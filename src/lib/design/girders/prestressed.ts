@@ -297,6 +297,9 @@ export const STRANDS: Record<0.5 | 0.6, { area: number; db: number }> = {
  * - 5.5.2.1: camber at deck placement at 60 days, ±30% on a CBT (at least ±1 in); dead load deflections
  *   without long-term multipliers; minimum haunches; no sag; the dead load haunch by Eq. 5.1.
  */
+/** PCI Design Handbook (7th ed.) Table 5.8.2: camber at erection from the release values. */
+export const PCI_ERECTION = { prestress: 1.8, selfWeight: 1.85 };
+
 export const CDOT = {
   maxFci: 6.5,
   maxFc: 8.5,
@@ -1236,8 +1239,14 @@ function designGirderLine(i: GirderInputs, exterior: boolean, ctx: SpanContext |
   // Continuity's change to the midspan moment per klf (linear along the girder, so it also gives the deflection).
   const endMoments = full ? ctx!.unit(i.L / 2).M - (i.L * i.L) / 8 : 0; // kip·ft per klf
   const dSidl = (5 * ((wDC2 + wDW) / 12) * Li ** 4) / (384 * Ec * comp.I) + ((wDC2 + wDW) * endMoments * 12 * Li ** 2) / (8 * Ec * comp.I);
-  const camber = { VS, ks, khc, kf, ktd, psi, t, dPs, dGr, cRelease, age: camberAge, tCam, psiCam, fpCam, cDeck, dDeck: -dDeck, dSidl: -dSidl, dTotal: -(dDeck + dSidl), net: cDeck - dDeck - dSidl };
-  const haunch = haunchDesign(i, shape, camber);
+  // The camber at erection by the PCI Design Handbook's multipliers (Table 5.8.2: 1.80 on the prestress,
+  // 1.85 on the self-weight, from release), the method most CDOT designs use. The BDM sets no method, so
+  // the haunch and sag checks envelope the two estimates.
+  const cPci = PCI_ERECTION.prestress * dPs - PCI_ERECTION.selfWeight * dGr;
+  const cLow = Math.min(cDeck, cPci);
+  const cHigh = Math.max(cDeck, cPci);
+  const camber = { VS, ks, khc, kf, ktd, psi, t, dPs, dGr, cRelease, age: camberAge, tCam, psiCam, fpCam, cDeck, cPci, cLow, cHigh, dDeck: -dDeck, dSidl: -dSidl, dTotal: -(dDeck + dSidl), net: cDeck - dDeck - dSidl };
+  const haunch = haunchDesign(i, shape, { cDeck: cLow, cHigh, dTotal: camber.dTotal });
 
   // Live load deflection (2.5.2.6.2, 3.6.1.3.2): all lanes, multiple presence, shared by all girders.
   const llDefl = liveLoadDeflection(i, Ec * comp.I, df.lanes);
@@ -1313,7 +1322,7 @@ function designGirderLine(i: GirderInputs, exterior: boolean, ctx: SpanContext |
     add({ id: "bed-force", name: "Jacking force of all strands (precasting bed)", demand: Pj, capacity: CDOT.maxBedForce, unit: "kip", ref: "B-618-CBT2", note: `${N} strands at ${(strand.area * fpj).toFixed(1)} kip` });
 
     // Camber and haunch (BDM 5.5.2.1 B and G).
-    add({ id: "no-sag", name: "No sag: under-cambered girder after the dead load", demand: haunch.tolerance - camber.dTotal, capacity: camber.cDeck, unit: "in", ref: "CDOT BDM 5.5.2.1 G", note: `camber ${camber.cDeck.toFixed(2)} in at ${camber.age} days, less ${haunch.tolerance.toFixed(2)} in under-camber and ${(-camber.dTotal).toFixed(2)} in dead load deflection` });
+    add({ id: "no-sag", name: "No sag: under-cambered girder after the dead load", demand: haunch.tolerance - camber.dTotal, capacity: camber.cLow, unit: "in", ref: "CDOT BDM 5.5.2.1 G", note: `camber ${camber.cLow.toFixed(2)} in at ${camber.age} days (the lower of ${camber.cDeck.toFixed(2)} by creep and ${camber.cPci.toFixed(2)} by the PCI multipliers), less ${haunch.tolerance.toFixed(2)} in under-camber and ${(-camber.dTotal).toFixed(2)} in dead load deflection` });
     if (haunch.D1 !== undefined) {
       add({ id: "haunch-support", name: "Haunch at the supports, flange edge", demand: haunch.minSupport, capacity: haunch.D1 - haunch.cross, unit: "in", ref: "CDOT BDM 5.5.2.1 B", note: `${haunch.D1.toFixed(2)} in at the centerline, less ${haunch.cross.toFixed(2)} in of cross-slope over half the flange` });
       add({ id: "haunch-mid", name: "Haunch at midspan, over-cambered girder, flange edge", demand: haunch.minBetween, capacity: haunch.D2over! - haunch.cross, unit: "in", ref: "CDOT BDM 5.5.2.1 B", note: `predicted ${haunch.D2!.toFixed(2)} in at the centerline, less ${haunch.tolerance.toFixed(2)} in over-camber` });
@@ -2014,17 +2023,23 @@ export function strandGroups(i: GirderInputs, H: number, Lg: number): StrandGrou
  * haunch at the supports (to ¼ in) that keeps the minimums with an over-cambered girder, and for the dead
  * load the weighted haunch of Eq. 5.1 with an under-cambered one (G: designed for the larger haunch).
  */
-export function haunchDesign(i: GirderInputs, shape: GirderShape, c: { cDeck: number; dTotal: number }) {
+export function haunchDesign(i: GirderInputs, shape: GirderShape, c: { cDeck: number; dTotal: number; cHigh?: number }) {
   const panels = !!i.deckPanels;
   const minSupport = panels ? CDOT.haunchSupport.panels : CDOT.haunchSupport.none;
   const minBetween = panels ? CDOT.haunchBetween.panels : CDOT.haunchBetween.none;
   // BDM 5.5.2.1 D: ±30% for CBTs, ±50% for slab and box girders; at least 1 in either way.
   const pct = shape.family === "Prestressed box" ? CDOT.camberToleranceBox : CDOT.camberTolerance;
-  const tolerance = Math.max(pct * Math.max(0, c.cDeck), CDOT.camberToleranceMin);
+  const tol = (camber: number) => Math.max(pct * Math.max(0, camber), CDOT.camberToleranceMin);
+  // The camber's estimate is enveloped (the BDM sets no method): the lower one, cDeck, for sag and the
+  // under-cambered haunch; the higher, cHigh, for the over-cambered haunch.
+  const high = Math.max(c.cHigh ?? c.cDeck, c.cDeck);
+  const tolerance = tol(c.cDeck);
+  const toleranceHigh = tol(high);
   const cross = ((i.crossSlope ?? 0.02) * shape.topWidth) / 2;
   const profile = i.profileOrdinate ?? 0;
   const net = c.cDeck + c.dTotal; // the camber left under all the dead load (dTotal is negative)
-  const base = { mode: i.haunchMode ?? "given", panels, minSupport, minBetween, tolerance, cross, profile, net };
+  const netHigh = high + c.dTotal;
+  const base = { mode: i.haunchMode ?? "given", panels, minSupport, minBetween, tolerance, toleranceHigh, cross, profile, net, netHigh };
   if (i.haunchMode === "supports") {
     // The haunch at the bearings is set; at midspan it's what the predicted camber leaves (F: plus the
     // profile above the chord). The dead load takes Eq. 5.1 with an under-cambered girder's larger haunch,
@@ -2032,13 +2047,13 @@ export function haunchDesign(i: GirderInputs, shape: GirderShape, c: { cDeck: nu
     const D1 = i.haunchSupport ?? i.haunch;
     const D2 = D1 - net + profile;
     const D2under = D2 + tolerance;
-    return { ...base, D1, D2, D2over: D2 - tolerance, D2under, design: (2 * D1 + 10 * Math.max(0, D2under)) / 12 };
+    return { ...base, D1, D2, D2over: D1 - netHigh + profile - toleranceHigh, D2under, design: (2 * D1 + 10 * Math.max(0, D2under)) / 12 };
   }
   if (i.haunchMode !== "computed") return { ...base, D1: undefined, D2: undefined, D2over: undefined, D2under: undefined, design: i.haunch };
-  const need = Math.max(minSupport + cross, minBetween + cross + tolerance + net - profile);
+  const need = Math.max(minSupport + cross, minBetween + cross + toleranceHigh + netHigh - profile);
   const D1 = i.haunchD1 ?? Math.ceil(need * 4 - 1e-9) / 4;
   const D2 = D1 - net + profile; // predicted, at midspan
-  const D2over = D2 - tolerance;
+  const D2over = D1 - netHigh + profile - toleranceHigh;
   const D2under = D2 + tolerance;
   const design = (D1 + 10 * D2under + D1) / 12; // Eq. 5.1
   return { ...base, D1, D2, D2over, D2under, design };

@@ -1,5 +1,6 @@
 import { designGirder, GIRDER_DEFAULTS, girderShape, liveLoad, type GirderInputs } from "../girders/prestressed";
 import { continuousEndShear, continuousLaneReaction } from "../girders/substructure-loads";
+import { applyRail } from "../girders/bridge-deck";
 import { DesignError } from "../walls/cip";
 import { crossSlopeAt, deckElevation, horizontalElements, pointAt, profileAt, profileGeometry, stationOffset, type Alignment, type Profile, type RoadwaySection } from "./alignment";
 
@@ -211,7 +212,7 @@ export function girderInputsFor(b: BridgeInputs, lay: BridgeLayout, group: numbe
   // 11 in below its top, so a new girder design of any section can run.
   const depth = girderShape({ ...GIRDER_DEFAULTS, shape: b.shape }).depth;
   const fit = <H extends { count: number; yEnd: number } | null | undefined>(h: H): H => (h && h.count > 0 && h.yEnd > depth - 6 ? { ...h, yEnd: Math.round(depth - 11) } : h);
-  return {
+  const out: GirderInputs = {
     ...base,
     harped: fit(base.harped),
     shape: b.shape,
@@ -237,6 +238,8 @@ export function girderInputsFor(b: BridgeInputs, lay: BridgeLayout, group: numbe
     extraSpans: spans.slice(1).map((s, k) => ({ L: s.L, strands: base.extraSpans[k]?.strands ?? null, harped: fit(base.extraSpans[k]?.harped ?? null) })),
     pierBearingOffset: pier ? pier.bearingOffset : base.pierBearingOffset,
   };
+  // A CDOT standard rail sets the barrier's width and its worksheet weight, as a saved girder design's do.
+  return b.rail ? applyRail(out) : out;
 }
 
 /** Per girder at a support, from the girder check's girder lines: DC, DW, and LL per girder with and without IM (kip). */

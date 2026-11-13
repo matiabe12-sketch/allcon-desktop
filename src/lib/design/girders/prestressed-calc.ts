@@ -545,17 +545,23 @@ export function girderCalcLines(entered: GirderInputs, title: string, figures?: 
     text("Camber tolerance, sag and haunch (CDOT BDM 5.5.2.1)", "subheading");
     const box = g.shape.family === "Prestressed box";
     text(`Dead load deflections without long-term multipliers (E). Camber may be up to ${box ? "50% over or under the prediction on a box or slab girder" : "30% over or under the prediction on a CBT"}, and at least 1 in either way (D); a smaller tolerance for cambers under 1 in needs the Unit Leader's approval.`, "note");
-    m(`\\delta_c\\coloneq\\max\\left(${box ? "0.5" : "0.3"}\\cdot C_d,1\\mathrm{in}\\right)=`, "Camber tolerance, over or under (D)", "in");
-    m(ok("\\delta_c+\\Delta_{dk}+\\Delta_{sd}", "C_d"), "No sag: an under-cambered girder keeps its camber under the dead load (G)");
+    text("The BDM sets no method for the camber, so two estimates are enveloped: the creep estimate above and the PCI Design Handbook's multipliers (Table 5.8.2), the lower for sag and the under-cambered haunch, the higher for the over-cambered haunch.", "note");
+    m("C_{dP}\\coloneq1.80\\cdot\\Delta_{ps}-1.85\\cdot\\Delta_{gr}=", "At erection by the PCI multipliers", "in");
+    m("C_{dl}\\coloneq\\min\\left(C_d,C_{dP}\\right)=", "The lower estimate", "in");
+    m("C_{dh}\\coloneq\\max\\left(C_d,C_{dP}\\right)=", "The higher estimate", "in");
+    m(`\\delta_c\\coloneq\\max\\left(${box ? "0.5" : "0.3"}\\cdot C_{dl},1\\mathrm{in}\\right)=`, "Camber tolerance on the lower estimate, under (D)", "in");
+    m(`\\delta_{ch}\\coloneq\\max\\left(${box ? "0.5" : "0.3"}\\cdot C_{dh},1\\mathrm{in}\\right)=`, "On the higher, over (D)", "in");
+    m(ok("\\delta_c+\\Delta_{dk}+\\Delta_{sd}", "C_{dl}"), "No sag: an under-cambered girder keeps its camber under the dead load (G)");
     if (h.D1 !== undefined) {
       m(`\\Delta_x\\coloneq ${num(i.crossSlope ?? 0.02)}\\cdot\\frac{${num(g.shape.topWidth)}\\mathrm{in}}{2}=`, "Cross-slope over half the level top flange (B)", "in");
       m(`\\Delta_{pf}\\coloneq ${num(h.profile)}\\mathrm{in}`, "Profile grade above the bearing-to-bearing chord at midspan (F)");
       m(`h_s\\coloneq ${num(h.minSupport)}\\mathrm{in}`, h.panels ? "Minimum haunch at the supports, deck panels permitted (B)" : "Minimum haunch at the supports, no deck panels (B)");
       m(`h_m\\coloneq ${num(h.minBetween)}\\mathrm{in}`, "Minimum haunch between the supports (B)");
-      given(`D_1\\coloneq ${num(h.D1)}\\mathrm{in}`, "Haunch at the supports: the least, to ¼ in, keeping both minimums with an over-cambered girder");
-      m("D_2\\coloneq D_1-C_n+\\Delta_{pf}=", "Predicted haunch at midspan, at the girder's centerline", "in");
+      given(`D_1\\coloneq ${num(h.D1)}\\mathrm{in}`, h.mode === "supports" ? "Haunch at the supports, from the bridge's slab offset" : "Haunch at the supports: the least, to ¼ in, keeping both minimums with an over-cambered girder");
+      m("D_2\\coloneq D_1-\\left(C_{dl}-\\Delta_{dk}-\\Delta_{sd}\\right)+\\Delta_{pf}=", "Haunch at midspan with the lower estimate, at the girder's centerline", "in");
+      m("D_{2o}\\coloneq D_1-\\left(C_{dh}-\\Delta_{dk}-\\Delta_{sd}\\right)+\\Delta_{pf}-\\delta_{ch}=", "With the higher estimate, over-cambered", "in");
       m(ok("h_s", "D_1-\\Delta_x"), "At the supports, flange edge");
-      m(ok("h_m", "D_2-\\delta_c-\\Delta_x"), "At midspan with an over-cambered girder, flange edge");
+      m(ok("h_m", "D_{2o}-\\Delta_x"), "At midspan with an over-cambered girder, flange edge");
       m("h_{51}\\coloneq\\frac{D_1+10\\cdot\\left(D_2+\\delta_c\\right)+D_1}{12}=", "Dead load haunch by Eq. 5.1 with an under-cambered girder (G): the haunch hh used for the loads above", "in");
     }
   }

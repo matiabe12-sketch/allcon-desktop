@@ -137,9 +137,13 @@ export const I05VA_PAD = { pad: "plain" as const, method: "A" as const, L: 8, W:
 // tips (the abutments' 9 piles are 22 ft, the caissons 25 ft: both end in rock).
 const layer = (name: string, thickness: number, kind: SoilLayer["kind"], gamma: number, phi: number, k: number): SoilLayer => ({ name, thickness, kind, gamma, phi, k, su: 0, e50: 0, qu: kind === "weak-rock" ? 400 : 0, Em: kind === "weak-rock" ? 40000 : 0, rqd: kind === "weak-rock" ? 50 : 0 });
 export const I05VA_ABUT_SOIL: SoilLayer[] = [layer("Embankment fill", 10, "sand", 120, 34, 90), layer("Sand and gravel alluvium", 10, "sand", 60, 36, 60), layer("Bedrock", 20, "weak-rock", 70, 0, 0)];
+// The caissons' axial resistance as the IDC takes it from the geotechnical report (IDC p. 547–548): an 18 ft
+// socket into bedrock, its top 5 ft weathered (no side shear); 41 ksf side shear (φ 0.45) and 1,600 ksf end
+// bearing (φ 0.50, for L/B = 5.1); the alluvium above not counted.
 export const I05VA_SHAFT_LAYERS: ShaftLayer[] = [
-  { ...layer("Sand and gravel alluvium", 8, "sand", 60, 36, 60), axial: "beta", N60: 30, quKsf: 0, qs: 0, qp: 0, phiQs: 0.55, phiQp: 0.55 },
-  { ...layer("Bedrock", 30, "weak-rock", 70, 0, 0), axial: "rock", N60: 0, quKsf: (400 * 144) / 1000, qs: 0, qp: 0, phiQs: 0.55, phiQp: 0.55 },
+  { ...layer("Sand and gravel alluvium", 7.3, "sand", 60, 36, 60), axial: "none", N60: 30, quKsf: 0, qs: 0, qp: 0, phiQs: 0.55, phiQp: 0.55 },
+  { ...layer("Weathered bedrock", 5, "weak-rock", 70, 0, 0), axial: "none", N60: 0, quKsf: 0, qs: 0, qp: 0, phiQs: 0.45, phiQp: 0.5 },
+  { ...layer("Bedrock", 30, "weak-rock", 70, 0, 0), axial: "entered", N60: 0, quKsf: 0, qs: 41, qp: 1600, phiQs: 0.45, phiQp: 0.5 },
 ];
 /** The piers' top tie when complete: the deck's transverse bars within the cap's 4 ft and the diaphragm's (assumed: 12 #5). */
 export const I05VA_DIAPHRAGM_TOP = { size: 5, count: 12 };

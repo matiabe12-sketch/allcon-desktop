@@ -94,7 +94,8 @@ describe("strut-and-tie calc package", () => {
     c.r.services.forEach((s, k) => close(c.value(`V_{cr${k + 1}}\\coloneq`, "kip"), s.Vcr));
     const texts = c.lines.flatMap((l) => ("math" in l ? [l.math, l.ref ?? ""] : "text" in l ? [l.text] : []));
     expect(texts.join(" ")).not.toMatch(/allcon|fhwa|example/i);
-    expect(texts.some((t) => t.startsWith("Strut "))).toBe(true);
+    // The finite geometry checks, a table with a row per strut.
+    expect(c.lines.some((l) => "region" in l && l.region.kind === "image" && l.region.svg.includes(">Strut "))).toBe(true);
   });
 
   for (const [name, inputs] of [

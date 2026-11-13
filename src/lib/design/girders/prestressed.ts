@@ -313,6 +313,7 @@ export const CDOT = {
   shipWeight: 240, // kip
   camberAge: 60, // days
   camberTolerance: 0.3, // of the predicted camber (CBT)
+  camberToleranceBox: 0.5, // slab and box girders
   camberToleranceMin: 1, // in
   haunchSupport: { panels: 1.5, none: 0.5 }, // in, at the supports
   haunchBetween: { panels: 1, none: 0 }, // in, between the supports
@@ -2017,7 +2018,9 @@ export function haunchDesign(i: GirderInputs, shape: GirderShape, c: { cDeck: nu
   const panels = !!i.deckPanels;
   const minSupport = panels ? CDOT.haunchSupport.panels : CDOT.haunchSupport.none;
   const minBetween = panels ? CDOT.haunchBetween.panels : CDOT.haunchBetween.none;
-  const tolerance = Math.max(CDOT.camberTolerance * Math.max(0, c.cDeck), CDOT.camberToleranceMin);
+  // BDM 5.5.2.1 D: ±30% for CBTs, ±50% for slab and box girders; at least 1 in either way.
+  const pct = shape.family === "Prestressed box" ? CDOT.camberToleranceBox : CDOT.camberTolerance;
+  const tolerance = Math.max(pct * Math.max(0, c.cDeck), CDOT.camberToleranceMin);
   const cross = ((i.crossSlope ?? 0.02) * shape.topWidth) / 2;
   const profile = i.profileOrdinate ?? 0;
   const net = c.cDeck + c.dTotal; // the camber left under all the dead load (dTotal is negative)

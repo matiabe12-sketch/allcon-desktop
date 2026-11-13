@@ -4,8 +4,8 @@ import { cell, COLOR_NOTE, INPUT_COLOR, isInput, num } from "../calc-style";
 import type { Figure } from "../figures";
 import { BARS } from "../walls/cip";
 import { railDef } from "../decks/rails";
-import { textTable } from "../svg-table";
-import { checksSummary } from "../checks-summary";
+import { textTable, wrap } from "../svg-table";
+import { checksSummary, checkTable } from "../checks-summary";
 import { girderSchedule, SCHEDULE_HEAD, scheduleCells } from "./schedule";
 import { CONNECTION_STRESS, criteriaInputs, designGirder, EP, liveLoad, spanInputs, strandGroups, STRANDS, zoneCallout, type GirderInputs, type GirderResult } from "./prestressed";
 
@@ -17,7 +17,6 @@ import { CONNECTION_STRESS, criteriaInputs, designGirder, EP, liveLoad, spanInpu
 const ok = (demand: string, capacity: string) => `\\operatorname{if}\\left(${demand}\\le ${capacity},\\text{OK},\\text{NG}\\right)=`;
 const kft = "\\mathrm{kip}\\cdot\\mathrm{ft}";
 
-const verdict = (c: { ok: boolean; advisory?: boolean }) => (c.advisory ? (c.ok ? "Info" : "Info, over") : c.ok ? "OK" : "NG");
 
 export function girderCalcLines(entered: GirderInputs, title: string, figures?: { section?: Figure; elevation?: Figure; handling?: Figure; bridge?: Figure; schedule?: Figure }): Line[] {
   const input = criteriaInputs(entered);
@@ -47,11 +46,26 @@ export function girderCalcLines(entered: GirderInputs, title: string, figures?: 
       ? `LRFD Bridge Design Check: a ${design.spans.length}-span bridge of precast, pretensioned ${g.shape.name} girders with a composite cast-in-place deck, made continuous over the piers for the loads after the diaphragms are cast (AASHTO 5.12.3.3), to the AASHTO LRFD Bridge Design Specifications, 10th edition (2024). This worksheet works out span ${spanNo + 1}'s ${ext ? "exterior" : "interior"} girder, which controls, and the continuity over the piers; the summary at the end lists every check for every span, pier and girder. Stresses are positive in compression.`
       : `LRFD Bridge Design Check: a simple-span precast, pretensioned ${g.shape.name} girder with a composite cast-in-place deck, to the AASHTO LRFD Bridge Design Specifications, 10th edition (2024). This worksheet works out the ${ext ? "exterior" : "interior"} girder, which controls; the summary at the end lists every check for both girders. Stresses are positive in compression.`,
   );
-  if (cdot)
-    text(
-      "Design criteria: AASHTO LRFD with the CDOT Bridge Design Manual's amendments: the Colorado Permit Vehicle and EV3 at Strength II with HL-93's distribution factors and impact (BDM 3.6); f′ci ≤ 6.5 ksi and f′c ≤ 8.5 ksi without approval (5.3.1.2); Service III γLL = 1.0 with refined losses and elastic gains, the live load's elastic gain included (5.5.1.1); no tension under dead load alone after losses (5.5.1.3); hold-down ≤ 4.0 kip per strand (5.5.2.2); restraint moments taken as zero and the positive moment connection designed for 1.2 Mcr (5.7.2); a joint fully effective only when the girders are at least 60 days old (5.7.3); stirrups at most 18 in apart (5.5.1.6); the top harped strand at most 6 in below the top and 60 in high, no harped strands under 100 ft, harp points at 0.35–0.45 L and at most 2,800 kip on the bed (5.5.1.5, sheet B-618-CBT2); girders up to 154 ft and 240 kip to ship (5.5.1.9); camber at 60 days with a ±30% tolerance (at least 1 in), no sag, and the minimum haunches (5.5.2.1). Lifting and hauling are the fabricator's design (5.5.1.8): worked out below for information only.",
-      "note",
-    );
+  if (cdot) {
+    text("Design criteria:- AASHTO LRFD with the CDOT Bridge Design Manual's amendments, as below.", "note");
+    const crit: [string, string][] = [
+      ["Colorado Permit Vehicle and EV3 at Strength II, with HL-93's distribution factors and impact", "3.6"],
+      ["Unit weights: Ec and Eci by AASHTO Table 3.5.1-1 at f′c and f′ci; loads with the bars, at least 155 pcf (girder) and 150 pcf (deck)", "3.4.4.1, 5.3.2"],
+      ["f′ci ≤ 6.5 ksi and f′c ≤ 8.5 ksi without approval", "5.3.1.2"],
+      ["Relative humidity 55% for creep and shrinkage", "5.3.3"],
+      ["Service III γLL = 1.0, refined losses with elastic gains, the live load's gain included", "5.5.1.1"],
+      ["No tension under dead load alone after losses", "5.5.1.3"],
+      ["Stirrups at most 18 in apart", "5.5.1.6"],
+      ["Top harped strand at most 6 in below the top and 60 in high; no harping under 100 ft; harp points 0.35–0.45 L; at most 2,800 kip on the bed", "5.5.1.5, B-618-CBT2"],
+      ["Lifting and hauling: the fabricator's design, shown for information only", "5.5.1.8"],
+      ["Girders up to 154 ft and 240 kip to ship", "5.5.1.9"],
+      [`Camber at 60 days, ±${g.shape.family === "Prestressed box" ? "50" : "30"}% tolerance (at least 1 in); no sag; minimum haunches; dead load haunch by Eq. 5.1, under-cambered`, "5.5.2.1"],
+      ["Hold-down at most 4.0 kip per strand", "5.5.2.2"],
+      ["Restraint moments zero; positive moment connection resists 1.2 Mcr (φ = 0.9)", "5.7.2"],
+      ["A joint fully effective only when the girders are at least 60 days old", "5.7.3"],
+    ];
+    lines.push({ region: textTable([{ title: "Criterion", x: 4 }, { title: "BDM", x: 560 }], crit.map(([a, b]) => [wrap(a, 96), b]), 720, "CDOT CRITERIA") });
+  }
   text(COLOR_NOTE, "note");
   if (input.fromPlans) {
     text(`Inputs from the plans${input.fromPlans.drawingSet ? ` (${input.fromPlans.drawingSet})` : ""}, each confirmed by the engineer:`, "subheading");
@@ -491,7 +505,7 @@ export function girderCalcLines(entered: GirderInputs, title: string, figures?: 
   const deb = g.checks.filter((c) => c.id.startsWith("deb-"));
   if (deb.length) {
     text("Debonding limits (AASHTO 5.9.4.3.3)", "subheading");
-    for (const c of deb) text(`${c.ok ? "OK" : "NG"} — ${c.name}: ${fmt(c.demand)} / ${fmt(c.capacity)} ${c.unit}${c.note ? ` (${c.note})` : ""}`);
+    lines.push(...checkTable(deb));
   }
 
   // --- camber -------------------------------------------------------------------------------------------
@@ -529,8 +543,9 @@ export function girderCalcLines(entered: GirderInputs, title: string, figures?: 
     // CDOT BDM 5.5.2.1: camber tolerance, sag and the haunch.
     const h = g.haunch;
     text("Camber tolerance, sag and haunch (CDOT BDM 5.5.2.1)", "subheading");
-    text("Dead load deflections without long-term multipliers (E). Camber may be up to 30% over or under the prediction on a CBT, and at least 1 in either way (D); a smaller tolerance for cambers under 1 in needs the Unit Leader's approval.", "note");
-    m("\\delta_c\\coloneq\\max\\left(0.3\\cdot C_d,1\\mathrm{in}\\right)=", "Camber tolerance, over or under (D)", "in");
+    const box = g.shape.family === "Prestressed box";
+    text(`Dead load deflections without long-term multipliers (E). Camber may be up to ${box ? "50% over or under the prediction on a box or slab girder" : "30% over or under the prediction on a CBT"}, and at least 1 in either way (D); a smaller tolerance for cambers under 1 in needs the Unit Leader's approval.`, "note");
+    m(`\\delta_c\\coloneq\\max\\left(${box ? "0.5" : "0.3"}\\cdot C_d,1\\mathrm{in}\\right)=`, "Camber tolerance, over or under (D)", "in");
     m(ok("\\delta_c+\\Delta_{dk}+\\Delta_{sd}", "C_d"), "No sag: an under-cambered girder keeps its camber under the dead load (G)");
     if (h.D1 !== undefined) {
       m(`\\Delta_x\\coloneq ${num(i.crossSlope ?? 0.02)}\\cdot\\frac{${num(g.shape.topWidth)}\\mathrm{in}}{2}=`, "Cross-slope over half the level top flange (B)", "in");
@@ -597,7 +612,7 @@ export function girderCalcLines(entered: GirderInputs, title: string, figures?: 
     const s = girderSchedule(input, design);
     lines.push({ text: "Girder schedule", style: "subheading", newPage: true, keepWithNext: true });
     text(
-      `The girders as CDOT's worksheet B-618-CBT1 schedules them, from this design${s.final ? "" : ": preliminary, since the design has failing checks (see the summary), not for plans"}. As* is the prestressing steel provided; Ee and Ec are the strands' centroid above the girder's bottom at its end and at midspan; Fj the jacking force and Ff the force after all losses; Δ the deflection at midspan from the deck, diaphragms, overlay and rails; the predicted camber, for the girder alone, at ${s.rows[0]?.age ?? 0} days. Acceptable camber is 30% over or under the predicted, or ±1 in, whichever is greater.`,
+      `The girders as CDOT's worksheet B-618-CBT1 schedules them, from this design${s.final ? "" : ": preliminary, since the design has failing checks (see the summary), not for plans"}. As* is the prestressing steel provided; Ee and Ec are the strands' centroid above the girder's bottom at its end and at midspan; Fj the jacking force and Ff the force after all losses; Δ the deflection at midspan from the deck, diaphragms, overlay and rails; the predicted camber, for the girder alone, at ${s.rows[0]?.age ?? 0} days. Acceptable camber is ${g.shape.family === "Prestressed box" ? "50" : "30"}% over or under the predicted, or ±1 in, whichever is greater.`,
     );
     const xs = [4, 104, 134, 210, 248, 296, 334, 372, 420, 466, 500, 532, 568, 626, 680];
     lines.push({ region: textTable(SCHEDULE_HEAD.map((h, k) => ({ title: h, x: xs[k], ...(k > 2 ? { anchor: "end" as const } : {}) })), s.rows.map(scheduleCells), 686, "GIRDER SCHEDULE") });
@@ -873,7 +888,7 @@ function phase4Section(p: {
   } else text(Number.isFinite(gl.fscr) ? "Cracking: a flange tip is already past the modulus of rupture with the girder plumb, so FScr = 0." : "Cracking: no flange tip cracks within the tilt angles considered.", "note");
   m("\\theta_{mL}\\coloneq\\min\\left(0.4,\\sqrt{\\frac{e_{iL}}{2.5\\cdot z_{oL}}}\\right)=", "Tilt at failure, rad (not more than 0.4, the small-angle limit)");
   m("FS_{fL}\\coloneq\\frac{y_{rL}\\cdot\\theta_{mL}}{z_{oL}\\cdot\\theta_{mL}\\cdot\\left(1+2.5\\cdot\\theta_{mL}\\right)+e_{iL}}=", "Factor of safety against failure");
-  for (const c of g.checks.filter((k) => k.id.startsWith("lift-"))) text(`${verdict(c)} —${c.name}: ${fmt(c.demand)} / ${fmt(c.capacity)}${c.unit ? ` ${c.unit}` : ""}${c.note ? ` (${c.note})` : ""}`, "note");
+  p.lines.push(...checkTable(g.checks.filter((k) => k.id.startsWith("lift-"))));
 
   const H0 = h.hauling;
   const S0 = H0.superelevation;
@@ -908,7 +923,7 @@ function phase4Section(p: {
   m("FS_{rH}\\coloneq\\frac{K_\\theta\\cdot\\left(\\theta_{rH}-\\alpha_s\\right)}{W_L\\cdot\\left(z_{oH}\\cdot\\theta_{rH}\\cdot\\left(1+2.5\\cdot\\theta_{rH}\\right)+y_{rH}\\cdot\\theta_{rH}+e_{iH}\\right)}=", "Factor of safety against rollover");
   m("\\theta_{mH}\\coloneq\\min\\left(0.4,\\alpha_s+\\sqrt{\\alpha_s^{2}+\\frac{e_{iH}+\\left(z_{oH}+y_{rH}\\right)\\cdot\\alpha_s}{2.5\\cdot z_{oH}}}\\right)=", "Tilt at failure, rad (not more than 0.4)");
   m("FS_{fH}\\coloneq\\frac{K_\\theta\\cdot\\left(\\theta_{mH}-\\alpha_s\\right)}{W_L\\cdot\\left(z_{oH}\\cdot\\theta_{mH}\\cdot\\left(1+2.5\\cdot\\theta_{mH}\\right)+y_{rH}\\cdot\\theta_{mH}+e_{iH}\\right)}=", "Factor of safety against failure");
-  for (const c of g.checks.filter((k) => k.id.startsWith("haul-") || k.id.startsWith("ship-"))) text(`${verdict(c)} —${c.name}: ${fmt(c.demand)} / ${fmt(c.capacity)}${c.unit ? ` ${c.unit}` : ""}${c.note ? ` (${c.note})` : ""}`, "note");
+  p.lines.push(...checkTable(g.checks.filter((k) => k.id.startsWith("haul-") || k.id.startsWith("ship-"))));
 }
 
 const fmt = (v: number) => (Math.abs(v) >= 1000 ? v.toFixed(0) : Number(v.toFixed(3)).toString());

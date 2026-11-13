@@ -3,6 +3,7 @@ import type { UnitSystem } from "../evaluate";
 import { textLook } from "../text-format";
 import { contentSize, GRID, type ImageRegion, type Paper, type PlotRegion, type Region, type SolveRegion, type TableRegion, type TextRegion } from "../types";
 import { fitsBeside } from "./fit";
+import { plainNumbers } from "../plain-numbers";
 import type { Snippet } from "./materials";
 
 // Worksheet templates: complete calcs to start from (AISC 360-22 and ACI 318-19, LRFD), laid out
@@ -110,7 +111,7 @@ export function layout(lines: Line[], at: { x: number; y: number }, paper: Paper
     }
     if ("text" in line) {
       const style = line.style ?? "normal";
-      out.push({ id: newId(), kind: "text", x: at.x, y, text: line.text, style, width: style === "normal" || style === "note" ? 600 : 640, ...(line.color ? { color: line.color } : {}) });
+      out.push({ id: newId(), kind: "text", x: at.x, y, text: plainNumbers(line.text), style, width: style === "normal" || style === "note" ? 600 : 640, ...(line.color ? { color: line.color } : {}) });
     } else if ("math" in line) {
       out.push({ id: newId(), kind: "math", x: at.x, y, latex: line.math, ...(line.unit ? { displayUnit: line.unit } : {}), ...(line.color ? { color: line.color } : {}) });
       if (line.ref && !wideOf(line)) out.push({ id: newId(), kind: "text", x: at.x + REF_X, y: y + Math.max(0, (h - 32) / 2), text: line.ref, style: "note", width: 230 });

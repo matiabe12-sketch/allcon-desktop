@@ -55,3 +55,17 @@ export function checksSummary(groups: SummaryGroup[]): Line[] {
   }
   return lines;
 }
+
+/**
+ * A short list of checks inside a calc (debonding limits, lifting, the column's details) as a table in
+ * the summary's columns, rather than a sentence per check; a check's note goes under its name.
+ */
+export function checkTable(checks: (SummaryCheck & { note?: string })[], title?: string): Line[] {
+  const lines: Line[] = [];
+  for (let k = 0; k < checks.length; k += 30) {
+    const part = checks.slice(k, k + 30);
+    const rows = part.map((c) => [wrap(c.note ? `${c.name} (${c.note})` : c.name, 54), num(c.demand), num(c.capacity), wrap(c.unit, 12), c.capacity > 0 ? (c.demand / c.capacity).toFixed(2) : "—", result(c), wrap(c.ref, 26)]);
+    lines.push({ region: textTable(COLS, rows, 720, k === 0 ? title : undefined, part.map(color)) });
+  }
+  return lines;
+}

@@ -1,5 +1,6 @@
 import type { Line } from "@/lib/calcs/library/templates";
 import { checksSummary } from "../checks-summary";
+import { textTable } from "../svg-table";
 import { COLOR_NOTE, INPUT_COLOR, isInput, num } from "../calc-style";
 import type { Figure } from "../figures";
 import { designStripSeal, type StripSealInputs } from "./strip-seal";
@@ -47,7 +48,13 @@ export function stripSealCalcLines(i: StripSealInputs, title: string, figures?: 
   m(`W\\coloneq A+2\\cdot ${num(i.rail)}\\mathrm{in}=`, "Overall width, with the rails", "in");
 
   text("Settings by installation temperature", "subheading");
-  for (const row of r.table) text(`${num(row.Ti)}°F: A = ${row.status === "too small" ? "—" : `${num(row.A, 3)} in, W = ${num(row.W, 3)} in`}${STATUS[row.status]}`);
+  lines.push({
+    region: textTable(
+      [{ title: ["Installation", "temperature (°F)"], x: 96, anchor: "end" }, { title: ["Gap A", "(in)"], x: 170, anchor: "end" }, { title: ["Width W", "(in)"], x: 250, anchor: "end" }, { title: "Note", x: 270 }],
+      r.table.map((row) => [num(row.Ti), row.status === "too small" ? "—" : num(row.A, 3), row.status === "too small" ? "—" : num(row.W, 3), STATUS[row.status].replace(/^ \((.*)\)$/, "$1")]),
+      640,
+    ),
+  });
   lines.push(...checksSummary([{ checks: r.checks }]));
   return lines;
 }

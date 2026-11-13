@@ -1,5 +1,6 @@
 import type { Body } from "@/lib/calcs/library/templates";
 import type { ImageRegion } from "@/lib/calcs/types";
+import { plainNumbers } from "@/lib/calcs/plain-numbers";
 
 // A table of text and numbers as a picture for a calc package (a Calcs table holds numbers only):
 // a header row (one or two lines per column), ruled rows, columns left-aligned or right-aligned. A
@@ -30,7 +31,7 @@ export function textTable(cols: TableColumn[], rows: string[][], width = 640, ti
   const heights = rows.map((r) => Math.max(1, ...r.map((s) => s.split("\n").length)) * lineH + 4);
   const H = top + head + 10 + heights.reduce((s, h) => s + h, 0);
   // Each attribute once: a repeated one makes the SVG invalid, and the picture doesn't show.
-  const t = (x: number, y: number, s: string, extra = "", size = 10) => `<text x="${x}" y="${y}" font-size="${size}"${extra}>${esc(s)}</text>`;
+  const t = (x: number, y: number, s: string, extra = "", size = 10) => `<text x="${x}" y="${y}" font-size="${size}"${extra}>${esc(plainNumbers(s))}</text>`;
   const anchor = (c: TableColumn) => (c.anchor ? ` text-anchor="${c.anchor}"` : "");
   const parts = [`<svg width="${width}" height="${H}" viewBox="0 0 ${width} ${H}" xmlns="http://www.w3.org/2000/svg" font-family="Helvetica, Arial, sans-serif" fill="#171717">`];
   if (title) parts.push(t(width / 2, 12, title, ' font-weight="bold" text-anchor="middle"', 11));

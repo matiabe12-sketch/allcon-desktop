@@ -1,6 +1,8 @@
 import type { Line } from "@/lib/calcs/library/templates";
 import { COLOR_NOTE, INPUT_COLOR, isInput, num } from "../calc-style";
 import type { Figure } from "../figures";
+import { textTable, wrap } from "../svg-table";
+import { checkTable } from "../checks-summary";
 import { BARS, PHI_STM, PHI_TIE } from "./aashto";
 import type { StmInputs, StmResult } from "./strut-tie";
 
@@ -58,25 +60,50 @@ export function stmCalcLines(i: StmInputs, r: StmResult, title: string, figures?
   m(`\\phi_c\\coloneq ${PHI_STM}`, "Compression in strut-and-tie models, AASHTO 5.5.4.2");
 
   text("Strut-and-tie model", "subheading", { keepWithNext: true });
-  text(`Nodes, in feet: ${i.nodes.map((n) => `${n.label} (${num(n.x)}, ${num(n.y)})`).join("; ")}.`);
+  lines.push({ region: textTable([{ title: "Node", x: 4 }, { title: "x (ft)", x: 140, anchor: "end" }, { title: "y (ft)", x: 220, anchor: "end" }], i.nodes.map((n) => [n.label, num(n.x), num(n.y)]), 320, "NODES") });
   if (r.capLoads && i.girders) girderLoadLines(i, r, text);
   text("Factored loads at the nodes, by load case (upward forces positive):", "note", { keepWithNext: true });
-  for (const c of r.cases) text(`${c.name}:- ${c.loads.map((l) => `${num(l.fy)} kip vertically${l.fx ? ` and ${num(l.fx)} kip horizontally` : ""} at ${l.node}`).join("; ")}.`);
+  lines.push({
+    region: textTable(
+      [{ title: "Case", x: 4 }, { title: "Node", x: 380 }, { title: ["Vertical", "(kip)"], x: 530, anchor: "end" }, { title: ["Horizontal", "(kip)"], x: 636, anchor: "end" }],
+      r.cases.flatMap((c, k) => c.loads.map((l, n) => [n === 0 ? wrap(`${k + 1}. ${c.name}`, 56) : "", l.node, num(l.fy), l.fx ? num(l.fx) : "–"])),
+      640,
+      "LOADS AT THE NODES",
+    ),
+  });
   if (figures?.model) {
     text("The model, with the largest force in each member over the load cases (kip):", "note", { keepWithNext: true });
     lines.push({ region: figures.model });
   }
   text("Member forces:- The largest tension and compression in each member over the load cases, with the case each comes from. These maxima come from different cases, so together they are not one state of equilibrium; each case on its own is.", "note", { keepWithNext: true });
-  for (const mr of r.members.filter((x) => x.active)) {
-    const t = mr.tension > 0 ? `tension ${num(mr.tension)} kip in case ${mr.tensionCase! + 1}` : "";
-    const c = mr.compression > 0 ? `compression ${num(mr.compression)} kip in case ${mr.compressionCase! + 1}` : "";
-    text(`${mr.key}, ${num(mr.length / 12)} ft long: ${[t, c].filter(Boolean).join("; ")}.`);
-  }
-  text("Equilibrium:- Each case was checked from its member forces, loads and reactions, apart from the solver.", undefined, { keepWithNext: true });
-  r.perCase.forEach((p, k) =>
-    text(`Case ${k + 1}, ${p.name}: ${num(p.applied)} kip applied; largest nodal residual ${p.equilibrium.nodal < 1e-3 ? "under 0.001" : num(p.equilibrium.nodal)} kip; ${p.equilibrium.ok ? "in equilibrium" : "NOT in equilibrium"}${p.smallestAngle !== null ? `; smallest strut-tie angle ${num(p.smallestAngle)} degrees` : ""}.`),
-  );
-  text(`Supports:- ${r.supportReport.map((s) => `${s.node} restrains ${s.direction === "y" ? "vertical" : "horizontal"} movement${s.upwardOnly ? " (upward only)" : ""}`).join("; ")}. ${r.boundary.kind === "solver" ? "Their reactions follow from statics and the solver." : "Their reactions are held as near as statics allows to the column's linear stress, P/A ± Mc/I, over each support's tributary width."}`);
+  lines.push({
+    region: textTable(
+      [{ title: "Member", x: 4 }, { title: ["Length", "(ft)"], x: 170, anchor: "end" }, { title: ["Tension", "(kip)"], x: 290, anchor: "end" }, { title: "Case", x: 370, anchor: "end" }, { title: ["Compression", "(kip)"], x: 520, anchor: "end" }, { title: "Case", x: 600, anchor: "end" }],
+      r.members
+        .filter((x) => x.active)
+        .map((mr) => [mr.key, num(mr.length / 12), mr.tension > 0 ? num(mr.tension) : "–", mr.tension > 0 ? String(mr.tensionCase! + 1) : "–", mr.compression > 0 ? num(mr.compression) : "–", mr.compression > 0 ? String(mr.compressionCase! + 1) : "–"]),
+      640,
+      "MEMBER FORCES",
+    ),
+  });
+  text("Equilibrium:- Each case was checked from its member forces, loads and reactions, apart from the solver.", "note", { keepWithNext: true });
+  lines.push({
+    region: textTable(
+      [{ title: "Case", x: 4 }, { title: ["Applied", "(kip)"], x: 320, anchor: "end" }, { title: ["Largest nodal", "residual (kip)"], x: 430, anchor: "end" }, { title: "Equilibrium", x: 450 }, { title: ["Smallest strut-tie", "angle (deg)"], x: 636, anchor: "end" }],
+      r.perCase.map((p, k) => [wrap(`${k + 1}. ${p.name}`, 48), num(p.applied), p.equilibrium.nodal < 1e-3 ? "< 0.001" : num(p.equilibrium.nodal), p.equilibrium.ok ? "yes" : "NO", p.smallestAngle !== null ? num(p.smallestAngle) : "–"]),
+      640,
+      "EQUILIBRIUM BY CASE",
+    ),
+  });
+  text(`Supports:- ${r.boundary.kind === "solver" ? "Their reactions follow from statics and the solver." : "Their reactions are held as near as statics allows to the column's linear stress, P/A ± Mc/I, over each support's tributary width."}`, "note", { keepWithNext: true });
+  lines.push({
+    region: textTable(
+      [{ title: "Node", x: 4 }, { title: "Restrains", x: 120 }],
+      r.supportReport.map((s) => [s.node, `${s.direction === "y" ? "vertical" : "horizontal"} movement${s.upwardOnly ? " (upward only)" : ""}`]),
+      400,
+      "SUPPORTS",
+    ),
+  });
   if (r.angles.smallest !== null) {
     given(`\\theta_{min}\\coloneq ${num(r.angles.smallest)}\\mathrm{deg}`, "The smallest angle between a strut and a tie meeting at a node");
     m("\\operatorname{if}\\left(\\theta_{min}>25\\mathrm{deg},\\text{OK},\\text{NG}\\right)=", "AASHTO 5.8.2.2");
@@ -160,13 +187,13 @@ export function stmCalcLines(i: StmInputs, r: StmResult, title: string, figures?
   if (geometry.length) {
     text("Finite geometry (AASHTO 5.8.2.2, 5.8.2.5.2 and 5.10.3.1)", "subheading", { keepWithNext: true });
     text("Method:- Each strut is as wide as its face at a singular node and is held prismatic from there to midlength; toward a smeared node it may fan out. Each nodal zone is its bearing length by twice the chord's centroid distance from the face. Both must lie within the concrete, and neighboring zones must not overlap.");
-    for (const c of geometry) text(`${c.item}:- ${c.status === "pass" ? "OK" : "NG"}. ${c.detail}`);
+    lines.push({ region: textTable([{ title: "Item", x: 4 }, { title: "Result", x: 200 }, { title: "Detail", x: 250 }], geometry.map((c) => [wrap(c.item, 30), c.status === "pass" ? "OK" : "NG", wrap(c.detail, 78)]), 720) });
   }
 
   if (r.ledges.length) {
     text("Inverted-T ledges (AASHTO 5.8.4.3)", "subheading", { keepWithNext: true });
     text("Method:- At each girder's bearing on its ledge: shear friction at the stem's face (monolithic concrete, μ = 1.4, no cohesion for ledges), flexure with Nuc = 0.2 Vu, the primary bars and closed ties, punching shear, hangers at the strength and service limit states, and bearing with m from Article 5.6.5. Resistance factors 0.9 for shear and flexure, 0.7 for bearing.");
-    for (const c of r.ledges) text(`${c.name}:- ${c.ok ? "OK" : "NG"}. ${num(c.demand)} against ${num(c.capacity)} ${c.unit}, ${c.ref}.${c.note ? ` ${c.note}` : ""}`);
+    lines.push(...checkTable(r.ledges));
   }
 
   r.services.forEach((s, k) => {
@@ -190,7 +217,7 @@ export function stmCalcLines(i: StmInputs, r: StmResult, title: string, figures?
     text("Checks not completed", "subheading", { keepWithNext: true });
     text("Scope:- The items below are not checked, or fail, in these calculations. A missing check is not a pass; the design is not complete until each is resolved.");
     const why: Record<string, string> = { "missing-input": "missing input", "not-checked": "not checked", "not-implemented": "not evaluated by these calculations", fail: "fails" };
-    for (const c of open) text(`${c.item}:- ${why[c.status]}. ${c.detail}`);
+    lines.push({ region: textTable([{ title: "Item", x: 4 }, { title: "Status", x: 200 }, { title: "Detail", x: 330 }], open.map((c) => [wrap(c.item, 30), wrap(why[c.status], 20), wrap(c.detail, 64)]), 720) });
   }
   return lines;
 }

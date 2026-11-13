@@ -1,5 +1,5 @@
 import type { Line } from "@/lib/calcs/library/templates";
-import { checksSummary } from "../checks-summary";
+import { checksSummary, checkTable } from "../checks-summary";
 import { textTable } from "../svg-table";
 import { COLOR_NOTE, INPUT_COLOR, isInput, num } from "../calc-style";
 import type { Figure } from "../figures";
@@ -149,13 +149,13 @@ export function columnCalcLines(i: ColumnInputs, title: string, figures?: { sect
     m("\\operatorname{if}\\left(\\rho_s\\ge\\rho_{sreq},\\text{spiral},\\text{tied}\\right)=", "AASHTO 5.6.4.4");
   }
   if (r.hinge) text(`Hinge regions (Seismic Zone 1, SD1 ≥ 0.10):- ${num(r.hinge.spacing)} in spacing over ${num(Math.ceil(r.hinge.length))} in from each end, the larger of the largest dimension, a sixth of the clear height and 18 in (AASHTO 5.11.4.1.3).`);
-  for (const c of r.checks.filter((x) => /^(spiral-[spc]|tie|bar-|seis-)/.test(x.id))) text(`${c.name}:- ${num(c.demand)} against ${num(c.capacity)}${c.unit ? ` ${c.unit}` : ""}, ${c.ok ? "OK" : "NG"} (${c.ref}).`);
+  lines.push(...checkTable(r.checks.filter((x) => /^(spiral-[spc]|tie|bar-|seis-)/.test(x.id))));
 
   if (r.collision) {
     const ct = r.checks.filter((c) => c.id.startsWith("ct-"));
     text("Vehicle collision, Extreme Event II (AASHTO 3.6.5.1)", "subheading", { keepWithNext: true });
     text(`Collision:- ${num(i.collision.CT)} kip at 2.0 and 5.0 ft above the ground, whichever is critical, from 0° to 15° with the roadway below, which runs ${i.collision.traffic === "T" ? "across" : "along"} the bridge; the permanent loads at 1.25 and 0.90; resistance factors 1.0 (AASHTO 1.3.2.1).`);
-    for (const c of ct) text(`${c.name}:- ${num(c.demand)} ${c.unit} against ${num(c.capacity)} ${c.unit}, ${c.ok ? "OK" : "NG"} (${c.ref})${c.note ? `, ${c.note}` : ""}.`);
+    lines.push(...checkTable(ct));
   }
 
   for (const n2 of r.notes) text(n2, "note");

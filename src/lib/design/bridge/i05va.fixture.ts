@@ -116,7 +116,8 @@ export const I05VA_GIRDER: GirderInputs = {
     { L: 139, strands: S2, harped: H2 },
     { L: 110, strands: S13, harped: H13 },
   ],
-  connection: { count: 8, bar: 6, y: 3 },
+  // The IDC calcs: 8 strands extended 2'-4" past the end (1'-8" down, 8" bent), 2.25 in up.
+  connection: { count: 0, bar: 6, y: 3, strands: { count: 8, length: 28, y: 2.25 } },
   stirrups: [
     { length: 1.5, bar: 6, legs: 2, spacing: 3 },
     { length: 44 / 12, bar: 6, legs: 2, spacing: 4 },

@@ -78,7 +78,7 @@ export const I18BC_SEATS = {
  * the fabricator within those; the one here gives them exactly: 16 at 2 in and 12 at 4 in straight, 10
  * harped with their c.g. at 4.96 in in the middle and 32.55 in at the ends. End-zone stirrups #4 and D20
  * bundled (0.40 in² a leg, taken as #6): 4 spaces at 3 in, 6 at 4 in, 20 at 6 in, then 9 in. The positive
- * moment connection: 10 strands extended 2'-8" into the diaphragm (taken as 10 #6 bars).
+ * moment connection: 10 strands extended into the diaphragm and bent (ℓdsh = 2'-0", the sealed calcs).
  */
 const STRANDS = [
   { y: 2, count: 16 },
@@ -95,7 +95,8 @@ export const I18BC_GIRDER: GirderInputs = {
   strands: STRANDS,
   harped: HARPED,
   extraSpans: [{ L: 100, strands: STRANDS, harped: HARPED }],
-  connection: { count: 10, bar: 6, y: 3 },
+  // B20 and the sealed calcs: 10 strands extended 2'-0" past the end (1'-4" down, 8" bent), 2.25 in up.
+  connection: { count: 0, bar: 6, y: 3, strands: { count: 10, length: 24, y: 2.25 } },
   // The deck's negative moment bars over the pier (FOR tabulation: #9 at 6 in, 60 ft long), on the top mat.
   pierBars: { ...BRIDGE_GIRDER_BASE.pierBars, topBar: 9, topSpacing: 6 },
   stirrups: [

@@ -206,7 +206,12 @@ export function girderInputs(saved: unknown): GirderInputs {
     harped: { ...GIRDER_DEFAULTS.harped, ...(phase1.harped ?? {}), ...(s.harped ?? {}) },
     bottomBars: { ...GIRDER_DEFAULTS.bottomBars, ...(s.bottomBars ?? {}) },
     pierBars: { ...GIRDER_DEFAULTS.pierBars, ...(s.pierBars ?? {}) },
-    connection: { ...GIRDER_DEFAULTS.connection, ...(s.connection ?? {}) },
+    connection: (() => {
+      const c = { ...GIRDER_DEFAULTS.connection, ...(s.connection ?? {}) };
+      const st = (s.connection as { strands?: unknown } | undefined)?.strands as { count?: unknown; length?: unknown; y?: unknown } | undefined;
+      const num = (v: unknown, d: number) => (typeof v === "number" && Number.isFinite(v) ? v : d);
+      return st && typeof st === "object" ? { ...c, strands: { count: Math.max(0, Math.round(num(st.count, 0))), length: Math.max(0, num(st.length, 24)), y: num(st.y, 2.25) } } : { ...c, strands: undefined };
+    })(),
     extraSpans: Array.isArray(s.extraSpans) ? s.extraSpans.slice(0, 4).map((x) => ({ L: Number(x?.L) || GIRDER_DEFAULTS.L, strands: Array.isArray(x?.strands) && x.strands.length ? x.strands : null, harped: x?.harped ? { ...GIRDER_DEFAULTS.harped, ...x.harped } : null })) : [],
     restraintMoments: s.restraintMoments === "positive" || s.restraintMoments === "none" ? s.restraintMoments : "all",
     criteria: s.criteria === "cdot" ? "cdot" : "aashto",

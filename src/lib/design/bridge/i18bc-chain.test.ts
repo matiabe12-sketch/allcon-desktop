@@ -124,8 +124,11 @@ describe("I-18-BC through the Bridge, end to end", async () => {
     for (const k of Object.keys(r.verdicts).filter((x) => /Bearings|Abutment$|Columns|shafts|Wingwalls|Pier cap/.test(x))) expect([k, r.verdicts[k].fail]).toEqual([k, []]);
   });
 
-  it("designs the girders with the girder schedule's 38 strands, all but the bearing's longitudinal reinforcement passing", () => {
-    expect(r.verdicts["Girders, spans 1–2"].fail.every((x) => x.startsWith("Longitudinal reinforcement at the bearing"))).toBe(true);
+  it("designs the girders with the girder schedule's 38 strands, all but the bearing's longitudinal reinforcement and the connection's 1.2 Mcr passing", () => {
+    // The bearing's longitudinal reinforcement (5.7.3.5-2): the sealed design's own girder output shows the same
+    // shortfall at the bearing. The positive moment connection (10 extended strands, 5.12.3.3.9c): short at
+    // φ = 0.9; the sealed calcs take φ = 1.0, which passes (an open question for the owner).
+    expect(r.verdicts["Girders, spans 1–2"].fail.every((x) => x.startsWith("Longitudinal reinforcement at the bearing") || x.startsWith("Positive moment connection: strength"))).toBe(true);
   });
 
   it("works out the whole calc package as one worksheet with no errors", () => {

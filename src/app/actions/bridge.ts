@@ -28,6 +28,7 @@ import { analyzeBridge } from "@/lib/bridge/bridge";
 import { BRIDGE_DEFAULTS, bridgeDefinition, type BridgeDefinition, type DesignLink } from "@/lib/bridge/definition";
 import { toBridgeInputs } from "@/lib/bridge/geometry";
 import { LOAD_PATH_KINDS, linksFrom, withLinks } from "@/lib/bridge/load-links";
+import { definitionFromBridge } from "@/lib/bridge/from-design";
 import { designPrefill, designTargets } from "@/lib/bridge/design-links";
 import { importedOf } from "@/lib/bridge/imported";
 import { movingLoad } from "@/lib/bridge/moving";
@@ -71,6 +72,22 @@ export async function syncBridge(bridgeId: string, inputsNow: unknown, create: b
   await db.design.update({ where: { id: design.id }, data: { inputs: r.b as unknown as Prisma.InputJsonValue } });
   revalidatePath("/design");
   return { rows: r.rows, inputs: r.b };
+}
+
+/**
+ * A Bridge design moved to the Bridge section: a new Bridge with the design's alignment, profile, roadway,
+ * supports, girders and deck (definitionFromBridge) and the same linked designs, in the same project.
+ * The design itself is left as it is.
+ */
+export async function moveBridgeToSection(designId: string): Promise<{ bridgeId: string }> {
+  const { user, design } = await ownBridgeDesign(designId);
+  const b = bridgeInputs(design.inputs);
+  const gid = b.girderDesignIds.find((x): x is string => !!x && isUuid(x));
+  const g = gid ? await db.design.findFirst({ where: { id: gid, orgId: user.orgId, kind: "lrfd-girder-check" }, select: { inputs: true } }) : null;
+  const definition = definitionFromBridge(b, g ? girderInputs(g.inputs) : null);
+  const bridge = await db.bridge.create({ data: { orgId: user.orgId, projectId: design.projectId, name: design.name, definition: definition as unknown as Prisma.InputJsonValue, createdById: user.id } });
+  revalidatePath("/bridges");
+  return { bridgeId: bridge.id };
 }
 
 /**

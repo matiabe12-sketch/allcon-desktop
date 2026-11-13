@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { buildBridgeModel, syncBridge, type SyncRow } from "@/app/actions/bridge";
+import { buildBridgeModel, moveBridgeToSection, syncBridge, type SyncRow } from "@/app/actions/bridge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { bearingText, stationText } from "@/lib/design/bridge/alignment";
@@ -208,11 +208,28 @@ export function BridgeEditor({
       setBusy(false);
     }
   };
+  const moveToSection = async () => {
+    setBusy(true);
+    try {
+      const out = await moveBridgeToSection(design.id);
+      toast.success("The bridge is in the Bridge section", { action: { label: "Open", onClick: () => window.open(`/bridges/${out.bridgeId}`, "_blank") } });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not move the bridge");
+    } finally {
+      setBusy(false);
+    }
+  };
   const allChecks = r ? r.groups.flatMap((g) => [...g.result.spans.flatMap((s) => [...s.interior.checks, ...s.exterior.checks]), ...g.result.piers.flatMap((p) => [...p.interior.checks, ...p.exterior.checks])]) : [];
   const failing = allChecks.filter((c) => !c.ok && !c.advisory);
   return (
     <div className="space-y-4">
       <DesignHeader design={design} projects={projects} inputs={inputs} label="Bridge · alignment, layout, girder check and load path" canMakeCalc />
+      <div className="flex items-center gap-2 rounded-md border border-dashed px-3 py-2 text-xs text-muted-foreground">
+        <span>The Bridge section now does all of this, with the analysis model. Move this bridge there (it keeps its linked designs; this one stays as it is).</span>
+        <Button size="sm" variant="outline" disabled={busy} onClick={() => void moveToSection()} className="ml-auto shrink-0">
+          Move to the Bridge section
+        </Button>
+      </div>
       <div className="grid gap-4 lg:grid-cols-[minmax(340px,440px)_1fr]">
         <Card className="self-start">
           <CardContent className="py-2">

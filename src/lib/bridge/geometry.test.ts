@@ -77,3 +77,25 @@ describe("the Bridge section's geometry", () => {
     );
   });
 });
+
+describe("the barrier from the rail", () => {
+  const d = materialized({ ...BRIDGE_DEFAULTS, spans: [100, 120], supports: supportsFor(2) });
+  const withRail = (type: BridgeGeometry["rail"]["type"]) => withGeometry(d, { ...d.geometry!, rail: { ...d.geometry!.rail, type } });
+
+  it("takes a CDOT rail's weight from its worksheet: the concrete per foot at the deck's unit weight, and the steel", () => {
+    expect(withRail("type9-4").loads.barrierWeight).toBeCloseTo(0.12 * 27 * 0.15, 4); // B-606-9-4: 0.12 CY/LF
+    expect(withRail("type10-mash").loads.barrierWeight).toBeCloseTo(0.059 * 27 * 0.15 + 0.0496, 4); // B-606-10MASH: 0.059 CY/LF, 49.6 lb/LF of posts and tubes
+    expect(withRail("type9-4").loads.barrierWidth).toBe(1.5);
+  });
+
+  it("keeps what's entered for a barrier that isn't a standard rail", () => {
+    const custom = withRail("custom");
+    expect(custom.loads.barrierWeight).toBe(d.loads.barrierWeight);
+  });
+
+  it("loads the bridge with it: both barriers over its length", async () => {
+    const { analyzeBridge } = await import("./bridge");
+    const a = analyzeBridge(withRail("type9-4"));
+    expect(Math.abs(a.checks.find((c) => c.name === "Barriers")!.applied)).toBeCloseTo(2 * 0.486 * 220, 1);
+  });
+});

@@ -3,6 +3,7 @@
 import { Choice, Field, Toggle } from "@/components/design/design-kit";
 import { GIRDER_CHOICES, supportsFor, type BridgeDefinition } from "@/lib/bridge/definition";
 import { applyEdit } from "@/lib/bridge/geometry";
+import { railDef, railWeight } from "@/lib/design/decks/rails";
 import { GeometryForm, PierShapesForm } from "./geometry-forms";
 
 // The bridge's inputs, in the groups the workspace's ribbon and tree open in the properties panel
@@ -121,12 +122,37 @@ export function BridgeForm({ form, def, setDef: setRaw }: Props & { form: FormKe
         )}
       </>
     );
+  const rail = def.geometry && def.geometry.rail.type !== "custom" ? railDef(def.geometry.rail.type) : null;
   return (
     <>
-      <Field label="Barrier, each side" unit="klf" value={def.loads.barrierWeight} onChange={part("loads")("barrierWeight")} step={0.05} />
-      <Field label="Barrier width" unit="ft" value={def.loads.barrierWidth} onChange={part("loads")("barrierWidth")} step={0.25} hint="The roadway, and its lanes, run between the barriers" />
+      {rail ? (
+        <>
+          <Fixed label="Barrier, each side" unit="klf" value={def.loads.barrierWeight.toFixed(3)} />
+          <Fixed label="Barrier width" unit="ft" value={def.loads.barrierWidth.toFixed(2)} />
+          {note(`From the ${rail.name} (Roadway section): ${railWeight(rail, def.deck.wc).basis}.`)}
+        </>
+      ) : (
+        <>
+          <Field label="Barrier, each side" unit="klf" value={def.loads.barrierWeight} onChange={part("loads")("barrierWeight")} step={0.05} />
+          <Field label="Barrier width" unit="ft" value={def.loads.barrierWidth} onChange={part("loads")("barrierWidth")} step={0.25} hint="The roadway, and its lanes, run between the barriers" />
+          {note("A CDOT standard rail (Roadway section) sets these from its worksheet.")}
+        </>
+      )}
       <Field label="Future wearing surface" unit="psf" value={def.loads.wearingSurface} onChange={part("loads")("wearingSurface")} step={5} />
       {note("The girders', deck's, haunches' and piers' weights come from the sections. Live load is HL-93 (AASHTO 3.6.1): the design truck or tandem with 33% dynamic allowance, plus the lane load, in every lane that adds to an effect.")}
     </>
+  );
+}
+
+/** A value the bridge works out (shown, not entered). */
+function Fixed({ label, unit, value }: { label: string; unit: string; value: string }) {
+  return (
+    <div className="grid grid-cols-[1fr_7rem] items-center gap-2 py-0.5 text-xs">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="flex items-center gap-1">
+        <span className="h-7 w-full rounded-md border border-dashed px-2 text-right leading-7 tabular-nums">{value}</span>
+        <span className="w-9 shrink-0 text-[11px] text-muted-foreground">{unit}</span>
+      </span>
+    </div>
   );
 }

@@ -1,5 +1,6 @@
 import type { Alignment, Profile, RoadwaySection } from "../design/bridge/alignment";
 import { BRIDGE_GIRDER_BASE, PIER_DEFAULTS, type BridgeInputs, type PierShape, type Support, type SupportType } from "../design/bridge/bridge";
+import { railDef, railWeight } from "../design/decks/rails";
 import { GIRDER_RAIL_DEFAULT } from "../design/girders/bridge-deck";
 import type { BridgeDefinition } from "./definition";
 
@@ -117,8 +118,12 @@ export function reconcile(d: BridgeDefinition): BridgeDefinition {
   });
   const piers = supports.slice(1, -1);
   const half = ((d.nGirders - 1) * d.spacing) / 2;
+  // A CDOT standard rail sets the barrier: its weight from its worksheet (railWeight), its width at the base.
+  const rail = g.rail.type !== "custom" ? railDef(g.rail.type) : null;
+  const loads = rail ? { ...d.loads, barrierWeight: +railWeight(rail, d.deck.wc).klf.toFixed(4), barrierWidth: rail.width / 12 } : d.loads;
   return {
     ...d,
+    loads,
     skew: supports[0].skew,
     continuity: piers.length && piers.every((p) => p.type === "simple-pier") ? "simple" : d.spans.length > 1 ? "continuous" : d.continuity,
     overhang: r6(Math.max(0, (g.leftEdge - half + (g.rightEdge - half)) / 2)), // the wizard's one overhang: the two sides' mean

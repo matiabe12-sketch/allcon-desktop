@@ -226,6 +226,16 @@ export const RAILS: RailDef[] = [
 
 export const railDef = (key: RailKey) => RAILS.find((r) => r.key === key) ?? null;
 
+/**
+ * A rail's weight per foot (klf) from its Staff Bridge worksheet: the concrete in the worksheet's table
+ * (CY per LF) at the concrete's unit weight (kcf, the bars in it), plus the posts and tubes (lb per LF).
+ */
+export function railWeight(r: RailDef, gammaC = 0.15) {
+  const concrete = r.perFoot.concrete * 27 * gammaC;
+  const steel = (r.steel?.lbPerFt ?? 0) / 1000;
+  return { klf: concrete + steel, concrete, steel, basis: `${r.sheet}: ${r.perFoot.concrete} CY/LF × 27 × ${gammaC} kcf${steel ? ` + ${r.steel!.lbPerFt} lb/LF of steel` : ""}` };
+}
+
 /** The area of a polygon (in²) and its centroid's x. */
 export function polygonProps(pts: Pt[]) {
   let A = 0;

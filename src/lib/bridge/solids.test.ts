@@ -41,3 +41,19 @@ describe("the bridge rails in 3D", () => {
     expect(Math.max(...r.section.outline.map((p) => p[1]))).toBeCloseTo(42 / 12, 9);
   });
 });
+
+describe("each solid's part, for showing it alone", () => {
+  it("names every part: members by their name, the deck, each barrier (its tubes with it), diaphragms and bearings", () => {
+    const d = withGeometry(two, { ...geometryOf(two), rail: { ...geometryOf(two).rail, type: "type10-mash" } });
+    const g = analyzeBridge(d).generated;
+    const { solids } = bridgeSolids(d, g);
+    expect(solids.every((s) => !!s.part && !!s.label)).toBe(true);
+    for (const m of g.members) expect(solids.filter((s) => s.part === m.id).map((s) => s.label)).toEqual([m.name]);
+    expect(solids.filter((s) => s.part === "deck")).toHaveLength(1);
+    expect(new Set(solids.filter((s) => s.kind === "barrier").map((s) => s.part))).toEqual(new Set(["barrier-left", "barrier-right"]));
+    expect(solids.filter((s) => s.part === "barrier-left").length).toBe(1 + railDef("type10-mash")!.posts!.tubes.length);
+    const bearings = solids.filter((s) => s.kind === "bearing");
+    expect(new Set(bearings.map((s) => s.part)).size).toBe(bearings.length);
+    expect(bearings[0].label).toMatch(/^Abutment 1, girder 1 bearing$/);
+  });
+});

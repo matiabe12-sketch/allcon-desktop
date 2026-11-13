@@ -67,7 +67,8 @@ export function BridgeWorkspace({ bridge, projects }: { bridge: { id: string; na
   const [form, setForm] = useState<FormKey | null>("layout");
   const [memberId, setMemberId] = useState<string | null>(null);
   // Parts shown alone in the 3D view (a member, or a group of them from the tree), the rest ghosted.
-  const [isolation, setIsolation] = useState<{ label: string; members: string[] } | null>(null);
+  // Parts are members' ids and the solids' parts ("deck", "barrier-left", "diaphragm-3", "bearing-12").
+  const [isolation, setIsolation] = useState<{ label: string; parts: string[] } | null>(null);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape" && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement || e.target instanceof HTMLTextAreaElement)) setIsolation(null);
@@ -183,7 +184,7 @@ export function BridgeWorkspace({ bridge, projects }: { bridge: { id: string; na
   const members = useMemo(() => a?.generated.members ?? [], [a]);
   const member = members.find((m) => m.id === memberId) ?? null;
   const selected = useMemo(() => new Set(member?.elements ?? []), [member]);
-  const isolated = useMemo(() => (isolation ? members.filter((m) => isolation.members.includes(m.id)) : null), [isolation, members]);
+  const isolated = useMemo(() => (isolation ? members.filter((m) => isolation.parts.includes(m.id)) : null), [isolation, members]);
   const isolate = useMemo(() => (isolated?.length ? new Set(isolated.flatMap((m) => m.elements)) : null), [isolated]);
   const displacements = useMemo(() => (a && show === "deformed" && sel.kind !== "live" ? a.displacements(sel) : null), [a, sel, show]);
 
@@ -194,7 +195,8 @@ export function BridgeWorkspace({ bridge, projects }: { bridge: { id: string; na
     if (!a || show === "none" || show === "deformed") return null;
     const total = a.generated.stations[a.generated.stations.length - 1];
     // Shown alone: the result on those parts only (their extremes, and the diagrams scaled to them).
-    const rows = (isolated?.length ? isolated : members).map((m) => ({ m, st: a.member(m, sel, 2, live) }));
+    // (Parts that aren't members, as a barrier or the deck, carry no member results: none shown.)
+    const rows = (isolation ? (isolated ?? []) : members).map((m) => ({ m, st: a.member(m, sel, 2, live) }));
     let peak = 0;
     let max = { v: -Infinity, where: "", p: [0, 0, 0] as Vec3 };
     let min = { v: Infinity, where: "", p: [0, 0, 0] as Vec3 };
@@ -228,11 +230,26 @@ export function BridgeWorkspace({ bridge, projects }: { bridge: { id: string; na
         }
     }
     return { overlay: { outline: new Float32Array(outline), hatch: new Float32Array(hatch), color: SHOW[show].color } as Overlay, contour, max, min, rows };
-  }, [a, members, isolated, sel, show, live]);
+  }, [a, members, isolation, isolated, sel, show, live]);
   const diagram = field;
 
   // The solids, and what is drawn over them.
   const built = useMemo(() => (a ? bridgeSolids(JSON.parse(modelKey) as BridgeDefinition, a.generated) : null), [a, modelKey]);
+  // The parts that aren't analysis members, by kind, for the tree: each once, with its name.
+  const otherParts = useMemo(() => {
+    const out: Record<"deck" | "barrier" | "diaphragm" | "bearing", { part: string; label: string }[]> = { deck: [], barrier: [], diaphragm: [], bearing: [] };
+    for (const sd of built?.solids ?? [])
+      if (sd.part && (sd.kind === "deck" || sd.kind === "barrier" || sd.kind === "diaphragm" || sd.kind === "bearing") && !out[sd.kind].some((x) => x.part === sd.part)) out[sd.kind].push({ part: sd.part, label: sd.label ?? sd.part });
+    return out;
+  }, [built]);
+  const isolateParts = useMemo(() => (isolation ? new Set(isolation.parts) : null), [isolation]);
+  /** A part double-clicked in 3D: shown alone (and a member selected too). */
+  const showPart = (part: string) => {
+    const m = members.find((x) => x.id === part);
+    if (m) return showMember(m);
+    const label = (built?.solids ?? []).find((x) => x.part === part)?.label ?? part;
+    setIsolation({ label, parts: [part] });
+  };
   const hidden = useMemo((): SolidKind[] => (display.deck ? [] : ["deck", "barrier"]), [display.deck]);
   const nodeAt = useMemo(() => new Map((a?.generated.stage2.nodes ?? []).map((n) => [n.id, [n.x, n.y, n.z] as Vec3])), [a]);
   const bearingRows = useMemo(() => (a && display.reactions && sel.kind !== "live" ? a.bearings(sel, live) : null), [a, sel, live, display.reactions]);
@@ -308,7 +325,7 @@ export function BridgeWorkspace({ bridge, projects }: { bridge: { id: string; na
   /** A member picked in the tree: selected, and shown alone. */
   const showMember = (m: Member) => {
     pickMember(m.id);
-    setIsolation({ label: m.name, members: [m.id] });
+    setIsolation({ label: m.name, parts: [m.id] });
   };
   const lanes = live?.arrangements[0].length ?? 0;
   const selectionLabel = sel.kind === "live" ? "LL+IM (HL-93)" : sel.name;
@@ -518,14 +535,35 @@ export function BridgeWorkspace({ bridge, projects }: { bridge: { id: string; na
                 key={kind}
                 title={`${kind === "girder" ? "Girders" : kind === "cap" ? "Pier caps" : "Pier columns"} (${list.length})`}
                 closed={kind === "girder" && list.length > 12}
-                onShow={() => setIsolation({ label: kind === "girder" ? "The girders" : kind === "cap" ? "The pier caps" : "The pier columns", members: list.map((m) => m.id) })}
-                showing={!!isolation && isolation.members.length === list.length && list.every((m) => isolation.members.includes(m.id))}
+                onShow={() => setIsolation({ label: kind === "girder" ? "The girders" : kind === "cap" ? "The pier caps" : "The pier columns", parts: list.map((m) => m.id) })}
+                showing={!!isolation && isolation.parts.length === list.length && list.every((m) => isolation.parts.includes(m.id))}
               >
                 {list.map((m) => (
                   <Leaf key={m.id} label={m.name} active={memberId === m.id} onClick={() => showMember(m)} />
                 ))}
               </Tree>
             ) : null;
+          })}
+          {(
+            [
+              ["deck", "Deck"],
+              ["barrier", "Barriers"],
+              ["diaphragm", "Diaphragms"],
+              ["bearing", "Bearings"],
+            ] as const
+          ).map(([kind, title]) => {
+            const list = otherParts[kind];
+            if (!list.length) return null;
+            const all = list.map((x) => x.part);
+            const showingAll = !!isolation && isolation.parts.length === all.length && all.every((x) => isolation.parts.includes(x));
+            if (kind === "deck") return <Leaf key={kind} label={title} active={!!isolation && isolation.parts.length === 1 && isolation.parts[0] === "deck"} onClick={() => setIsolation({ label: "The deck", parts: ["deck"] })} />;
+            return (
+              <Tree key={kind} title={`${title} (${list.length})`} closed={list.length > 6} onShow={() => setIsolation({ label: `The ${title.toLowerCase()}`, parts: all })} showing={showingAll}>
+                {list.map((x) => (
+                  <Leaf key={x.part} label={x.label} active={!!isolation && isolation.parts.length === 1 && isolation.parts[0] === x.part} onClick={() => setIsolation({ label: x.label, parts: [x.part] })} />
+                ))}
+              </Tree>
+            );
           })}
           {a && (
             <>
@@ -557,6 +595,8 @@ export function BridgeWorkspace({ bridge, projects }: { bridge: { id: string; na
               contour={field && useContour ? field.contour : null}
               selected={selected}
               isolate={isolate}
+              isolateParts={isolateParts}
+              onShowAlone={showPart}
               labels={labels}
               arrows={arrows}
               strips={strips}

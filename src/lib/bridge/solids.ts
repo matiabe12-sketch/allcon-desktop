@@ -13,7 +13,10 @@ export type Vec3 = [number, number, number];
 export type SolidKind = "girder" | "deck" | "barrier" | "diaphragm" | "cap" | "column" | "bearing" | "member";
 
 /** A prism along one or more segments end to end (a member and its elements), its section in the member's local y (across) and z (up). */
-export type Prism = {
+/** Which part of the bridge a solid is (a member's id, "deck", "barrier-left", "diaphragm-3", "bearing-12"…) and its name, for showing it alone. */
+export type PartOf = { part?: string; label?: string };
+
+export type Prism = PartOf & {
   type: "prism";
   kind: SolidKind;
   section: { outline: [number, number][] } | { radius: number };
@@ -21,7 +24,7 @@ export type Prism = {
   angle?: number;
 };
 /** A slab: an outline in plan between two levels. */
-export type Slab = { type: "slab"; kind: SolidKind; plan: [number, number][]; z0: number; z1: number };
+export type Slab = PartOf & { type: "slab"; kind: SolidKind; plan: [number, number][]; z0: number; z1: number };
 export type Solid = Prism | Slab;
 
 const rect = (width: number, depth: number, zCenter = 0): [number, number][] => [
@@ -56,10 +59,10 @@ export function bridgeSolids(d: BridgeDefinition, g: Generated): { solids: Solid
     return { round, size: p.columnSize / 12, depth: (round ? p.columnSize : p.columnDepth) / 12, capWidth: p.capWidth / 12, capDepth: p.capDepth };
   };
   for (const m of g.members) {
-    if (m.kind === "girder") solids.push({ type: "prism", kind: "girder", section: { outline }, segments: segmentsOf(m.elements) });
+    if (m.kind === "girder") solids.push({ type: "prism", kind: "girder", part: m.id, label: m.name, section: { outline }, segments: segmentsOf(m.elements) });
     if (m.kind === "column") {
       const p = pierAt(m.support);
-      solids.push({ type: "prism", kind: "column", section: p.round ? { radius: p.size / 2 } : { outline: rect(p.size, p.depth) }, segments: segmentsOf(m.elements) });
+      solids.push({ type: "prism", kind: "column", part: m.id, label: m.name, section: p.round ? { radius: p.size / 2 } : { outline: rect(p.size, p.depth) }, segments: segmentsOf(m.elements) });
     }
     if (m.kind === "cap") {
       // The cap runs a little past its end girders.
@@ -77,6 +80,8 @@ export function bridgeSolids(d: BridgeDefinition, g: Generated): { solids: Solid
         solids.push({
           type: "prism",
           kind: "cap",
+          part: m.id,
+          label: m.name,
           section: { outline: rect(pierAt(m.support).capWidth, pierAt(m.support).capDepth) },
           segments: [{ a: [first.a[0] - u0[0] * ext, first.a[1] - u0[1] * ext, first.a[2]], b: first.a }, ...seg, { a: last.b, b: [last.b[0] + u1[0] * ext, last.b[1] + u1[1] * ext, last.b[2]] }],
         });
@@ -85,18 +90,22 @@ export function bridgeSolids(d: BridgeDefinition, g: Generated): { solids: Solid
   }
   // Diaphragms, between the girders at mid-depth.
   const dh = (0.75 * H) / 12;
+  let nDia = 0;
   for (const e of model.elements)
     if (e.sec === 20) {
       const a = at.get(e.n1);
       const b = at.get(e.n2);
-      if (a && b) solids.push({ type: "prism", kind: "diaphragm", section: { outline: rect(d.diaphragms.thickness, dh, (H / 2 - yb) / 12) }, segments: [{ a, b }] });
+      if (a && b) solids.push({ type: "prism", kind: "diaphragm", part: `diaphragm-${nDia}`, label: `Diaphragm ${++nDia}`, section: { outline: rect(d.diaphragms.thickness, dh, (H / 2 - yb) / 12) }, segments: [{ a, b }] });
     }
   // Bearings, under the girders.
   const heightAt = new Map(g.bearings.map((b) => [b.link, Math.max(d.geometry?.supports[b.support - 1]?.bearingHeight ?? d.piers.bearingHeight, 1) / 12]));
+  const lineName = (k: number) => d.geometry?.supports[k]?.name || (k === 0 ? "Abutment 1" : k === d.supports.length - 1 ? "Abutment 2" : `Pier ${k}`);
+  const bearingOf = new Map(g.bearings.map((b) => [b.link, b]));
   for (const l of model.links) {
     const a = at.get(l.n1);
     const bh = heightAt.get(l.id) ?? Math.max(d.piers.bearingHeight, 1) / 12;
-    if (a) solids.push({ type: "slab", kind: "bearing", plan: [[a[0] - 0.75, a[1] - 0.75], [a[0] + 0.75, a[1] - 0.75], [a[0] + 0.75, a[1] + 0.75], [a[0] - 0.75, a[1] + 0.75]], z0: -yb / 12 - bh, z1: -yb / 12 });
+    const br = bearingOf.get(l.id);
+    if (a) solids.push({ type: "slab", kind: "bearing", part: `bearing-${l.id}`, label: br ? `${lineName(br.support - 1)}, girder ${br.girder} bearing` : `Bearing ${l.id}`, plan: [[a[0] - 0.75, a[1] - 0.75], [a[0] + 0.75, a[1] - 0.75], [a[0] + 0.75, a[1] + 0.75], [a[0] - 0.75, a[1] + 0.75]], z0: -yb / 12 - bh, z1: -yb / 12 });
   }
   // The deck over the haunches, and a barrier along each edge.
   const { deck } = g.layout;
@@ -104,20 +113,21 @@ export function bridgeSolids(d: BridgeDefinition, g: Generated): { solids: Solid
   const z1 = z0 + d.deck.thickness / 12;
   // Between two lines along the bridge, from the first support line to the last (each at its own skew).
   const strip = (ya: number, yc: number): [number, number][] => g.layout.plan(ya, yc);
-  solids.push({ type: "slab", kind: "deck", plan: strip(deck[0], deck[1]), z0, z1 });
+  solids.push({ type: "slab", kind: "deck", part: "deck", label: "Deck", plan: strip(deck[0], deck[1]), z0, z1 });
   // The bridge rail along each edge in its own shape (a CDOT standard rail's outline, its steel tubes too;
   // otherwise a 42 in parapet the barrier's width at its base), span by span between the support lines.
   if (d.loads.barrierWidth > 0 && d.loads.barrierWeight > 0) {
     const rail = barrierShape({ rail: d.geometry?.rail, barrierWidth: d.loads.barrierWidth });
     const tubes = rail.def?.posts?.tubes ?? [];
     const lines = g.supportStations.map((_, sl) => sl);
-    for (const [y, inward] of [[deck[0], 1], [deck[1], -1]] as const) {
+    for (const [y, inward, side] of [[deck[0], 1, "left"], [deck[1], -1, "right"]] as const) {
+      const part = { part: `barrier-${side}`, label: `${rail.def ? rail.name : "Barrier"}, ${side}` };
       // The outline across (y, inward from the edge) and up (z, from the deck's top), ft.
       const at = (pts: [number, number][]): [number, number][] => pts.map(([x, h]) => [(inward * x) / 12, h / 12]);
       const segments = lines.slice(1).map((sl) => ({ a: [g.layout.plan(y, y)[sl - 1][0], y, z1] as Vec3, b: [g.layout.plan(y, y)[sl][0], y, z1] as Vec3 }));
-      solids.push({ type: "prism", kind: "barrier", section: { outline: at(rail.outline) }, segments });
+      solids.push({ type: "prism", kind: "barrier", ...part, section: { outline: at(rail.outline) }, segments });
       for (const t of tubes)
-        solids.push({ type: "prism", kind: "barrier", section: { outline: at([[t.x0, t.y0], [t.x1, t.y0], [t.x1, t.y1], [t.x0, t.y1]]) }, segments });
+        solids.push({ type: "prism", kind: "barrier", ...part, section: { outline: at([[t.x0, t.y0], [t.x1, t.y0], [t.x1, t.y1], [t.x0, t.y1]]) }, segments });
     }
   }
   return { solids, deckTop: z1 };

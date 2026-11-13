@@ -48,6 +48,8 @@ type State = {
   framed: string;
   box: THREE.Box3;
   pickable: THREE.Object3D[];
+  /** Every solid with its part, ghosts too: what a double-click shows alone. */
+  parts: THREE.Object3D[];
   labels: { el: HTMLSpanElement; p: THREE.Vector3 }[];
 };
 
@@ -62,7 +64,11 @@ export type BridgeViewProps = {
   selected?: Set<number>;
   /** Elements shown alone: the rest of the bridge drawn as a faint ghost, and the camera framed on these. */
   isolate?: Set<number> | null;
+  /** Parts shown alone (a solid's part: a member's id, "deck", "barrier-left", …), with `isolate`'s elements. */
+  isolateParts?: Set<string> | null;
   onPick?: (elementId: number | null) => void;
+  /** A double-click on a part: show it alone. */
+  onShowAlone?: (part: string) => void;
   labels?: Label[];
   arrows?: Arrow[];
   strips?: Strip[];
@@ -73,11 +79,15 @@ export type BridgeViewProps = {
   className?: string;
 };
 
-export const BridgeView = forwardRef<BridgeViewHandle, BridgeViewProps>(function BridgeView({ model, solids, mode = "solid", hidden, displacements, overlay, contour, selected, isolate, onPick, labels, arrows, strips, grid = true, dark = false, plain, className }, ref) {
+export const BridgeView = forwardRef<BridgeViewHandle, BridgeViewProps>(function BridgeView({ model, solids, mode = "solid", hidden, displacements, overlay, contour, selected, isolate, isolateParts, onPick, onShowAlone, labels, arrows, strips, grid = true, dark = false, plain, className }, ref) {
   const host = useRef<HTMLDivElement>(null);
   const layer = useRef<HTMLDivElement>(null);
   const state = useRef<State | null>(null);
   const pick = useRef(onPick);
+  const showAlone = useRef(onShowAlone);
+  useEffect(() => {
+    showAlone.current = onShowAlone;
+  }, [onShowAlone]);
   useEffect(() => {
     pick.current = onPick;
   }, [onPick]);
@@ -145,7 +155,7 @@ export const BridgeView = forwardRef<BridgeViewHandle, BridgeViewProps>(function
     controls.infinityDolly = true;
     const group = new THREE.Group();
     scene.add(group);
-    const s: State = { renderer, scene, camera, controls, group, render: () => undefined, framed: "", box: new THREE.Box3(), pickable: [], labels: [] };
+    const s: State = { renderer, scene, camera, controls, group, render: () => undefined, framed: "", box: new THREE.Box3(), pickable: [], parts: [], labels: [] };
     const v = new THREE.Vector3();
     const turn = new THREE.Matrix4().set(1, 0, 0, 0, 0, 0, -1, 0, 0, 1, 0, 0, 0, 0, 0, 1); // the cube's axes (y up, z south) in the model's (z up)
     const seen = new THREE.Matrix4();
@@ -210,14 +220,24 @@ export const BridgeView = forwardRef<BridgeViewHandle, BridgeViewProps>(function
       }
       pick.current?.(found);
     };
+    // A double-click shows the part under the pointer alone (a ghost too: to go from one part to another).
+    const onDouble = (e: MouseEvent) => {
+      const r = renderer.domElement.getBoundingClientRect();
+      const ray = new THREE.Raycaster();
+      ray.setFromCamera(new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), camera);
+      const hit = ray.intersectObjects(s.parts, false).find((h) => typeof h.object.userData.part === "string");
+      if (hit) showAlone.current?.(hit.object.userData.part as string);
+    };
     renderer.domElement.addEventListener("pointerdown", onDown);
     renderer.domElement.addEventListener("pointerup", onUp);
+    renderer.domElement.addEventListener("dblclick", onDouble);
     resize();
     return () => {
       cancelAnimationFrame(frame);
       observer.disconnect();
       renderer.domElement.removeEventListener("pointerdown", onDown);
       renderer.domElement.removeEventListener("pointerup", onUp);
+      renderer.domElement.removeEventListener("dblclick", onDouble);
       controls.dispose();
       renderer.dispose();
       el.removeChild(renderer.domElement);
@@ -237,22 +257,31 @@ export const BridgeView = forwardRef<BridgeViewHandle, BridgeViewProps>(function
     });
     s.group.clear();
     s.pickable = [];
+    s.parts = [];
     const at = new Map(model.nodes.map((n) => [n.id, n]));
     const box = new THREE.Box3();
     for (const n of model.nodes) box.expandByPoint(new THREE.Vector3(n.x, n.y, n.z));
     // Isolated: the camera frames those elements (with a little room), the rest is a ghost.
     const alone = isolate && isolate.size ? isolate : null;
-    const ghost = (element: number | undefined) => !!alone && (element === undefined || !alone.has(element));
+    const aloneParts = isolateParts && isolateParts.size ? isolateParts : null;
+    const isolating = !!alone || !!aloneParts;
+    const ghost = (element: number | undefined, part?: string) => isolating && !((element !== undefined && alone?.has(element)) || (part !== undefined && aloneParts?.has(part)));
     let frameBox = box;
-    if (alone) {
+    if (isolating) {
       const at0 = new Map(model.nodes.map((n) => [n.id, n]));
       const b = new THREE.Box3();
       for (const e of model.elements)
-        if (alone.has(e.id))
+        if (alone?.has(e.id))
           for (const id of [e.n1, e.n2]) {
             const n = at0.get(id);
             if (n) b.expandByPoint(new THREE.Vector3(n.x, n.y, n.z));
           }
+      // The isolated solids that aren't model elements (the deck, a barrier, a bearing): their points.
+      for (const sd of solids ?? [])
+        if (sd.part && aloneParts?.has(sd.part)) {
+          if (sd.type === "slab") for (const [x, y] of sd.plan) b.expandByPoint(new THREE.Vector3(x, y, sd.z0)).expandByPoint(new THREE.Vector3(x, y, sd.z1));
+          else for (const sg of sd.segments) b.expandByPoint(new THREE.Vector3(...sg.a)).expandByPoint(new THREE.Vector3(...sg.b));
+        }
       if (!b.isEmpty()) {
         const pad = Math.max(4, b.getSize(new THREE.Vector3()).length() * 0.15);
         frameBox = b.expandByScalar(pad);
@@ -285,8 +314,8 @@ export const BridgeView = forwardRef<BridgeViewHandle, BridgeViewProps>(function
     const drawSolids = mode === "solid" && !!solids?.length;
     if (drawSolids) {
       const fade = busy ? 0.28 : 1;
-      const paint = (geometry: THREE.BufferGeometry, kind: SolidKind, element: number | undefined, along: ((p: THREE.Vector3) => number) | null) => {
-        if (ghost(element)) {
+      const paint = (geometry: THREE.BufferGeometry, kind: SolidKind, element: number | undefined, along: ((p: THREE.Vector3) => number) | null, part?: string) => {
+        if (ghost(element, part)) {
           const m = new THREE.Mesh(geometry, new THREE.MeshLambertMaterial({ color: dark ? 0x94a3b8 : 0x64748b, transparent: true, opacity: 0.08, depthWrite: false }));
           m.userData.ghost = true;
           return m;
@@ -314,8 +343,12 @@ export const BridgeView = forwardRef<BridgeViewHandle, BridgeViewProps>(function
         if (picked && values) (material as THREE.MeshLambertMaterial).emissive = new THREE.Color(0x7a1040);
         return new THREE.Mesh(geometry, material);
       };
-      const place = (mesh: THREE.Mesh, edges: boolean, element?: number) => {
+      const place = (mesh: THREE.Mesh, edges: boolean, element?: number, part?: string) => {
         s.group.add(mesh);
+        if (part) {
+          mesh.userData.part = part;
+          s.parts.push(mesh);
+        }
         if (mesh.userData.ghost) return; // a ghost: seen through, not picked, no edges
         if (element !== undefined) {
           mesh.userData.element = element;
@@ -332,10 +365,10 @@ export const BridgeView = forwardRef<BridgeViewHandle, BridgeViewProps>(function
         if (solid.type === "slab") {
           const shape = new THREE.Shape(solid.plan.map(([x, y]) => new THREE.Vector2(x, y)));
           const geometry = new THREE.ExtrudeGeometry(shape, { depth: solid.z1 - solid.z0, bevelEnabled: false });
-          const mesh = paint(geometry, solid.kind, undefined, null);
+          const mesh = paint(geometry, solid.kind, undefined, null, solid.part);
           mesh.position.z = solid.z0;
           mesh.updateMatrix();
-          place(mesh, true);
+          place(mesh, true, undefined, solid.part);
           continue;
         }
         for (const seg of solid.segments) {
@@ -355,19 +388,19 @@ export const BridgeView = forwardRef<BridgeViewHandle, BridgeViewProps>(function
           let mesh: THREE.Mesh;
           if ("radius" in solid.section) {
             const geometry = new THREE.CylinderGeometry(solid.section.radius, solid.section.radius, L, 24);
-            mesh = paint(geometry, solid.kind, seg.element, (p) => p.y / L + 0.5);
+            mesh = paint(geometry, solid.kind, seg.element, (p) => p.y / L + 0.5, solid.part);
             mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), ex);
             mesh.position.copy(a).addScaledVector(ex, L / 2);
           } else {
             const shape = new THREE.Shape(solid.section.outline.map(([y, z]) => new THREE.Vector2(y, z)));
             const geometry = new THREE.ExtrudeGeometry(shape, { depth: L, bevelEnabled: false, steps: 1 });
-            mesh = paint(geometry, solid.kind, seg.element, (p) => p.z / L);
+            mesh = paint(geometry, solid.kind, seg.element, (p) => p.z / L, solid.part);
             mesh.matrixAutoUpdate = false;
             mesh.matrix.makeBasis(ey, ez, ex).setPosition(a);
           }
           if (mesh.matrixAutoUpdate) mesh.updateMatrix();
           mesh.matrixAutoUpdate = false;
-          place(mesh, true, seg.element);
+          place(mesh, true, seg.element, solid.part);
         }
       }
     } else {
@@ -482,7 +515,7 @@ export const BridgeView = forwardRef<BridgeViewHandle, BridgeViewProps>(function
     s.render();
     // `look` reads the view's state through a ref: it isn't something this drawing depends on.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [model, solids, mode, hidden, displacements, overlay, contour, selected, isolate, labels, arrows, strips, grid, dark, plain]);
+  }, [model, solids, mode, hidden, displacements, overlay, contour, selected, isolate, isolateParts, labels, arrows, strips, grid, dark, plain]);
 
   return (
     <div className={className}>

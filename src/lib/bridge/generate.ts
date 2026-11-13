@@ -1,6 +1,8 @@
 import { modulus } from "../design/girders/prestressed";
 import { customShape, profileProps, shapeById, type GirderShape } from "../design/girders/sections";
+import { bridgeLayout, type PierShape } from "../design/bridge/bridge";
 import type { BridgeDefinition } from "./definition";
+import { pierFrom, toBridgeInputs } from "./geometry";
 import { emptyModel, ModelError, type Dof6, type Element, type Load, type Model, type Section } from "./model";
 
 // The analysis model of a girder bridge from its definition, as midas Civil's Prestressed Composite
@@ -49,8 +51,46 @@ export type Generated = {
   stations: number[];
   supportStations: number[];
   /** Across the bridge: each girder's Y, the deck's edges, the roadway between the barriers; the skew's tangent; a girder element's id from its girder (0-based) and first station. */
-  layout: { girderY: number[]; deck: [number, number]; roadway: [number, number]; tan: number; girderElement: (girder: number, station: number) => number };
+  layout: {
+    girderY: number[]; // at midspan of the first span (a flared bridge's change along it: girderYAt)
+    deck: [number, number];
+    roadway: [number, number];
+    tan: number; // the first support's skew (each support's own: plan, locate)
+    girderElement: (girder: number, station: number) => number;
+    /** Each girder's Y where the bridge is at X (they change along a flared bridge). */
+    girderYAt: (X: number) => number[];
+    /** Where on its girder a point at X (along the bridge) on girder k falls: the element and the distance along it; null off the girder. */
+    locate: (k: number, X: number) => { element: number; a: number } | null;
+    /** Where a point S along the bridge (as its stations count) is at Y: between the support lines' crossings of that line. */
+    laneX: (S: number, y: number) => number;
+    /** The plan outline of the strip between Y = ya and yb, from the first support line to the last (each at its skew). */
+    plan: (ya: number, yb: number) => [number, number][];
+  };
 };
+
+/** Section ids: the girder (1), composite interior (2), exterior left (3) and right (4); diaphragm 20; each pier i's cap 30 + 2i and column 31 + 2i; deck strips from 100. */
+export const isGirderSection = (sec: number) => sec >= 1 && sec <= 4;
+export const isCapSection = (sec: number) => sec >= 30 && sec < 60 && sec % 2 === 0;
+export const isColumnSection = (sec: number) => sec >= 30 && sec < 60 && sec % 2 === 1;
+
+/** Each support line in the model's axes (X along the bridge from the first support, Y across from the bridge line): where it crosses each girder. */
+type Line = { X: number; ends: { X: number; Y: number }[] };
+
+/** The support lines from the bridge's geometry (geometry.ts): each girder's ends where the skewed support lines cross the (flared) girder lines, in stations and offsets along the alignment. */
+function geometryLines(d: BridgeDefinition): { lines: Line[]; columnHeights: (number | null)[] } {
+  const b = toBridgeInputs(d);
+  let lay: ReturnType<typeof bridgeLayout>;
+  try {
+    lay = bridgeLayout(b);
+  } catch (e) {
+    throw new ModelError(e instanceof Error ? e.message : "The bridge can't be laid out.");
+  }
+  const s0 = lay.supports[0].station;
+  return {
+    lines: lay.supports.map((s) => ({ X: s.station - s0, ends: s.ends.map((e) => ({ X: e.station - s0, Y: e.offset - b.bridgeLineOffset })) })),
+    columnHeights: lay.supports.map((_, k) => lay.piers[k]?.columnHeight ?? null),
+  };
+}
 
 type Composite = { beff: number; A: number; I: number; yb: number };
 
@@ -110,10 +150,23 @@ export function generate(d: BridgeDefinition): Generated {
   const EcP = modulus(1, 0.15, d.piers.fc);
   const n = EcD / EcG;
   const ts = d.deck.thickness - d.deck.sacrificial; // in, structural
-  const tribute = (k: number) => (k === 0 || k === nG - 1 ? d.spacing / 2 + d.overhang : d.spacing); // ft
-  const comp = { interior: compositeProps(g, shape.depth, d.spacing * 12, ts, n), exterior: compositeProps(g, shape.depth, (d.spacing / 2 + d.overhang) * 12, ts, n) };
   const Jg = torsionConstant(shape);
   const tan = Math.tan((d.skew * Math.PI) / 180);
+  const yOf = (k: number) => (k - (nG - 1) / 2) * d.spacing;
+
+  // The support lines: from the bridge's geometry (each support's station, skew and girder spacing), or
+  // straight across at the one skew; and the deck's edges from the bridge line. A skew is + clockwise
+  // (as PGSuper and the geometry take it): the line falls back along the bridge to the right (+Y).
+  const supportX: number[] = [0];
+  d.spans.forEach((L) => supportX.push(supportX[supportX.length - 1] + L));
+  const geo = d.geometry ? geometryLines(d) : null;
+  const lines: Line[] = geo ? geo.lines : supportX.map((X) => ({ X, ends: Array.from({ length: nG }, (_, k) => ({ X: X - yOf(k) * tan, Y: yOf(k) })) }));
+  const leftEdge = d.geometry ? d.geometry.leftEdge : -yOf(0) + d.overhang;
+  const rightEdge = d.geometry ? d.geometry.rightEdge : yOf(nG - 1) + d.overhang;
+  const ovL = leftEdge + yOf(0);
+  const ovR = rightEdge - yOf(nG - 1);
+  const comp = { interior: compositeProps(g, shape.depth, d.spacing * 12, ts, n), exterior: compositeProps(g, shape.depth, (d.spacing / 2 + ovL) * 12, ts, n), right: compositeProps(g, shape.depth, (d.spacing / 2 + ovR) * 12, ts, n) };
+  const twoSides = Math.abs(ovL - ovR) > 1e-6;
 
   // Stations along the bridge: each span's divisions and its diaphragms; the supports' stations.
   const stations: number[] = [0];
@@ -135,7 +188,33 @@ export function generate(d: BridgeDefinition): Generated {
     supportStations.push(stations.length - 1);
   }
   const nS = stations.length;
-  const yOf = (k: number) => (k - (nG - 1) / 2) * d.spacing;
+  /** The span a station is in (a support's station: the span it ends), and how far along it. */
+  const spanAt = (s: number) => {
+    let j = 0;
+    while (j < d.spans.length - 1 && supportStations[j + 1] < s) j++;
+    return { j, t: (stations[s] - supportX[j]) / d.spans[j] };
+  };
+  /** Girder k's point at station s: between the support lines' crossings of its line. */
+  const pointOn = (k: number, s: number) => {
+    const { j, t } = spanAt(s);
+    const a = lines[j].ends[k];
+    const b = lines[j + 1].ends[k];
+    return { X: a.X + t * (b.X - a.X), Y: a.Y + t * (b.Y - a.Y) };
+  };
+  /** Support line k's X where it reaches Y (straight through its first and last girders' crossings). */
+  const lineX = (sl: number, y: number) => {
+    const e = lines[sl].ends;
+    const a = e[0];
+    const b = e[e.length - 1];
+    return Math.abs(b.Y - a.Y) < 1e-9 ? a.X : a.X + ((y - a.Y) * (b.X - a.X)) / (b.Y - a.Y);
+  };
+  /** The deck girder k carries at station s (half to each neighbour, the overhang at the edges), ft. */
+  const tributeAt = (k: number, s: number) => {
+    const y = pointOn(k, s).Y;
+    const lo = k > 0 ? (y - pointOn(k - 1, s).Y) / 2 : y + leftEdge;
+    const hi = k < nG - 1 ? (pointOn(k + 1, s).Y - y) / 2 : rightEdge - y;
+    return { width: lo + hi, overhang: k === 0 ? y + leftEdge : k === nG - 1 ? rightEdge - y : 0 };
+  };
   const girderNode = (k: number, s: number) => 1000 * (k + 1) + s;
   const girderElement = (k: number, s: number) => 10000 * (k + 1) + s;
 
@@ -148,20 +227,34 @@ export function generate(d: BridgeDefinition): Generated {
   const shearArea = shape.web * shape.depth * IN2;
   const sections: Section[] = [
     { id: 1, name: `${shape.name}`, A: g.A * IN2, Asy: 0, Asz: shearArea, J: Jg * IN4, Iy: g.I * IN4, Iz: g.Iy * IN4 },
-    ...(["interior", "exterior"] as const).map((side, k) => {
+    ...((twoSides ? ["interior", "exterior", "right"] : ["interior", "exterior"]) as ("interior" | "exterior" | "right")[]).map((side, k) => {
       const c = comp[side];
-      return { id: 2 + k, name: `${shape.name} composite, ${side}`, A: c.A * IN2, Asy: 0, Asz: shearArea, J: (Jg + (n * c.beff * ts ** 3) / 6) * IN4, Iy: c.I * IN4, Iz: (g.Iy + (n * ts * c.beff ** 3) / 12) * IN4 };
+      const label = side === "exterior" && twoSides ? "exterior, left" : side === "right" ? "exterior, right" : side;
+      return { id: 2 + k, name: `${shape.name} composite, ${label}`, A: c.A * IN2, Asy: 0, Asz: shearArea, J: (Jg + (n * c.beff * ts ** 3) / 6) * IN4, Iy: c.I * IN4, Iz: (g.Iy + (n * ts * c.beff ** 3) / 12) * IN4 };
     }),
   ];
   // Diaphragm: a rectangle three quarters of the girder's depth.
   const dh = (0.75 * shape.depth) / 12;
   const dt = d.diaphragms.thickness;
   sections.push({ id: 20, name: "Diaphragm", A: dh * dt, Asy: 0, Asz: (5 / 6) * dh * dt, J: rectJ(dh, dt), Iy: (dt * dh ** 3) / 12, Iz: (dh * dt ** 3) / 12 });
-  const { capWidth: cb, capDepth: cd, columnDiameter: dia } = d.piers;
-  sections.push({ id: 30, name: "Pier cap", A: cb * cd, Asy: (5 / 6) * cb * cd, Asz: (5 / 6) * cb * cd, J: rectJ(cb, cd), Iy: (cb * cd ** 3) / 12, Iz: (cd * cb ** 3) / 12 });
-  const Ac = (Math.PI * dia ** 2) / 4;
-  const Ic = (Math.PI * dia ** 4) / 64;
-  sections.push({ id: 31, name: "Pier column", A: Ac, Asy: 0.9 * Ac, Asz: 0.9 * Ac, J: 2 * Ic, Iy: Ic, Iz: Ic });
+  // Each pier: its cap and columns, from the geometry's pier (its own shape and column height) or the wizard's one pier.
+  type PierModel = { cap: [number, number]; columns: number; spacing: number; round: boolean; size: number; depth: number; height: number; capSec: number; colSec: number; capArea: number; colArea: number };
+  const pierModels = new Map<number, PierModel>();
+  d.supports.forEach((_, sl) => {
+    if (sl === 0 || sl === d.supports.length - 1) return;
+    const i = sl - 1;
+    const p: PierShape = d.geometry ? (d.geometry.supports[sl]?.pier ?? pierFrom(d)) : { ...pierFrom(d), capWidth: d.piers.capWidth * 12, columnSize: d.piers.columnDiameter * 12, columnDepth: d.piers.columnDiameter * 12, columnSpacing: d.piers.columnSpacing, columns: d.piers.columns };
+    const height = (geo ? geo.columnHeights[sl] : null) ?? d.piers.columnHeight;
+    const [cb, cd] = [p.capWidth / 12, p.capDepth];
+    const round = p.columnShape === "round";
+    const [cs, cdp] = [p.columnSize / 12, (round ? p.columnSize : p.columnDepth) / 12];
+    const m: PierModel = { cap: [cb, cd], columns: p.columns, spacing: p.columnSpacing, round, size: cs, depth: cdp, height: Math.max(3, height), capSec: 30 + 2 * i, colSec: 31 + 2 * i, capArea: cb * cd, colArea: round ? (Math.PI * cs ** 2) / 4 : cs * cdp };
+    pierModels.set(sl, m);
+    sections.push({ id: m.capSec, name: d.supports.length > 3 ? `Pier ${sl} cap` : "Pier cap", A: cb * cd, Asy: (5 / 6) * cb * cd, Asz: (5 / 6) * cb * cd, J: rectJ(cb, cd), Iy: (cb * cd ** 3) / 12, Iz: (cd * cb ** 3) / 12 });
+    const Ic = round ? (Math.PI * cs ** 4) / 64 : (cs * cdp ** 3) / 12;
+    const Iz = round ? Ic : (cdp * cs ** 3) / 12;
+    sections.push({ id: m.colSec, name: d.supports.length > 3 ? `Pier ${sl} column` : "Pier column", A: m.colArea, Asy: 0.9 * m.colArea, Asz: 0.9 * m.colArea, J: round ? 2 * Ic : rectJ(cs, cdp), Iy: Ic, Iz });
+  });
   // Deck strips: a slab the width of the stretch of girder each one stands for (their torsion
   // halved, as a grillage's slab members are: the girders' sections carry the other half).
   const stripSection = new Map<string, number>();
@@ -180,7 +273,11 @@ export function generate(d: BridgeDefinition): Generated {
 
   // The girders.
   const members: Member[] = [];
-  for (let k = 0; k < nG; k++) for (let s = 0; s < nS; s++) base.nodes.push({ id: girderNode(k, s), x: stations[s] + yOf(k) * tan, y: yOf(k), z: 0 });
+  for (let k = 0; k < nG; k++)
+    for (let s = 0; s < nS; s++) {
+      const p = pointOn(k, s);
+      base.nodes.push({ id: girderNode(k, s), x: p.X, y: p.Y, z: 0 });
+    }
   for (let k = 0; k < nG; k++)
     for (let sp = 0; sp < d.spans.length; sp++) {
       const ids: number[] = [];
@@ -189,32 +286,33 @@ export function generate(d: BridgeDefinition): Generated {
     }
 
   // Bearings and what they stand on.
-  const zBearing = -(g.yb + d.piers.bearingHeight) / 12;
-  const zCap = zBearing - cd / 2;
   const bearings: BearingRef[] = [];
   const substructure: Element[] = [];
   let linkId = 1;
   let subId = 500000;
   d.supports.forEach((line, sl) => {
     const s = supportStations[sl];
-    const pier = sl > 0 && sl < d.supports.length - 1;
-    const onCap = pier && d.piers.model;
+    const pm = pierModels.get(sl);
+    const onCap = !!pm && d.piers.model;
+    const zBearing = -(g.yb + (d.geometry?.supports[sl]?.bearingHeight ?? d.piers.bearingHeight)) / 12;
+    const zCap = zBearing - (pm?.cap[1] ?? 0) / 2;
     const z = onCap ? zCap : zBearing;
-    const xLine = (y: number) => stations[s] + y * tan;
+    const xLine = (y: number) => lineX(sl, y);
     const below = (k: number) => 200000 + 1000 * sl + k;
     for (let k = 0; k < nG; k++) {
-      base.nodes.push({ id: below(k), x: xLine(yOf(k)), y: yOf(k), z });
+      const e = lines[sl].ends[k];
+      base.nodes.push({ id: below(k), x: e.X, y: e.Y, z });
       // Link axes (vertical, the girder's node first): x down, y across the bridge, z along it.
       const fixedLine = line.bearing === "fixed";
       base.links.push({ id: linkId, n1: girderNode(k, s), n2: below(k), k: [STIFF, STIFF, fixedLine ? STIFF : 0, 0, 0, STIFF] });
       bearings.push({ link: linkId++, support: sl + 1, girder: k + 1, node: girderNode(k, s) });
       if (!onCap) base.supports.push({ node: below(k), fixed: FIXED });
     }
-    if (!onCap) return;
+    if (!onCap || !pm) return;
     // The cap: through the points under the girders and over the columns; the columns to their bases.
-    const nc = d.piers.columns;
-    const colY = Array.from({ length: nc }, (_, c) => (c - (nc - 1) / 2) * d.piers.columnSpacing);
-    const points: { y: number; node: number }[] = Array.from({ length: nG }, (_, k) => ({ y: yOf(k), node: below(k) }));
+    const nc = pm.columns;
+    const colY = Array.from({ length: nc }, (_, c) => (c - (nc - 1) / 2) * pm.spacing);
+    const points: { y: number; node: number }[] = Array.from({ length: nG }, (_, k) => ({ y: lines[sl].ends[k].Y, node: below(k) }));
     const capIds: number[] = [];
     colY.forEach((y, c) => {
       let top = points.find((p) => Math.abs(p.y - y) < 1e-3)?.node;
@@ -224,16 +322,16 @@ export function generate(d: BridgeDefinition): Generated {
         points.push({ y, node: top });
       }
       const foot = 400000 + 1000 * sl + c;
-      base.nodes.push({ id: foot, x: xLine(y), y, z: zCap - cd / 2 - d.piers.columnHeight });
+      base.nodes.push({ id: foot, x: xLine(y), y, z: zCap - pm.cap[1] / 2 - pm.height });
       base.supports.push({ node: foot, fixed: FIXED });
       const id = subId++;
-      substructure.push({ id, type: "beam", mat: 3, sec: 31, n1: foot, n2: top });
+      substructure.push({ id, type: "beam", mat: 3, sec: pm.colSec, n1: foot, n2: top });
       members.push({ id: `P${sl}-C${c + 1}`, kind: "column", name: `Pier ${sl}, column ${c + 1}`, elements: [id], support: sl + 1 });
     });
     points.sort((a, b) => a.y - b.y);
     for (let p = 1; p < points.length; p++) {
       const id = subId++;
-      substructure.push({ id, type: "beam", mat: 3, sec: 30, n1: points[p - 1].node, n2: points[p].node });
+      substructure.push({ id, type: "beam", mat: 3, sec: pm.capSec, n1: points[p - 1].node, n2: points[p].node });
       capIds.push(id);
     }
     members.push({ id: `P${sl}-cap`, kind: "cap", name: `Pier ${sl} cap`, elements: capIds, support: sl + 1 });
@@ -255,10 +353,12 @@ export function generate(d: BridgeDefinition): Generated {
   const interiorStations = new Set(supportStations);
   for (let k = 0; k < nG; k++) {
     const edge = k === 0 || k === nG - 1;
-    const wDeck = tribute(k) * (d.deck.thickness / 12) * d.deck.wc + shape.topWidth * d.deck.haunch * IN2 * d.deck.wc;
-    const wWearing = ((edge ? d.spacing / 2 + d.overhang - d.loads.barrierWidth : d.spacing) * d.loads.wearingSurface) / 1000;
     for (let s = 0; s < nS - 1; s++) {
       const element = girderElement(k, s);
+      // The deck it carries here: the mean of its two ends' widths (a flared bridge's change along the span).
+      const width = (tributeAt(k, s).width + tributeAt(k, s + 1).width) / 2;
+      const wDeck = width * (d.deck.thickness / 12) * d.deck.wc + shape.topWidth * d.deck.haunch * IN2 * d.deck.wc;
+      const wWearing = ((edge ? width - d.loads.barrierWidth : width) * d.loads.wearingSurface) / 1000;
       loads.push({ stage: 1, load: { case: "Girders", kind: "uniform", element, dir: "GZ", w: -wGirder } });
       loads.push({ stage: 1, load: { case: "Deck and haunch", kind: "uniform", element, dir: "GZ", w: -wDeck } });
       if (wWearing > 0) loads.push({ stage: 2, load: { case: "Wearing surface", kind: "uniform", element, dir: "GZ", w: -wWearing } });
@@ -266,8 +366,8 @@ export function generate(d: BridgeDefinition): Generated {
     }
     // A barrier stands outside its girder: its weight's moment about the girder, at the stations.
     if (edge && d.loads.barrierWeight > 0) {
-      const arm = (k === 0 ? -1 : 1) * Math.max(0, d.overhang - d.loads.barrierWidth / 2);
       for (let s = 0; s < nS; s++) {
+        const arm = (k === 0 ? -1 : 1) * Math.max(0, tributeAt(k, s).overhang - d.loads.barrierWidth / 2);
         const length = ((s > 0 ? stations[s] - stations[s - 1] : 0) + (s < nS - 1 ? stations[s + 1] - stations[s] : 0)) / 2;
         if (arm) loads.push({ stage: 2, load: { case: "Barriers", kind: "nodal", node: girderNode(k, s), F: [0, 0, 0, -arm * d.loads.barrierWeight * length, 0, 0] } });
       }
@@ -275,26 +375,28 @@ export function generate(d: BridgeDefinition): Generated {
     for (const s of diaphragmStations)
       if (!interiorStations.has(s) && d.diaphragms.weight > 0) loads.push({ stage: 1, load: { case: "Diaphragms", kind: "nodal", node: girderNode(k, s), F: [0, 0, -(edge ? 0.5 : 1) * d.diaphragms.weight, 0, 0, 0] } });
   }
-  for (const e of substructure) loads.push({ stage: 1, load: { case: "Substructure", kind: "uniform", element: e.id, dir: "GZ", w: -(e.sec === 30 ? cb * cd : Ac) * 0.15 } });
+  const areaOf = new Map<number, number>();
+  for (const pm of pierModels.values()) areaOf.set(pm.capSec, pm.capArea).set(pm.colSec, pm.colArea);
+  for (const e of substructure) loads.push({ stage: 1, load: { case: "Substructure", kind: "uniform", element: e.id, dir: "GZ", w: -(areaOf.get(e.sec) ?? 0) * 0.15 } });
 
   const none: Dof6<boolean> = [false, false, false, false, false, false];
   const hinge: Dof6<boolean> = [false, false, false, false, true, false];
-  const piers = new Set(supportStations.slice(1, -1));
+  // Each pier's station, and whether its girders are made continuous (the geometry's pier type, or the wizard's continuity).
+  const pierSimple = new Map<number, boolean>(supportStations.slice(1, -1).map((s, i) => [s, d.geometry ? d.geometry.supports[i + 1]?.type === "simple-pier" : d.continuity === "simple"]));
   const build = (stage: 1 | 2): Model => {
     const m: Model = { ...base, nodes: base.nodes, elements: [], loadCases: stage === 1 ? stage1Cases : stage2Cases, loads: loads.filter((l) => l.stage === stage).map((l) => l.load) };
-    const simple = stage === 1 || d.continuity === "simple";
     for (let k = 0; k < nG; k++) {
-      const edge = k === 0 || k === nG - 1;
+      const sec = stage === 1 ? 1 : k === 0 ? 3 : k === nG - 1 ? (twoSides ? 4 : 3) : 2;
       for (let s = 0; s < nS - 1; s++)
         m.elements.push({
           id: girderElement(k, s),
           type: "beam",
           mat: 1,
-          sec: stage === 1 ? 1 : edge ? 3 : 2,
+          sec,
           n1: girderNode(k, s),
           n2: girderNode(k, s + 1),
-          // Simple spans: a hinge in the girder just before each pier.
-          ...(simple && piers.has(s + 1) ? { releases: { i: none, j: hinge } } : {}),
+          // Simple spans: a hinge in the girder just before each pier they're simple at (every pier, for the girders alone).
+          ...(pierSimple.has(s + 1) && (stage === 1 || pierSimple.get(s + 1)) ? { releases: { i: none, j: hinge } } : {}),
         });
     }
     if (stage === 2) {
@@ -323,11 +425,49 @@ export function generate(d: BridgeDefinition): Generated {
     stations,
     supportStations,
     layout: {
-      girderY: Array.from({ length: nG }, (_, k) => yOf(k)),
-      deck: [yOf(0) - d.overhang, yOf(nG - 1) + d.overhang],
-      roadway: [yOf(0) - d.overhang + d.loads.barrierWidth, yOf(nG - 1) + d.overhang - d.loads.barrierWidth],
+      girderY: girderYAt(d.spans[0] / 2),
+      deck: [-leftEdge, rightEdge],
+      roadway: [-leftEdge + d.loads.barrierWidth, rightEdge - d.loads.barrierWidth],
       tan,
       girderElement,
+      girderYAt,
+      locate,
+      laneX: (S: number, y: number) => {
+        let j = 0;
+        while (j < d.spans.length - 1 && S > supportX[j + 1]) j++;
+        const a = lineX(j, y);
+        return a + ((S - supportX[j]) / d.spans[j]) * (lineX(j + 1, y) - a);
+      },
+      plan: (ya: number, yb: number) => [...lines.map((_, sl) => [lineX(sl, ya), ya] as [number, number]), ...lines.map((_, sl) => [lineX(sl, yb), yb] as [number, number]).reverse()],
     },
   };
+
+  /** Each girder's Y at X along the bridge (between the support lines' crossings of its line). */
+  function girderYAt(X: number): number[] {
+    return Array.from({ length: nG }, (_, k) => {
+      for (let j = 0; j < d.spans.length; j++) {
+        const a = lines[j].ends[k];
+        const b = lines[j + 1].ends[k];
+        if (X <= b.X + 1e-9 || j === d.spans.length - 1) return a.Y + (Math.abs(b.X - a.X) < 1e-9 ? 0 : (Math.min(Math.max(X, a.X), b.X) - a.X) / (b.X - a.X)) * (b.Y - a.Y);
+      }
+      return lines[0].ends[k].Y;
+    });
+  }
+
+  function locate(k: number, X: number): { element: number; a: number } | null {
+    for (let j = 0; j < d.spans.length; j++) {
+      const a = lines[j].ends[k];
+      const b = lines[j + 1].ends[k];
+      if (X < a.X - 1e-9 || X > b.X + 1e-9) continue;
+      const S = supportX[j] + (Math.abs(b.X - a.X) < 1e-9 ? 0 : (X - a.X) / (b.X - a.X)) * d.spans[j];
+      let st = supportStations[j];
+      while (st < supportStations[j + 1] - 1 && stations[st + 1] <= S) st++;
+      const p = pointOn(k, st);
+      const q = pointOn(k, st + 1);
+      const len = Math.hypot(q.X - p.X, q.Y - p.Y);
+      const f = Math.min(Math.max((S - stations[st]) / (stations[st + 1] - stations[st]), 0), 1);
+      return { element: girderElement(k, st), a: f * len };
+    }
+    return null;
+  }
 }

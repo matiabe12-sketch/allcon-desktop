@@ -47,9 +47,19 @@ export function bridgeSolids(d: BridgeDefinition, g: Generated): { solids: Solid
     const b = e && at.get(e.n2);
     return a && b ? [{ element: id, a, b }] : [];
   });
+  // Each pier's cap and columns: its own (the geometry's pier at that support) or the wizard's one pier.
+  const pierAt = (support?: number) => {
+    const p = support ? d.geometry?.supports[support - 1]?.pier : undefined;
+    if (!p) return { round: true, size: d.piers.columnDiameter, depth: d.piers.columnDiameter, capWidth: d.piers.capWidth, capDepth: d.piers.capDepth };
+    const round = p.columnShape === "round";
+    return { round, size: p.columnSize / 12, depth: (round ? p.columnSize : p.columnDepth) / 12, capWidth: p.capWidth / 12, capDepth: p.capDepth };
+  };
   for (const m of g.members) {
     if (m.kind === "girder") solids.push({ type: "prism", kind: "girder", section: { outline }, segments: segmentsOf(m.elements) });
-    if (m.kind === "column") solids.push({ type: "prism", kind: "column", section: { radius: d.piers.columnDiameter / 2 }, segments: segmentsOf(m.elements) });
+    if (m.kind === "column") {
+      const p = pierAt(m.support);
+      solids.push({ type: "prism", kind: "column", section: p.round ? { radius: p.size / 2 } : { outline: rect(p.size, p.depth) }, segments: segmentsOf(m.elements) });
+    }
     if (m.kind === "cap") {
       // The cap runs a little past its end girders.
       const seg = segmentsOf(m.elements);
@@ -66,7 +76,7 @@ export function bridgeSolids(d: BridgeDefinition, g: Generated): { solids: Solid
         solids.push({
           type: "prism",
           kind: "cap",
-          section: { outline: rect(d.piers.capWidth, d.piers.capDepth) },
+          section: { outline: rect(pierAt(m.support).capWidth, pierAt(m.support).capDepth) },
           segments: [{ a: [first.a[0] - u0[0] * ext, first.a[1] - u0[1] * ext, first.a[2]], b: first.a }, ...seg, { a: last.b, b: [last.b[0] + u1[0] * ext, last.b[1] + u1[1] * ext, last.b[2]] }],
         });
       }
@@ -81,17 +91,18 @@ export function bridgeSolids(d: BridgeDefinition, g: Generated): { solids: Solid
       if (a && b) solids.push({ type: "prism", kind: "diaphragm", section: { outline: rect(d.diaphragms.thickness, dh, (H / 2 - yb) / 12) }, segments: [{ a, b }] });
     }
   // Bearings, under the girders.
-  const bh = Math.max(d.piers.bearingHeight, 1) / 12;
+  const heightAt = new Map(g.bearings.map((b) => [b.link, Math.max(d.geometry?.supports[b.support - 1]?.bearingHeight ?? d.piers.bearingHeight, 1) / 12]));
   for (const l of model.links) {
     const a = at.get(l.n1);
+    const bh = heightAt.get(l.id) ?? Math.max(d.piers.bearingHeight, 1) / 12;
     if (a) solids.push({ type: "slab", kind: "bearing", plan: [[a[0] - 0.75, a[1] - 0.75], [a[0] + 0.75, a[1] - 0.75], [a[0] + 0.75, a[1] + 0.75], [a[0] - 0.75, a[1] + 0.75]], z0: -yb / 12 - bh, z1: -yb / 12 });
   }
   // The deck over the haunches, and a barrier along each edge.
-  const total = g.stations[g.stations.length - 1];
-  const { deck, tan } = g.layout;
+  const { deck } = g.layout;
   const z0 = (H - yb + d.deck.haunch) / 12;
   const z1 = z0 + d.deck.thickness / 12;
-  const strip = (ya: number, yc: number): [number, number][] => [[ya * tan, ya], [total + ya * tan, ya], [total + yc * tan, yc], [yc * tan, yc]];
+  // Between two lines along the bridge, from the first support line to the last (each at its own skew).
+  const strip = (ya: number, yc: number): [number, number][] => g.layout.plan(ya, yc);
   solids.push({ type: "slab", kind: "deck", plan: strip(deck[0], deck[1]), z0, z1 });
   if (d.loads.barrierWidth > 0 && d.loads.barrierWeight > 0) {
     solids.push({ type: "slab", kind: "barrier", plan: strip(deck[0], deck[0] + d.loads.barrierWidth), z0: z1, z1: z1 + 2.75 });

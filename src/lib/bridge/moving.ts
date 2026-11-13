@@ -1,4 +1,4 @@
-import type { Generated } from "./generate";
+import { isCapSection, isColumnSection, isGirderSection, type Generated } from "./generate";
 import type { Load } from "./model";
 import type { Analysis, SectionForces } from "./solver";
 
@@ -187,9 +187,8 @@ const forces = (v: ArrayLike<number>, o: number): SectionForces => ({ N: v[o], V
 export function* movingLoadSteps(g: Generated, stage2: Analysis, opts: { IM?: number; step?: number } = {}): Generator<number, LiveLoad, void> {
   const IM = opts.IM ?? 0.33;
   const model = stage2.model;
-  const { girderY, roadway, tan, girderElement } = g.layout;
+  const { roadway, girderYAt, locate, laneX } = g.layout;
   const total = g.stations[g.stations.length - 1];
-  const nS = g.stations.length;
   const { lines, arrangements } = laneArrangements(roadway[0], roadway[1]);
 
   // Positions along a lane: the stations (where the influence lines turn) and points between.
@@ -202,25 +201,25 @@ export function* movingLoadSteps(g: Generated, stage2: Analysis, opts: { IM?: nu
 
   // What is followed: every girder element and the piers' members (both ends, six forces), and every bearing.
   const index = new Map(model.elements.map((e, i) => [e.id, i]));
-  const followed = model.elements.filter((e) => e.sec <= 3 || e.sec === 30 || e.sec === 31);
-  const isGirder = followed.map((e) => e.sec <= 3);
+  const followed = model.elements.filter((e) => isGirderSection(e.sec) || isCapSection(e.sec) || isColumnSection(e.sec));
+  const isGirder = followed.map((e) => isGirderSection(e.sec));
   const want = { elements: followed.map((e) => index.get(e.id)!), links: model.links.map((_, i) => i) };
   const E = followed.length;
   const R = 12 * E + 3 * model.links.length;
 
   /** A wheel's load on the girders beside it (the lever rule; beyond the outside girder, carried on with its couple). */
   const wheel = (X: number, y: number, load: number): Load[] => {
+    // The girders beside the wheel where it is (they spread on a flared bridge), and where on each it falls.
+    const girderY = girderYAt(X);
     let k = 0;
     while (k < girderY.length - 2 && girderY[k + 1] <= y) k++;
     const t = (y - girderY[k]) / (girderY[k + 1] - girderY[k]);
     const out: Load[] = [];
     for (const [gk, share] of [[k, 1 - t], [k + 1, t]] as const) {
       if (Math.abs(share) < 1e-9) continue;
-      const s = X - girderY[gk] * tan; // along this girder from its first support
-      if (s < -1e-9 || s > total + 1e-9) continue;
-      let st = 0;
-      while (st < nS - 2 && g.stations[st + 1] <= s) st++;
-      out.push({ case: "", kind: "point", element: girderElement(gk, st), dir: "GZ", P: -load * share, a: Math.min(Math.max(s - g.stations[st], 0), g.stations[st + 1] - g.stations[st]) });
+      const at = locate(gk, X);
+      if (!at) continue;
+      out.push({ case: "", kind: "point", element: at.element, dir: "GZ", P: -load * share, a: at.a });
     }
     return out;
   };
@@ -229,7 +228,7 @@ export function* movingLoadSteps(g: Generated, stage2: Analysis, opts: { IM?: nu
   const eta = lines.map(() => new Float32Array(R * P));
   for (let l = 0; l < lines.length; l++) {
     for (let j = 0; j < P; j++) {
-      const X = positions[j] + lines[l] * tan;
+      const X = laneX(positions[j], lines[l]);
       const r = stage2.respond([...wheel(X, lines[l] - WHEEL_GAUGE / 2, 0.5), ...wheel(X, lines[l] + WHEEL_GAUGE / 2, 0.5)], want);
       for (let q = 0; q < R; q++) eta[l][q * P + j] = r[q];
     }

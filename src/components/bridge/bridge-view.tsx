@@ -3,6 +3,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import * as THREE from "three";
 import CameraControls from "camera-controls";
+import { isCapSection, isColumnSection, isGirderSection } from "@/lib/bridge/generate";
 import type { Dof6, Model } from "@/lib/bridge/model";
 import type { Solid, SolidKind, Vec3 } from "@/lib/bridge/solids";
 import { OrientationCube, type OrientationCubeHandle } from "@/components/models/orientation-cube";
@@ -35,7 +36,7 @@ export const contourCss = (t: number) => `#${contourColor(t).getHexString()}`;
 
 const WIRE = { girder: 0x1f2937, strip: 0xcbd5e1, diaphragm: 0x64748b, cap: 0x92400e, column: 0x92400e, link: 0xea580c };
 const SOLID: Record<SolidKind, number> = { girder: 0xc9ced6, deck: 0xdfe3e8, barrier: 0xaab2bd, diaphragm: 0xb6bcc6, cap: 0xb9a78f, column: 0xb9a78f, bearing: 0x374151, member: 0xc9ced6 };
-const kindOf = (sec: number) => (sec <= 3 ? "girder" : sec === 20 ? "diaphragm" : sec === 30 ? "cap" : sec === 31 ? "column" : "strip");
+const kindOf = (sec: number) => (isGirderSection(sec) ? "girder" : sec === 20 ? "diaphragm" : isCapSection(sec) ? "cap" : isColumnSection(sec) ? "column" : "strip");
 
 type State = {
   renderer: THREE.WebGLRenderer;

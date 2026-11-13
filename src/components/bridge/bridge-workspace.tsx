@@ -268,7 +268,6 @@ export function BridgeWorkspace({ bridge, projects }: { bridge: { id: string; na
   const strips = useMemo((): Strip[] => {
     if (!a || !live || !display.lanes || !built) return [];
     const g = a.generated;
-    const total = g.stations[g.stations.length - 1];
     const [left, right] = g.layout.roadway;
     const half = Math.min(LANE_WIDTH, right - left) / 2;
     // The lanes centered on the roadway (one of the three arrangements tried).
@@ -276,7 +275,7 @@ export function BridgeWorkspace({ bridge, projects }: { bridge: { id: string; na
       const y = live.lanes[k];
       const ya = Math.max(left, y - half) + 0.15;
       const yb = Math.min(right, y + half) - 0.15;
-      return { plan: [[ya * g.layout.tan, ya], [total + ya * g.layout.tan, ya], [total + yb * g.layout.tan, yb], [yb * g.layout.tan, yb]] as [number, number][], z: built.deckTop + 0.06, color: 0xf59e0b };
+      return { plan: g.layout.plan(ya, yb), z: built.deckTop + 0.06, color: 0xf59e0b };
     });
   }, [a, live, display.lanes, built]);
   const useContour = display.contour && display.solid;

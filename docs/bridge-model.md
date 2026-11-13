@@ -80,10 +80,17 @@ station, orientation, connection, girder end distance and bearing offset).
   continuous beam, the lane by its influence lines), `loadpath.ts`, `kinds.ts`; `app/actions/bridge.ts`
   (`syncBridge`: update the linked designs top to bottom, create the missing girder and abutment
   designs); `components/design/bridge-editor.tsx`, `bridge-sketch.tsx` (plan and profile).
-- A pier cap linked to the Bridge must be a strut-and-tie design made from a standard pier cap: its
-  bearings are rebuilt where the Bridge's girders sit, and its model with them.
-- The column takes the cap's cases ("loads from the cap"); the foundation takes the column's base forces.
-  The cap's and column's cases are factored, so a footing's settlement and crack control (Service) and a
-  pile group's deflection need their Service cases entered on the foundation itself.
+- Piers (added 2026-11-13): each pier is described in the Bridge as PGSuper's physical pier model is
+  (multicolumn bent or hammerhead; cap length, depth and width; columns, spacing and section; the top of
+  the footing or shaft; the foundation's type). The cap is built from the standard pier cap template
+  with those dimensions and its bearings where the Bridge's girders sit; the column's height runs from
+  the cap's soffit (the lowest bearing seat less the cap's depth) to the foundation's top; "Create the
+  missing designs" makes the cap, column and foundation.
+- Service loads: the column's link from the cap carries a Service I case (each bearing's DC + DW + the
+  most live load reaching it, with IM and the multiple presence factor, unfactored), shown in the
+  column's rows but not held to its strength checks, so the footing's settlement and crack control and
+  a pile group's deflection now run from the bridge's loads.
+- Abutments also drive their approach slab (deck width, roadway between barriers, skew) and a
+  wingwall (height at the abutment face, the abutment's width, skew, backfill).
 - Not yet: spirals, superelevation transitions, flared or curved girders (girders are chorded between
   supports), a calc package for the Bridge itself, wingwalls and approach slabs from the Bridge.

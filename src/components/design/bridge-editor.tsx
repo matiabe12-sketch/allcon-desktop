@@ -8,14 +8,14 @@ import { syncBridge, type SyncRow } from "@/app/actions/bridge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { bearingText, stationText } from "@/lib/design/bridge/alignment";
-import { runBridge, spanGroups, type BridgeInputs } from "@/lib/design/bridge/bridge";
+import { PIER_DEFAULTS, runBridge, spanGroups, type BridgeInputs } from "@/lib/design/bridge/bridge";
 import type { GirderInputs } from "@/lib/design/girders/prestressed";
 import { GIRDER_SHAPES } from "@/lib/design/girders/sections";
 import { DesignError } from "@/lib/design/walls/cip";
 import { BridgePlan, BridgeProfile } from "./bridge-sketch";
 import { DesignErrorCard, DesignHeader, fmt, KeyValues, Section } from "./design-kit";
 import { FieldView } from "./foundation-editor";
-import type { SectionSpec } from "./foundation-specs";
+import type { FieldSpec, SectionSpec } from "./foundation-specs";
 
 // The Bridge: entered as PGSuper's Alignment and Bridge Description dialogs take it (the alignment,
 // profile and roadway section; the supports; the girders and deck) on the left; its layout, the
@@ -26,7 +26,13 @@ type Inputs = Record<string, unknown>;
 const get = (o: Inputs, path: string): unknown => path.split(".").reduce<unknown>((a, k) => (a && typeof a === "object" ? (a as Inputs)[k] : undefined), o);
 function setPath(o: Inputs, path: string, v: unknown): Inputs {
   const [k, ...rest] = path.split(".");
-  return { ...o, [k]: rest.length ? setPath((o[k] as Inputs) ?? {}, rest.join("."), v) : v };
+  const child = rest.length ? setPath(((o as Record<string, unknown>)[k] as Inputs) ?? {}, rest.join("."), v) : v;
+  if (Array.isArray(o)) {
+    const a = [...o];
+    a[Number(k)] = child;
+    return a as unknown as Inputs;
+  }
+  return { ...o, [k]: child };
 }
 
 const supportTypes = [
@@ -139,7 +145,7 @@ export function BridgeEditor({
     <label className="grid grid-cols-[8rem_1fr] items-center gap-2 py-0.5 text-xs">
       <span className="text-muted-foreground">{label}</span>
       <select className="h-7 min-w-0 rounded-md border border-input bg-transparent px-1" value={value ?? ""} onChange={(e) => onChange(e.target.value || null)}>
-        <option value="">{kind === "lrfd-girder-check" || kind === "abutment" ? "None (create it)" : "None"}</option>
+        <option value="">None (create it)</option>
         {(candidates[kind] ?? []).map((d) => (
           <option key={d.id} value={d.id}>
             {d.name}
@@ -176,25 +182,50 @@ export function BridgeEditor({
                 ))}
               </Section>
             ))}
+            <Section title="Piers (PGSuper's physical pier)" open>
+              {inputs.supports.map((s, i) =>
+                s.type.endsWith("pier") ? (
+                  <div key={i} className="border-b pb-1 last:border-b-0">
+                    <div className="py-1 text-xs font-medium">{s.name}</div>
+                    {s.pier ? (
+                      (
+                        [
+                          { type: "choice", key: `supports.${i}.pier.kind`, label: "Cap", options: [{ value: "multicolumn", label: "Multicolumn bent" }, { value: "hammerhead", label: "Hammerhead" }] },
+                          { type: "number", key: `supports.${i}.pier.capLength`, label: "Cap length (along the support)", unit: "ft", step: 0.5 },
+                          { type: "number", key: `supports.${i}.pier.capDepth`, label: "Cap depth", unit: "ft", step: 0.25 },
+                          { type: "number", key: `supports.${i}.pier.capWidth`, label: "Cap width (along the bridge)", unit: "in" },
+                          { type: "number", key: `supports.${i}.pier.columns`, label: "Columns", show: () => s.pier!.kind === "multicolumn" },
+                          { type: "number", key: `supports.${i}.pier.columnSpacing`, label: "Column spacing", unit: "ft", step: 0.5, show: () => s.pier!.kind === "multicolumn" },
+                          { type: "choice", key: `supports.${i}.pier.columnShape`, label: "Column", options: [{ value: "round", label: "Round" }, { value: "rectangular", label: "Rectangular" }] },
+                          { type: "number", key: `supports.${i}.pier.columnSize`, label: "Column diameter or width", unit: "in" },
+                          { type: "number", key: `supports.${i}.pier.columnDepth`, label: "Column depth (along the bridge)", unit: "in", show: () => s.pier!.columnShape === "rectangular" },
+                          { type: "number", key: `supports.${i}.pier.foundationTop`, label: "Top of footing or shaft, elevation (0: 20 ft below the cap)", unit: "ft", step: 0.5 },
+                          { type: "choice", key: `supports.${i}.pier.foundation`, label: "Foundation", options: [{ value: "spread-footing", label: "Spread footing" }, { value: "pile-foundation", label: "Pile foundation" }, { value: "drilled-shaft", label: "Drilled shaft" }] },
+                        ] as FieldSpec[]
+                      ).map((f, k) => <FieldView key={k} spec={f} inputs={inputs as unknown as Inputs} set={set} />)
+                    ) : (
+                      <Button size="sm" variant="outline" onClick={() => set(`supports.${i}.pier`, PIER_DEFAULTS)}>
+                        Describe this pier
+                      </Button>
+                    )}
+                  </div>
+                ) : null,
+              )}
+            </Section>
             <Section title="Linked designs" open>
               {groups.map((g, gi) => pick(`Girders, span${g.length > 1 ? "s" : ""} ${g.map((j) => j + 1).join("–")}`, "lrfd-girder-check", inputs.girderDesignIds[gi], (v) => setInputs((s) => ({ ...s, girderDesignIds: groups.map((_, k) => (k === gi ? v : (s.girderDesignIds[k] ?? null))) }))))}
               {inputs.supports.map((s, i) =>
                 s.type.endsWith("abutment") ? (
-                  <div key={i}>{pick(s.name, "abutment", comp(i).abutmentId, (v) => setComp(i, { abutmentId: v }))}</div>
+                  <div key={i} className="border-t pt-1">
+                    {pick(s.name, "abutment", comp(i).abutmentId, (v) => setComp(i, { abutmentId: v }))}
+                    {pick(`${s.name}, approach slab`, "approach-slab", comp(i).approachSlabId, (v) => setComp(i, { approachSlabId: v }))}
+                    {pick(`${s.name}, wingwall`, "cantilever-wingwall", comp(i).wingwallId, (v) => setComp(i, { wingwallId: v }))}
+                  </div>
                 ) : (
                   <div key={i} className="border-t pt-1">
                     {pick(`${s.name}, cap`, "stm-d-region", comp(i).capId, (v) => setComp(i, { capId: v }))}
                     {pick(`${s.name}, column`, "pier-column", comp(i).columnId, (v) => setComp(i, { columnId: v }))}
-                    <label className="grid grid-cols-[8rem_1fr] items-center gap-2 py-0.5 text-xs">
-                      <span className="text-muted-foreground">{s.name}, foundation</span>
-                      <select className="h-7 rounded-md border border-input bg-transparent px-1" value={comp(i).foundationKind ?? ""} onChange={(e) => setComp(i, { foundationKind: e.target.value || null, foundationId: null })}>
-                        <option value="">None</option>
-                        <option value="spread-footing">Spread footing</option>
-                        <option value="pile-foundation">Pile foundation</option>
-                        <option value="drilled-shaft">Drilled shaft</option>
-                      </select>
-                    </label>
-                    {comp(i).foundationKind && pick(" ", comp(i).foundationKind!, comp(i).foundationId, (v) => setComp(i, { foundationId: v }))}
+                    {s.pier && pick(`${s.name}, foundation`, s.pier.foundation, comp(i).foundationKind === s.pier.foundation ? comp(i).foundationId : null, (v) => setComp(i, { foundationId: v, foundationKind: s.pier!.foundation }))}
                   </div>
                 ),
               )}
@@ -203,7 +234,7 @@ export function BridgeEditor({
                   {busy && <Loader2 className="animate-spin" />} Update the components
                 </Button>
                 <Button size="sm" variant="outline" onClick={() => sync(true)} disabled={busy || !r}>
-                  Create the missing girder and abutment designs
+                  Create the missing designs
                 </Button>
               </div>
             </Section>

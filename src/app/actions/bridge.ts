@@ -5,14 +5,17 @@ import { Prisma } from "@/generated/prisma/client";
 import { getCurrentUser, isUuid } from "@/lib/auth/session";
 import { bridgeInputs } from "@/lib/design/bridge/kinds";
 import { girderInputsFor, runBridge, spanGroups, type BridgeInputs } from "@/lib/design/bridge/bridge";
-import { abutmentFromBridge, capFromBridge, changedKeys, footingFromColumn, pilesFromColumn, shaftFromColumn } from "@/lib/design/bridge/loadpath";
+import { abutmentFromBridge, approachSlabFromBridge, capFromBridge, changedKeys, columnFromBridge, footingFromColumn, pilesFromColumn, shaftFromColumn, wingwallFromBridge } from "@/lib/design/bridge/loadpath";
+import { designApproachSlab } from "@/lib/design/approach/approach-slab";
+import { designWingwall } from "@/lib/design/walls/wingwall";
+import { nodeLpSolver } from "@/lib/design/stm/lp-node";
 import { abutmentInputs, footingInputs, pileFoundationInputs, shaftInputs } from "@/lib/design/foundations/kinds";
 import { runFoundation } from "@/lib/design/foundations/run";
 import type { GirderInputs } from "@/lib/design/girders/prestressed";
-import { designInputs, girderInputs, kindInfo } from "@/lib/design/kinds";
+import { approachSlabInputs, designInputs, girderInputs, kindInfo, wingwallInputs } from "@/lib/design/kinds";
 import { columnInputs, designColumn } from "@/lib/design/piers/column";
 import { columnLinkFrom } from "@/lib/design/piers/column-link";
-import { stmInputs } from "@/lib/design/stm/strut-tie";
+import { designStm, stmInputs } from "@/lib/design/stm/strut-tie";
 import { db } from "@/lib/db";
 
 // The Bridge's load path through its linked designs (docs/bridge-model.md): each linked design's
@@ -34,7 +37,7 @@ async function ownBridge(bridgeId: string) {
 export async function bridgeCandidates(): Promise<Record<string, { id: string; name: string }[]>> {
   const user = await getCurrentUser();
   if (!user) throw new Error("Sign in");
-  const kinds = ["lrfd-girder-check", "abutment", "stm-d-region", "pier-column", "spread-footing", "pile-foundation", "drilled-shaft"];
+  const kinds = ["lrfd-girder-check", "abutment", "approach-slab", "cantilever-wingwall", "stm-d-region", "pier-column", "spread-footing", "pile-foundation", "drilled-shaft"];
   const rows = await db.design.findMany({ where: { orgId: user.orgId, kind: { in: kinds } }, orderBy: { updatedAt: "desc" }, select: { id: true, name: true, kind: true }, take: 500 });
   return Object.fromEntries(kinds.map((k) => [k, rows.filter((r) => r.kind === k).map((r) => ({ id: r.id, name: r.name }))]));
 }
@@ -88,83 +91,99 @@ export async function syncBridge(bridgeId: string, inputsNow: unknown, create: b
 
   // --- each support's components ------------------------------------------------------------------------------------
   const comps = b.supports.map((_, i) => ({ support: i, ...(b.components.find((c) => c.support === i) ?? {}) }));
+  /** A component brought up to date: saved if linked, created if missing and asked to, else reported missing. Returns its id. */
+  const upsert = async (label: string, kind: string, existing: { id: string; name: string } | null, before: object, next: object, verdict: string, newName: string) => {
+    if (existing) {
+      const changes = await save(existing.id, before, next);
+      rows.push({ component: label, kind, designId: existing.id, name: existing.name, action: changes.length ? "updated" : "unchanged", changes, verdict });
+      return existing.id;
+    }
+    if (create) {
+      const id = await make(kind, newName, next);
+      rows.push({ component: label, kind, designId: id, name: `${newName} (${kindInfo(kind)!.name})`, action: "created", changes: [], verdict });
+      return id;
+    }
+    rows.push({ component: label, kind, designId: null, name: "", action: "missing", changes: [], verdict });
+    return null;
+  };
+  const verdictTry = (f: () => { ok: boolean; advisory?: boolean }[]) => {
+    try {
+      return verdictOf(f());
+    } catch (e) {
+      return e instanceof Error ? e.message : "can't be worked out";
+    }
+  };
+  const girders = new Map<string, GirderInputs>();
+  for (let gi = 0; gi < groups.length; gi++) if (girderIds[gi]) girders.set(girderIds[gi]!, run.groups[gi].inputs);
+
   for (const c of comps) {
     const s = b.supports[c.support];
     if (s.type.endsWith("abutment")) {
       const d = await load(c.abutmentId, "abutment");
       const before = d ? abutmentInputs(d.inputs) : abutmentInputs({});
       const next = abutmentFromBridge(b, run, c.support, before);
-      const verdict = (() => {
-        try {
-          return verdictOf(runFoundation("abutment", next).checks);
-        } catch (e) {
-          return e instanceof Error ? e.message : "can't be worked out";
-        }
-      })();
-      if (d) {
-        const changes = await save(d.id, before, next);
-        rows.push({ component: s.name, kind: "abutment", designId: d.id, name: d.name, action: changes.length ? "updated" : "unchanged", changes, verdict });
-      } else if (create) {
-        c.abutmentId = await make("abutment", `${design.name}, ${s.name}`, next);
-        rows.push({ component: s.name, kind: "abutment", designId: c.abutmentId, name: `${design.name}, ${s.name}`, action: "created", changes: [], verdict });
-      } else rows.push({ component: s.name, kind: "abutment", designId: null, name: "", action: "missing", changes: [], verdict });
+      c.abutmentId = await upsert(s.name, "abutment", d, before, next, verdictTry(() => runFoundation("abutment", next).checks), `${design.name}, ${s.name}`);
+      // Its approach slab and a wingwall.
+      const sd = await load(c.approachSlabId, "approach-slab");
+      const sBefore = approachSlabInputs(sd?.inputs ?? {});
+      const sNext = approachSlabFromBridge(b, c.support, sBefore);
+      c.approachSlabId = await upsert(`${s.name}, approach slab`, "approach-slab", sd, sBefore, sNext, verdictTry(() => designApproachSlab(sNext).checks), `${design.name}, ${s.name} approach slab`);
+      const wd = await load(c.wingwallId, "cantilever-wingwall");
+      const wBefore = wingwallInputs(wd?.inputs ?? {});
+      const wNext = wingwallFromBridge(b, c.support, next, wBefore);
+      c.wingwallId = await upsert(`${s.name}, wingwall`, "cantilever-wingwall", wd, wBefore, wNext, verdictTry(() => designWingwall(wNext).checks), `${design.name}, ${s.name} wingwall`);
       continue;
     }
-    // A pier: its cap (strut-and-tie, from a standard pier cap), column and foundation.
+    // A pier: its cap (strut-and-tie from a standard pier cap), column and foundation, from the Bridge's pier.
+    if (!s.pier) {
+      rows.push({ component: `${s.name}`, kind: "stm-d-region", designId: null, name: "", action: "missing", changes: [], verdict: "describe the pier (cap, columns, foundation) in the Bridge's supports" });
+      continue;
+    }
     const cap = await load(c.capId, "stm-d-region");
-    if (!cap) {
-      rows.push({ component: `${s.name}, cap`, kind: "stm-d-region", designId: null, name: "", action: "missing", changes: [], verdict: "link a Strut-and-Tie design made from a standard pier cap" });
-      continue;
+    const capBefore = cap ? stmInputs(cap.inputs) : stmInputs({});
+    let capNext = capBefore;
+    let capVerdict = "";
+    try {
+      capNext = capFromBridge(b, run, c.support, capBefore, girderIds, names);
+      capVerdict = verdictOf((await designStm(capNext, nodeLpSolver)).checks);
+    } catch (e) {
+      capVerdict = e instanceof Error ? e.message : "the cap couldn't be built";
     }
-    const capBefore = stmInputs(cap.inputs);
-    const capNext = capFromBridge(b, run, c.support, capBefore, girderIds, names);
-    const capChanges = await save(cap.id, capBefore, capNext);
-    rows.push({ component: `${s.name}, cap`, kind: "stm-d-region", designId: cap.id, name: cap.name, action: capChanges.length ? "updated" : "unchanged", changes: capChanges, verdict: "open it to rerun the strut-and-tie model" });
+    c.capId = await upsert(`${s.name}, cap`, "stm-d-region", cap, capBefore, capNext, capVerdict, `${design.name}, ${s.name} cap`);
+    if (!c.capId) continue;
+    const capName = cap?.name ?? `${design.name}, ${s.name} cap`;
     const col = await load(c.columnId, "pier-column");
-    if (!col) {
-      rows.push({ component: `${s.name}, column`, kind: "pier-column", designId: null, name: "", action: "missing", changes: [], verdict: "link a Pier Column design" });
-      continue;
-    }
-    const girders = new Map<string, GirderInputs>();
-    for (let gi = 0; gi < groups.length; gi++) if (girderIds[gi]) girders.set(girderIds[gi]!, run.groups[gi].inputs);
-    const colBefore = columnInputs(col.inputs);
+    const colBefore = columnInputs(col?.inputs ?? {});
     let colNext = colBefore;
+    let colResult: ReturnType<typeof designColumn> | null = null;
     let colVerdict = "";
     try {
-      colNext = { ...colBefore, loads: "stm", link: columnLinkFrom(cap.id, cap.name, capNext, girders) };
-    } catch (e) {
-      colVerdict = e instanceof Error ? e.message : "the cap's loads couldn't be read";
-    }
-    const colChanges = await save(col.id, colBefore, colNext);
-    let colResult: ReturnType<typeof designColumn> | null = null;
-    try {
+      colNext = columnFromBridge(b, run, c.support, colBefore, columnLinkFrom(c.capId, capName, capNext, girders));
       colResult = designColumn(colNext);
-      colVerdict ||= verdictOf(colResult.checks);
+      colVerdict = verdictOf(colResult.checks);
     } catch (e) {
-      colVerdict ||= e instanceof Error ? e.message : "can't be worked out";
+      colVerdict = e instanceof Error ? e.message : "the column couldn't be worked out";
     }
-    rows.push({ component: `${s.name}, column`, kind: "pier-column", designId: col.id, name: col.name, action: colChanges.length ? "updated" : "unchanged", changes: colChanges, verdict: colVerdict });
-    const kind = c.foundationKind ?? null;
-    const f = kind ? await load(c.foundationId, kind) : null;
-    if (!f || !kind) {
-      rows.push({ component: `${s.name}, foundation`, kind: kind ?? "spread-footing", designId: null, name: "", action: "missing", changes: [], verdict: "link a footing, pile foundation or drilled shaft design" });
-      continue;
+    c.columnId = await upsert(`${s.name}, column`, "pier-column", col, colBefore, colNext, colVerdict, `${design.name}, ${s.name} column`);
+    const kind = s.pier.foundation;
+    if (c.foundationKind !== kind) c.foundationId = null;
+    c.foundationKind = kind;
+    const fd = await load(c.foundationId, kind);
+    const fBefore = kind === "spread-footing" ? footingInputs(fd?.inputs ?? {}) : kind === "pile-foundation" ? pileFoundationInputs(fd?.inputs ?? {}) : shaftInputs(fd?.inputs ?? {});
+    let fNext: object = fBefore;
+    if (colResult) {
+      fNext = kind === "spread-footing" ? footingFromColumn(colResult, fBefore as ReturnType<typeof footingInputs>) : kind === "pile-foundation" ? pilesFromColumn(colResult, fBefore as ReturnType<typeof pileFoundationInputs>) : shaftFromColumn(colResult, fBefore as ReturnType<typeof shaftInputs>);
+      if (kind === "drilled-shaft") fNext = { ...fNext, D: Math.max((fNext as ReturnType<typeof shaftInputs>).D, s.pier.columnShape === "round" ? s.pier.columnSize : 0) };
     }
-    if (!colResult) continue;
-    const fBefore = kind === "spread-footing" ? footingInputs(f.inputs) : kind === "pile-foundation" ? pileFoundationInputs(f.inputs) : shaftInputs(f.inputs);
-    const fNext = kind === "spread-footing" ? footingFromColumn(colResult, fBefore as ReturnType<typeof footingInputs>) : kind === "pile-foundation" ? pilesFromColumn(colResult, fBefore as ReturnType<typeof pileFoundationInputs>) : shaftFromColumn(colResult, fBefore as ReturnType<typeof shaftInputs>);
-    const fChanges = await save(f.id, fBefore, fNext);
-    let fVerdict = "";
-    try {
-      fVerdict = verdictOf(runFoundation(kind, fNext).checks);
-    } catch (e) {
-      fVerdict = e instanceof Error ? e.message : "can't be worked out";
-    }
-    rows.push({ component: `${s.name}, foundation`, kind, designId: f.id, name: f.name, action: fChanges.length ? "updated" : "unchanged", changes: fChanges, verdict: fVerdict });
+    c.foundationId = await upsert(`${s.name}, foundation`, kind, fd, fBefore, fNext, colResult ? verdictTry(() => runFoundation(kind, fNext).checks) : "the column's base forces are needed first", `${design.name}, ${s.name} foundation`);
   }
 
   // The Bridge keeps the links it made.
-  const next: BridgeInputs = { ...b, girderDesignIds: girderIds, components: comps.map(({ support, abutmentId, capId, columnId, foundationId, foundationKind }) => ({ support, abutmentId: abutmentId ?? null, capId: capId ?? null, columnId: columnId ?? null, foundationId: foundationId ?? null, foundationKind: foundationKind ?? null })) };
+  const next: BridgeInputs = {
+    ...b,
+    girderDesignIds: girderIds,
+    components: comps.map(({ support, abutmentId, approachSlabId, wingwallId, capId, columnId, foundationId, foundationKind }) => ({ support, abutmentId: abutmentId ?? null, approachSlabId: approachSlabId ?? null, wingwallId: wingwallId ?? null, capId: capId ?? null, columnId: columnId ?? null, foundationId: foundationId ?? null, foundationKind: foundationKind ?? null })),
+  };
   await db.design.update({ where: { id: design.id }, data: { inputs: next as unknown as Prisma.InputJsonValue } });
   revalidatePath("/design");
   return { rows, inputs: next };

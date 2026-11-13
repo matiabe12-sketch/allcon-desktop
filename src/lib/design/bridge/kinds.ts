@@ -1,4 +1,4 @@
-import { BRIDGE_DEFAULTS, type BridgeInputs } from "./bridge";
+import { BRIDGE_DEFAULTS, PIER_DEFAULTS, type BridgeInputs, type Support } from "./bridge";
 
 // The Bridge in the Design list, and its saved inputs filled in from the defaults (each nested part
 // merged, the lists kept as saved).
@@ -24,7 +24,7 @@ export function bridgeInputs(saved: unknown): BridgeInputs {
     alignment: { ...d.alignment, ...(al as Partial<BridgeInputs["alignment"]>), curves: arr(al.curves, d.alignment.curves) },
     profile: { ...d.profile, ...(pr as Partial<BridgeInputs["profile"]>), curves: arr(pr.curves, d.profile.curves) },
     roadway: { ...d.roadway, ...(obj(s.roadway) as Partial<BridgeInputs["roadway"]>) },
-    supports: arr(s.supports, d.supports),
+    supports: arr<Support>(s.supports, d.supports).map((x) => (x.pier ? { ...x, pier: { ...PIER_DEFAULTS, ...x.pier } } : x)),
     girderDesignIds: arr(s.girderDesignIds, d.girderDesignIds),
     components: arr(s.components, d.components),
   };

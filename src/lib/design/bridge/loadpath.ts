@@ -5,10 +5,13 @@ import { type ShaftInputs } from "../foundations/shaft";
 import { brakingPerLane } from "../girders/substructure-loads";
 import { girderSide } from "../stm/cap-loads";
 import type { StmInputs } from "../stm/strut-tie";
-import { bearingsFromLink, buildTemplate } from "../stm/templates";
+import { bearingsFromLink, buildTemplate, HAMMERHEAD_DEFAULTS, MULTICOLUMN_DEFAULTS, type StmTemplate } from "../stm/templates";
+import type { ColumnInputs, ColumnLink } from "../piers/column";
+import type { ApproachSlabInputs } from "../approach/approach-slab";
+import type { WingwallInputs } from "../walls/wingwall";
 import type { ColumnResult } from "../piers/column";
 import type { GirderInputs } from "../girders/prestressed";
-import { spanGroups, type BridgeInputs, type BridgeRun } from "./bridge";
+import { spanGroups, type BridgeInputs, type BridgeRun, type PierShape } from "./bridge";
 
 // The load path from a Bridge run down through its linked designs (docs/bridge-model.md): each
 // function takes a component's inputs as saved and returns them with what the Bridge decides (its
@@ -65,8 +68,26 @@ export function abutmentFromBridge(b: BridgeInputs, run: BridgeRun, support: num
   };
 }
 
+/** A standard pier cap's template from the Bridge's pier: its length, depth, width and columns (the cap's own bars and details kept). */
+export function capTemplate(p: PierShape, xs: number[], current: StmTemplate | null): StmTemplate {
+  const base = current && current.kind === p.kind ? current : p.kind === "hammerhead" ? HAMMERHEAD_DEFAULTS : MULTICOLUMN_DEFAULTS;
+  return {
+    ...base,
+    kind: p.kind,
+    length: p.capLength,
+    depth: p.capDepth,
+    tipDepth: p.kind === "hammerhead" ? Math.min(p.capDepth, base.tipDepth * (p.capDepth / base.depth)) : p.capDepth,
+    capWidth: p.capWidth,
+    columns: p.kind === "hammerhead" ? [p.capLength / 2] : xs,
+    columnWidth: (p.columnShape === "round" ? p.columnSize : p.columnSize) / 12,
+  };
+}
+
 /** A pier cap's girder link from the girder designs either side (span ending at the pier, span starting there). */
 export function capFromBridge(b: BridgeInputs, run: BridgeRun, support: number, current: StmInputs, girderIds: (string | null)[], names: string[]): StmInputs {
+  const shape = b.supports[support].pier;
+  const lp = run.layout.piers[support];
+  if (shape && lp) current = { ...current, template: capTemplate(shape, lp.columnsX, current.template ?? null) };
   const groups = spanGroups(b);
   const sideOf = (span: number, end: "start" | "end") => {
     const gi = groups.findIndex((g) => g.includes(span));
@@ -86,6 +107,45 @@ export function capFromBridge(b: BridgeInputs, run: BridgeRun, support: number, 
     return buildTemplate(tpl, { ...current, girders: next });
   }
   return { ...current, girders: next };
+}
+
+/** The pier column from the Bridge's pier: its section, its height from the cap's soffit to the foundation's top, its loads from the cap. */
+export function columnFromBridge(b: BridgeInputs, run: BridgeRun, support: number, current: ColumnInputs, link: ColumnLink): ColumnInputs {
+  const p = b.supports[support].pier;
+  const lp = run.layout.piers[support];
+  if (!p || !lp) return { ...current, loads: "stm", link };
+  return {
+    ...current,
+    shape: p.columnShape,
+    T: p.columnSize,
+    W: p.columnShape === "round" ? p.columnSize : p.columnDepth,
+    height: Math.round(lp.columnHeight * 100) / 100,
+    ground: Math.min(current.ground, Math.max(0, lp.columnHeight - 1)),
+    capDepth: p.capDepth,
+    base: p.foundation === "drilled-shaft" ? "shaft" : "footing",
+    shaftD: p.foundation === "drilled-shaft" ? Math.max(current.shaftD, p.columnSize) : current.shaftD,
+    loads: "stm",
+    link,
+  };
+}
+
+/** The approach slab at an abutment: the deck's width and the roadway between the barriers, the abutment's skew. */
+export function approachSlabFromBridge(b: BridgeInputs, support: number, current: ApproachSlabInputs): ApproachSlabInputs {
+  const width = b.leftEdge + b.rightEdge;
+  return { ...current, W: width, roadway: width - 2 * b.barrierWidth, skew: Math.abs(b.supports[support].skew) };
+}
+
+/** A wingwall off an abutment: its height at the abutment face (the abutment's depth), the abutment's width square to it, the skew and the backfill. */
+export function wingwallFromBridge(b: BridgeInputs, support: number, abutment: AbutmentInputs, current: WingwallInputs): WingwallInputs {
+  const integral = abutment.type.startsWith("integral");
+  return {
+    ...current,
+    H: integral ? abutment.totalDepth : abutment.stemH + abutment.backwallH,
+    A: integral ? abutment.capWidth : abutment.stemT,
+    skew: Math.abs(b.supports[support].skew),
+    phi: abutment.backfillPhi,
+    gammaS: abutment.backfillGamma / 1000,
+  };
 }
 
 /** Load cases at a column's base for its foundation: each factored case's largest column (P, the moments and shears both ways). */

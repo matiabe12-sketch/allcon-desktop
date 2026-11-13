@@ -19,7 +19,26 @@ export type Support = {
   endDistance: number; // ft, the girder's end to its bearing's centerline, along the girder
   bearingOffset: number; // ft, the support's line to the bearings' centerline, normal to the support
   bearingHeight: number; // in, the bearing (or leveling pad) under the girder
+  /** A pier's physical description, as PGSuper's physical pier model: its cap, columns and the top of its foundation. */
+  pier?: PierShape;
 };
+
+export type PierShape = {
+  kind: "multicolumn" | "hammerhead";
+  capLength: number; // ft, along the support line
+  capDepth: number; // ft
+  capWidth: number; // in, along the bridge
+  columns: number;
+  columnSpacing: number; // ft
+  columnShape: "round" | "rectangular";
+  columnSize: number; // in (round: diameter; rectangular: across the bridge)
+  columnDepth: number; // in, a rectangular column along the bridge
+  foundationTop: number; // ft, the elevation of the footing's or shaft's top (0: 20 ft below the cap's soffit)
+  foundation: "spread-footing" | "pile-foundation" | "drilled-shaft";
+};
+
+/** A pier's description to start from: a three-column bent under the deck's width. */
+export const PIER_DEFAULTS: PierShape = { kind: "multicolumn", capLength: 46, capDepth: 4.5, capWidth: 48, columns: 3, columnSpacing: 18, columnShape: "round", columnSize: 42, columnDepth: 42, foundationTop: 0, foundation: "spread-footing" };
 
 export type BridgeInputs = {
   alignment: Alignment;
@@ -41,7 +60,7 @@ export type BridgeInputs = {
   fws: number; // psf
   // The linked designs (the Bridge sets their layout and loads)
   girderDesignIds: (string | null)[]; // one per group of spans (continuous across continuous piers)
-  components: { support: number; abutmentId?: string | null; capId?: string | null; columnId?: string | null; foundationId?: string | null; foundationKind?: "spread-footing" | "pile-foundation" | "drilled-shaft" | null }[];
+  components: { support: number; abutmentId?: string | null; approachSlabId?: string | null; wingwallId?: string | null; capId?: string | null; columnId?: string | null; foundationId?: string | null; foundationKind?: "spread-footing" | "pile-foundation" | "drilled-shaft" | null }[];
 };
 
 /** A two-span continuous BT-72 bridge, 120 ft spans, on a tangent with a sag vertical curve, integral abutments. */
@@ -51,7 +70,7 @@ export const BRIDGE_DEFAULTS: BridgeInputs = {
   roadway: { leftSlope: -0.02, rightSlope: -0.02, crownOffset: 0 },
   supports: [
     { name: "Abutment 1", station: 1030, skew: 0, type: "integral-abutment", endDistance: 1, bearingOffset: 1, bearingHeight: 1 },
-    { name: "Pier 2", station: 1152, skew: 0, type: "continuous-pier", endDistance: 0.75, bearingOffset: 1, bearingHeight: 2 },
+    { name: "Pier 2", station: 1152, skew: 0, type: "continuous-pier", endDistance: 0.75, bearingOffset: 1, bearingHeight: 2, pier: PIER_DEFAULTS },
     { name: "Abutment 3", station: 1274, skew: 0, type: "integral-abutment", endDistance: 1, bearingOffset: 1, bearingHeight: 1 },
   ],
   shape: GIRDER_DEFAULTS.shape,
@@ -140,10 +159,21 @@ export function bridgeLayout(b: BridgeInputs) {
     return { index: j, from: s0.name, to: s1.name, girders, L, skew: Math.max(Math.abs(s0.skew), Math.abs(s1.skew)) };
   });
   const width = b.leftEdge + b.rightEdge;
+  const piers = supports.map((sp, k) => {
+    if (!sp.pier) return null;
+    const seats = [...(k > 0 ? spans[k - 1].girders.map((g) => g.end.seat) : []), ...(k < spans.length ? spans[k].girders.map((g) => g.start.seat) : [])];
+    const capTop = Math.min(...seats);
+    const soffit = capTop - sp.pier.capDepth;
+    const foundationTop = sp.pier.foundationTop > 0 ? sp.pier.foundationTop : soffit - 20;
+    if (foundationTop >= soffit) throw new DesignError(`${sp.name}: the foundation's top is above the cap's soffit.`);
+    const xs = Array.from({ length: sp.pier.columns }, (_, c) => sp.pier!.capLength / 2 + (c - (sp.pier!.columns - 1) / 2) * sp.pier!.columnSpacing);
+    if (xs.some((x) => x <= 0 || x >= sp.pier!.capLength)) throw new DesignError(`${sp.name}: the columns don't fit under the cap.`);
+    return { capTop, soffit, foundationTop, columnHeight: soffit - foundationTop, columnsX: xs };
+  });
   const overhang = Math.min(b.leftEdge, b.rightEdge) - ((b.nGirders - 1) / 2) * b.spacing;
   if (overhang <= 0) throw new DesignError("The deck's edges are inside the exterior girders: widen the deck or narrow the spacing.");
   const length = supports[supports.length - 1].station - supports[0].station;
-  return { supports, spans, offsets, depth, width, overhang, length, shapeName: shape.name };
+  return { supports, spans, piers, offsets, depth, width, overhang, length, shapeName: shape.name };
 }
 
 export type BridgeLayout = ReturnType<typeof bridgeLayout>;

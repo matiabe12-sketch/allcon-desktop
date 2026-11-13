@@ -147,8 +147,8 @@ describe("the pier's load path: Bridge → cap → column → footing", () => {
     const { capFromBridge, footingFromColumn } = await import("./loadpath");
     const r = runBridge(BRIDGE_DEFAULTS);
     const cap = capFromBridge(BRIDGE_DEFAULTS, r, 1, buildTemplate(MULTICOLUMN_DEFAULTS, stmInputs({})), ["g"], ["Girders"]);
-    // Six girders at 8 ft about the cap's middle (28 ft): bearings at 8 … 48 ft, each on a load node.
-    expect(cap.template!.bearings.map((b) => b.x)).toEqual([8, 16, 24, 32, 40, 48]);
+    // The Bridge's pier sets the cap (46 ft): six girders at 8 ft about its middle, 3 … 43 ft, each on a load node.
+    expect(cap.template!.bearings.map((b) => b.x)).toEqual([3, 11, 19, 27, 35, 43]);
     expect(cap.girders!.loadNodes.length).toBe(6);
     expect(cap.girders!.back!.n).toBe(6);
     const link = columnLinkFrom("cap", "Cap", cap, new Map([["g", r.groups[0].inputs]]));
@@ -158,5 +158,54 @@ describe("the pier's load path: Bridge → cap → column → footing", () => {
     expect(f.cases.length).toBe(new Set(col.rows.filter((x) => x.where === "base").map((x) => x.case)).size);
     expect(Math.max(...f.cases.map((c) => c.P))).toBeGreaterThan(r.reactions[1].DC);
     expect(runFoundation("spread-footing", f).checks.length).toBeGreaterThan(0);
+  });
+});
+
+describe("the pier from the Bridge (PGSuper's physical pier)", () => {
+  it("the cap built from the pier's description, the column's height from the elevations, a Service I case down to the footing", async () => {
+    const { stmInputs } = await import("../stm/strut-tie");
+    const { columnInputs, designColumn } = await import("../piers/column");
+    const { columnLinkFrom } = await import("../piers/column-link");
+    const { footingInputs } = await import("../foundations/kinds");
+    const { runFoundation } = await import("../foundations/run");
+    const { capFromBridge, columnFromBridge, footingFromColumn } = await import("./loadpath");
+    const r = runBridge(BRIDGE_DEFAULTS);
+    const lp = r.layout.piers[1]!;
+    expect(lp.columnsX).toEqual([5, 23, 41]);
+    close(lp.soffit, lp.capTop - 4.5);
+    close(lp.columnHeight, 20);
+    // From nothing: the cap is made from the pier's description.
+    const cap = capFromBridge(BRIDGE_DEFAULTS, r, 1, stmInputs({}), ["g"], ["Girders"]);
+    expect(cap.template!.kind).toBe("multicolumn");
+    expect(cap.template!.columns).toEqual([5, 23, 41]);
+    expect(cap.template!.length).toBe(46);
+    expect(cap.girders!.loadNodes.length).toBe(6);
+    const link = columnLinkFrom("cap", "Cap", cap, new Map([["g", r.groups[0].inputs]]));
+    expect(link.cases.some((c) => c.name.startsWith("Service I"))).toBe(true);
+    const col = columnFromBridge(BRIDGE_DEFAULTS, r, 1, columnInputs({}), link);
+    expect(col.height).toBe(20);
+    expect(col.T).toBe(42);
+    expect(col.loads).toBe("stm");
+    const res = designColumn(col);
+    // The Service row is reported but not held to the strength checks.
+    expect(res.rows.some((x) => x.limit === "Service I")).toBe(true);
+    expect(res.checks.some((c) => c.id.includes("Service"))).toBe(false);
+    const f = footingFromColumn(res, footingInputs({}));
+    expect(f.cases.some((c) => c.limit === "service")).toBe(true);
+    const fr = runFoundation("spread-footing", f);
+    expect(fr.checks.some((c) => c.id === "settlement")).toBe(true);
+  });
+  it("the approach slab and wingwall from the abutment", async () => {
+    const { approachSlabFromBridge, wingwallFromBridge } = await import("./loadpath");
+    const { approachSlabInputs, wingwallInputs } = await import("../kinds");
+    const b = { ...BRIDGE_DEFAULTS, supports: BRIDGE_DEFAULTS.supports.map((s, k) => (k === 0 ? { ...s, skew: 15 } : s)) };
+    const s = approachSlabFromBridge(b, 0, approachSlabInputs({}));
+    expect(s.W).toBe(47);
+    expect(s.roadway).toBe(44);
+    expect(s.skew).toBe(15);
+    const w = wingwallFromBridge(b, 0, abutmentInputs({}), wingwallInputs({}));
+    expect(w.H).toBe(10);
+    expect(w.A).toBe(3);
+    expect(w.skew).toBe(15);
   });
 });

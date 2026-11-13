@@ -104,10 +104,19 @@ export async function workerCreate(
   return { handles: body.handles, summary: body.summary!, size: body.size ?? null };
 }
 
-/** Writes a Bridge's IFC 4.3 model (src/lib/design/bridge/ifc.ts's description) at `fileKey`. */
-export async function workerBridge(fileKey: string, params: object) {
-  const body = await call("bridge", params, { write: fileKey });
+/** Writes a Bridge design's IFC 4.3 model (src/lib/design/bridge/ifc.ts's description) at `fileKey` (desktop; action "bridge_model"). */
+export async function workerBridgeModel(fileKey: string, params: object) {
+  const body = await call("bridge_model", params, { write: fileKey });
   return { handles: body.handles, summary: body.summary!, size: body.size ?? null };
+}
+
+/** A bridge element for the IFC engine: a section extruded from a to b, or a plan outline between two levels (feet). */
+export type BridgeIfcElement = { kind: string; name: string; material?: string; properties?: Record<string, string | number | boolean> } & ({ a: number[]; b: number[]; outline?: [number, number][]; radius?: number } | { plan: [number, number][]; z0: number; z1: number });
+
+/** Writes a bridge (the Bridge section's model as solids) as an IFC 4.3 model at `fileKey`. */
+export async function workerBridge(fileKey: string, params: { name: string; elements: BridgeIfcElement[]; location?: { lat: number; lon: number; heading: number } }) {
+  const body = await call("bridge", params, { write: fileKey });
+  return { summary: body.summary!, size: body.size ?? null };
 }
 
 /** Applies operations to the file at `from`, writing the result to `to` (all or nothing). */

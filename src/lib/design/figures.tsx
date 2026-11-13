@@ -13,6 +13,8 @@ import { StmSketch } from "@/components/design/stm-sketch";
 import { CapDetailSketch } from "@/components/design/cap-detail-sketch";
 import { DetailSketch } from "@/components/design/detail-sketch";
 import type { Takeoff } from "./takeoff/types";
+import { ApproachSlabSketch } from "@/components/design/approach-slab-sketch";
+import { designApproachSlab, type ApproachSlabInputs } from "./approach/approach-slab";
 import { StripSealSketch } from "@/components/design/strip-seal-sketch";
 import { CbcSketch, CipSketch, MseSketch, UStairSketch } from "@/components/design/wall-sketch";
 import { WingwallSketch } from "@/components/design/wingwall-sketch";
@@ -135,6 +137,8 @@ export function dtFigures(i: DtInputs) {
   }
   return { section: figure(<DtSectionSketch inputs={i} layout={r.geo} cg={r.solve.cg} />), summary: figure(<RatingSummaryTable r={r} title={title} />), ...(comparison ? { comparison } : {}) };
 }
+
+export const approachSlabFigures = (i: ApproachSlabInputs) => ({ section: figure(<ApproachSlabSketch inputs={i} result={designApproachSlab(i)} />) });
 
 export const stripSealFigures = (i: StripSealInputs) => ({ section: figure(<StripSealSketch inputs={i} result={designStripSeal(i)} />) });
 

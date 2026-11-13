@@ -21,6 +21,7 @@ function cleanExtension(v: unknown): CbcInputs["extension"] {
     .map((p, k) => ({ name: typeof p.name === "string" ? p.name.slice(0, 20) : `Piece ${k + 1}`, length: n(p.length, 0) }));
   return { pieces, bar: Math.round(n(o.bar, 5)), length: n(o.length, 36), spacing: n(o.spacing, 12) || 12, removalBackfill: n(o.removalBackfill, 0), waterproofJoints: o.waterproofJoints === true };
 }
+import { APPROACH_SLAB_DEFAULTS, type ApproachSlabInputs } from "./approach/approach-slab";
 import { DECK_DEFAULTS, RAIL_DEFAULT, type DeckInputs } from "./decks/deck";
 import { STRIP_SEAL_DEFAULTS, type StripSealInputs } from "./joints/strip-seal";
 import { HAUNCH_DEFAULTS, type HaunchInputs } from "./girders/haunch";
@@ -41,7 +42,7 @@ import { WINGWALL_DEFAULTS, type WingwallInputs } from "./walls/wingwall";
 // The Design section's categories and design types: highway structures to AASHTO LRFD, grouped
 // by element. What can be designed, and what's coming next.
 
-export type DesignKind = "lrfd-girder-check" | "dt-load-rating" | "stm-d-region" | "cip-cantilever-wall" | "mse-wall" | "cantilever-wingwall" | "box-culvert" | "deck-slab" | "seismic-zone1" | "pier-column" | "camber-haunch" | "sign-cantilever" | "elastomeric-bearing" | "ptfe-bearing" | "strip-seal-joint";
+export type DesignKind = "lrfd-girder-check" | "dt-load-rating" | "stm-d-region" | "cip-cantilever-wall" | "mse-wall" | "cantilever-wingwall" | "box-culvert" | "deck-slab" | "seismic-zone1" | "pier-column" | "camber-haunch" | "sign-cantilever" | "elastomeric-bearing" | "ptfe-bearing" | "strip-seal-joint" | "approach-slab";
 
 export const CATEGORIES: { id: string; name: string; kinds: { id: DesignKind; name: string; short: string; description: string; available: boolean }[] }[] = [
   {
@@ -81,6 +82,7 @@ export const CATEGORIES: { id: string; name: string; kinds: { id: DesignKind; na
     name: "Bridge Components",
     kinds: [
       { id: "deck-slab", name: "Deck Slab", short: "Equivalent strips: bars and overhang", description: "Cast-in-place deck on parallel girders by the equivalent strip method: the strip analyzed as a continuous beam under dead loads and the design truck's axles, the top, bottom and longitudinal bars, and the overhang for vehicle collision. AASHTO LRFD 4.6.2.1, 9.7.3 and A13.4.", available: true },
+      { id: "approach-slab", name: "Approach Slab", short: "On the abutment notch and a sleeper slab: bars and quantities", description: "A cast-in-place bridge approach slab anchored to the abutment and resting on a sleeper slab, designed as CDOT does for the span over which the fill may settle away (50% of its length, BDM 11.3.7): the axles over the equivalent strip of a slab-type bridge, the main bars (flexure, minimum, crack control, fatigue), shear, distribution and temperature bars, the dowels into the abutment, the sleeper slab's bearing and bars, and a barrier on its edge; with its bars detailed and its CDOT quantities. AASHTO LRFD 3.6.1.3.3, 4.6.2.3, 5.5.3, 5.6, 5.10.6 and 9.7.3.2.", available: true },
       { id: "camber-haunch", name: "Camber and Haunch", short: "Haunch at supports and midspan, camber tolerances", description: "A girder span's haunch (or adjacent box beams' deck thickness) at the supports and midspan, from the deck's profile over the girder (vertical curve, chorded girders on a horizontal curve, cross-slope) and the girder's camber and dead load deflection, with over- and under-camber tolerances.", available: true },
       { id: "elastomeric-bearing", name: "Elastomeric Bearing", short: "Plain or steel-reinforced pads", description: "Elastomeric bearing pads, plain or steel-reinforced, by Method A or B: compression, shear strains, deflection, stability, shims and anchorage. AASHTO LRFD 14.7.5 and 14.7.6.", available: true },
       { id: "ptfe-bearing", name: "PTFE Sliding Bearing", short: "Sliding surface on an elastomeric pad", description: "A steel-reinforced elastomeric pad with a PTFE sliding surface: contact stresses (average and edge), the pad's deformation to the first slip and the sliding beyond, with the pad's own checks. AASHTO LRFD 14.7.2 and 14.7.5.", available: true },
@@ -167,6 +169,13 @@ export function bearingInputs(saved: unknown): BearingInputs {
 export function ptfeInputs(saved: unknown): BearingInputs {
   const s = (saved && typeof saved === "object" ? saved : {}) as Partial<BearingInputs>;
   return { ...PTFE_DEFAULTS, ...s, sliding: true };
+}
+
+/** An approach slab's inputs as saved, filled in from the defaults. */
+export function approachSlabInputs(saved: unknown): ApproachSlabInputs {
+  const s = (saved && typeof saved === "object" ? saved : {}) as Partial<ApproachSlabInputs>;
+  const joint = s.joint === "strip-seal" || s.joint === "silicone" ? s.joint : "none";
+  return { ...APPROACH_SLAB_DEFAULTS, ...s, joint, sleeper: s.sleeper !== false, barrier: s.barrier === true };
 }
 
 /** A strip seal joint's inputs as saved, filled in from the defaults. */
@@ -293,5 +302,5 @@ function parseInputs(kind: string, saved: unknown) {
   if (kind === "dt-load-rating") return dtRatingInputs(saved);
   if (kind === "stm-d-region") return stmInputs(saved);
   if (kind === "pier-column") return columnInputs(saved);
-  return kind === "mse-wall" ? mseInputs(saved) : kind === "box-culvert" ? cbcInputs(saved) : kind === "elastomeric-bearing" ? bearingInputs(saved) : kind === "cantilever-wingwall" ? wingwallInputs(saved) : kind === "deck-slab" ? deckInputs(saved) : kind === "seismic-zone1" ? zone1Inputs(saved) : kind === "camber-haunch" ? haunchInputs(saved) : kind === "sign-cantilever" ? signInputs(saved) : kind === "ptfe-bearing" ? ptfeInputs(saved) : kind === "strip-seal-joint" ? stripSealInputs(saved) : cipInputs(saved);
+  return kind === "mse-wall" ? mseInputs(saved) : kind === "box-culvert" ? cbcInputs(saved) : kind === "elastomeric-bearing" ? bearingInputs(saved) : kind === "cantilever-wingwall" ? wingwallInputs(saved) : kind === "deck-slab" ? deckInputs(saved) : kind === "seismic-zone1" ? zone1Inputs(saved) : kind === "camber-haunch" ? haunchInputs(saved) : kind === "sign-cantilever" ? signInputs(saved) : kind === "ptfe-bearing" ? ptfeInputs(saved) : kind === "strip-seal-joint" ? stripSealInputs(saved) : kind === "approach-slab" ? approachSlabInputs(saved) : cipInputs(saved);
 }

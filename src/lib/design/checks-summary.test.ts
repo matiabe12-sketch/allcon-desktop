@@ -7,6 +7,7 @@ import { bearingCalcLines } from "./bearings/elastomeric-calc";
 import { signCalcLines } from "./signs/cantilever-calc";
 import { zone1CalcLines } from "./seismic/zone1-calc";
 import { columnCalcLines } from "./piers/column-calc";
+import { approachSlabCalcLines } from "./approach/approach-slab-calc";
 import { stripSealCalcLines } from "./joints/strip-seal-calc";
 import { mseCalcLines } from "./walls/mse-calc";
 import { haunchCalcLines } from "./girders/haunch-calc";
@@ -15,7 +16,7 @@ import { cipAsdCalcLines } from "./walls/cip-asd-calc";
 import { cipAsdUCalcLines } from "./walls/cip-asd-u-calc";
 import { wingwallCalcLines } from "./walls/wingwall-calc";
 import { girderCalcLines } from "./girders/prestressed-calc";
-import { bearingInputs, cbcInputs, cipInputs, deckInputs, girderInputs, haunchInputs, mseInputs, signInputs, stripSealInputs, wingwallInputs, zone1Inputs } from "./kinds";
+import { approachSlabInputs, bearingInputs, cbcInputs, cipInputs, deckInputs, girderInputs, haunchInputs, mseInputs, signInputs, stripSealInputs, wingwallInputs, zone1Inputs } from "./kinds";
 import { columnInputs } from "./piers/column";
 
 // The summary of the checks at the end of every calc package: a table with its columns described.
@@ -42,6 +43,7 @@ describe("summary of the checks", () => {
     ["Seismic Zone 1", () => zone1CalcLines(zone1Inputs({}), "T")],
     ["Pier column", () => columnCalcLines(columnInputs({}), "T")],
     ["Strip seal", () => stripSealCalcLines(stripSealInputs({}), "T")],
+    ["Approach slab", () => approachSlabCalcLines(approachSlabInputs({}), "T")],
     ["MSE wall", () => mseCalcLines(mseInputs({}), "T")],
     ["Camber and haunch", () => haunchCalcLines(haunchInputs({}), "T")],
     ["CIP wall", () => cipCalcLines(cipInputs({}), "T")],

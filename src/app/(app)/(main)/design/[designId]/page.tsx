@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { ApproachSlabEditor } from "@/components/design/approach-slab-editor";
 import { BearingEditor } from "@/components/design/bearing-editor";
 import { CbcEditor } from "@/components/design/cbc-editor";
 import { CipEditor } from "@/components/design/cip-editor";
@@ -18,7 +19,7 @@ import { Zone1Editor } from "@/components/design/zone1-editor";
 import { PageBody } from "@/components/shell/page-header";
 import { isUuid, requireUser } from "@/lib/auth/session";
 import { DtRatingEditor } from "@/components/design/dt-rating-editor";
-import { bearingInputs, cbcInputs, cipInputs, deckInputs, dtRatingInputs, girderInputs, haunchInputs, mseInputs, ptfeInputs, signInputs, stripSealInputs, wingwallInputs, zone1Inputs } from "@/lib/design/kinds";
+import { approachSlabInputs, bearingInputs, cbcInputs, cipInputs, deckInputs, dtRatingInputs, girderInputs, haunchInputs, mseInputs, ptfeInputs, signInputs, stripSealInputs, wingwallInputs, zone1Inputs } from "@/lib/design/kinds";
 import { db } from "@/lib/db";
 
 export async function generateMetadata({ params }: PageProps<"/design/[designId]">): Promise<Metadata> {
@@ -106,6 +107,12 @@ export default async function DesignEditorPage({ params }: PageProps<"/design/[d
     return (
       <PageBody>
         <WingwallEditor design={{ ...base, inputs: wingwallInputs(design.inputs) }} projects={projects} />
+      </PageBody>
+    );
+  if (design.kind === "approach-slab")
+    return (
+      <PageBody>
+        <ApproachSlabEditor design={{ ...base, inputs: approachSlabInputs(design.inputs) }} projects={projects} />
       </PageBody>
     );
   if (design.kind === "strip-seal-joint")

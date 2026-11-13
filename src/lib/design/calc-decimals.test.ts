@@ -7,8 +7,9 @@ import { deckCalcLines } from "./decks/deck-calc";
 import { cell, MAX_DECIMALS, num } from "./calc-style";
 import { haunchCalcLines } from "./girders/haunch-calc";
 import { girderCalcLines } from "./girders/prestressed-calc";
+import { approachSlabCalcLines } from "./approach/approach-slab-calc";
 import { stripSealCalcLines } from "./joints/strip-seal-calc";
-import { bearingInputs, cbcInputs, cipInputs, deckInputs, dtRatingInputs, girderInputs, haunchInputs, mseInputs, ptfeInputs, signInputs, stripSealInputs, wingwallInputs, zone1Inputs } from "./kinds";
+import { approachSlabInputs, bearingInputs, cbcInputs, cipInputs, deckInputs, dtRatingInputs, girderInputs, haunchInputs, mseInputs, ptfeInputs, signInputs, stripSealInputs, wingwallInputs, zone1Inputs } from "./kinds";
 import { columnCalcLines } from "./piers/column-calc";
 import { columnInputs } from "./piers/column";
 import { TELLRD } from "./rating/benchmarks";
@@ -46,6 +47,8 @@ const PACKAGES: [string, () => Line[]][] = [
   ["Elastomeric bearing", () => bearingCalcLines(bearingInputs({}), "Test")],
   ["PTFE bearing", () => bearingCalcLines(ptfeInputs({}), "Test")],
   ["Strip seal joint", () => stripSealCalcLines(stripSealInputs({}), "Test")],
+  ["Approach slab", () => approachSlabCalcLines(approachSlabInputs({}), "Test")],
+  ["Approach slab, skewed with an overlay, a 30 ft span and a barrier", () => approachSlabCalcLines(approachSlabInputs({ L: 30, supportLoss: 1, skew: 25, wearing: 3, barrier: true }), "Test")],
   ["Double-tee load rating", () => dtRatingCalcLines({ ...dtRatingInputs({}), ...TELLRD }, "Test")],
   [
     "Box culvert, corner bars and M-601-20 wingwalls (25250)",

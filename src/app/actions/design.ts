@@ -14,17 +14,18 @@ import { deckCalcLines } from "@/lib/design/decks/deck-calc";
 import { haunchCalcLines } from "@/lib/design/girders/haunch-calc";
 import { toConfirm } from "@/lib/design/girders/from-plans";
 import { girderCalcLines } from "@/lib/design/girders/prestressed-calc";
+import { approachSlabCalcLines } from "@/lib/design/approach/approach-slab-calc";
 import { stripSealCalcLines } from "@/lib/design/joints/strip-seal-calc";
 import { dtRatingCalcLines } from "@/lib/design/rating/double-tee-calc";
 import { missingInputs } from "@/lib/design/rating/sources";
-import { bearingInputs, cbcInputs, cipInputs, deckInputs, designInputs, dtRatingInputs, girderInputs, haunchInputs, kindInfo, mseInputs, ptfeInputs, signInputs, stripSealInputs, wingwallInputs, zone1Inputs } from "@/lib/design/kinds";
+import { approachSlabInputs, bearingInputs, cbcInputs, cipInputs, deckInputs, designInputs, dtRatingInputs, girderInputs, haunchInputs, kindInfo, mseInputs, ptfeInputs, signInputs, stripSealInputs, wingwallInputs, zone1Inputs } from "@/lib/design/kinds";
 import { signCalcLines } from "@/lib/design/signs/cantilever-calc";
 import { columnInputs, type ColumnLink } from "@/lib/design/piers/column";
 import { columnCalcLines } from "@/lib/design/piers/column-calc";
 import { columnLinkFrom } from "@/lib/design/piers/column-link";
 import { zone1CalcLines } from "@/lib/design/seismic/zone1-calc";
 import { cbcCalcLines } from "@/lib/design/culverts/cbc-calc";
-import { bearingFigures, capDetailFigures, takeoffFigures, cbcFigures, cipFigures, uStairFigures, columnFigures, deckFigures, dtFigures, girderFigures, haunchFigures, mseFigures, signFigures, stmFigures, stripSealFigures, wingwallFigures } from "@/lib/design/figures";
+import { approachSlabFigures, bearingFigures, capDetailFigures, takeoffFigures, cbcFigures, cipFigures, uStairFigures, columnFigures, deckFigures, dtFigures, girderFigures, haunchFigures, mseFigures, signFigures, stmFigures, stripSealFigures, wingwallFigures } from "@/lib/design/figures";
 import { girderSide, type GirderSide } from "@/lib/design/stm/cap-loads";
 import { nodeLpSolver } from "@/lib/design/stm/lp-node";
 import { designStm, stmInputs, type StmInputs } from "@/lib/design/stm/strut-tie";
@@ -308,7 +309,9 @@ export async function createCalcFromDesign(designId: string, variant?: "asd" | "
                         ? signCalcLines(signInputs(design.inputs), design.name, figures(() => signFigures(signInputs(design.inputs))))
                         : design.kind === "ptfe-bearing"
                           ? bearingCalcLines(ptfeInputs(design.inputs), design.name, figures(() => bearingFigures(ptfeInputs(design.inputs))))
-                          : design.kind === "strip-seal-joint"
+                          : design.kind === "approach-slab"
+                            ? approachSlabCalcLines(approachSlabInputs(design.inputs), design.name, figures(() => approachSlabFigures(approachSlabInputs(design.inputs))))
+                            : design.kind === "strip-seal-joint"
                             ? stripSealCalcLines(stripSealInputs(design.inputs), design.name, figures(() => stripSealFigures(stripSealInputs(design.inputs))))
                             : null);
   if (!lines) throw new Error("Calc packages for this design type are coming");

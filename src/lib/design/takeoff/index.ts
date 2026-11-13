@@ -7,6 +7,8 @@ import type { GirderInputs } from "../girders/prestressed";
 import type { ColumnInputs } from "../piers/column";
 import { columnTakeoff as pierColumnTakeoff } from "../piers/column-detail";
 import type { SignInputs } from "../signs/cantilever";
+import type { ApproachSlabInputs } from "../approach/approach-slab";
+import { approachSlabTakeoff } from "../approach/approach-slab-detail";
 import type { StripSealInputs } from "../joints/strip-seal";
 import type { CipInputs } from "../walls/cip";
 import type { MseInputs } from "../walls/mse";
@@ -39,6 +41,8 @@ export function takeoffFor(kind: string, inputs: unknown, s?: TakeoffSettings): 
     case "elastomeric-bearing":
     case "ptfe-bearing":
       return bearingTakeoff(Math.max(1, Math.round(L ?? 1)));
+    case "approach-slab":
+      return approachSlabTakeoff(inputs as ApproachSlabInputs, L ?? 2);
     case "strip-seal-joint":
       return jointTakeoff(inputs as StripSealInputs, L ?? 40);
     default:

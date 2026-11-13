@@ -118,8 +118,9 @@ describe("CDOT criteria", () => {
       expect(Math.abs(loadBot / pg.bot - 1)).toBeLessThan(side === "exterior" ? 0.005 : 0.02);
       expect(Math.abs(m.Mu / pg.Mu - 1)).toBeLessThan(0.02);
       expect(m.strengthIIGoverns).toBe(true);
-      // PGSuper: exterior Service III tension at its limit (rating factor 1.00).
-      if (pg.svc3) expect(Math.max(0, -m.service.botIII)).toBeCloseTo(pg.svc3, 2);
+      // PGSuper: exterior Service III tension at its limit (rating factor 1.00). PGSuper takes Ec at 155 pcf;
+      // under CDOT's criteria allcon takes it at Table 3.5.1-1's 149 pcf (BDM 5.3.2): about 1% apart.
+      if (pg.svc3) expect(Math.abs(Math.max(0, -m.service.botIII) / pg.svc3 - 1)).toBeLessThan(0.015);
     }
   });
 });

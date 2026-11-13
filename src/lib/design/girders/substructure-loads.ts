@@ -36,7 +36,7 @@ export function superstructureWind(design: GirderInputs, site: SiteWind) {
   const i = spanInputs(design, 0);
   const shape = girderShape(i);
   const h = profileProps(shape.profile).h / 12; // girder depth, ft
-  const deckTop = h + i.haunch / 12 + i.deckT / 12; // ft above the bearings (the girders' bottom)
+  const deckTop = h + (i.haunchSupport ?? i.haunch) / 12 + i.deckT / 12; // ft above the bearings (the girders' bottom)
   const depth = deckTop + site.barrierHeight; // girders, haunch, deck and barrier, as seen in elevation (3.8.1.2.3a)
   const by = (c: "Strength III" | "Strength V" | "Service I") => {
     const p = windPressure(c, site);

@@ -224,7 +224,10 @@ export function girderInputsFor(b: BridgeInputs, lay: BridgeLayout, group: numbe
     skew: Math.max(...spans.map((s) => s.skew)),
     deckT: b.deckT,
     sacrificial: b.sacrificial,
+    // The slab offset sets the haunch at the bearings; the girder works out its dead load haunch (BDM 5.5.2.1 G).
     haunch: Math.max(0, b.slabOffset - b.deckT),
+    haunchMode: "supports",
+    haunchSupport: Math.max(0, b.slabOffset - b.deckT),
     crossSlope,
     crown: { kind: "crown", offset: b.roadway.crownOffset - b.bridgeLineOffset },
     profileOrdinate: ordinates[0],

@@ -49,8 +49,13 @@ export type GirderInputs = {
   sacrificial: number; // in, wearing surface cast with the deck (left out of the section)
   haunch: number; // in, at the girder's centerline (a load; in the section only if chosen)
   haunchInSection: boolean;
-  /** The haunch as given, or worked out by CDOT BDM 5.5.2.1 from the camber (then `haunch` is a first guess). */
-  haunchMode?: "given" | "computed";
+  /**
+   * The haunch as given; worked out by CDOT BDM 5.5.2.1 from the camber (then `haunch` is a first guess);
+   * or "supports": `haunchSupport` is the haunch at the bearings and the dead load takes the weighted haunch
+   * of Eq. 5.1 with the predicted camber (`haunch` then a first guess).
+   */
+  haunchMode?: "given" | "computed" | "supports";
+  haunchSupport?: number; // in, at the bearings ("supports" mode)
   deckPanels?: boolean; // partial-depth precast deck panels permitted (CDOT's minimum haunches)
   crossSlope?: number; // ft/ft, the deck's cross-slope over a level top flange (default 0.02)
   /** The roadway's crown: at an offset (ft) from the deck's centerline (+ toward the right), or a one-way slope down to the right. */
@@ -2014,6 +2019,13 @@ export function haunchDesign(i: GirderInputs, shape: GirderShape, c: { cDeck: nu
   const profile = i.profileOrdinate ?? 0;
   const net = c.cDeck + c.dTotal; // the camber left under all the dead load (dTotal is negative)
   const base = { mode: i.haunchMode ?? "given", panels, minSupport, minBetween, tolerance, cross, profile, net };
+  if (i.haunchMode === "supports") {
+    // The haunch at the bearings is set; at midspan it's what the predicted camber leaves (F: plus the
+    // profile above the chord), and the dead load takes Eq. 5.1 with it, as the plans' deflection does (G).
+    const D1 = i.haunchSupport ?? i.haunch;
+    const D2 = D1 - net + profile;
+    return { ...base, D1, D2, D2over: D2 - tolerance, D2under: D2 + tolerance, design: (2 * D1 + 10 * Math.max(0, D2)) / 12 };
+  }
   if (i.haunchMode !== "computed") return { ...base, D1: undefined, D2: undefined, D2over: undefined, D2under: undefined, design: i.haunch };
   const need = Math.max(minSupport + cross, minBetween + cross + tolerance + net - profile);
   const D1 = Math.ceil(need * 4 - 1e-9) / 4;
@@ -2216,9 +2228,19 @@ export function governingRatio(checks: Check[], choosingGirder: boolean) {
 }
 
 /** The design check: both girders, the controlling one first in the summary. */
-/** The inputs as the criteria take them: under CDOT's, the relative humidity for creep and shrinkage is 55 % (BDM 5.3.3). */
+/** Unreinforced normal-weight concrete's unit weight by its strength (kcf), AASHTO Table 3.5.1-1. */
+export const plainUnitWeight = (fc: number) => (fc <= 5 ? 0.145 : Math.round(140 + Math.min(fc, 15)) / 1000); // to the pcf
+
+/**
+ * The inputs as the criteria take them. Under CDOT's: the relative humidity for creep and shrinkage is
+ * 55 % (BDM 5.3.3); Ec takes the unreinforced unit weight of AASHTO Table 3.5.1-1 (BDM 5.3.2); the weights
+ * add the reinforcement, at least 155 pcf for a precast girder and 150 pcf for the deck (BDM 3.4.4.1).
+ */
 export function criteriaInputs(i: GirderInputs): GirderInputs {
-  return i.criteria === "cdot" && i.humidity !== 55 ? { ...i, humidity: 55 } : i;
+  if (i.criteria !== "cdot") return i;
+  const wc = plainUnitWeight(i.fc);
+  const wcDeck = plainUnitWeight(i.fcDeck);
+  return { ...i, humidity: 55, wc, wcLoad: Math.max(i.wcLoad ?? 0, 0.155, wc + 0.005), wcDeck, wcDeckLoad: Math.max(i.wcDeckLoad ?? 0, wcDeck + 0.005) };
 }
 
 export function designGirder(entered: GirderInputs) {
@@ -2235,7 +2257,7 @@ export function designGirder(entered: GirderInputs) {
   // haunch's own weight: repeated until it settles (to 0.005 in).
   const solve = (si: GirderInputs, ext: boolean, ctx?: SpanContext) => {
     let r = designGirderLine(si, ext, ctx);
-    if (si.haunchMode !== "computed") return r;
+    if (si.haunchMode !== "computed" && si.haunchMode !== "supports") return r;
     let h = si.haunch;
     for (let k = 0; k < 10 && Math.abs(r.haunch.design - h) >= 0.005; k++) {
       h = r.haunch.design;

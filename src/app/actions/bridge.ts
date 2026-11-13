@@ -21,7 +21,7 @@ import { columnLinkFrom } from "@/lib/design/piers/column-link";
 import { designStm, stmInputs } from "@/lib/design/stm/strut-tie";
 import { db } from "@/lib/db";
 import { bridgeIfc, type BridgeComponents } from "@/lib/design/bridge/ifc";
-import { attachRebar, rebarSources, type RebarDesigns } from "@/lib/design/bridge/ifc-rebar";
+import { attachRebar, rebarOnSpecs, rebarSources, sectionRebarSources, type RebarDesigns } from "@/lib/design/bridge/ifc-rebar";
 import { newModelFileKey, workerBridge, workerBridgeModel, WorkerError, type WorkerSummary } from "@/lib/ifc/worker";
 import { gzipSync } from "node:zlib";
 import { redirect } from "next/navigation";
@@ -459,6 +459,16 @@ export async function exportBridgeIfc(bridgeId: string): Promise<{ modelId: stri
   if (!project) throw new Error("Project not found");
   const definition = bridgeDefinition(bridge.definition);
   const elements = ifcElements(definition, analyzeBridge(definition).generated);
+  // The linked designs' bars (the deck's and each pier's columns') in the elements they detail.
+  const linked = async (target: string, kind: string) => {
+    const link = definition.designs.find((x) => x.target === target && x.kind === kind);
+    return link && isUuid(link.id) ? db.design.findFirst({ where: { id: link.id, orgId: user.orgId, kind }, select: { id: true, inputs: true } }) : null;
+  };
+  const deckDesign = await linked("deck", "deck-slab");
+  const columnDesigns = (
+    await Promise.all(definition.designs.filter((x) => /^column-\d+$/.test(x.target)).map(async (x) => ({ pier: Number(x.target.slice(7)), d: await linked(x.target, "pier-column") })))
+  ).flatMap(({ pier, d }) => (d ? [{ pier, id: d.id, inputs: columnInputs(d.inputs) }] : []));
+  rebarOnSpecs(elements, sectionRebarSources({ deck: deckDesign ? { id: deckDesign.id, inputs: deckInputs(deckDesign.inputs) } : null, columns: columnDesigns }));
   const existing = definition.ifcModelId ? await db.ifcModel.findFirst({ where: { id: definition.ifcModelId, projectId: project.id } }) : null;
   const id = existing?.id ?? crypto.randomUUID();
   const fileKey = newModelFileKey(id);

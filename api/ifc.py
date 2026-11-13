@@ -783,6 +783,11 @@ def bridge(params):
     model, handles = create({**params, "schema": "IFC4X3", "units": "ft", "facility": "bridge", "levels": []})
     api = ifcopenshell.api
     body = model.by_id(handles["body_context"])
+    # Weights (the bars') in kg, beside create()'s ft, m² and m³.
+    assignment = model.by_type("IfcUnitAssignment")[0]
+    assignment.Units = list(assignment.Units) + [api.unit.add_si_unit(model, unit_type="MASSUNIT", prefix="KILO")]
+    bm = bridge_module()
+    rebar = bm.RebarWriter(model, body, model.by_type("IfcProject")[0])
     facility = model.by_id(handles["facility"])
     materials = {}
     origin = model.createIfcAxis2Placement3D(model.createIfcCartesianPoint((0.0, 0.0, 0.0)), None, None)
@@ -837,7 +842,21 @@ def bridge(params):
         if properties:
             pset = api.pset.add_pset(model, product=element, name="Pset_Conkit")
             api.pset.edit_pset(model, pset=pset, properties=properties)
+        # Its base quantities from its geometry, and its bars (ifc-rebar.ts rebarOnSpecs), as the Bridge design's model has them.
+        described = {
+            "cls": ifc_class,
+            "profile": {"kind": "circle", "r": float(spec["radius"])} if spec.get("radius") else {"kind": "poly", "pts": [list(p) for p in points]},
+            "depth": depth,
+            "material": name or "",
+        }
+        if "plan" in spec:
+            described["length"] = max(math.dist(points[i], points[(i + 1) % len(points)]) for i in range(len(points)))
+        for qto in bm.element_quantities(described):
+            bm._add_qto(model, element, qto[0], qto[1])
+        if spec.get("rebar"):
+            rebar.write(element, spec["rebar"])
         made.append(element.id())
+    rebar.finish()
     return model, {**handles, "elements": len(made)}
 
 

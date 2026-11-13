@@ -1,11 +1,12 @@
 """
 Checks the Bridge IFC writer's bars and quantities (src/lib/design/bridge/ifc-rebar.test.ts runs it).
 
-    python -I scripts/ifc-rebar-check.py <api dir> <bridge description .json> <out .ifc>
+    python -I scripts/ifc-rebar-check.py <api dir> <bridge description .json> <out .ifc> [section]
 
 Writes the description with api/_bridge.py (IFC 4.3), then the same bar-carrying elements into an IFC4
 file with the same writer; reads each back with IfcOpenShell, checks it against its schema, tessellates
-some bars, and prints one JSON line of counts per schema.
+some bars, and prints one JSON line of counts per schema. With "section", the description is the
+Bridge section's export (src/lib/bridge/solids.ts) and api/ifc.py's "bridge" action writes it.
 """
 
 import json
@@ -102,12 +103,21 @@ def check(f):
         "hostsWithoutReinforcementQto": sum(1 for h in hosts if "ALLCON_Reinforcement" not in ifcopenshell.util.element.get_psets(h, qtos_only=True)),
         "weightKg": weight,
         "concreteWithoutQto": without,
+        "elementsWithoutQto": [e.Name for e in f.by_type("IfcElement") if not e.is_a("IfcReinforcingBar") and not ifcopenshell.util.element.get_psets(e, qtos_only=True)],
         "extrudedConcreteM3": extruded,
     }
 
 
 def main():
     params = json.load(open(sys.argv[2], encoding="utf-8"))
+    if len(sys.argv) > 4 and sys.argv[4] == "section":
+        # The Bridge section's export: api/ifc.py's "bridge" action (IFC 4.3 only).
+        import ifc  # noqa: E402
+
+        model, _ = ifc.bridge(params)
+        model.write(sys.argv[3])
+        print(json.dumps({"IFC4X3": check(ifcopenshell.open(sys.argv[3]))}))
+        return
     model, _ = _bridge.build(params)
     model.write(sys.argv[3])
     out = {"IFC4X3": check(ifcopenshell.open(sys.argv[3]))}

@@ -95,6 +95,8 @@ export type GirderInputs = {
   fws: number; // psf, future wearing surface (DW)
   // Shear reinforcement
   stirrups: StirrupZone[];
+  /** Vertical bars at each girder end besides the stirrups (CDOT's 2 #6 end bars), in the splitting resistance (5.9.4.4.1). */
+  endBars?: { count: number; bar: number };
   stirrupsIntoDeck: boolean;
   fy: number; // ksi
   // Factors and options
@@ -119,7 +121,7 @@ export type GirderInputs = {
     count: number; // bars into the diaphragm
     bar: number;
     y: number; // in, the bars above the girder's bottom
-    /** Strands extended beyond the girder's end into the diaphragm and bent (unstressed), as CDOT details them: how many, their length past the end (ℓdsh, in), and their height (in). */
+    /** Strands extended beyond the girder's end into the diaphragm and bent 90° (unstressed), as CDOT details them: how many, their length past the girder's end (in, an 8 in hook included), and their height (in). */
     strands?: { count: number; length: number; y: number };
   }; // the positive moment connection
   // Anchorage zone (5.9.4.4): confinement bars around the bottom flange's strands at each end.
@@ -1451,13 +1453,14 @@ function designGirderLine(i: GirderInputs, exterior: boolean, ctx: SpanContext |
   // Anchorage zone (5.9.4.4): splitting resistance within h/4 of the end, and confinement.
   const zonesFromEnd = i.stirrups.map((z, k) => ({ ...z, length: (k === 0 ? i.endDist + z.length : z.length) * 12 }));
   const splitZone = H / 4;
-  const splitAs = splittingAs(zonesFromEnd, splitZone);
+  const endBarsAs = i.endBars && i.endBars.count > 0 ? i.endBars.count * (BARS[i.endBars.bar]?.area ?? 0) : 0;
+  const splitAs = splittingAs(zonesFromEnd, splitZone) + endBarsAs;
   const splitFs = 20; // ksi, at most 20 ksi (5.9.4.4.1)
   // The strands bonded at the end, just after transfer (as PGSuper; AASHTO's Pi is just before transfer).
   const endPs = fptAt(0, true);
   const Fpi = endPs.Ab * endPs.fp;
   const splitting = { zone: splitZone, As: splitAs, fs: splitFs, Pr: splitFs * splitAs, Fpi, demand: 0.04 * Fpi };
-  add({ id: "splitting", name: "Splitting resistance at the girder's end", demand: splitting.demand, capacity: splitting.Pr, unit: "kip", ref: "5.9.4.4.1", note: `4% of Fpi = ${Fpi.toFixed(0)} kip; vertical bars within h/4 = ${splitZone.toFixed(1)} in: As = ${splitAs.toFixed(2)} in² at fs = ${splitFs} ksi` });
+  add({ id: "splitting", name: "Splitting resistance at the girder's end", demand: splitting.demand, capacity: splitting.Pr, unit: "kip", ref: "5.9.4.4.1", note: `4% of Fpi = ${Fpi.toFixed(0)} kip (the force at transfer); vertical bars within h/4 = ${splitZone.toFixed(1)} in: As = ${splitAs.toFixed(2)} in²${endBarsAs ? ` (${i.endBars!.count} #${i.endBars!.bar} end bars ${endBarsAs.toFixed(2)} in² included)` : ""} at fs = ${splitFs} ksi` });
   const cf = i.confinement ?? GIRDER_DEFAULTS.confinement;
   add({ id: "conf-bar", name: "Confinement: bar size (at least #3)", demand: 3, capacity: cf.bar, unit: "#", ref: "5.9.4.4.2" });
   add({ id: "conf-spacing", name: "Confinement: bar spacing", demand: cf.spacing, capacity: 6, unit: "in", ref: "5.9.4.4.2" });
@@ -1540,11 +1543,13 @@ function designGirderLine(i: GirderInputs, exterior: boolean, ctx: SpanContext |
       const addP = (k: Omit<Check, "ok"> & { ok?: boolean }) => pierChecks.push({ ...k, ok: k.ok ?? k.demand <= k.capacity + 1e-9 });
       // CDOT BDM 5.7.2: the connection resists 1.2 Mcr, Mcr of the composite section in the diaphragm's (the deck's) concrete.
       const McrConn = (0.24 * sqrt(i.fcDeck) * comp.Sbc) / 12;
+      // AASHTO 10th: positive moment connections need not be evaluated at the strength limit state (5.12.3.3.6); CDOT
+      // BDM 5.7.2 requires them to resist 1.2 Mcr (the nominal resistance, φ = 1.0).
       if (cdot)
-        addP({ id: "conn-strength", name: "Positive moment connection: strength (1.2 Mcr)", demand: Math.max(CDOT.connectionMcr * McrConn, MuPos), capacity: conn.phiMn, unit: "kip·ft", ref: "CDOT BDM 5.7.2", note: `${conn.label}; Mcr = fr·Sbc = ${McrConn.toFixed(0)} kip·ft, fr = 0.24√f′c of the diaphragm (deck) concrete` });
-      else addP({ id: "conn-strength", name: "Positive moment connection: strength", demand: Math.max(0, MuPos), capacity: conn.phiMn, unit: "kip·ft", ref: "5.12.3.3", note: `${conn.label}; restraint ${Mr.toFixed(0)} kip·ft` });
-      if (conn.As > 0 || conn.Aps === 0) addP({ id: "conn-stress", name: "Positive moment connection: bar stress at service", demand: fs, capacity: CONNECTION_STRESS, unit: "ksi", ref: "5.12.3.3", note: `Service I moment ${Math.max(0, Ms).toFixed(0)} kip·ft` });
-      if (conn.Aps > 0) addP({ id: "conn-strand-stress", name: "Positive moment connection: extended strands' stress at service", demand: conn.strandStress(Ms), capacity: conn.fpsl, unit: "ksi", ref: "5.12.3.3.9c-1", note: `Service I moment ${Math.max(0, Ms).toFixed(0)} kip·ft; fpsl = (ℓdsh − 8)/0.228` });
+        addP({ id: "conn-strength", name: "Positive moment connection: resistance (1.2 Mcr)", demand: CDOT.connectionMcr * McrConn, capacity: conn.phiMn, unit: "kip·ft", ref: "CDOT BDM 5.7.2", note: `${conn.label}; Mn, φ = 1.0; Mcr = fr·Sbc = ${McrConn.toFixed(0)} kip·ft, fr = 0.24√f′c of the diaphragm (deck) concrete` });
+      void MuPos;
+      if (conn.As > 0 || conn.Aps === 0) addP({ id: "conn-stress", name: "Positive moment connection: bar stress at service", demand: fs, capacity: CONNECTION_STRESS, unit: "ksi", ref: "5.12.3.3.8a", note: `Service I moment ${Math.max(0, Ms).toFixed(0)} kip·ft` });
+      if (conn.Aps > 0) addP({ id: "conn-strand-stress", name: "Positive moment connection: extended strands' stress at service", demand: conn.strandStress(Ms), capacity: CONNECTION_STRESS, unit: "ksi", ref: "5.12.3.3.8a", note: `Service I moment ${Math.max(0, Ms).toFixed(0)} kip·ft` });
       pierRight = { Mdc2, Mdw, Mr, MllPos, Mfe, fBottom, effective: Mfe <= 1e-9, MuPos, Ms, fs, connection: conn, checks: pierChecks };
     }
   }
@@ -1913,9 +1918,11 @@ function negativeSection(i: GirderInputs, shape: GirderShape, comp: Composite, E
 
 /** The positive moment connection at a pier: bars from the girders' bottoms into the diaphragm, the deck in compression. */
 /**
- * The positive moment connection: bars, and strands extended into the diaphragm and bent (unstressed, AASHTO
- * 5.12.3.3.9c): their stress at the strength limit state fpul = (ℓdsh − 8)/0.163 ksi and at service
- * fpsl = (ℓdsh − 8)/0.228 ksi (ℓdsh in, ≤ fpy); the steel's centroid its forces' centroid.
+ * The positive moment connection (AASHTO 5.12.3.3.8): bars, and strands extended into the diaphragm and bent 90°.
+ * Its resistance (CDOT BDM 5.7.2's 1.2 Mcr): the bars at fy, the strands at their pullout capacity
+ * fps = 0.017 fpu·Lv/db (Noppakunwajai et al., 2002, cited in C5.12.3.3.8b; Lv the length past the girder's end less
+ * the 8 in hook), at most fpy; the steel's depth its forces' centroid. At service the steel's stress, bars and
+ * strands, is limited to 36 ksi (5.12.3.3.8a).
  */
 function positiveConnection(i: GirderInputs, comp: Composite, Ecd: number) {
   const bar = BARS[i.connection.bar];
@@ -1923,8 +1930,8 @@ function positiveConnection(i: GirderInputs, comp: Composite, Ecd: number) {
   const st = i.connection.strands && i.connection.strands.count > 0 ? i.connection.strands : null;
   const Aps = st ? st.count * STRANDS[i.strandDia].area : 0;
   const fpy = 0.9 * i.fpu;
-  const fpul = st ? Math.min(fpy, Math.max(0, (st.length - 8) / 0.163)) : 0;
-  const fpsl = st ? Math.min(fpy, Math.max(0, (st.length - 8) / 0.228)) : 0;
+  const Lv = st ? Math.max(0, st.length - 8) : 0; // in, the straight length before the 8 in hook
+  const fpul = st ? Math.min(fpy, (0.017 * i.fpu * Lv) / STRANDS[i.strandDia].db) : 0;
   const T = As * i.fy + Aps * fpul;
   const dBars = comp.h - i.connection.y;
   const dStrands = st ? comp.h - st.y : dBars;
@@ -1939,8 +1946,9 @@ function positiveConnection(i: GirderInputs, comp: Composite, Ecd: number) {
   const Icr = (comp.beff * c ** 3) / 3 + n * As * (dBars - c) ** 2 + (EP / Ecd) * Aps * (dStrands - c) ** 2;
   const steelStress = (Ms: number) => (Ms <= 0 ? 0 : nAs > 0 ? (n * Ms * 12 * (dBars - c)) / Icr : Infinity);
   const strandStress = (Ms: number) => (Ms <= 0 ? 0 : Aps > 0 ? ((EP / Ecd) * Ms * 12 * (dStrands - c)) / Icr : Infinity);
-  const label = [As > 0 ? `${i.connection.count} #${i.connection.bar} bars at ${i.connection.y} in` : "", st ? `${st.count} strands extended ${st.length} in at ${st.y} in (fpul = ${fpul.toFixed(1)} ksi, 5.12.3.3.9c-2)` : ""].filter(Boolean).join(" and ") || "none";
-  return { As, Aps, fpul, fpsl, d, a, Mn, phiMn: 0.9 * Mn, n, c, Icr, steelStress, strandStress, label };
+  const label = [As > 0 ? `${i.connection.count} #${i.connection.bar} bars at ${i.connection.y} in` : "", st ? `${st.count} strands extended ${st.length} in at ${st.y} in (pullout fps = 0.017 fpu·Lv/db = ${fpul.toFixed(1)} ksi)` : ""].filter(Boolean).join(" and ") || "none";
+  // φ = 1.0: CDOT's 1.2 Mcr is a resistance requirement, not a strength limit state check (AASHTO 5.12.3.3.6), as CDOT's designs take it.
+  return { As, Aps, fpul, d, a, Mn, phiMn: Mn, n, c, Icr, steelStress, strandStress, label };
 }
 
 // --- strands ----------------------------------------------------------------------------------------

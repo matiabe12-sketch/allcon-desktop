@@ -404,7 +404,10 @@ export function GirderEditor({ design, projects }: { design: { id: string; name:
                 <Field label="Bars per girder" value={inputs.connection.count} onChange={(v) => setInputs((s) => ({ ...s, connection: { ...s.connection, count: Math.max(0, Math.round(v)) } }))} step={2} />
                 <BarChoice label="Bar size" bar={inputs.connection.bar} onBar={(bar) => setInputs((s) => ({ ...s, connection: { ...s.connection, bar } }))} />
                 <Field label="Height above the girder's bottom" unit="in" value={inputs.connection.y} onChange={(y) => setInputs((s) => ({ ...s, connection: { ...s.connection, y } }))} step={0.5} />
-                <p className="pt-2 pb-1 text-xs text-muted-foreground">Strands extended into the diaphragm and bent (unstressed, AASHTO 5.12.3.3.9c)</p>
+                <p className="pt-2 pb-1 text-xs text-muted-foreground">Vertical bars at each girder end besides the stirrups (in the splitting resistance, 5.9.4.4.1)</p>
+                <Field label="End bars per end" value={inputs.endBars?.count ?? 0} onChange={(v) => setInputs((s) => ({ ...s, endBars: Math.round(v) > 0 ? { bar: s.endBars?.bar ?? 6, count: Math.round(v) } : undefined }))} step={1} />
+                {(inputs.endBars?.count ?? 0) > 0 && <BarChoice label="End bar size" bar={inputs.endBars!.bar} onBar={(bar) => setInputs((s) => ({ ...s, endBars: { ...s.endBars!, bar } }))} />}
+                <p className="pt-2 pb-1 text-xs text-muted-foreground">Strands extended into the diaphragm and bent 90° (AASHTO 5.12.3.3.8b)</p>
                 <Field label="Extended strands per girder" value={inputs.connection.strands?.count ?? 0} onChange={(v) => setInputs((s) => ({ ...s, connection: { ...s.connection, strands: { length: 24, y: 2.25, ...s.connection.strands, count: Math.max(0, Math.round(v)) } } }))} step={2} />
                 {(inputs.connection.strands?.count ?? 0) > 0 && (
                   <>

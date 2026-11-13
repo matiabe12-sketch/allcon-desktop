@@ -228,6 +228,10 @@ export function girderInputs(saved: unknown): GirderInputs {
     site: { ...SITE_WIND_DEFAULTS, ...(s.site ?? {}) },
     strands: Array.isArray(s.strands) && s.strands.length ? s.strands : GIRDER_DEFAULTS.strands,
     stirrups: Array.isArray(s.stirrups) && s.stirrups.length ? s.stirrups : GIRDER_DEFAULTS.stirrups,
+    endBars: (() => {
+      const e = (s as { endBars?: { count?: unknown; bar?: unknown } }).endBars;
+      return e && typeof e.count === "number" && e.count > 0 && typeof e.bar === "number" ? { count: Math.round(e.count), bar: e.bar } : undefined;
+    })(),
     crown: { ...CROWN_DEFAULT, ...(s.crown ?? {}) },
     rail: { ...GIRDER_RAIL_DEFAULT, ...(s.rail ?? {}) },
   });

@@ -116,14 +116,17 @@ export const I05VA_GIRDER: GirderInputs = {
     { L: 139, strands: S2, harped: H2 },
     { L: 110, strands: S13, harped: H13 },
   ],
-  // The IDC calcs: 8 strands extended 2'-4" past the end (1'-8" down, 8" bent), 2.25 in up.
-  connection: { count: 0, bar: 6, y: 3, strands: { count: 8, length: 28, y: 2.25 } },
+  // B15 (as constructed): 8 strands extended 3'-0" past the end, bent 90°, 2.25 in up.
+  connection: { count: 0, bar: 6, y: 3, strands: { count: 8, length: 36, y: 2.25 } },
+  // B15: #6 bars, 2 at each end (vertical legs D − 4 in).
+  endBars: { count: 2, bar: 6 },
+  // B15: #4 hairpins and D20 wires bundled, two legs (0.40 in² a leg): 6 spaces at 3 in, 11 at 4, 11 at 6, 11 at 12, then 18.
   stirrups: [
-    { length: 1.5, bar: 6, legs: 2, spacing: 3 },
-    { length: 44 / 12, bar: 6, legs: 2, spacing: 4 },
-    { length: 5.5, bar: 6, legs: 2, spacing: 6 },
-    { length: 11, bar: 6, legs: 2, spacing: 12 },
-    { length: 0, bar: 6, legs: 2, spacing: 18 },
+    { length: 1.5, bar: 4, legs: 2, spacing: 3, bundle: { bars: 1, wire: 0.2 } },
+    { length: 44 / 12, bar: 4, legs: 2, spacing: 4, bundle: { bars: 1, wire: 0.2 } },
+    { length: 5.5, bar: 4, legs: 2, spacing: 6, bundle: { bars: 1, wire: 0.2 } },
+    { length: 11, bar: 4, legs: 2, spacing: 12, bundle: { bars: 1, wire: 0.2 } },
+    { length: 0, bar: 4, legs: 2, spacing: 18, bundle: { bars: 1, wire: 0.2 } },
   ],
 };
 

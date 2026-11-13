@@ -27,7 +27,7 @@ import { wingwallCalcLines } from "../walls/wingwall-calc";
 import { runBridge } from "./bridge";
 import { bridgeCalcLines, soqRows, type CalcPart, type PayColumn, type SupportCalc } from "./calc";
 import { bridgeIfc, meshVolume } from "./ifc";
-import { I18BC, I18BC_ABUT_SOIL, I18BC_GIRDER, I18BC_PAD, I18BC_PILE, I18BC_SHAFT_LAYERS, I18BC_SOQ } from "./i18bc.fixture";
+import { I18BC, I18BC_DIAPHRAGM_TOP, I18BC_ABUT_SOIL, I18BC_GIRDER, I18BC_PAD, I18BC_PILE, I18BC_SHAFT_LAYERS, I18BC_SOQ } from "./i18bc.fixture";
 import { MULTICOLUMN_DEFAULTS } from "../stm/templates";
 import { deckLengthFor, abutmentFromBridge, approachSlabFromBridge, bearingFromBridge, capFromBridge, columnFromBridge, deckFromBridge, shaftFromColumn, wingwallFromBridge } from "./loadpath";
 import { renderBridgeSvg } from "./render3d";
@@ -87,7 +87,7 @@ async function build() {
       approachPay.push(...pays("approach-slab", ap, { length: 1 }));
     } else {
       // Sheet B17: 18 #11 top and bottom, #6 double stirrups at 5 to 10 in (7 in taken).
-      const cap = capFromBridge(b, run, k, stmInputs({ template: { ...MULTICOLUMN_DEFAULTS, topBars: { size: 11, count: 18 }, bottomBars: { size: 11, count: 18 }, stirrups: { size: 6, legs: 4, spacing: 7 } } }), ["g"], ["Girders"]);
+      const cap = capFromBridge(b, run, k, stmInputs({ template: { ...MULTICOLUMN_DEFAULTS, topBars: { size: 11, count: 18 }, bottomBars: { size: 11, count: 18 }, stirrups: { size: 6, legs: 4, spacing: 7 } }, stages: { enabled: true, diaphragmHeight: 0, topBars: I18BC_DIAPHRAGM_TOP } }), ["g"], ["Girders"]);
       const r = await designStm(cap, nodeLpSolver);
       parts.push({ label: "Pier cap", name: "Pier 2 cap", lines: stmPackageLines(cap, r, "Pier 2 cap"), checks: [{ checks: r.checks }] });
       const det = capDetailOrNull(cap);
@@ -120,8 +120,8 @@ async function build() {
 describe("I-18-BC through the Bridge, end to end", async () => {
   const r = await build();
 
-  it("passes the checks the sealed calcs pass: bearing pads, abutments and piles, columns, shafts, wingwalls", () => {
-    for (const k of Object.keys(r.verdicts).filter((x) => /Bearings|Abutment$|Columns|shafts|Wingwalls/.test(x))) expect([k, r.verdicts[k].fail]).toEqual([k, []]);
+  it("passes the checks the sealed calcs pass: bearing pads, abutments and piles, the two-stage pier cap, columns, shafts, wingwalls", () => {
+    for (const k of Object.keys(r.verdicts).filter((x) => /Bearings|Abutment$|Columns|shafts|Wingwalls|Pier cap/.test(x))) expect([k, r.verdicts[k].fail]).toEqual([k, []]);
   });
 
   it("designs the girders with the girder schedule's 38 strands, all but the bearing's longitudinal reinforcement passing", () => {

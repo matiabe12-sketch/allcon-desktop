@@ -136,3 +136,9 @@ export const I18BC_SOQ: Record<string, { superstructure?: number; abut1?: number
   "601-03056": { superstructure: 477.5, pier2: 27.5, approach: 106.5, total: 611.6 }, // Class DF, CY
   "602-00020": { superstructure: 120000, abut1: 11160, pier2: 27750, abut3: 11160, approach: 26530, total: 196600 }, // epoxy rebar, LB
 };
+
+/**
+ * The pier diaphragm's top tie along the cap, for the completed cap (cap and diaphragm one member): the FOR's
+ * P2 diaphragm longitudinals (5 #5, 70 ft) and the deck's top transverse #5 at 6 in within its 4 ft (8 bars).
+ */
+export const I18BC_DIAPHRAGM_TOP = { size: 5, count: 13 };

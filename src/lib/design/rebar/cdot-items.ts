@@ -7,6 +7,9 @@ export type PayItem = { code: string; description: string; unit: string };
 const item = (code: string, description: string, unit: string): PayItem => ({ code, description, unit });
 
 export const CDOT_ITEMS: PayItem[] = [
+  { code: "618-01992", description: "Prestressed Concrete Box (Depth Less Than 32 Inches)", unit: "SF" },
+  { code: "618-01994", description: 'Prestressed Concrete Box (Depth 32" Through 48")', unit: "SF" },
+  { code: "618-01995", description: "Prestressed Concrete Box (Depth Greater Than 48 Inches)", unit: "SF" },
   // 601 Structural concrete
   item("601-03040", "Concrete Class D (Bridge)", "CY"),
   item("601-03041", "Concrete Class D (Bridge) (Special)", "CY"),
@@ -137,7 +140,7 @@ export const TOOL_PAY_ITEMS: Record<string, Partial<Record<QuantityRole, string[
   "cantilever-wingwall": { concrete: ["601-03040", "601-03050"], rebar: ["602-00020", "602-00000"] },
   "mse-wall": { facing: ["504-04420", "504-04410", "504-04430"], "soil-reinforcement": ["206-00360"], backfill: ["206-00100", "206-00200"], excavation: ["206-00000"], concrete: ["601-01000"], rebar: ["602-00000"] },
   "deck-slab": { concrete: ["601-03056", "601-03040", "601-04100", "601-05001"], rebar: ["602-00020", "602-00000"], waterproofing: ["515-00120"], rail: ["606-10900", "606-10905", "606-11035", "606-11037", "606-11005"] },
-  "lrfd-girder-check": { concrete: ["601-03056", "601-03040"], rebar: ["602-00020", "602-00000"], waterproofing: ["515-00120"], rail: ["606-10900", "606-10905", "606-11035", "606-11037", "606-11005"], girder: ["618-01154", "618-01137", "618-01145", "618-01163", "618-01172", "618-01181", "618-01190", "618-00142", "618-00154", "618-00163", "618-00172", "618-00184"] },
+  "lrfd-girder-check": { concrete: ["601-03056", "601-03040"], rebar: ["602-00020", "602-00000"], waterproofing: ["515-00120"], rail: ["606-10900", "606-10905", "606-11035", "606-11037", "606-11005"], girder: ["618-01154", "618-01992", "618-01994", "618-01995", "618-01137", "618-01145", "618-01163", "618-01172", "618-01181", "618-01190", "618-00142", "618-00154", "618-00163", "618-00172", "618-00184"] },
   "pier-column": { concrete: ["601-03040", "601-03041", "601-03000"], rebar: ["602-00020", "602-00000", "602-00010", "602-00011", "602-00025"], excavation: ["206-00000"], backfill: ["206-00200", "206-00100"] },
   "elastomeric-bearing": { bearing: ["512-00101", "512-00102", "512-00103", "512-00114", "512-00115", "512-00118"] },
   "ptfe-bearing": { bearing: ["512-00118", "512-00103", "512-00114", "512-00115"] },

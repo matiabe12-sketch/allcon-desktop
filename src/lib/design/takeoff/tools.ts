@@ -702,7 +702,9 @@ export function girderTakeoff(i: GirderInputs, deckFt?: number): Takeoff {
   });
   const { sch } = finish(pre, concrete);
   const quantities: Takeoff["quantities"] = {
-    girder: { value: lf, basis: `${i.nGirders} girders per span, ${each.map((x) => `${fit(x)} ft`).join(" + ")} end to end`, math: `${i.nGirders}\\cdot ${sumT(each.map(ftT))}`, ref: "girders per span × each span's girder length end to end" },
+    girder: i.shape.startsWith("box-")
+      ? { value: lf * (girderShape(i).topWidth / 12), basis: `${i.nGirders} boxes per span, ${fit(girderShape(i).topWidth)} in wide, ${each.map((x) => `${fit(x)} ft`).join(" + ")} end to end (square feet of box)`, math: `${i.nGirders}\\cdot ${inT(girderShape(i).topWidth)}\\cdot ${sumT(each.map(ftT))}`, ref: "boxes per span × top width × each span's box length (CDOT pays boxes by the square foot)" }
+      : { value: lf, basis: `${i.nGirders} girders per span, ${each.map((x) => `${fit(x)} ft`).join(" + ")} end to end`, math: `${i.nGirders}\\cdot ${sumT(each.map(ftT))}`, ref: "girders per span × each span's girder length end to end" },
     waterproofing: { value: (b.roadway * Ld) / 9, basis: `${fit(b.roadway)} ft between the rails by ${fit(Ld)} ft`, math: `${ftT(b.roadway)}\\cdot ${ftT(Ld)}`, ref: "the roadway between the rails × length" },
     ...(b.rail ? { rail: { value: 2 * Ld, basis: `${b.rail.name.replace(/ \(#\d option\)/, "")} on both edges, ${fit(Ld)} ft each`, math: `2\\cdot ${ftT(Ld)}`, ref: `${b.rail.name.replace(/ \(#\d option\)/, "")} on both edges` } } : {}),
   };

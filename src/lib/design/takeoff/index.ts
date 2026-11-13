@@ -89,6 +89,10 @@ function defaultFor(kind: string, role: QuantityRole, inputs: unknown): string |
     const r = railDef((inputs as DeckInputs | GirderInputs).rail?.type ?? "custom");
     return r?.payItem;
   }
+  if (kind === "lrfd-girder-check" && role === "girder" && (inputs as GirderInputs).shape?.startsWith("box-")) {
+    const depth = Number((inputs as GirderInputs).shape.slice(4).split("x")[0]);
+    return depth < 32 ? "618-01992" : depth <= 48 ? "618-01994" : "618-01995";
+  }
   if (kind === "lrfd-girder-check" && role === "girder") {
     const norm = (s: string) => s.toUpperCase().replace(/[^A-Z0-9.]/g, "");
     const shape = norm((inputs as GirderInputs).shape);

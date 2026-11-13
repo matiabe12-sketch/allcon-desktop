@@ -90,6 +90,13 @@ export function capFromBridge(b: BridgeInputs, run: BridgeRun, support: number, 
   const shape = b.supports[support].pier;
   const lp = run.layout.piers[support];
   if (shape && lp) current = { ...current, template: capTemplate(shape, lp.columnsX, current.template ?? null) };
+  // Girders made continuous over the pier by a cast-in-place diaphragm: the cap is built in two stages, the
+  // diaphragm from the cap's top (the lowest seat) to the deck's top over the cap.
+  if (b.supports[support].type === "continuous-pier" && lp) {
+    const deckTop = Math.max(...[...(support > 0 ? run.layout.spans[support - 1].girders.map((g) => g.end.deck) : []), ...(support < run.layout.spans.length ? run.layout.spans[support].girders.map((g) => g.start.deck) : [])]);
+    const h = Math.round((deckTop - lp.capTop) * 100) / 100;
+    current = { ...current, stages: { enabled: current.stages?.enabled ?? true, diaphragmHeight: h, topBars: current.stages?.topBars ?? null } };
+  }
   const groups = spanGroups(b);
   const sideOf = (span: number, end: "start" | "end") => {
     const gi = groups.findIndex((g) => g.includes(span));

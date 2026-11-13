@@ -180,3 +180,41 @@ plans B17/B20/B22, boring logs, pile calc): `bridge/i18bc.fixture.ts` (numbers o
   transverse distribution (CDOT's #5 at 12 in, 2.04); the 12'-6" sidewalk isn't modelled (waterproofing on
   58.5 ft, not 46 ft); no rail on the approach slabs; three shafts in the plans, four in the FOR; which
   concrete class columns and diaphragms are paid under.
+
+## Two-stage pier caps (built 2026-11-13)
+
+A pier cap under girders made continuous by a cast-in-place diaphragm is designed in two stages, as CDOT
+designs them (`stm/strut-tie.ts` `stages`, set by the Bridge at a continuous pier): **construction**, the
+first-stage cap under the girders, deck, haunch and the wet diaphragm (DC1, Strength I at 1.25 and IV at
+1.50, no live load); **completed**, cap and diaphragm as one member (the diaphragm from the cap's top to the
+deck's top, its top bars the top tie) under every load. Both stages' checks are reported ("Construction: …",
+"Completed: …"); the calc's model drawing is the completed member. On I-18-BC the plans' 18 #11 now pass, as
+the sealed calc finds them.
+
+## Prestressed boxes and the lever rule (built 2026-11-13)
+
+- The 35 x 66 in box (`girders/sections.ts` `box-35x66`): a net-width profile (the void taken out at each
+  height) that gives the published A, yb and I; both walls are its web for shear. Paid by the square foot of
+  box, CDOT 618-01992/01994/01995 by depth.
+- The girder check's `distribution: "lever-rule"`: the lever rule for every girder (trucks placed across the
+  roadway, each girder's share by simple spans between girders), for systems AASHTO's tables don't cover,
+  as F-19-AGA's analysis used. AASHTO's tables stay the default.
+
+## Three CDOT bridges, saved in ALLCON (2026-11-13)
+
+Each is a Bridge in its own project, its components created by the Bridge and given the plans' details, with
+its IFC model and calc package. Fixtures (numbers only) and tests: `bridge/i18bc.*`, `i05va.*`, `f19aga.*`,
+the end-to-end chain in `chain.testkit.ts`.
+
+| Structure | Project | Checked against | Result |
+|---|---|---|---|
+| I-18-BC | 24610 Airport Rd over Powers Blvd | sealed calcs, FOR quantities, plans | 24 seats within 0.01 ft; girders, rail, deck length, piles 0 %; super bars +1.8 % |
+| I-05-VA | 22943 SH 92 over the Gunnison River | IDC (seats, LEAP runs, summary), Pre-AD plans, SOQ | 24 seats within 0.01 ft; deck 366 ft; girders −0.3 %; rail, waterproofing, piles 0 %; shafts −1.3 % |
+| F-19-AGA | 24898 SH 79 over I-70 | IDC (boxes, substructure, quantities), FIR | box 16,276 SF vs 16,204 (+0.4 %); rail, piles, caissons 0 %; geometry assumed (plans not read) |
+
+Found by these and reported, not changed (the owner asked that no rules change yet): CDOT's f'ci / f'c
+"without approval" limits and the harp point at 0.35–0.45 L flag I-05-VA's real design (7.5 / 9.0 ksi, harped
+at 0.30 L); I-05-VA's construction-stage tie at 1.21; the abutments' "cap depth at most 6 ft" against I-05-VA's
+7.5 ft; the approach slabs' bottom transverse distribution (CDOT's #5 at 12 in, 2.0); strands extended into
+the diaphragm aren't counted in the positive moment connection or 5.7.3.5; F-19-AGA's debonding and splitting
+rest on assumed details. Not modelled: sidewalks, rail on approach slabs.

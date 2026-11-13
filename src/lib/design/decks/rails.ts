@@ -327,9 +327,11 @@ export type ParapetResistance = ReturnType<typeof parapetResistance>;
 /** What the deck takes from the rail: its width, weight and c.g., the vertical force's lever arm, and for a parapet its base moment and tension. */
 export function railOnDeck(r: RailDef, o: { fc: number; steel: RailSteel; testLevel: TestLevel; gammaC: number }) {
   const { A, xc } = polygonProps(r.outline);
-  const steelKlf = (r.steel?.lbPerFt ?? 0) / 1000;
-  const concreteKlf = (A / 144) * o.gammaC;
-  const weight = concreteKlf + steelKlf;
+  // The weight as the worksheet gives it (its concrete per foot, and the posts and tubes); the c.g. from the section.
+  const w = railWeight(r, o.gammaC);
+  const steelKlf = w.steel;
+  const concreteKlf = w.concrete;
+  const weight = w.klf;
   const cg = (concreteKlf * xc + steelKlf * (r.posts?.x ?? xc)) / weight; // in from the deck edge
   const topCenter = (() => {
     const top = Math.max(...r.outline.map((p) => p[1]));

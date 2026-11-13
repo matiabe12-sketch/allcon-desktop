@@ -42,7 +42,9 @@ describe("the deck with a standard rail", () => {
     const r = designDeck(withType("type9-4"));
     const A = polygonProps(railDef("type9-4")!.outline).A;
     expect(r.applied.barrierWidth).toBe(18);
-    close(r.applied.barrierWeight, (A / 144) * 0.15, 1e-9);
+    // The weight from the worksheet (B-606-9-4: 0.12 CY/LF); the drawn section agrees with it to 3%.
+    close(r.applied.barrierWeight, 0.12 * 27 * 0.15, 1e-9);
+    expect(Math.abs((A / 144) * 0.15 / r.applied.barrierWeight - 1)).toBeLessThan(0.03);
     close(r.applied.T, r.rail!.resistance!.interior.T, 1e-9);
     close(r.applied.Mc, r.rail!.resistance!.interior.Mc, 1e-9);
     expect(r.applied.Fv).toBe(80);
@@ -50,7 +52,8 @@ describe("the deck with a standard rail", () => {
     // The curb-and-posts rail keeps the entered Mc and T.
     const t10 = designDeck(withType("type10-mash"));
     expect(t10.applied.Mc).toBe(DECK_DEFAULTS.Mc);
-    close(t10.applied.barrierWeight, (polygonProps(railDef("type10-mash")!.outline).A / 144) * 0.15 + 0.0496, 1e-9);
+    close(t10.applied.barrierWeight, 0.059 * 27 * 0.15 + 0.0496, 1e-9); // B-606-10MASH: 0.059 CY/LF, 49.6 lb/LF of steel
+    expect(Math.abs(((polygonProps(railDef("type10-mash")!.outline).A / 144) * 0.15 + 0.0496) / t10.applied.barrierWeight - 1)).toBeLessThan(0.03);
   });
 
   for (const type of ["type9-4", "type9-3", "type10-mash"] as const)

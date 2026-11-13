@@ -108,6 +108,7 @@ export const I05VA_GIRDER: GirderInputs = {
   criteria: "cdot",
   fci: 7.5,
   fc: 9.0,
+  highStrengthApproved: true, // the sealed plans specify 7.5 / 9.0 ksi: approved (BDM 5.3.1.2)
   strandDia: 0.6,
   strands: S13,
   harped: H13,

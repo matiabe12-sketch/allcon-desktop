@@ -7,7 +7,7 @@ import { railDef } from "../decks/rails";
 import { textTable } from "../svg-table";
 import { checksSummary } from "../checks-summary";
 import { girderSchedule, SCHEDULE_HEAD, scheduleCells } from "./schedule";
-import { CONNECTION_STRESS, designGirder, EP, liveLoad, spanInputs, strandGroups, STRANDS, zoneCallout, type GirderInputs, type GirderResult } from "./prestressed";
+import { CONNECTION_STRESS, criteriaInputs, designGirder, EP, liveLoad, spanInputs, strandGroups, STRANDS, zoneCallout, type GirderInputs, type GirderResult } from "./prestressed";
 
 // The LRFD Bridge Design Check as a Calcs worksheet, for the controlling girder: the section's
 // properties and the analysis's live load envelopes as given values (from the outline and the
@@ -19,7 +19,8 @@ const kft = "\\mathrm{kip}\\cdot\\mathrm{ft}";
 
 const verdict = (c: { ok: boolean; advisory?: boolean }) => (c.advisory ? (c.ok ? "Info" : "Info, over") : c.ok ? "OK" : "NG");
 
-export function girderCalcLines(input: GirderInputs, title: string, figures?: { section?: Figure; elevation?: Figure; handling?: Figure; bridge?: Figure; schedule?: Figure }): Line[] {
+export function girderCalcLines(entered: GirderInputs, title: string, figures?: { section?: Figure; elevation?: Figure; handling?: Figure; bridge?: Figure; schedule?: Figure }): Line[] {
+  const input = criteriaInputs(entered);
   const lines: Line[] = [];
   const text = (t: string, style?: "heading" | "subheading" | "note") => lines.push({ text: t, ...(style ? { style } : {}) });
   const m = (math: string, ref?: string, unit?: string) => lines.push({ math, ...(ref ? { ref } : {}), ...(unit ? { unit } : {}), ...(math.length > 110 && ref ? { wide: true } : {}), ...(isInput(math) ? { color: INPUT_COLOR } : {}) });

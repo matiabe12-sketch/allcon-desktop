@@ -297,7 +297,7 @@ export function designAbutment(i: AbutmentInputs) {
     add({ id: "grade", name: "Grade between the unit's ends", demand: i.grade, capacity: 5, unit: "%", ref: "CDOT BDM 11.3.1" });
     add({ id: "skew", name: "Skew", demand: i.skew, capacity: 30, unit: "deg", ref: "CDOT BDM 11.3.1" });
     add({ id: "curvature", name: "Degree of curvature", demand: i.curvature, capacity: 5, unit: "deg", ref: "CDOT BDM 11.3.1" });
-    add({ id: "depth", name: "Depth, top of deck to the cap's bottom", demand: i.totalDepth, capacity: 13, unit: "ft", ref: "CDOT BDM 11.3.1" });
+    add({ id: "depth", name: "Depth, top of deck to the cap's bottom (typically 13 ft or less)", demand: i.totalDepth, capacity: 13, unit: "ft", ref: "CDOT BDM 11.3.1", advisory: true });
     add({ id: "cap-max", name: "Pile cap depth at most 6 ft", demand: i.capDepth, capacity: 6, unit: "ft", ref: "CDOT BDM 11.3.1" });
     add({ id: "cap-min", name: "Pile cap depth at least 3.5 ft", demand: 3.5, capacity: i.capDepth, unit: "ft", ref: "CDOT BDM 11.3.1" });
     add({ id: "cap-embed", name: "Cap's bottom embedded in the embankment", demand: 1.5, capacity: i.capEmbed, unit: "ft", ref: "CDOT BDM 11.3.1" });

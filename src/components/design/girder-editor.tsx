@@ -421,9 +421,19 @@ export function GirderEditor({ design, projects }: { design: { id: string; name:
               />
               {inputs.criteria === "cdot" && (
                 <p className="pb-1 text-xs text-muted-foreground">
-                  CDOT BDM: Colorado Permit Vehicle and EV3 at Strength II (3.6); f′ci ≤ 6.5, f′c ≤ 8.5 ksi (5.3.1.2); no tension under dead load (5.5.1.3); live load elastic gain with γLL = 1.0 (5.5.1.1); hold-down ≤ 4 kip per strand (5.5.2.2); continuity rules (5.7); stirrups ≤ 18 in (5.5.1.6); harp height, harped strands only over 100 ft, harp points 0.35–0.45 L and 2,800 kip on the bed (5.5.1.5, B-618-CBT2); shipping 154 ft, 240 kip (5.5.1.9); camber at 60 days ±30%, no sag, minimum haunches (5.5.2.1). Lifting and hauling are the fabricator&apos;s (5.5.1.8): shown for information. Use 55% humidity (5.3.3).
+                  CDOT BDM: Colorado Permit Vehicle and EV3 at Strength II (3.6); f′ci ≤ 6.5, f′c ≤ 8.5 ksi (5.3.1.2); no tension under dead load (5.5.1.3); live load elastic gain with γLL = 1.0 (5.5.1.1); hold-down ≤ 4 kip per strand (5.5.2.2); continuity rules (5.7); stirrups ≤ 18 in (5.5.1.6); harp height, harped strands only over 100 ft and 2,800 kip on the bed (5.5.1.5, B-618-CBT2); shipping 154 ft, 240 kip (5.5.1.9); camber at 60 days ±30%, no sag, minimum haunches (5.5.2.1). For information: the harp points at 0.35–0.45 of the girder&apos;s length (5.5.1.5, guidance), lifting and hauling (the fabricator&apos;s, 5.5.1.8). Creep and shrinkage at 55% humidity (5.3.3), whatever is entered below.
                 </p>
               )}
+              {inputs.criteria === "cdot" && <Toggle label="Higher f′ci or f′c approved by the Unit Leader with the State Bridge Engineer (5.3.1.2)" value={!!inputs.highStrengthApproved} onChange={set("highStrengthApproved")} />}
+              <Choice
+                label="Live load distribution"
+                value={inputs.distribution ?? "aashto"}
+                options={[
+                  { value: "aashto", label: "AASHTO's tables (4.6.2.2)" },
+                  { value: "lever-rule", label: "The lever rule for every girder" },
+                ]}
+                onChange={set("distribution")}
+              />
               <Field label="η (ηD·ηR·ηI)" value={inputs.eta} onChange={set("eta")} step={0.05} hint="1.3.2" />
               <Choice
                 label="Service III tension limit"

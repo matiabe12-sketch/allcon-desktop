@@ -229,7 +229,18 @@ export function designApproachSlab(i: ApproachSlabInputs) {
   // --- distribution and temperature bars --------------------------------------------------------------
   const pct = Math.min(100 / Math.sqrt(S), 50) / 100; // 9.7.3.2, main bars parallel to traffic
   const distRequired = pct * area(i.mainBars);
-  add({ id: "dist", name: `Bottom transverse: distribution, ${(pct * 100).toFixed(1)}% of the main bars`, demand: distRequired, capacity: area(i.distBars), unit: "in²/ft", ref: "AASHTO 9.7.3.2" });
+  // CDOT's standard slab (B-601-1EA, B-601-1) details #5 at 12 in here, less than 9.7.3.2 asks for at CDOT's
+  // half-span design assumption: with those bars the check is shown for information, the standard detail governing.
+  const worksheetDist = i.distBars.bar === APPROACH_SLAB_DEFAULTS.distBars.bar && i.distBars.spacing === APPROACH_SLAB_DEFAULTS.distBars.spacing;
+  add({
+    id: "dist",
+    name: `Bottom transverse: distribution, ${(pct * 100).toFixed(1)}% of the main bars${worksheetDist ? " (CDOT B-601 standard detail, for information)" : ""}`,
+    demand: distRequired,
+    capacity: area(i.distBars),
+    unit: "in²/ft",
+    ref: worksheetDist ? "AASHTO 9.7.3.2; CDOT B-601-1EA" : "AASHTO 9.7.3.2",
+    ...(worksheetDist ? { advisory: true } : {}),
+  });
   const bIn = i.W * 12;
   const tempRequired = Math.max(0.11, (1.3 * bIn * i.t) / (2 * (bIn + i.t) * i.fy)); // Eq. 5.10.6-1, per face
   const sTemp = Math.min(3 * i.t, 18);

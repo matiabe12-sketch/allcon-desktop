@@ -218,3 +218,25 @@ at 0.30 L); I-05-VA's construction-stage tie at 1.21; the abutments' "cap depth 
 7.5 ft; the approach slabs' bottom transverse distribution (CDOT's #5 at 12 in, 2.0); strands extended into
 the diaphragm aren't counted in the positive moment connection or 5.7.3.5; F-19-AGA's debonding and splitting
 rest on assumed details. Not modelled: sidewalks, rail on approach slabs.
+
+## CDOT rules update (applied 2026-11-13, the owner's "apply all five")
+
+After a review against BDM 2026's wording:
+
+1. **Higher girder strengths** (5.3.1.2): a girder setting, *Higher f′ci or f′c approved by the Unit Leader
+   with the State Bridge Engineer* (`highStrengthApproved`). Set, the 6.5 / 8.5 ksi checks are shown for
+   information. I-05-VA has it set (its sealed plans specify 7.5 / 9.0 ksi).
+2. **Harp point** (5.5.1.5 "should"): for information. It was already measured on the girder's length.
+3. **Integral abutment depth**, deck top to cap bottom (11.3.1 "typically" 13 ft): for information. The
+   6 ft maximum ("shall") and 3.5 ft minimum cap depths stay checks. I-05-VA's abutment cap (seat to the
+   cap's bottom, 7.46 ft in its IDC) is genuine and still fails the 6 ft.
+4. **Approach slab distribution**: when the bars are CDOT's B-601 standard detail (#5 at 12 in), the check is
+   for information; other bars are checked.
+5. **Humidity** (5.3.3 "shall"): under CDOT criteria, creep and shrinkage use 55 % whatever is entered
+   (`criteriaInputs`, used by `designGirder` and the calc).
+
+Also: a *Live load distribution* choice in the girder editor (AASHTO's tables or the lever rule). Tests:
+`girders/cdot-rules.test.ts`. The three bridges were re-synced and their calcs remade. Remaining failures:
+I-18-BC girders 3 (longitudinal reinforcement at the bearing, 5.7.3.5, strands into the diaphragm not
+counted); I-05-VA girders 12, abutment cap depth, pier cap construction tie 1.21; F-19-AGA girders 10
+(debonding and splitting, on assumed details), pile geotechnical 1.05 (assumed soils).

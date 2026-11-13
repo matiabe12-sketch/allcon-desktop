@@ -1,5 +1,6 @@
 "use server";
 
+import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { Prisma } from "@/generated/prisma/client";
 import { getCurrentUser, isUuid } from "@/lib/auth/session";
@@ -17,6 +18,8 @@ import { columnInputs, designColumn } from "@/lib/design/piers/column";
 import { columnLinkFrom } from "@/lib/design/piers/column-link";
 import { designStm, stmInputs } from "@/lib/design/stm/strut-tie";
 import { db } from "@/lib/db";
+import { bridgeIfc, type BridgeComponents } from "@/lib/design/bridge/ifc";
+import { newModelFileKey, workerBridge, WorkerError } from "@/lib/ifc/worker";
 
 // The Bridge's load path through its linked designs (docs/bridge-model.md): each linked design's
 // inputs brought up to date from the Bridge, top to bottom (girders, abutments, pier caps, columns,
@@ -187,4 +190,91 @@ export async function syncBridge(bridgeId: string, inputsNow: unknown, create: b
   await db.design.update({ where: { id: design.id }, data: { inputs: next as unknown as Prisma.InputJsonValue } });
   revalidatePath("/design");
   return { rows, inputs: next };
+}
+
+/**
+ * The Bridge's IFC 4.3 model (phase 2, docs/bridge-model.md): the alignment, the bridge's parts and every
+ * element at its designed size and place, from the Bridge and its linked designs, saved as a 3D model in
+ * the Bridge's project. Returns the model's link.
+ */
+export async function buildBridgeModel(bridgeId: string, inputsNow: unknown): Promise<{ link: string; elements: number } | { error: string }> {
+  const { user, design } = await ownBridge(bridgeId);
+  if (!design.projectId) return { error: "Put the Bridge in a project first (the project picker at the top): the model is saved there." };
+  const b = bridgeInputs(inputsNow ?? design.inputs);
+  const ids = b.girderDesignIds.filter((x): x is string => !!x && isUuid(x));
+  const linked = await db.design.findMany({ where: { id: { in: ids }, orgId: user.orgId, kind: "lrfd-girder-check" }, select: { id: true, inputs: true } });
+  let run: ReturnType<typeof runBridge>;
+  try {
+    run = runBridge(b, b.girderDesignIds.map((id) => { const d = linked.find((x) => x.id === id); return d ? girderInputs(d.inputs) : null; }));
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "The bridge can't be laid out." };
+  }
+  const verdicts: Record<string, string> = {};
+  const verdictTry = (id: string | null | undefined, f: () => { ok: boolean; advisory?: boolean }[]) => {
+    if (!id) return;
+    try {
+      verdicts[id] = verdictOf(f());
+    } catch {
+      verdicts[id] = "can't be worked out";
+    }
+  };
+  run.groups.forEach((g, gi) => {
+    const id = b.girderDesignIds[gi];
+    if (id) verdicts[id] = g.result.ok ? "all checks pass" : "some checks fail";
+  });
+  const load = async (id: string | null | undefined, kind: string) => (id && isUuid(id) ? db.design.findFirst({ where: { id, orgId: user.orgId, kind }, select: { id: true, inputs: true } }) : null);
+  const comps: BridgeComponents = { verdicts, abutments: {}, approachSlabs: {}, foundations: {}, ids: { girders: b.girderDesignIds, caps: {}, columns: {} } };
+  for (const c of b.components) {
+    const s = b.supports[c.support];
+    if (!s) continue;
+    if (s.type.endsWith("abutment")) {
+      const a = await load(c.abutmentId, "abutment");
+      if (a) {
+        const inputs = abutmentInputs(a.inputs);
+        comps.abutments![c.support] = { id: a.id, inputs };
+        verdictTry(a.id, () => runFoundation("abutment", inputs).checks);
+      }
+      const ap = await load(c.approachSlabId, "approach-slab");
+      if (ap) {
+        const inputs = approachSlabInputs(ap.inputs);
+        comps.approachSlabs![c.support] = { id: ap.id, inputs };
+        verdictTry(ap.id, () => designApproachSlab(inputs).checks);
+      }
+      continue;
+    }
+    comps.ids!.caps![c.support] = c.capId ?? null;
+    comps.ids!.columns![c.support] = c.columnId ?? null;
+    const kind = s.pier?.foundation;
+    const f = kind && c.foundationKind === kind ? await load(c.foundationId, kind) : null;
+    if (f && kind) {
+      const inputs = kind === "spread-footing" ? footingInputs(f.inputs) : kind === "pile-foundation" ? pileFoundationInputs(f.inputs) : shaftInputs(f.inputs);
+      comps.foundations![c.support] = { id: f.id, kind, inputs };
+      verdictTry(f.id, () => runFoundation(kind, inputs).checks);
+    }
+  }
+  const description = bridgeIfc(b, run, comps, design.name);
+  const id = randomUUID();
+  const fileKey = newModelFileKey(id);
+  let made: Awaited<ReturnType<typeof workerBridge>>;
+  try {
+    made = await workerBridge(fileKey, { ...description, project: design.name });
+  } catch (e) {
+    return { error: e instanceof WorkerError ? e.message : "The IFC model couldn't be written." };
+  }
+  await db.ifcModel.create({
+    data: {
+      id,
+      projectId: design.projectId,
+      name: `${design.name} (IFC 4.3)`.slice(0, 200),
+      description: `Built from the Bridge "${design.name}": the alignment, ${run.layout.spans.length} span(s) and ${run.layout.supports.length} supports, each element from its linked design.`,
+      fileKey,
+      fileSize: made.size,
+      summary: made.summary as unknown as object,
+      elementCount: made.summary.elements,
+      editedAt: new Date(),
+      createdById: user.id,
+    },
+  });
+  revalidatePath(`/projects/${design.projectId}`);
+  return { link: `/projects/${design.projectId}/models/ifc/${id}`, elements: made.summary.elements };
 }

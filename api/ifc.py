@@ -121,6 +121,14 @@ def dxf_module():
     return _dxf
 
 
+def bridge_module():
+    # Next to this file, like _dxf: the Bridge's IFC 4.3 writer.
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import _bridge
+
+    return _bridge
+
+
 def dxf_export(payload, params):
     drawing = json.loads(fetch(payload["drawing_url"]))
     data, skipped = dxf_module().export_dxf(drawing, params.get("fileName") or "")
@@ -762,6 +770,9 @@ def handle(payload):
         return dxf_export(payload, params)
     if action == "dxf_import":
         return dxf_import(payload, params)
+    if action == "bridge":
+        model, handles = bridge_module().build(params)
+        return {"size": dump(model, payload), "handles": handles, "summary": summary(model)}
     if action == "create":
         model, handles = create(params)
         return {"size": dump(model, payload), "handles": handles, "summary": summary(model)}

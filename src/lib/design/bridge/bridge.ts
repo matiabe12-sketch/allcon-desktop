@@ -19,6 +19,8 @@ export type Support = {
   endDistance: number; // ft, the girder's end to its bearing's centerline, along the girder
   bearingOffset: number; // ft, the support's line to the bearings' centerline, normal to the support
   bearingHeight: number; // in, the bearing (or leveling pad) under the girder
+  /** ft, the girder spacing at this support, normal to the alignment (0 or none: the bridge's). Spacings that differ from one support to the next flare the girders, as PGSuper's spacing at each support. */
+  spacing?: number;
   /** A pier's physical description, as PGSuper's physical pier model: its cap, columns and the top of its foundation. */
   pier?: PierShape;
 };
@@ -107,13 +109,14 @@ export function bridgeLayout(b: BridgeInputs) {
   const vcs = profileGeometry(b.profile);
   const shape = girderShape({ ...GIRDER_DEFAULTS, shape: b.shape });
   const depth = shape.depth; // in
-  const offsets = Array.from({ length: b.nGirders }, (_, k) => b.bridgeLineOffset + (k - (b.nGirders - 1) / 2) * b.spacing);
+  const offsetsAt = (sp: number) => Array.from({ length: b.nGirders }, (_, k) => b.bridgeLineOffset + (k - (b.nGirders - 1) / 2) * sp);
+  const offsets = offsetsAt(b.spacing);
 
   // Each support: where its line crosses each girder line.
   const supports = b.supports.map((s) => {
     const p = pointAt(b.alignment, s.station, cache);
     const lineAz = p.az + 90 + s.skew; // the support's line, toward the right
-    const ends = offsets.map((o) => {
+    const ends = offsetsAt(spacingAt(b, s)).map((o) => {
       // The support line from the alignment point: x = p + t·u; the girder line at offset o: its normal offset is o.
       // For a skew θ the line reaches normal offset o after t = o / cos θ.
       const t = o / Math.cos(rad(s.skew));
@@ -129,9 +132,10 @@ export function bridgeLayout(b: BridgeInputs) {
   // Each span, each girder: the chord between the support lines, less the end distances to the bearings.
   const spans = supports.slice(0, -1).map((s0, j) => {
     const s1 = supports[j + 1];
-    const girders = offsets.map((o, k) => {
+    const girders = offsets.map((_, k) => {
       const a = s0.ends[k];
       const c = s1.ends[k];
+      const o = (a.offset + c.offset) / 2; // a flared girder's offset at midspan
       const chord = Math.hypot(c.x - a.x, c.y - a.y);
       const gAz = (Math.atan2(c.x - a.x, c.y - a.y) * 180) / Math.PI;
       // The bearing offset is normal to the support; along the girder it's longer by 1/cos of the angle between them.
@@ -143,7 +147,7 @@ export function bridgeLayout(b: BridgeInputs) {
         const xb = a.x + (c.x - a.x) * f;
         const yb = a.y + (c.y - a.y) * f;
         const so = stationOffset(b.alignment, xb, yb, a.station + (c.station - a.station) * f, cache);
-        return { station: so.station, offset: so.offset, deck: deckElevation(b.profile, b.roadway, so.station, so.offset, vcs) };
+        return { x: xb, y: yb, station: so.station, offset: so.offset, deck: deckElevation(b.profile, b.roadway, so.station, so.offset, vcs) };
       };
       const fb = along(s0) / chord;
       const fe = 1 - along(s1) / chord;
@@ -153,7 +157,7 @@ export function bridgeLayout(b: BridgeInputs) {
       // The profile above the bearing-to-bearing chord at midspan (+ crest), in: what the haunch must absorb.
       const ordinate = (mid.deck - (start.deck + end.deck) / 2) * 12;
       const seat = (d: number, s: (typeof supports)[number]) => d - b.slabOffset / 12 - depth / 12 - s.bearingHeight / 12;
-      return { k, offset: o, chord, L, length: len, azimuth: gAz, start: { ...start, seat: seat(start.deck, s0) }, end: { ...end, seat: seat(end.deck, s1) }, ordinate, crossSlope: crossSlopeAt(b.roadway, o) };
+      return { k, offset: o, chord, L, length: len, azimuth: gAz, start: { ...start, seat: seat(start.deck, s0) }, end: { ...end, seat: seat(end.deck, s1) }, ordinate, crossSlope: crossSlopeAt(b.roadway, mid.offset, mid.station), flare: c.offset - a.offset };
     });
     const L = Math.max(...girders.map((g) => g.L));
     return { index: j, from: s0.name, to: s1.name, girders, L, skew: Math.max(Math.abs(s0.skew), Math.abs(s1.skew)) };
@@ -170,13 +174,16 @@ export function bridgeLayout(b: BridgeInputs) {
     if (xs.some((x) => x <= 0 || x >= sp.pier!.capLength)) throw new DesignError(`${sp.name}: the columns don't fit under the cap.`);
     return { capTop, soffit, foundationTop, columnHeight: soffit - foundationTop, columnsX: xs };
   });
-  const overhang = Math.min(b.leftEdge, b.rightEdge) - ((b.nGirders - 1) / 2) * b.spacing;
+  const overhang = Math.min(b.leftEdge, b.rightEdge) - ((b.nGirders - 1) / 2) * Math.max(...b.supports.map((s) => spacingAt(b, s)));
   if (overhang <= 0) throw new DesignError("The deck's edges are inside the exterior girders: widen the deck or narrow the spacing.");
   const length = supports[supports.length - 1].station - supports[0].station;
   return { supports, spans, piers, offsets, depth, width, overhang, length, shapeName: shape.name };
 }
 
 export type BridgeLayout = ReturnType<typeof bridgeLayout>;
+
+/** The girder spacing at a support (ft, normal to the alignment): its own, else the bridge's. */
+export const spacingAt = (b: BridgeInputs, s: Support) => (s.spacing && s.spacing > 0 ? s.spacing : b.spacing);
 
 /** The bridge's spans grouped into girder designs: continuous across continuous piers, separate at the others. */
 export function spanGroups(b: BridgeInputs) {
@@ -202,7 +209,7 @@ export function girderInputsFor(b: BridgeInputs, lay: BridgeLayout, group: numbe
     L: first.L,
     endDist: inner.endDistance,
     nGirders: b.nGirders,
-    S: b.spacing,
+    S: Math.max(...b.supports.slice(group[0], group[group.length - 1] + 2).map((s) => spacingAt(b, s))), // flared: the widest spacing in the group
     overhang: lay.overhang,
     barrierWidth: b.barrierWidth,
     skew: Math.max(...spans.map((s) => s.skew)),

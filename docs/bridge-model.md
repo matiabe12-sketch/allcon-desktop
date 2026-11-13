@@ -1,4 +1,4 @@
-# The Bridge (phase 1 of the IFC bridge workflow)
+# The Bridge (phases 1 and 2 of the IFC bridge workflow)
 
 One record that describes a whole girder bridge, entered the way PGSuper's Bridge Description and
 Alignment dialogs ask for it, which every design tool reads from and the IFC generator (phase 2) and
@@ -67,9 +67,8 @@ station, orientation, connection, girder end distance and bearing offset).
 
 ## Later phases
 
-2. The Bridge → IFC 4.3 (IfcBridge, IfcBridgePart, IfcAlignment, the elements and their property sets).
 3. IFC → the Bridge (classify, extract, confirm), then the same design run.
-4. Spirals, superelevation transitions, curved girders, flared girders, rebar and strands in IFC.
+4. Curved girders, rebar and strands in IFC.
 
 ## Status (phase 1 built, 2026-11-13)
 
@@ -92,5 +91,37 @@ station, orientation, connection, girder end distance and bearing offset).
   a pile group's deflection now run from the bridge's loads.
 - Abutments also drive their approach slab (deck width, roadway between barriers, skew) and a
   wingwall (height at the abutment face, the abutment's width, skew, backfill).
-- Not yet: spirals, superelevation transitions, flared or curved girders (girders are chorded between
-  supports), a calc package for the Bridge itself, wingwalls and approach slabs from the Bridge.
+- Not yet: curved girders (girders are chorded between supports, as precast girders are), a calc
+  package for the Bridge itself.
+
+## Status (phase 2 built, 2026-11-13): the Bridge → IFC 4.3
+
+"Build the IFC model" in the Bridge editor writes an IFC 4.3 model of the bridge and saves it as a new
+3D model in the Bridge's project (the Bridge must be in a project).
+
+- `lib/design/bridge/ifc.ts` (`bridgeIfc`) describes the model: the alignment as its horizontal segments
+  (LINE, CIRCULARARC, CLOTHOID, as IfcAlignmentHorizontalSegment takes them) and its PVIs, from 100 ft
+  before the first abutment to 100 ft past the last (widened to take in whole spirals and vertical
+  curves); the parts (IfcBridge → SUPERSTRUCTURE and SUBSTRUCTURE, an ABUTMENT or PIER part per support);
+  and each element as a profile swept from a placement, with its class, predefined type, material and an
+  `ALLCON_Design` property set (the design's kind, id, verdict, the CDOT pay item).
+- `api/_bridge.py` writes it with IfcOpenShell (action `bridge` of the IFC worker): feet, the site's
+  `ALLCON_Origin` (the first abutment's northing and easting: the model's (0, 0)), the alignment segment
+  by segment with `create_layout_segment`, the vertical by `layout_vertical_alignment_by_pi_method`, the
+  start station as a STATION referent. The description is data: a fixed set of classes, numbers, names.
+- Elements: girders (IfcBeam GIRDER_SEGMENT, the girder's outline swept along its 3D chord, seated on its
+  bearings); bearings (IfcBearing); the deck (IfcSlab FLOOR, a closed triangulated solid whose top follows
+  the alignment, the profile, the crown and the superelevation exactly, the soffit the deck's thickness
+  below); integral abutments (pile cap IfcFooting, end diaphragm, H-piles IfcPile DRIVEN or shafts BORED);
+  seat abutments (stem, backwall, footing); approach slabs (IfcSlab APPROACH_SLAB); pier caps (IfcBeam
+  PIERCAP), columns (IfcColumn), footings, pile caps and piles, or shafts. Sizes come from the linked
+  designs, or their defaults when one isn't linked.
+- Alignment items added with it: spirals (entry and exit clothoids per curve, PGSuper's spiral lengths;
+  `alignment.ts`), superelevation transitions (roadway section templates by station, straight-line
+  between them; `sectionAt`), and flared girders (a girder spacing per support, the girder lines straight
+  between them; the girder design takes the widest spacing in its group).
+- Checked: `ifc.test.ts` and `geometry.test.ts` (spiral T, p, k, Lc and continuity; superelevation;
+  flare; the deck's volume; the haunch at every bearing). The written files pass IfcOpenShell's schema
+  validation, every element tessellates, and IfcOpenShell's own evaluation of a spiral alignment lies
+  within 0.0001 ft of ours.
+- Not modelled yet: wingwalls, barriers, diaphragms at piers, rebar and strands, the deck's haunch.

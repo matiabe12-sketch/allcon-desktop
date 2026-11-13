@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { syncBridge, type SyncRow } from "@/app/actions/bridge";
+import { buildBridgeModel, syncBridge, type SyncRow } from "@/app/actions/bridge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { bearingText, stationText } from "@/lib/design/bridge/alignment";
@@ -52,7 +52,7 @@ const SPEC: SectionSpec[] = [
       { type: "number", key: "alignment.northing", label: "Northing", unit: "ft" },
       { type: "number", key: "alignment.easting", label: "Easting", unit: "ft" },
       { type: "number", key: "alignment.azimuth", label: "Back tangent's bearing (azimuth)", unit: "deg", step: 0.0001, hint: "Clockwise from north: 90 is due east" },
-      { type: "list", key: "alignment.curves", label: "Horizontal curves", note: "By the PI's station (along the stationing), the radius and the front tangent's azimuth; circular curves.", columns: [{ key: "pi", label: "PI station" }, { key: "radius", label: "R ft" }, { key: "azimuth", label: "Ahead azimuth°" }], blank: { pi: 1150, radius: 2000, azimuth: 95 } },
+      { type: "list", key: "alignment.curves", label: "Horizontal curves", note: "By the PI's station (along the stationing), the radius, the front tangent's azimuth and the entry and exit spirals' lengths (clothoids; 0 for a simple circular curve).", columns: [{ key: "pi", label: "PI station" }, { key: "radius", label: "R ft" }, { key: "azimuth", label: "Ahead azimuth°" }, { key: "spiralIn", label: "Entry spiral ft" }, { key: "spiralOut", label: "Exit spiral ft" }], blank: { pi: 1150, radius: 2000, azimuth: 95, spiralIn: 0, spiralOut: 0 } },
     ],
   },
   {
@@ -66,11 +66,24 @@ const SPEC: SectionSpec[] = [
     ],
   },
   {
-    title: "Roadway section (crown)",
+    title: "Roadway section (crown and superelevation)",
     fields: [
       { type: "number", key: "roadway.leftSlope", label: "Left slope (− falls to the left)", unit: "ft/ft", step: 0.005 },
       { type: "number", key: "roadway.rightSlope", label: "Right slope (− falls to the right)", unit: "ft/ft", step: 0.005 },
       { type: "number", key: "roadway.crownOffset", label: "Crown point's offset from the alignment", unit: "ft", step: 0.5 },
+      {
+        type: "list",
+        key: "roadway.sections",
+        label: "Superelevation (roadway section templates)",
+        note: "As PGSuper's roadway section templates: the slopes and the crown's offset at stations, straight-line between them (the transitions), constant before the first and after the last. None: the section above everywhere.",
+        columns: [
+          { key: "station", label: "Station" },
+          { key: "leftSlope", label: "Left ft/ft" },
+          { key: "rightSlope", label: "Right ft/ft" },
+          { key: "crownOffset", label: "Crown offset ft" },
+        ],
+        blank: { station: 1000, leftSlope: -0.02, rightSlope: -0.02, crownOffset: 0 },
+      },
     ],
   },
   {
@@ -81,7 +94,7 @@ const SPEC: SectionSpec[] = [
         type: "list",
         key: "supports",
         label: "From the first abutment to the last",
-        note: "Skew: the support line from the alignment's normal, + clockwise (PGSuper's R). End distance and bearing offset along the girder and normal to the support, as PGSuper measures them.",
+        note: "Skew: the support line from the alignment's normal, + clockwise (PGSuper's R). End distance and bearing offset along the girder and normal to the support, as PGSuper measures them. Spacing: the girder spacing at the support (0: the bridge's); spacings that differ flare the girders.",
         columns: [
           { key: "name", label: "Name", kind: "text", width: "6rem" },
           { key: "station", label: "Station" },
@@ -90,8 +103,9 @@ const SPEC: SectionSpec[] = [
           { key: "endDistance", label: "End dist. ft" },
           { key: "bearingOffset", label: "Brg offset ft" },
           { key: "bearingHeight", label: "Brg height in" },
+          { key: "spacing", label: "Spacing ft" },
         ],
-        blank: { name: "Pier", station: 0, skew: 0, type: "continuous-pier", endDistance: 0.75, bearingOffset: 1, bearingHeight: 2 },
+        blank: { name: "Pier", station: 0, skew: 0, type: "continuous-pier", endDistance: 0.75, bearingOffset: 1, bearingHeight: 2, spacing: 0 },
       },
     ],
   },
@@ -167,6 +181,22 @@ export function BridgeEditor({
       setBusy(false);
     }
   };
+  const [model, setModel] = useState<{ link: string; elements: number } | null>(null);
+  const buildModel = async () => {
+    setBusy(true);
+    try {
+      const out = await buildBridgeModel(design.id, inputs);
+      if ("error" in out) toast.error(out.error);
+      else {
+        setModel(out);
+        toast.success(`The IFC model is built: ${out.elements} elements`);
+      }
+    } catch {
+      toast.error("Could not build the IFC model");
+    } finally {
+      setBusy(false);
+    }
+  };
   const allChecks = r ? r.groups.flatMap((g) => [...g.result.spans.flatMap((s) => [...s.interior.checks, ...s.exterior.checks]), ...g.result.piers.flatMap((p) => [...p.interior.checks, ...p.exterior.checks])]) : [];
   const failing = allChecks.filter((c) => !c.ok && !c.advisory);
   return (
@@ -236,6 +266,21 @@ export function BridgeEditor({
                 <Button size="sm" variant="outline" onClick={() => sync(true)} disabled={busy || !r}>
                   Create the missing designs
                 </Button>
+              </div>
+            </Section>
+            <Section title="IFC model" open>
+              <p className="text-xs text-muted-foreground">
+                An IFC 4.3 model of the bridge: the alignment, the bridge&apos;s parts and every element (girders, bearings, deck, abutments, approach slabs, pier caps, columns, footings, piles and shafts) at its designed size and place, from the linked designs. It&apos;s saved as a new 3D model in the Bridge&apos;s project.
+              </p>
+              <div className="flex flex-wrap items-center gap-2 pt-2">
+                <Button size="sm" variant="outline" onClick={buildModel} disabled={busy || !r}>
+                  Build the IFC model
+                </Button>
+                {model && (
+                  <Link className="text-xs underline" href={model.link}>
+                    Open the model ({model.elements} elements)
+                  </Link>
+                )}
               </div>
             </Section>
           </CardContent>

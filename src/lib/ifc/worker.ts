@@ -104,6 +104,12 @@ export async function workerCreate(
   return { handles: body.handles, summary: body.summary!, size: body.size ?? null };
 }
 
+/** Writes a Bridge's IFC 4.3 model (src/lib/design/bridge/ifc.ts's description) at `fileKey`. */
+export async function workerBridge(fileKey: string, params: object) {
+  const body = await call("bridge", params, { write: fileKey });
+  return { handles: body.handles, summary: body.summary!, size: body.size ?? null };
+}
+
 /** Applies operations to the file at `from`, writing the result to `to` (all or nothing). */
 export async function workerEdit(from: string, to: string, operations: unknown[]) {
   const body = await call("edit", { operations }, { read: from, write: to });

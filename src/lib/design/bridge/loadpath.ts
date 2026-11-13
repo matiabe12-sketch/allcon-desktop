@@ -11,7 +11,7 @@ import type { ApproachSlabInputs } from "../approach/approach-slab";
 import type { WingwallInputs } from "../walls/wingwall";
 import type { ColumnResult } from "../piers/column";
 import type { GirderInputs } from "../girders/prestressed";
-import { spanGroups, type BridgeInputs, type BridgeRun, type PierShape } from "./bridge";
+import { spacingAt, spanGroups, type BridgeInputs, type BridgeRun, type PierShape } from "./bridge";
 
 // The load path from a Bridge run down through its linked designs (docs/bridge-model.md): each
 // function takes a component's inputs as saved and returns them with what the Bridge decides (its
@@ -58,7 +58,7 @@ export function abutmentFromBridge(b: BridgeInputs, run: BridgeRun, support: num
     skew: Math.abs(s.skew),
     curvature: Number.isFinite(lay.R) ? Math.round((5729.578 / lay.R) * 1000) / 1000 : 0,
     nGirders: b.nGirders,
-    girderSpacing: b.spacing,
+    girderSpacing: spacingAt(b, s),
     RDC: Math.round(r.DC * 10) / 10,
     RDW: Math.round(r.DW * 10) / 10,
     RLL: Math.round(r.LL * 10) / 10,

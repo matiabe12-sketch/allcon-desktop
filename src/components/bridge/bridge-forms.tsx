@@ -2,18 +2,34 @@
 
 import { Choice, Field, Toggle } from "@/components/design/design-kit";
 import { GIRDER_CHOICES, supportsFor, type BridgeDefinition } from "@/lib/bridge/definition";
+import { applyEdit } from "@/lib/bridge/geometry";
+import { GeometryForm } from "./geometry-forms";
 
 // The bridge's inputs, in the groups the workspace's ribbon and tree open in the properties panel
 // (as midas Civil's girder bridge wizard groups them: layout, section, boundary, loads).
 
-export type FormKey = "layout" | "girders" | "diaphragms" | "bearings" | "piers" | "loads";
-export const FORM_TITLES: Record<FormKey, string> = { layout: "Layout", girders: "Girders and deck", diaphragms: "Diaphragms", bearings: "Bearings", piers: "Piers", loads: "Loads" };
+export type FormKey = "layout" | "alignment" | "profile" | "roadway" | "supports" | "girders" | "diaphragms" | "bearings" | "piers" | "loads";
+export const FORM_TITLES: Record<FormKey, string> = {
+  layout: "Layout",
+  alignment: "Alignment",
+  profile: "Profile",
+  roadway: "Roadway section",
+  supports: "Supports",
+  girders: "Girders and deck",
+  diaphragms: "Diaphragms",
+  bearings: "Bearings",
+  piers: "Piers",
+  loads: "Loads",
+};
 
 type Props = { def: BridgeDefinition; setDef: (update: (d: BridgeDefinition) => BridgeDefinition) => void };
 
 const note = (text: string) => <p className="py-1 text-[11px] leading-snug text-muted-foreground">{text}</p>;
 
-export function BridgeForm({ form, def, setDef }: Props & { form: FormKey }) {
+export function BridgeForm({ form, def, setDef: setRaw }: Props & { form: FormKey }) {
+  // Every edit of the definition's own values carried into its geometry (geometry.ts applyEdit).
+  const setDef: Props["setDef"] = (update) => setRaw((s) => applyEdit(s, update(s)));
+  if (form === "alignment" || form === "profile" || form === "roadway" || form === "supports") return <GeometryForm form={form} def={def} setDef={setRaw} />;
   const set = <K extends keyof BridgeDefinition>(key: K) => (v: BridgeDefinition[K]) => setDef((s) => ({ ...s, [key]: v }));
   const part = <K extends "girder" | "deck" | "diaphragms" | "piers" | "loads">(key: K) => <F extends keyof BridgeDefinition[K]>(field: F) => (v: BridgeDefinition[K][F]) => setDef((s) => ({ ...s, [key]: { ...s[key], [field]: v } }));
   const setSpans = (spans: number[]) => setDef((s) => ({ ...s, spans, supports: supportsFor(spans.length, s.supports) }));

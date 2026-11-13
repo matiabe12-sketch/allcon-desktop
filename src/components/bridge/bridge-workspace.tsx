@@ -378,6 +378,12 @@ export function BridgeWorkspace({ bridge, projects }: { bridge: { id: string; na
         <div className="flex h-[4.75rem] overflow-x-auto bg-background">
           {tab === "structure" && (
             <>
+              <Panel title="Roadway">
+                <Big icon={Route} label="Alignment" title="Stations, bearings, curves and spirals" onClick={() => openForm("alignment")} active={form === "alignment"} />
+                <Big icon={Spline} label="Profile" title="Grades and vertical curves" onClick={() => openForm("profile")} active={form === "profile"} />
+                <Big icon={PencilRuler} label="Section" title="Cross slopes, superelevation, edges, slab offset, rail" onClick={() => openForm("roadway")} active={form === "roadway"} />
+                <Big icon={MoveVertical} label="Supports" title="Stations, skews, types, bearings" onClick={() => openForm("supports")} active={form === "supports"} />
+              </Panel>
               <Panel title="Bridge">
                 <Big icon={Ruler} label="Layout" title="Spans, skew, continuity" onClick={() => openForm("layout")} active={form === "layout"} />
                 <Big icon={Layers} label="Girders and deck" onClick={() => openForm("girders")} active={form === "girders"} />

@@ -1,4 +1,5 @@
 import { GIRDER_SHAPES, shapeById, type Profile } from "../design/girders/sections";
+import { parseGeometry, reconcile, type BridgeGeometry } from "./geometry";
 
 // A bridge's definition: what the engineer enters and the wizard fills in, a few dozen values. The
 // analysis model (model.ts) is generated from it (generate.ts). First version: precast prestressed
@@ -33,6 +34,8 @@ export type BridgeDefinition = {
   designs: DesignLink[];
   /** The 3D model (IFC) the bridge was last exported to, under its project's Models. */
   ifcModelId?: string;
+  /** The alignment, profile, roadway and each support at its station (geometry.ts); none: a straight, level bridge worked out from the spans. */
+  geometry?: BridgeGeometry;
 };
 
 export type DesignLink = { id: string; target: string; kind: string };
@@ -69,6 +72,10 @@ export function supportsFor(spans: number, current: SupportLine[] = []): Support
 
 /** A definition as saved, filled in from the defaults and kept within what the generator takes. */
 export function bridgeDefinition(saved: unknown): BridgeDefinition {
+  return reconcile(parseDefinition(saved));
+}
+
+function parseDefinition(saved: unknown): BridgeDefinition {
   const s = obj(saved);
   const d = BRIDGE_DEFAULTS;
   const spans = (Array.isArray(s.spans) ? s.spans : d.spans).map((v) => num(v, 100, 10, 500)).slice(0, 8);
@@ -80,11 +87,14 @@ export function bridgeDefinition(saved: unknown): BridgeDefinition {
   const c = obj(girder.custom);
   const profile = Array.isArray(c.profile) ? (c.profile as unknown[]).filter((p): p is [number, number] => Array.isArray(p) && p.length === 2 && p.every((v) => typeof v === "number" && Number.isFinite(v))) : [];
   const custom = girder.shape === "custom" && profile.length >= 2 ? { profile, web: num(c.web, 6, 1, 60), topWidth: num(c.topWidth, 2 * profile[profile.length - 1][1], 1, 200) } : undefined;
+  const geometry = parseGeometry(s.geometry);
+  // With a geometry, the spans are its supports' stations apart.
+  const geoSpans = geometry ? geometry.supports.slice(1).map((x, k) => x.station - geometry.supports[k].station) : null;
   const shape = custom ? "custom" : typeof girder.shape === "string" && shapeById(girder.shape) ? girder.shape : d.girder.shape;
   return {
-    spans: spans.length ? spans : d.spans,
+    spans: geoSpans && geoSpans.every((L) => L >= 10 && L <= 500) ? geoSpans : spans.length ? spans : d.spans,
     skew: num(s.skew, 0, -60, 60),
-    supports: supportsFor(spans.length || 1, Array.isArray(s.supports) ? (s.supports as SupportLine[]) : []),
+    supports: supportsFor(geoSpans && geoSpans.every((L) => L >= 10 && L <= 500) ? geoSpans.length : spans.length || 1, Array.isArray(s.supports) ? (s.supports as SupportLine[]) : []),
     continuity: s.continuity === "simple" ? "simple" : "continuous",
     girder: { shape, fc: num(girder.fc, d.girder.fc, 3, 18), wc: num(girder.wc, d.girder.wc, 0.09, 0.2), ...(custom ? { custom } : {}) },
     nGirders: Math.round(num(s.nGirders, d.nGirders, 2, 20)),
@@ -111,6 +121,7 @@ export function bridgeDefinition(saved: unknown): BridgeDefinition {
       .slice(0, 100)
       .map((l) => ({ id: l.id as string, target: (l.target as string).slice(0, 40), kind: (l.kind as string).slice(0, 40) })),
     ...(typeof s.ifcModelId === "string" && /^[0-9a-f-]{36}$/i.test(s.ifcModelId) ? { ifcModelId: s.ifcModelId } : {}),
+    ...(geometry ? { geometry } : {}),
   };
 }
 

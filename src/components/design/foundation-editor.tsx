@@ -24,7 +24,7 @@ function setPath(o: Inputs, path: string, v: unknown): Inputs {
   return { ...o, [k]: rest.length ? setPath((o[k] as Inputs) ?? {}, rest.join("."), v) : v };
 }
 
-function ListField({ spec, value, onChange }: { spec: Extract<FieldSpec, { type: "list" }>; value: Inputs[]; onChange: (v: Inputs[]) => void }) {
+export function ListField({ spec, value, onChange }: { spec: Extract<FieldSpec, { type: "list" }>; value: Inputs[]; onChange: (v: Inputs[]) => void }) {
   const cell = "h-6 w-full min-w-0 rounded border border-input bg-transparent px-1 text-xs";
   return (
     <div className="space-y-1 py-1 text-xs">
@@ -79,7 +79,7 @@ function ListField({ spec, value, onChange }: { spec: Extract<FieldSpec, { type:
   );
 }
 
-function FieldView({ spec, inputs, set }: { spec: FieldSpec; inputs: Inputs; set: (path: string, v: unknown) => void }) {
+export function FieldView({ spec, inputs, set }: { spec: FieldSpec; inputs: Inputs; set: (path: string, v: unknown) => void }) {
   if (spec.show && !spec.show(inputs)) return null;
   const v = get(inputs, spec.key);
   switch (spec.type) {

@@ -2,6 +2,10 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { ApproachSlabEditor } from "@/components/design/approach-slab-editor";
 import { FoundationEditor } from "@/components/design/foundation-editor";
+import { BridgeEditor } from "@/components/design/bridge-editor";
+import { bridgeCandidates } from "@/app/actions/bridge";
+import { bridgeInputs } from "@/lib/design/bridge/kinds";
+import { spanGroups } from "@/lib/design/bridge/bridge";
 import { FOUNDATION_KINDS, foundationInputs, type FoundationKind } from "@/lib/design/foundations/kinds";
 import { BearingEditor } from "@/components/design/bearing-editor";
 import { CbcEditor } from "@/components/design/cbc-editor";
@@ -111,6 +115,20 @@ export default async function DesignEditorPage({ params }: PageProps<"/design/[d
         <WingwallEditor design={{ ...base, inputs: wingwallInputs(design.inputs) }} projects={projects} />
       </PageBody>
     );
+  if (design.kind === "bridge") {
+    const b = bridgeInputs(design.inputs);
+    const ids = spanGroups(b).map((_, gi) => b.girderDesignIds[gi] ?? null);
+    const rows = await db.design.findMany({ where: { id: { in: ids.filter((x): x is string => !!x) }, orgId: design.orgId, kind: "lrfd-girder-check" }, select: { id: true, inputs: true } });
+    const girders = ids.map((id) => {
+      const row = rows.find((x) => x.id === id);
+      return row ? girderInputs(row.inputs) : null;
+    });
+    return (
+      <PageBody>
+        <BridgeEditor design={{ ...base, inputs: b }} projects={projects} girders={girders} candidates={await bridgeCandidates()} />
+      </PageBody>
+    );
+  }
   if ((FOUNDATION_KINDS as readonly string[]).includes(design.kind))
     return (
       <PageBody>

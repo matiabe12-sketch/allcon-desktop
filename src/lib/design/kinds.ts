@@ -23,6 +23,7 @@ function cleanExtension(v: unknown): CbcInputs["extension"] {
 }
 import { APPROACH_SLAB_DEFAULTS, type ApproachSlabInputs } from "./approach/approach-slab";
 import { FOUNDATION_INFO, FOUNDATION_KINDS, foundationInputs } from "./foundations/kinds";
+import { BRIDGE_INFO, bridgeInputs } from "./bridge/kinds";
 import { DECK_DEFAULTS, RAIL_DEFAULT, type DeckInputs } from "./decks/deck";
 import { STRIP_SEAL_DEFAULTS, type StripSealInputs } from "./joints/strip-seal";
 import { HAUNCH_DEFAULTS, type HaunchInputs } from "./girders/haunch";
@@ -43,9 +44,14 @@ import { WINGWALL_DEFAULTS, type WingwallInputs } from "./walls/wingwall";
 // The Design section's categories and design types: highway structures to AASHTO LRFD, grouped
 // by element. What can be designed, and what's coming next.
 
-export type DesignKind = "lrfd-girder-check" | "dt-load-rating" | "stm-d-region" | "cip-cantilever-wall" | "mse-wall" | "cantilever-wingwall" | "box-culvert" | "deck-slab" | "seismic-zone1" | "pier-column" | "camber-haunch" | "sign-cantilever" | "elastomeric-bearing" | "ptfe-bearing" | "strip-seal-joint" | "approach-slab" | "spread-footing" | "pile-foundation" | "drilled-shaft" | "micropile" | "abutment";
+export type DesignKind = "lrfd-girder-check" | "dt-load-rating" | "stm-d-region" | "cip-cantilever-wall" | "mse-wall" | "cantilever-wingwall" | "box-culvert" | "deck-slab" | "seismic-zone1" | "pier-column" | "camber-haunch" | "sign-cantilever" | "elastomeric-bearing" | "ptfe-bearing" | "strip-seal-joint" | "approach-slab" | "spread-footing" | "pile-foundation" | "drilled-shaft" | "micropile" | "abutment" | "bridge";
 
 export const CATEGORIES: { id: string; name: string; kinds: { id: DesignKind; name: string; short: string; description: string; available: boolean }[] }[] = [
+  {
+    id: "bridges",
+    name: "Bridges",
+    kinds: [{ id: "bridge", ...BRIDGE_INFO, available: true }],
+  },
   {
     id: "superstructures",
     name: "Superstructures",
@@ -307,6 +313,7 @@ export function designInputs(kind: string, saved: unknown) {
 }
 
 function parseInputs(kind: string, saved: unknown) {
+  if (kind === "bridge") return bridgeInputs(saved);
   if ((FOUNDATION_KINDS as readonly string[]).includes(kind)) return foundationInputs(kind, saved)!;
   if (kind === "lrfd-girder-check") return girderInputs(saved);
   if (kind === "dt-load-rating") return dtRatingInputs(saved);

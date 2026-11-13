@@ -1,0 +1,85 @@
+import { payItem, TOOL_PAY_ITEMS, type QuantityRole } from "../rebar/cdot-items";
+import { roundFor, type PayLine } from "../rebar/pay-lines";
+import type { CbcInputs } from "../culverts/cbc";
+import type { DeckInputs } from "../decks/deck";
+import { railDef } from "../decks/rails";
+import type { GirderInputs } from "../girders/prestressed";
+import type { ColumnInputs } from "../piers/column";
+import { columnTakeoff as pierColumnTakeoff } from "../piers/column-detail";
+import type { SignInputs } from "../signs/cantilever";
+import type { StripSealInputs } from "../joints/strip-seal";
+import type { CipInputs } from "../walls/cip";
+import type { MseInputs } from "../walls/mse";
+import type { WingwallInputs } from "../walls/wingwall";
+import { bearingTakeoff, cipWallTakeoff, culvertTakeoff, deckTakeoff, girderTakeoff, jointTakeoff, mseTakeoff, shaftTakeoff, wingwallTakeoff } from "./tools";
+import type { Takeoff, TakeoffSettings } from "./types";
+
+export * from "./types";
+
+/** A design's take-off, from its inputs and its take-off settings; null for a kind without one. */
+export function takeoffFor(kind: string, inputs: unknown, s?: TakeoffSettings): Takeoff | null {
+  const L = s?.length;
+  switch (kind) {
+    case "box-culvert":
+      return culvertTakeoff(inputs as CbcInputs, L ?? 40, { ground: s?.ground, angle: s?.angle });
+    case "cip-cantilever-wall":
+      return cipWallTakeoff(inputs as CipInputs, L ?? 50, { ground: s?.ground });
+    case "cantilever-wingwall":
+      return wingwallTakeoff(inputs as WingwallInputs);
+    case "deck-slab":
+      return deckTakeoff(inputs as DeckInputs, L ?? 100);
+    case "mse-wall":
+      return mseTakeoff(inputs as MseInputs, L ?? 100);
+    case "pier-column":
+      return pierColumnTakeoff(inputs as ColumnInputs, L);
+    case "sign-cantilever":
+      return shaftTakeoff(inputs as SignInputs);
+    case "lrfd-girder-check":
+      return girderTakeoff(inputs as GirderInputs, L);
+    case "elastomeric-bearing":
+    case "ptfe-bearing":
+      return bearingTakeoff(Math.max(1, Math.round(L ?? 1)));
+    case "strip-seal-joint":
+      return jointTakeoff(inputs as StripSealInputs, L ?? 40);
+    default:
+      return null;
+  }
+}
+
+/** The pay item a shaft or girder quantity defaults to, from its size or shape (the code book's item, where there is one). */
+function defaultFor(kind: string, role: QuantityRole, inputs: unknown): string | undefined {
+  if (!inputs) return undefined;
+  if (kind === "sign-cantilever" && role === "shaft") {
+    const d = (inputs as SignInputs).shaftD;
+    const code = `503-000${Math.round(d)}`;
+    return payItem(code) ? code : undefined;
+  }
+  if ((kind === "deck-slab" || kind === "lrfd-girder-check") && role === "rail") {
+    const r = railDef((inputs as DeckInputs | GirderInputs).rail?.type ?? "custom");
+    return r?.payItem;
+  }
+  if (kind === "lrfd-girder-check" && role === "girder") {
+    const norm = (s: string) => s.toUpperCase().replace(/[^A-Z0-9.]/g, "");
+    const shape = norm((inputs as GirderInputs).shape);
+    return (TOOL_PAY_ITEMS[kind].girder ?? []).find((c) => norm(payItem(c)!.description.match(/\(([^)]+)\)/)?.[1] ?? "") === shape);
+  }
+  return undefined;
+}
+
+/** A take-off's quantities as pay lines: each role with a quantity, under the chosen (or default) pay item. */
+export function takeoffPayLines(kind: string, t: Takeoff, chosen: Partial<Record<QuantityRole, string>> = {}, inputs?: unknown): PayLine[] {
+  const allowed = TOOL_PAY_ITEMS[kind] ?? {};
+  const values: Partial<Record<QuantityRole, number>> = {};
+  if (t.schedule.concreteTotal > 0) values.concrete = t.schedule.concreteTotal;
+  if (t.schedule.total > 0) values.rebar = t.schedule.total;
+  for (const [role, q] of Object.entries(t.quantities)) if (q && q.value > 0) values[role as QuantityRole] = q.value;
+  const lines: PayLine[] = [];
+  for (const [role, value] of Object.entries(values) as [QuantityRole, number][]) {
+    const list = allowed[role];
+    if (!list?.length) continue;
+    const want = chosen[role] && list.includes(chosen[role]!) ? chosen[role] : (defaultFor(kind, role, inputs) ?? list[0]);
+    const p = payItem(want!);
+    if (p) lines.push({ ...p, quantity: roundFor(p.unit, value), role });
+  }
+  return lines;
+}

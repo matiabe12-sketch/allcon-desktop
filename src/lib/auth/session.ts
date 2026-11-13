@@ -1,0 +1,102 @@
+import "server-only";
+import { cache } from "react";
+import { headers } from "next/headers";
+import { notFound, redirect } from "next/navigation";
+import { auth } from "@/lib/auth/server";
+import { db } from "@/lib/db";
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export const isUuid = (id: string) => UUID.test(id);
+
+// Desktop (ALLCON_LOCAL=1): one person on this PC, no sign-in. The local user and their
+// organization are created on first use.
+const LOCAL_EMAIL = "local@allcon.desktop";
+async function localUser() {
+  const existing = await db.user.findUnique({ where: { email: LOCAL_EMAIL } });
+  if (existing) return existing;
+  const org = await db.organization.create({ data: { name: "My workspace" } });
+  return db.user.create({ data: { orgId: org.id, email: LOCAL_EMAIL, name: process.env.ALLCON_USER_NAME || "Me", emailVerified: true } });
+}
+
+export const isLocalMode = () => process.env.ALLCON_LOCAL === "1";
+
+/** The signed-in user, or null. Cached per request. */
+export const getCurrentUser = cache(async () => {
+  if (isLocalMode()) {
+    await headers(); // keeps pages rendered per request, as with sign-in
+    return localUser();
+  }
+  const session = await auth().api.getSession({ headers: await headers() });
+  if (!session) return null;
+  return db.user.findUnique({ where: { id: session.user.id } });
+});
+
+export async function requireUser() {
+  const user = await getCurrentUser();
+  if (!user) redirect("/");
+  return user;
+}
+
+/** Loads a project the current user may access; 404s otherwise so ids can't be probed. */
+export async function requireProject(projectId: string) {
+  const user = await requireUser();
+  if (!isUuid(projectId)) notFound();
+  const project = await db.project.findFirst({ where: { id: projectId, orgId: user.orgId } });
+  if (!project) notFound();
+  return { user, project };
+}
+
+/** Same check for API routes, returning null instead of redirecting. */
+export async function findAccessibleModel(modelId: string) {
+  const user = await getCurrentUser();
+  if (!user || !isUuid(modelId)) return null;
+  return db.modelVersion.findFirst({
+    where: { id: modelId, project: { orgId: user.orgId } },
+  });
+}
+
+export async function findAccessibleProject(projectId: string) {
+  const user = await getCurrentUser();
+  if (!user || !isUuid(projectId)) return null;
+  const project = await db.project.findFirst({ where: { id: projectId, orgId: user.orgId } });
+  return project && { user, project };
+}
+
+export async function findAccessibleDrawingSet(drawingSetId: string) {
+  const user = await getCurrentUser();
+  if (!user || !isUuid(drawingSetId)) return null;
+  const drawingSet = await db.drawingSet.findFirst({
+    where: { id: drawingSetId, project: { orgId: user.orgId } },
+  });
+  return drawingSet && { user, drawingSet };
+}
+
+/** A sheet the current user may access, with its project (for unit settings). */
+export async function findAccessibleSheet(sheetId: string) {
+  const user = await getCurrentUser();
+  if (!user || !isUuid(sheetId)) return null;
+  const sheet = await db.sheet.findFirst({
+    where: { id: sheetId, drawingSet: { project: { orgId: user.orgId } } },
+    include: { drawingSet: { include: { project: true } } },
+  });
+  return sheet && { user, sheet };
+}
+
+/** A library reference (manual) in the current user's organization. */
+export async function findAccessibleReference(referenceId: string) {
+  const user = await getCurrentUser();
+  if (!user || !isUuid(referenceId)) return null;
+  const reference = await db.reference.findFirst({ where: { id: referenceId, orgId: user.orgId } });
+  return reference && { user, reference };
+}
+
+/** A plan review the current user may access, with its drawing set. */
+export async function findAccessibleReview(reviewId: string) {
+  const user = await getCurrentUser();
+  if (!user || !isUuid(reviewId)) return null;
+  const review = await db.review.findFirst({
+    where: { id: reviewId, project: { orgId: user.orgId } },
+    include: { drawingSet: true },
+  });
+  return review && { user, review };
+}

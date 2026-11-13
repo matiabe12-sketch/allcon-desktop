@@ -1,0 +1,4031 @@
+{
+ "model": {
+  "id": "6f71455b-d8a2-401e-bc54-474c2af8c415",
+  "name": "Strut-and-Tie Model 1",
+  "updated_at": "2026-11-10T02:43:26.316Z"
+ },
+ "A": {
+  "cases": [
+   {
+    "case": 1,
+    "name": "Strength I (1 lane from 11.0 ft off the left curb, trucks right 1 ft)",
+    "applied": 1535.5,
+    "nodalResidual": 1.7053025658242404e-13,
+    "Fx": 0,
+    "Fy": -2.2737367544323206e-13,
+    "M": -1.8189894035458565e-12,
+    "equilibrium": true,
+    "smallestAngle": 25.2,
+    "angleOk": true
+   },
+   {
+    "case": 2,
+    "name": "Strength I (1 lane from 19.0 ft off the left curb, trucks right 1 ft)",
+    "applied": 1535.5,
+    "nodalResidual": 1.1368683772161603e-13,
+    "Fx": 0,
+    "Fy": -7.105427357601002e-14,
+    "M": -2.5011104298755527e-12,
+    "equilibrium": true,
+    "smallestAngle": 25.2,
+    "angleOk": true
+   },
+   {
+    "case": 3,
+    "name": "Strength I (1 lane from 27.0 ft off the left curb, trucks right 1 ft)",
+    "applied": 1535.5,
+    "nodalResidual": 1.5631940186722204e-13,
+    "Fx": 0,
+    "Fy": -2.2737367544323206e-13,
+    "M": -7.275957614183426e-12,
+    "equilibrium": true,
+    "smallestAngle": 25.2,
+    "angleOk": true
+   },
+   {
+    "case": 4,
+    "name": "Strength I (1 lane from 32.0 ft off the left curb, trucks right 1 ft)",
+    "applied": 1535.5,
+    "nodalResidual": 2.2737367544323206e-13,
+    "Fx": 0,
+    "Fy": -4.547473508864641e-13,
+    "M": -3.637978807091713e-12,
+    "equilibrium": true,
+    "smallestAngle": 25.2,
+    "angleOk": true
+   },
+   {
+    "case": 5,
+    "name": "Strength I (2 lanes from 20.0 ft off the left curb, trucks right 1 ft)",
+    "applied": 1712.9,
+    "nodalResidual": 2.7000623958883807e-13,
+    "Fx": 0,
+    "Fy": 0,
+    "M": -7.275957614183426e-12,
+    "equilibrium": true,
+    "smallestAngle": 25.2,
+    "angleOk": true
+   },
+   {
+    "case": 6,
+    "name": "Strength I (3 lanes from 0.0 ft off the left curb)",
+    "applied": 1834.8,
+    "nodalResidual": 2.2737367544323206e-13,
+    "Fx": 0,
+    "Fy": -2.2737367544323206e-13,
+    "M": -5.4569682106375694e-12,
+    "equilibrium": true,
+    "smallestAngle": 25.2,
+    "angleOk": true
+   },
+   {
+    "case": 7,
+    "name": "Strength I, dead loads at minimum (2 lanes from 20.0 ft off the left curb, trucks right 1 ft)",
+    "applied": 1329.1,
+    "nodalResidual": 2.2737367544323206e-13,
+    "Fx": 0,
+    "Fy": 0,
+    "M": -3.637978807091713e-12,
+    "equilibrium": true,
+    "smallestAngle": 25.2,
+    "angleOk": true
+   }
+  ],
+  "members": [
+   {
+    "member": "T1-M2",
+    "role": "strut",
+    "tension": 0,
+    "tensionCase": null,
+    "compression": 491.1,
+    "compressionCase": 6
+   },
+   {
+    "member": "M1-T7",
+    "role": "strut",
+    "tension": 0,
+    "tensionCase": null,
+    "compression": 422.1,
+    "compressionCase": 6
+   },
+   {
+    "member": "T2-M1",
+    "role": "strut",
+    "tension": 0,
+    "tensionCase": null,
+    "compression": 583,
+    "compressionCase": 6
+   },
+   {
+    "member": "T3-M1",
+    "role": "tie",
+    "tension": 1444.2,
+    "tensionCase": 5,
+    "compression": 231.1,
+    "compressionCase": 6
+   },
+   {
+    "member": "T4-C2",
+    "role": "strut",
+    "tension": 0,
+    "tensionCase": null,
+    "compression": 417.3,
+    "compressionCase": 2
+   },
+   {
+    "member": "T5-C2",
+    "role": "strut",
+    "tension": 0,
+    "tensionCase": null,
+    "compression": 1227.2,
+    "compressionCase": 5
+   },
+   {
+    "member": "T6-M3",
+    "role": "strut",
+    "tension": 0,
+    "tensionCase": null,
+    "compression": 633.8,
+    "compressionCase": 4
+   },
+   {
+    "member": "T8-M4",
+    "role": "strut",
+    "tension": 0,
+    "tensionCase": null,
+    "compression": 298.2,
+    "compressionCase": 4
+   },
+   {
+    "member": "C1-S1",
+    "role": "strut",
+    "tension": 0,
+    "tensionCase": null,
+    "compression": 1719.2,
+    "compressionCase": 5
+   },
+   {
+    "member": "C2-S2",
+    "role": "strut",
+    "tension": 0,
+    "tensionCase": null,
+    "compression": 1042.1,
+    "compressionCase": 5
+   },
+   {
+    "member": "M1-S3",
+    "role": "tie",
+    "tension": 1103,
+    "tensionCase": 7,
+    "compression": 847.8,
+    "compressionCase": 6
+   },
+   {
+    "member": "T3-C1",
+    "role": "strut",
+    "tension": 0,
+    "tensionCase": null,
+    "compression": 2044.3,
+    "compressionCase": 5
+   },
+   {
+    "member": "T4-C1",
+    "role": "strut",
+    "tension": 0,
+    "tensionCase": null,
+    "compression": 36.4,
+    "compressionCase": 1
+   },
+   {
+    "member": "M2-T7",
+    "role": "tie",
+    "tension": 211.2,
+    "tensionCase": 6,
+    "compression": 0,
+    "compressionCase": null
+   },
+   {
+    "member": "M3-T8",
+    "role": "tie",
+    "tension": 269.8,
+    "tensionCase": 4,
+    "compression": 0,
+    "compressionCase": null
+   },
+   {
+    "member": "T5-M4",
+    "role": "tie",
+    "tension": 254.1,
+    "tensionCase": 4,
+    "compression": 0,
+    "compressionCase": null
+   },
+   {
+    "member": "T1-T7",
+    "role": "tie",
+    "tension": 404.9,
+    "tensionCase": 6,
+    "compression": 0,
+    "compressionCase": null
+   },
+   {
+    "member": "T2-T7",
+    "role": "tie",
+    "tension": 770.3,
+    "tensionCase": 6,
+    "compression": 0,
+    "compressionCase": null
+   },
+   {
+    "member": "T2-T3",
+    "role": "tie",
+    "tension": 1244.8,
+    "tensionCase": 6,
+    "compression": 0,
+    "compressionCase": null
+   },
+   {
+    "member": "T3-T4",
+    "role": "tie",
+    "tension": 1869.4,
+    "tensionCase": 5,
+    "compression": 0,
+    "compressionCase": null
+   },
+   {
+    "member": "T4-T5",
+    "role": "tie",
+    "tension": 1705.6,
+    "tensionCase": 4,
+    "compression": 0,
+    "compressionCase": null
+   },
+   {
+    "member": "T5-T8",
+    "role": "tie",
+    "tension": 655.9,
+    "tensionCase": 4,
+    "compression": 0,
+    "compressionCase": null
+   },
+   {
+    "member": "T6-T8",
+    "role": "tie",
+    "tension": 528.9,
+    "tensionCase": 4,
+    "compression": 0,
+    "compressionCase": null
+   },
+   {
+    "member": "M1-M2",
+    "role": "strut",
+    "tension": 0,
+    "tensionCase": null,
+    "compression": 410.3,
+    "compressionCase": 6
+   },
+   {
+    "member": "C1-M1",
+    "role": "strut",
+    "tension": 0,
+    "tensionCase": null,
+    "compression": 1251.4,
+    "compressionCase": 6
+   },
+   {
+    "member": "C1-C2",
+    "role": "strut",
+    "tension": 0,
+    "tensionCase": null,
+    "compression": 1869.4,
+    "compressionCase": 5
+   },
+   {
+    "member": "C2-M4",
+    "role": "strut",
+    "tension": 0,
+    "tensionCase": null,
+    "compression": 662.7,
+    "compressionCase": 4
+   },
+   {
+    "member": "M3-M4",
+    "role": "strut",
+    "tension": 0,
+    "tensionCase": null,
+    "compression": 534.9,
+    "compressionCase": 4
+   }
+  ],
+  "supports": [
+   {
+    "node": "S1",
+    "restrains": "x",
+    "reactions": [
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0
+    ],
+    "target": null
+   },
+   {
+    "node": "S1",
+    "restrains": "y",
+    "reactions": [
+     425.2,
+     781.7,
+     1309.8,
+     1680.8,
+     1719.2,
+     170,
+     1579.1
+    ],
+    "target": null
+   },
+   {
+    "node": "S2",
+    "restrains": "y",
+    "reactions": [
+     642.7,
+     814,
+     861.4,
+     861.4,
+     1042.1,
+     817,
+     853
+    ],
+    "target": null
+   },
+   {
+    "node": "S3",
+    "restrains": "y",
+    "reactions": [
+     467.6,
+     -60.2,
+     -635.7,
+     -1006.7,
+     -1048.5,
+     847.8,
+     -1103
+    ],
+    "target": null
+   }
+  ],
+  "checks": [
+   {
+    "name": "Strut-tie angles greater than 25°",
+    "demand": 25,
+    "capacity": 25.2,
+    "ok": true
+   },
+   {
+    "name": "Crack-control grid, vertical: Av/(bw sv) ≥ 0.003",
+    "demand": 0,
+    "capacity": 0,
+    "ok": true
+   },
+   {
+    "name": "Crack-control grid, horizontal: Ah/(bw sh) ≥ 0.003",
+    "demand": 0,
+    "capacity": 0,
+    "ok": true
+   },
+   {
+    "name": "Crack-control grid spacing, d/4 and 12 in or less",
+    "demand": 6,
+    "capacity": 12,
+    "ok": true
+   },
+   {
+    "name": "Tie T3-M1: 26 #11",
+    "demand": 1444.2,
+    "capacity": 2190.2,
+    "ok": true
+   },
+   {
+    "name": "Tie M1-S3: 26 #11",
+    "demand": 1103,
+    "capacity": 2190.2,
+    "ok": true
+   },
+   {
+    "name": "Tie M2-T7: 48 #5",
+    "demand": 211.2,
+    "capacity": 803.5,
+    "ok": true
+   },
+   {
+    "name": "Tie M3-T8: 48 #5",
+    "demand": 269.8,
+    "capacity": 803.5,
+    "ok": true
+   },
+   {
+    "name": "Tie T5-M4: 16 #5",
+    "demand": 254.1,
+    "capacity": 267.8,
+    "ok": true
+   },
+   {
+    "name": "Tie T1-T7: 26 #11",
+    "demand": 404.9,
+    "capacity": 2190.2,
+    "ok": true
+   },
+   {
+    "name": "Tie T2-T7: 26 #11",
+    "demand": 770.3,
+    "capacity": 2190.2,
+    "ok": true
+   },
+   {
+    "name": "Tie T2-T3: 26 #11",
+    "demand": 1244.8,
+    "capacity": 2190.2,
+    "ok": true
+   },
+   {
+    "name": "Tie T3-T4: 26 #11",
+    "demand": 1869.4,
+    "capacity": 2190.2,
+    "ok": true
+   },
+   {
+    "name": "Tie T4-T5: 26 #11",
+    "demand": 1705.6,
+    "capacity": 2190.2,
+    "ok": true
+   },
+   {
+    "name": "Tie T5-T8: 26 #11",
+    "demand": 655.9,
+    "capacity": 2190.2,
+    "ok": true
+   },
+   {
+    "name": "Tie T6-T8: 26 #11",
+    "demand": 528.9,
+    "capacity": 2190.2,
+    "ok": true
+   },
+   {
+    "name": "Node T1 (CCT): bearing (applied load or reaction)",
+    "demand": 277.9,
+    "capacity": 1587.6,
+    "ok": true
+   },
+   {
+    "name": "Node T2 (CCT): bearing (applied load or reaction)",
+    "demand": 338.9,
+    "capacity": 1587.6,
+    "ok": true
+   },
+   {
+    "name": "Node T3 (CCT): bearing (applied load or reaction)",
+    "demand": 420.9,
+    "capacity": 1587.6,
+    "ok": true
+   },
+   {
+    "name": "Node T4 (CCT): bearing (applied load or reaction)",
+    "demand": 403.8,
+    "capacity": 1587.6,
+    "ok": true
+   },
+   {
+    "name": "Node T5 (CTT): bearing (applied load or reaction)",
+    "demand": 380.8,
+    "capacity": 1417.5,
+    "ok": true
+   },
+   {
+    "name": "Node T6 (CCT): bearing (applied load or reaction)",
+    "demand": 349.1,
+    "capacity": 1587.6,
+    "ok": true
+   },
+   {
+    "name": "Node C1 (CCC): bearing face, C1-S1",
+    "demand": 1719.2,
+    "capacity": 6775.9,
+    "ok": true
+   },
+   {
+    "name": "Node C2 (CCC): bearing face, C2-S2",
+    "demand": 1042.1,
+    "capacity": 1783.6,
+    "ok": true
+   }
+  ],
+  "failing": [],
+  "coverage": [
+   {
+    "item": "Tie T3-M1",
+    "status": "pass",
+    "detail": "26 #11, φPn 2190 kip against 1444 kip (case 5), AASHTO 5.8.2.4.1"
+   },
+   {
+    "item": "Anchorage of tie T3-M1 at T3",
+    "status": "missing-input",
+    "detail": "Needs the length available from the extended nodal zone, the bars' cover and spacing, and straight or hooked (AASHTO 5.8.2.4.2)."
+   },
+   {
+    "item": "Anchorage of tie T3-M1 at M1",
+    "status": "not-required",
+    "detail": "The bars continue in line into the next scheduled tie."
+   },
+   {
+    "item": "Tie M1-S3",
+    "status": "pass",
+    "detail": "26 #11, φPn 2190 kip against 1103 kip (case 7), AASHTO 5.8.2.4.1"
+   },
+   {
+    "item": "Anchorage of tie M1-S3 at M1",
+    "status": "not-required",
+    "detail": "The bars continue in line into the next scheduled tie."
+   },
+   {
+    "item": "Anchorage of tie M1-S3 at S3",
+    "status": "missing-input",
+    "detail": "Needs the length available from the extended nodal zone, the bars' cover and spacing, and straight or hooked (AASHTO 5.8.2.4.2)."
+   },
+   {
+    "item": "Tie M2-T7",
+    "status": "pass",
+    "detail": "48 #5, φPn 804 kip against 211 kip (case 6), AASHTO 5.8.2.4.1"
+   },
+   {
+    "item": "Anchorage of tie M2-T7 at M2",
+    "status": "missing-input",
+    "detail": "Needs the length available from the extended nodal zone, the bars' cover and spacing, and straight or hooked (AASHTO 5.8.2.4.2)."
+   },
+   {
+    "item": "Anchorage of tie M2-T7 at T7",
+    "status": "missing-input",
+    "detail": "Needs the length available from the extended nodal zone, the bars' cover and spacing, and straight or hooked (AASHTO 5.8.2.4.2)."
+   },
+   {
+    "item": "Tie M3-T8",
+    "status": "pass",
+    "detail": "48 #5, φPn 804 kip against 270 kip (case 4), AASHTO 5.8.2.4.1"
+   },
+   {
+    "item": "Anchorage of tie M3-T8 at M3",
+    "status": "missing-input",
+    "detail": "Needs the length available from the extended nodal zone, the bars' cover and spacing, and straight or hooked (AASHTO 5.8.2.4.2)."
+   },
+   {
+    "item": "Anchorage of tie M3-T8 at T8",
+    "status": "missing-input",
+    "detail": "Needs the length available from the extended nodal zone, the bars' cover and spacing, and straight or hooked (AASHTO 5.8.2.4.2)."
+   },
+   {
+    "item": "Tie T5-M4",
+    "status": "pass",
+    "detail": "16 #5, φPn 268 kip against 254 kip (case 4), AASHTO 5.8.2.4.1"
+   },
+   {
+    "item": "Anchorage of tie T5-M4 at T5",
+    "status": "missing-input",
+    "detail": "Needs the length available from the extended nodal zone, the bars' cover and spacing, and straight or hooked (AASHTO 5.8.2.4.2)."
+   },
+   {
+    "item": "Anchorage of tie T5-M4 at M4",
+    "status": "missing-input",
+    "detail": "Needs the length available from the extended nodal zone, the bars' cover and spacing, and straight or hooked (AASHTO 5.8.2.4.2)."
+   },
+   {
+    "item": "Tie T1-T7",
+    "status": "pass",
+    "detail": "26 #11, φPn 2190 kip against 405 kip (case 6), AASHTO 5.8.2.4.1"
+   },
+   {
+    "item": "Anchorage of tie T1-T7 at T1",
+    "status": "missing-input",
+    "detail": "Needs the length available from the extended nodal zone, the bars' cover and spacing, and straight or hooked (AASHTO 5.8.2.4.2)."
+   },
+   {
+    "item": "Anchorage of tie T1-T7 at T7",
+    "status": "not-required",
+    "detail": "The bars continue in line into the next scheduled tie."
+   },
+   {
+    "item": "Tie T2-T7",
+    "status": "pass",
+    "detail": "26 #11, φPn 2190 kip against 770 kip (case 6), AASHTO 5.8.2.4.1"
+   },
+   {
+    "item": "Anchorage of tie T2-T7 at T2",
+    "status": "not-required",
+    "detail": "The bars continue in line into the next scheduled tie."
+   },
+   {
+    "item": "Anchorage of tie T2-T7 at T7",
+    "status": "not-required",
+    "detail": "The bars continue in line into the next scheduled tie."
+   },
+   {
+    "item": "Tie T2-T3",
+    "status": "pass",
+    "detail": "26 #11, φPn 2190 kip against 1245 kip (case 6), AASHTO 5.8.2.4.1"
+   },
+   {
+    "item": "Anchorage of tie T2-T3 at T2",
+    "status": "not-required",
+    "detail": "The bars continue in line into the next scheduled tie."
+   },
+   {
+    "item": "Anchorage of tie T2-T3 at T3",
+    "status": "not-required",
+    "detail": "The bars continue in line into the next scheduled tie."
+   },
+   {
+    "item": "Tie T3-T4",
+    "status": "pass",
+    "detail": "26 #11, φPn 2190 kip against 1869 kip (case 5), AASHTO 5.8.2.4.1"
+   },
+   {
+    "item": "Anchorage of tie T3-T4 at T3",
+    "status": "not-required",
+    "detail": "The bars continue in line into the next scheduled tie."
+   },
+   {
+    "item": "Anchorage of tie T3-T4 at T4",
+    "status": "not-required",
+    "detail": "The bars continue in line into the next scheduled tie."
+   },
+   {
+    "item": "Tie T4-T5",
+    "status": "pass",
+    "detail": "26 #11, φPn 2190 kip against 1706 kip (case 4), AASHTO 5.8.2.4.1"
+   },
+   {
+    "item": "Anchorage of tie T4-T5 at T4",
+    "status": "not-required",
+    "detail": "The bars continue in line into the next scheduled tie."
+   },
+   {
+    "item": "Anchorage of tie T4-T5 at T5",
+    "status": "not-required",
+    "detail": "The bars continue in line into the next scheduled tie."
+   },
+   {
+    "item": "Tie T5-T8",
+    "status": "pass",
+    "detail": "26 #11, φPn 2190 kip against 656 kip (case 4), AASHTO 5.8.2.4.1"
+   },
+   {
+    "item": "Anchorage of tie T5-T8 at T5",
+    "status": "not-required",
+    "detail": "The bars continue in line into the next scheduled tie."
+   },
+   {
+    "item": "Anchorage of tie T5-T8 at T8",
+    "status": "not-required",
+    "detail": "The bars continue in line into the next scheduled tie."
+   },
+   {
+    "item": "Tie T6-T8",
+    "status": "pass",
+    "detail": "26 #11, φPn 2190 kip against 529 kip (case 4), AASHTO 5.8.2.4.1"
+   },
+   {
+    "item": "Anchorage of tie T6-T8 at T6",
+    "status": "missing-input",
+    "detail": "Needs the length available from the extended nodal zone, the bars' cover and spacing, and straight or hooked (AASHTO 5.8.2.4.2)."
+   },
+   {
+    "item": "Anchorage of tie T6-T8 at T8",
+    "status": "not-required",
+    "detail": "The bars continue in line into the next scheduled tie."
+   },
+   {
+    "item": "Node T1: bearing face (external)",
+    "status": "pass",
+    "detail": "24.0 in by the node's thickness, ν 0.70: φPn 1588 kip against 278 kip (case 6), AASHTO 5.8.2.5"
+   },
+   {
+    "item": "Node T1: strut-to-node faces of T1-M2",
+    "status": "missing-input",
+    "detail": "No face width given for these struts; their interfaces aren't checked."
+   },
+   {
+    "item": "Node T2: bearing face (external)",
+    "status": "pass",
+    "detail": "24.0 in by the node's thickness, ν 0.70: φPn 1588 kip against 339 kip (case 6), AASHTO 5.8.2.5"
+   },
+   {
+    "item": "Node T2: strut-to-node faces of T2-M1",
+    "status": "missing-input",
+    "detail": "No face width given for these struts; their interfaces aren't checked."
+   },
+   {
+    "item": "Node T3: bearing face (external)",
+    "status": "pass",
+    "detail": "24.0 in by the node's thickness, ν 0.70: φPn 1588 kip against 421 kip (case 1), AASHTO 5.8.2.5"
+   },
+   {
+    "item": "Node T3: strut-to-node faces of T3-M1, T3-C1",
+    "status": "missing-input",
+    "detail": "No face width given for these struts; their interfaces aren't checked."
+   },
+   {
+    "item": "Node T4: bearing face (external)",
+    "status": "pass",
+    "detail": "24.0 in by the node's thickness, ν 0.70: φPn 1588 kip against 404 kip (case 2), AASHTO 5.8.2.5"
+   },
+   {
+    "item": "Node T4: strut-to-node faces of T4-C2, T4-C1",
+    "status": "missing-input",
+    "detail": "No face width given for these struts; their interfaces aren't checked."
+   },
+   {
+    "item": "Node T5: bearing face (external)",
+    "status": "pass",
+    "detail": "24.0 in by the node's thickness, ν 0.63: φPn 1417 kip against 381 kip (case 3), AASHTO 5.8.2.5"
+   },
+   {
+    "item": "Node T5: strut-to-node faces of T5-C2",
+    "status": "missing-input",
+    "detail": "No face width given for these struts; their interfaces aren't checked."
+   },
+   {
+    "item": "Node T6: bearing face (external)",
+    "status": "pass",
+    "detail": "24.0 in by the node's thickness, ν 0.70: φPn 1588 kip against 349 kip (case 4), AASHTO 5.8.2.5"
+   },
+   {
+    "item": "Node T6: strut-to-node faces of T6-M3",
+    "status": "missing-input",
+    "detail": "No face width given for these struts; their interfaces aren't checked."
+   },
+   {
+    "item": "Node C1: bearing face (C1-S1)",
+    "status": "pass",
+    "detail": "35.1 in by the node's thickness, ν 0.85: φPn 6776 kip against 1719 kip (case 5), AASHTO 5.8.2.5"
+   },
+   {
+    "item": "Node C1: strut-to-node faces of T3-C1, T4-C1, C1-M1, C1-C2",
+    "status": "missing-input",
+    "detail": "No face width given for these struts; their interfaces aren't checked."
+   },
+   {
+    "item": "Node C2: bearing face (C2-S2)",
+    "status": "pass",
+    "detail": "9.3 in by the node's thickness, ν 0.85: φPn 1784 kip against 1042 kip (case 5), AASHTO 5.8.2.5"
+   },
+   {
+    "item": "Node C2: strut-to-node faces of T4-C2, T5-C2, C1-C2, C2-M4",
+    "status": "missing-input",
+    "detail": "No face width given for these struts; their interfaces aren't checked."
+   },
+   {
+    "item": "Node M1: strut-to-node faces of M1-T7, T2-M1, T3-M1, M1-S3, M1-M2, C1-M1",
+    "status": "not-checked",
+    "detail": "No face of this node is checked (a smeared node may need none, C5.8.2.2; any other node does)."
+   },
+   {
+    "item": "Node M2: strut-to-node faces of T1-M2, M1-M2",
+    "status": "not-checked",
+    "detail": "No face of this node is checked (a smeared node may need none, C5.8.2.2; any other node does)."
+   },
+   {
+    "item": "Node T7: strut-to-node faces of M1-T7",
+    "status": "not-checked",
+    "detail": "No face of this node is checked (a smeared node may need none, C5.8.2.2; any other node does)."
+   },
+   {
+    "item": "Node M3: strut-to-node faces of T6-M3, M3-M4",
+    "status": "not-checked",
+    "detail": "No face of this node is checked (a smeared node may need none, C5.8.2.2; any other node does)."
+   },
+   {
+    "item": "Node T8: strut-to-node faces of T8-M4",
+    "status": "not-checked",
+    "detail": "No face of this node is checked (a smeared node may need none, C5.8.2.2; any other node does)."
+   },
+   {
+    "item": "Node M4: strut-to-node faces of T8-M4, C2-M4, M3-M4",
+    "status": "not-checked",
+    "detail": "No face of this node is checked (a smeared node may need none, C5.8.2.2; any other node does)."
+   },
+   {
+    "item": "Strut T1-M2",
+    "status": "not-implemented",
+    "detail": "Carries 491 kip (case 6). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Strut M1-T7",
+    "status": "not-implemented",
+    "detail": "Carries 422 kip (case 6). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Strut T2-M1",
+    "status": "not-implemented",
+    "detail": "Carries 583 kip (case 6). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Strut T3-M1",
+    "status": "not-implemented",
+    "detail": "Carries 231 kip (case 6). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Strut T4-C2",
+    "status": "not-implemented",
+    "detail": "Carries 417 kip (case 2). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Strut T5-C2",
+    "status": "not-implemented",
+    "detail": "Carries 1227 kip (case 5). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Strut T6-M3",
+    "status": "not-implemented",
+    "detail": "Carries 634 kip (case 4). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Strut T8-M4",
+    "status": "not-implemented",
+    "detail": "Carries 298 kip (case 4). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Strut C1-S1",
+    "status": "not-implemented",
+    "detail": "Carries 1719 kip (case 5). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Strut C2-S2",
+    "status": "not-implemented",
+    "detail": "Carries 1042 kip (case 5). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Strut M1-S3",
+    "status": "not-implemented",
+    "detail": "Carries 848 kip (case 6). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Strut T3-C1",
+    "status": "not-implemented",
+    "detail": "Carries 2044 kip (case 5). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Strut T4-C1",
+    "status": "not-implemented",
+    "detail": "Carries 36 kip (case 1). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Strut M1-M2",
+    "status": "not-implemented",
+    "detail": "Carries 410 kip (case 6). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Strut C1-M1",
+    "status": "not-implemented",
+    "detail": "Carries 1251 kip (case 6). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Strut C1-C2",
+    "status": "not-implemented",
+    "detail": "Carries 1869 kip (case 5). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Strut C2-M4",
+    "status": "not-implemented",
+    "detail": "Carries 663 kip (case 4). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Strut M3-M4",
+    "status": "not-implemented",
+    "detail": "Carries 535 kip (case 4). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Finite nodal zones",
+    "status": "not-implemented",
+    "detail": "Nodes are points: their extent, overlap with neighboring nodes and fit within the concrete aren't evaluated."
+   },
+   {
+    "item": "Reinforcement fit and congestion",
+    "status": "not-implemented",
+    "detail": "The bars' spacing within the section and where systems cross aren't checked."
+   },
+   {
+    "item": "Crack-control grid",
+    "status": "pass",
+    "detail": "AASHTO 5.8.2.6"
+   },
+   {
+    "item": "Diagonal-cracking screen",
+    "status": "missing-input",
+    "detail": "Needs the service shear, shear span and depth."
+   }
+  ],
+  "status": {
+   "equilibrium": true,
+   "mechanisms": 3,
+   "crossings": 0,
+   "angles": true,
+   "finiteGeometry": "not-implemented"
+  },
+  "boundary": {
+   "kind": "solver",
+   "deviation": 0
+  },
+  "warnings": [
+   "4 load cases turn the column toward the left. This model is laid out for cases turning it toward the right, so they are left out here: check them in a second design built with \"Lay out for: left\".",
+   "Bearings at 1.5 ft, 41.5 ft are more than twice the cap's depth from a column face. That part of the cap is not a disturbed region; sectional design (AASHTO 5.7) may suit it better (AASHTO 5.8.2.1).",
+   "As a pin-jointed truss the model has 3 mechanism(s). It carries these loads in equilibrium, which a strut-and-tie model needs, but check that the surrounding concrete restrains the free motion.",
+   "Tie T3-M1: anchorage not checked at T3 (continuous bars, a curved-bar node or a splice need their own check).",
+   "Tie M1-S3: anchorage not checked at S3 (continuous bars, a curved-bar node or a splice need their own check).",
+   "Tie M2-T7: anchorage not checked at M2 and T7 (continuous bars, a curved-bar node or a splice need their own check).",
+   "Tie M3-T8: anchorage not checked at M3 and T8 (continuous bars, a curved-bar node or a splice need their own check).",
+   "Tie T5-M4: anchorage not checked at T5 and M4 (continuous bars, a curved-bar node or a splice need their own check).",
+   "Tie T1-T7: anchorage not checked at T1 (continuous bars, a curved-bar node or a splice need their own check).",
+   "Tie T6-T8: anchorage not checked at T6 (continuous bars, a curved-bar node or a splice need their own check).",
+   "Nodes not checked: M1, M2, T7, M3, T8, M4. A smeared node or a curved-bar node may need no stress check (C5.8.2.2); any other node does."
+  ],
+  "appliedLoads": [
+   {
+    "label": "G1",
+    "x": 1.5,
+    "P": 321.4,
+    "detail": "DC 110.8, DW 11.0, LL+IM 95.0 kip"
+   },
+   {
+    "label": "G2",
+    "x": 9.5,
+    "P": 332,
+    "detail": "DC 115.3, DW 11.0, LL+IM 97.9 kip"
+   },
+   {
+    "label": "G3",
+    "x": 17.5,
+    "P": 332,
+    "detail": "DC 115.3, DW 11.0, LL+IM 97.9 kip"
+   },
+   {
+    "label": "G4",
+    "x": 25.5,
+    "P": 332,
+    "detail": "DC 115.3, DW 11.0, LL+IM 97.9 kip"
+   },
+   {
+    "label": "G5",
+    "x": 33.5,
+    "P": 332,
+    "detail": "DC 115.3, DW 11.0, LL+IM 97.9 kip"
+   },
+   {
+    "label": "G6",
+    "x": 41.5,
+    "P": 321.4,
+    "detail": "DC 110.8, DW 11.0, LL+IM 95.0 kip"
+   }
+  ],
+  "reversedCases": [
+   "Strength I (1 lane from 0.0 ft off the left curb, trucks left 1 ft)",
+   "Strength I (1 lane from 3.0 ft off the left curb, trucks right 1 ft)",
+   "Strength I (2 lanes from 0.0 ft off the left curb, trucks left 1 ft)",
+   "Strength I, dead loads at minimum (2 lanes from 0.0 ft off the left curb, trucks left 1 ft)"
+  ],
+  "selfWeight": 253.5
+ },
+ "B": {
+  "cases": [
+   {
+    "case": 1,
+    "name": "Strength I (1 lane from 11.0 ft off the left curb, trucks right 1 ft)",
+    "applied": 1535.5,
+    "nodalResidual": 1.1368683772161603e-13,
+    "Fx": 0,
+    "Fy": -1.7053025658242404e-13,
+    "M": -2.7284841053187847e-12,
+    "equilibrium": true,
+    "smallestAngle": 25.2,
+    "angleOk": true
+   },
+   {
+    "case": 2,
+    "name": "Strength I (1 lane from 19.0 ft off the left curb, trucks right 1 ft)",
+    "applied": 1535.5,
+    "nodalResidual": 1.7053025658242404e-13,
+    "Fx": 0,
+    "Fy": -5.684341886080802e-14,
+    "M": -2.7284841053187847e-12,
+    "equilibrium": true,
+    "smallestAngle": 25.2,
+    "angleOk": true
+   },
+   {
+    "case": 3,
+    "name": "Strength I (1 lane from 27.0 ft off the left curb, trucks right 1 ft)",
+    "applied": 1535.5,
+    "nodalResidual": 9.094947017729282e-13,
+    "Fx": 0,
+    "Fy": 1.1368683772161603e-12,
+    "M": 1.2732925824820995e-11,
+    "equilibrium": true,
+    "smallestAngle": 25.2,
+    "angleOk": true
+   },
+   {
+    "case": 4,
+    "name": "Strength I (1 lane from 32.0 ft off the left curb, trucks right 1 ft)",
+    "applied": 1535.5,
+    "nodalResidual": 4.547473508864641e-12,
+    "Fx": 0,
+    "Fy": 4.661160346586257e-12,
+    "M": 8.36735125631094e-11,
+    "equilibrium": true,
+    "smallestAngle": 25.2,
+    "angleOk": true
+   },
+   {
+    "case": 5,
+    "name": "Strength I (2 lanes from 20.0 ft off the left curb, trucks right 1 ft)",
+    "applied": 1712.9,
+    "nodalResidual": 3.183231456205249e-12,
+    "Fx": 0,
+    "Fy": -2.9558577807620168e-12,
+    "M": -5.4569682106375694e-11,
+    "equilibrium": true,
+    "smallestAngle": 25.2,
+    "angleOk": true
+   },
+   {
+    "case": 6,
+    "name": "Strength I (3 lanes from 0.0 ft off the left curb)",
+    "applied": 1834.8,
+    "nodalResidual": 1.7053025658242404e-13,
+    "Fx": 0,
+    "Fy": 0,
+    "M": 3.637978807091713e-12,
+    "equilibrium": true,
+    "smallestAngle": 25.2,
+    "angleOk": true
+   },
+   {
+    "case": 7,
+    "name": "Strength I, dead loads at minimum (2 lanes from 20.0 ft off the left curb, trucks right 1 ft)",
+    "applied": 1329.1,
+    "nodalResidual": 2.2737367544323206e-13,
+    "Fx": 0,
+    "Fy": -2.2737367544323206e-13,
+    "M": -1.0913936421275139e-11,
+    "equilibrium": true,
+    "smallestAngle": 25.2,
+    "angleOk": true
+   }
+  ],
+  "members": [
+   {
+    "member": "T1-M2",
+    "role": "strut",
+    "tension": 0,
+    "tensionCase": null,
+    "compression": 491.1,
+    "compressionCase": 6
+   },
+   {
+    "member": "M1-T7",
+    "role": "strut",
+    "tension": 0,
+    "tensionCase": null,
+    "compression": 422.1,
+    "compressionCase": 6
+   },
+   {
+    "member": "T2-M1",
+    "role": "strut",
+    "tension": 0,
+    "tensionCase": null,
+    "compression": 583,
+    "compressionCase": 6
+   },
+   {
+    "member": "T3-M1",
+    "role": "tie",
+    "tension": 1444.2,
+    "tensionCase": 5,
+    "compression": 104.2,
+    "compressionCase": 6
+   },
+   {
+    "member": "T4-C2",
+    "role": "strut",
+    "tension": 0,
+    "tensionCase": null,
+    "compression": 417.3,
+    "compressionCase": 5
+   },
+   {
+    "member": "T5-C2",
+    "role": "strut",
+    "tension": 0,
+    "tensionCase": null,
+    "compression": 1227.2,
+    "compressionCase": 5
+   },
+   {
+    "member": "T6-M3",
+    "role": "strut",
+    "tension": 0,
+    "tensionCase": null,
+    "compression": 633.8,
+    "compressionCase": 4
+   },
+   {
+    "member": "T8-M4",
+    "role": "strut",
+    "tension": 0,
+    "tensionCase": null,
+    "compression": 298.2,
+    "compressionCase": 4
+   },
+   {
+    "member": "C1-S1",
+    "role": "strut",
+    "tension": 0,
+    "tensionCase": null,
+    "compression": 1719.2,
+    "compressionCase": 5
+   },
+   {
+    "member": "C2-S2",
+    "role": "strut",
+    "tension": 0,
+    "tensionCase": null,
+    "compression": 1042.1,
+    "compressionCase": 5
+   },
+   {
+    "member": "M1-S3",
+    "role": "tie",
+    "tension": 1103,
+    "tensionCase": 7,
+    "compression": 720.9,
+    "compressionCase": 6
+   },
+   {
+    "member": "T3-C1",
+    "role": "strut",
+    "tension": 0,
+    "tensionCase": null,
+    "compression": 2044.3,
+    "compressionCase": 5
+   },
+   {
+    "member": "T4-C1",
+    "role": "strut",
+    "tension": 0,
+    "tensionCase": null,
+    "compression": 445.2,
+    "compressionCase": 6
+   },
+   {
+    "member": "M2-T7",
+    "role": "tie",
+    "tension": 211.2,
+    "tensionCase": 6,
+    "compression": 0,
+    "compressionCase": null
+   },
+   {
+    "member": "M3-T8",
+    "role": "tie",
+    "tension": 269.8,
+    "tensionCase": 4,
+    "compression": 0,
+    "compressionCase": null
+   },
+   {
+    "member": "T5-M4",
+    "role": "tie",
+    "tension": 254.1,
+    "tensionCase": 4,
+    "compression": 0,
+    "compressionCase": null
+   },
+   {
+    "member": "T1-T7",
+    "role": "tie",
+    "tension": 404.9,
+    "tensionCase": 6,
+    "compression": 0,
+    "compressionCase": null
+   },
+   {
+    "member": "T2-T7",
+    "role": "tie",
+    "tension": 770.3,
+    "tensionCase": 6,
+    "compression": 0,
+    "compressionCase": null
+   },
+   {
+    "member": "T2-T3",
+    "role": "tie",
+    "tension": 1244.8,
+    "tensionCase": 6,
+    "compression": 0,
+    "compressionCase": null
+   },
+   {
+    "member": "T3-T4",
+    "role": "tie",
+    "tension": 1869.4,
+    "tensionCase": 5,
+    "compression": 0,
+    "compressionCase": null
+   },
+   {
+    "member": "T4-T5",
+    "role": "tie",
+    "tension": 1705.6,
+    "tensionCase": 4,
+    "compression": 0,
+    "compressionCase": null
+   },
+   {
+    "member": "T5-T8",
+    "role": "tie",
+    "tension": 655.9,
+    "tensionCase": 4,
+    "compression": 0,
+    "compressionCase": null
+   },
+   {
+    "member": "T6-T8",
+    "role": "tie",
+    "tension": 528.9,
+    "tensionCase": 4,
+    "compression": 0,
+    "compressionCase": null
+   },
+   {
+    "member": "M1-M2",
+    "role": "strut",
+    "tension": 0,
+    "tensionCase": null,
+    "compression": 410.3,
+    "compressionCase": 6
+   },
+   {
+    "member": "C1-M1",
+    "role": "strut",
+    "tension": 0,
+    "tensionCase": null,
+    "compression": 1247.7,
+    "compressionCase": 6
+   },
+   {
+    "member": "C1-C2",
+    "role": "strut",
+    "tension": 0,
+    "tensionCase": null,
+    "compression": 1869.4,
+    "compressionCase": 5
+   },
+   {
+    "member": "C2-M4",
+    "role": "strut",
+    "tension": 0,
+    "tensionCase": null,
+    "compression": 662.7,
+    "compressionCase": 4
+   },
+   {
+    "member": "M3-M4",
+    "role": "strut",
+    "tension": 0,
+    "tensionCase": null,
+    "compression": 534.9,
+    "compressionCase": 4
+   }
+  ],
+  "supports": [
+   {
+    "node": "S1",
+    "restrains": "x",
+    "reactions": [
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0
+    ],
+    "target": [
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null
+    ]
+   },
+   {
+    "node": "S1",
+    "restrains": "y",
+    "reactions": [
+     744.2,
+     949.7,
+     1269.1,
+     1640.1,
+     1719.2,
+     627.4,
+     1579.1
+    ],
+    "target": [
+     744.2,
+     949.7,
+     1155.3,
+     1283.7,
+     1417,
+     795.8,
+     1205.6
+    ]
+   },
+   {
+    "node": "S2",
+    "restrains": "y",
+    "reactions": [
+     412.1,
+     692.6,
+     890.8,
+     890.8,
+     1042.1,
+     486.5,
+     853
+    ],
+    "target": [
+     435.4,
+     744.9,
+     1054.3,
+     1247.6,
+     1369.2,
+     379.5,
+     1222.2
+    ]
+   },
+   {
+    "node": "S3",
+    "restrains": "y",
+    "reactions": [
+     379.1,
+     -106.9,
+     -624.4,
+     -995.4,
+     -1048.5,
+     720.9,
+     -1103
+    ],
+    "target": [
+     355.8,
+     -159.1,
+     -674,
+     -995.9,
+     -1073.3,
+     659.6,
+     -1098.7
+    ]
+   }
+  ],
+  "checks": [
+   {
+    "name": "Strut-tie angles greater than 25°",
+    "demand": 25,
+    "capacity": 25.2,
+    "ok": true
+   },
+   {
+    "name": "Crack-control grid, vertical: Av/(bw sv) ≥ 0.003",
+    "demand": 0,
+    "capacity": 0,
+    "ok": true
+   },
+   {
+    "name": "Crack-control grid, horizontal: Ah/(bw sh) ≥ 0.003",
+    "demand": 0,
+    "capacity": 0,
+    "ok": true
+   },
+   {
+    "name": "Crack-control grid spacing, d/4 and 12 in or less",
+    "demand": 6,
+    "capacity": 12,
+    "ok": true
+   },
+   {
+    "name": "Tie T3-M1: 26 #11",
+    "demand": 1444.2,
+    "capacity": 2190.2,
+    "ok": true
+   },
+   {
+    "name": "Tie M1-S3: 26 #11",
+    "demand": 1103,
+    "capacity": 2190.2,
+    "ok": true
+   },
+   {
+    "name": "Tie M2-T7: 48 #5",
+    "demand": 211.2,
+    "capacity": 803.5,
+    "ok": true
+   },
+   {
+    "name": "Tie M3-T8: 48 #5",
+    "demand": 269.8,
+    "capacity": 803.5,
+    "ok": true
+   },
+   {
+    "name": "Tie T5-M4: 16 #5",
+    "demand": 254.1,
+    "capacity": 267.8,
+    "ok": true
+   },
+   {
+    "name": "Tie T1-T7: 26 #11",
+    "demand": 404.9,
+    "capacity": 2190.2,
+    "ok": true
+   },
+   {
+    "name": "Tie T2-T7: 26 #11",
+    "demand": 770.3,
+    "capacity": 2190.2,
+    "ok": true
+   },
+   {
+    "name": "Tie T2-T3: 26 #11",
+    "demand": 1244.8,
+    "capacity": 2190.2,
+    "ok": true
+   },
+   {
+    "name": "Tie T3-T4: 26 #11",
+    "demand": 1869.4,
+    "capacity": 2190.2,
+    "ok": true
+   },
+   {
+    "name": "Tie T4-T5: 26 #11",
+    "demand": 1705.6,
+    "capacity": 2190.2,
+    "ok": true
+   },
+   {
+    "name": "Tie T5-T8: 26 #11",
+    "demand": 655.9,
+    "capacity": 2190.2,
+    "ok": true
+   },
+   {
+    "name": "Tie T6-T8: 26 #11",
+    "demand": 528.9,
+    "capacity": 2190.2,
+    "ok": true
+   },
+   {
+    "name": "Node T1 (CCT): bearing (applied load or reaction)",
+    "demand": 277.9,
+    "capacity": 1587.6,
+    "ok": true
+   },
+   {
+    "name": "Node T2 (CCT): bearing (applied load or reaction)",
+    "demand": 338.9,
+    "capacity": 1587.6,
+    "ok": true
+   },
+   {
+    "name": "Node T3 (CTT): bearing (applied load or reaction)",
+    "demand": 420.9,
+    "capacity": 1417.5,
+    "ok": true
+   },
+   {
+    "name": "Node T4 (CCT): bearing (applied load or reaction)",
+    "demand": 403.8,
+    "capacity": 1587.6,
+    "ok": true
+   },
+   {
+    "name": "Node T5 (CTT): bearing (applied load or reaction)",
+    "demand": 380.8,
+    "capacity": 1417.5,
+    "ok": true
+   },
+   {
+    "name": "Node T6 (CCT): bearing (applied load or reaction)",
+    "demand": 349.1,
+    "capacity": 1587.6,
+    "ok": true
+   },
+   {
+    "name": "Node C1 (CCC): bearing face, C1-S1",
+    "demand": 1719.2,
+    "capacity": 6775.9,
+    "ok": true
+   },
+   {
+    "name": "Node C2 (CCC): bearing face, C2-S2",
+    "demand": 1042.1,
+    "capacity": 1783.6,
+    "ok": true
+   }
+  ],
+  "failing": [],
+  "coverage": [
+   {
+    "item": "Tie T3-M1",
+    "status": "pass",
+    "detail": "26 #11, φPn 2190 kip against 1444 kip (case 5), AASHTO 5.8.2.4.1"
+   },
+   {
+    "item": "Anchorage of tie T3-M1 at T3",
+    "status": "missing-input",
+    "detail": "Needs the length available from the extended nodal zone, the bars' cover and spacing, and straight or hooked (AASHTO 5.8.2.4.2)."
+   },
+   {
+    "item": "Anchorage of tie T3-M1 at M1",
+    "status": "not-required",
+    "detail": "The bars continue in line into the next scheduled tie."
+   },
+   {
+    "item": "Tie M1-S3",
+    "status": "pass",
+    "detail": "26 #11, φPn 2190 kip against 1103 kip (case 7), AASHTO 5.8.2.4.1"
+   },
+   {
+    "item": "Anchorage of tie M1-S3 at M1",
+    "status": "not-required",
+    "detail": "The bars continue in line into the next scheduled tie."
+   },
+   {
+    "item": "Anchorage of tie M1-S3 at S3",
+    "status": "missing-input",
+    "detail": "Needs the length available from the extended nodal zone, the bars' cover and spacing, and straight or hooked (AASHTO 5.8.2.4.2)."
+   },
+   {
+    "item": "Tie M2-T7",
+    "status": "pass",
+    "detail": "48 #5, φPn 804 kip against 211 kip (case 6), AASHTO 5.8.2.4.1"
+   },
+   {
+    "item": "Anchorage of tie M2-T7 at M2",
+    "status": "missing-input",
+    "detail": "Needs the length available from the extended nodal zone, the bars' cover and spacing, and straight or hooked (AASHTO 5.8.2.4.2)."
+   },
+   {
+    "item": "Anchorage of tie M2-T7 at T7",
+    "status": "missing-input",
+    "detail": "Needs the length available from the extended nodal zone, the bars' cover and spacing, and straight or hooked (AASHTO 5.8.2.4.2)."
+   },
+   {
+    "item": "Tie M3-T8",
+    "status": "pass",
+    "detail": "48 #5, φPn 804 kip against 270 kip (case 4), AASHTO 5.8.2.4.1"
+   },
+   {
+    "item": "Anchorage of tie M3-T8 at M3",
+    "status": "missing-input",
+    "detail": "Needs the length available from the extended nodal zone, the bars' cover and spacing, and straight or hooked (AASHTO 5.8.2.4.2)."
+   },
+   {
+    "item": "Anchorage of tie M3-T8 at T8",
+    "status": "missing-input",
+    "detail": "Needs the length available from the extended nodal zone, the bars' cover and spacing, and straight or hooked (AASHTO 5.8.2.4.2)."
+   },
+   {
+    "item": "Tie T5-M4",
+    "status": "pass",
+    "detail": "16 #5, φPn 268 kip against 254 kip (case 4), AASHTO 5.8.2.4.1"
+   },
+   {
+    "item": "Anchorage of tie T5-M4 at T5",
+    "status": "missing-input",
+    "detail": "Needs the length available from the extended nodal zone, the bars' cover and spacing, and straight or hooked (AASHTO 5.8.2.4.2)."
+   },
+   {
+    "item": "Anchorage of tie T5-M4 at M4",
+    "status": "missing-input",
+    "detail": "Needs the length available from the extended nodal zone, the bars' cover and spacing, and straight or hooked (AASHTO 5.8.2.4.2)."
+   },
+   {
+    "item": "Tie T1-T7",
+    "status": "pass",
+    "detail": "26 #11, φPn 2190 kip against 405 kip (case 6), AASHTO 5.8.2.4.1"
+   },
+   {
+    "item": "Anchorage of tie T1-T7 at T1",
+    "status": "missing-input",
+    "detail": "Needs the length available from the extended nodal zone, the bars' cover and spacing, and straight or hooked (AASHTO 5.8.2.4.2)."
+   },
+   {
+    "item": "Anchorage of tie T1-T7 at T7",
+    "status": "not-required",
+    "detail": "The bars continue in line into the next scheduled tie."
+   },
+   {
+    "item": "Tie T2-T7",
+    "status": "pass",
+    "detail": "26 #11, φPn 2190 kip against 770 kip (case 6), AASHTO 5.8.2.4.1"
+   },
+   {
+    "item": "Anchorage of tie T2-T7 at T2",
+    "status": "not-required",
+    "detail": "The bars continue in line into the next scheduled tie."
+   },
+   {
+    "item": "Anchorage of tie T2-T7 at T7",
+    "status": "not-required",
+    "detail": "The bars continue in line into the next scheduled tie."
+   },
+   {
+    "item": "Tie T2-T3",
+    "status": "pass",
+    "detail": "26 #11, φPn 2190 kip against 1245 kip (case 6), AASHTO 5.8.2.4.1"
+   },
+   {
+    "item": "Anchorage of tie T2-T3 at T2",
+    "status": "not-required",
+    "detail": "The bars continue in line into the next scheduled tie."
+   },
+   {
+    "item": "Anchorage of tie T2-T3 at T3",
+    "status": "not-required",
+    "detail": "The bars continue in line into the next scheduled tie."
+   },
+   {
+    "item": "Tie T3-T4",
+    "status": "pass",
+    "detail": "26 #11, φPn 2190 kip against 1869 kip (case 5), AASHTO 5.8.2.4.1"
+   },
+   {
+    "item": "Anchorage of tie T3-T4 at T3",
+    "status": "not-required",
+    "detail": "The bars continue in line into the next scheduled tie."
+   },
+   {
+    "item": "Anchorage of tie T3-T4 at T4",
+    "status": "not-required",
+    "detail": "The bars continue in line into the next scheduled tie."
+   },
+   {
+    "item": "Tie T4-T5",
+    "status": "pass",
+    "detail": "26 #11, φPn 2190 kip against 1706 kip (case 4), AASHTO 5.8.2.4.1"
+   },
+   {
+    "item": "Anchorage of tie T4-T5 at T4",
+    "status": "not-required",
+    "detail": "The bars continue in line into the next scheduled tie."
+   },
+   {
+    "item": "Anchorage of tie T4-T5 at T5",
+    "status": "not-required",
+    "detail": "The bars continue in line into the next scheduled tie."
+   },
+   {
+    "item": "Tie T5-T8",
+    "status": "pass",
+    "detail": "26 #11, φPn 2190 kip against 656 kip (case 4), AASHTO 5.8.2.4.1"
+   },
+   {
+    "item": "Anchorage of tie T5-T8 at T5",
+    "status": "not-required",
+    "detail": "The bars continue in line into the next scheduled tie."
+   },
+   {
+    "item": "Anchorage of tie T5-T8 at T8",
+    "status": "not-required",
+    "detail": "The bars continue in line into the next scheduled tie."
+   },
+   {
+    "item": "Tie T6-T8",
+    "status": "pass",
+    "detail": "26 #11, φPn 2190 kip against 529 kip (case 4), AASHTO 5.8.2.4.1"
+   },
+   {
+    "item": "Anchorage of tie T6-T8 at T6",
+    "status": "missing-input",
+    "detail": "Needs the length available from the extended nodal zone, the bars' cover and spacing, and straight or hooked (AASHTO 5.8.2.4.2)."
+   },
+   {
+    "item": "Anchorage of tie T6-T8 at T8",
+    "status": "not-required",
+    "detail": "The bars continue in line into the next scheduled tie."
+   },
+   {
+    "item": "Node T1: bearing face (external)",
+    "status": "pass",
+    "detail": "24.0 in by the node's thickness, ν 0.70: φPn 1588 kip against 278 kip (case 6), AASHTO 5.8.2.5"
+   },
+   {
+    "item": "Node T1: strut-to-node faces of T1-M2",
+    "status": "missing-input",
+    "detail": "No face width given for these struts; their interfaces aren't checked."
+   },
+   {
+    "item": "Node T2: bearing face (external)",
+    "status": "pass",
+    "detail": "24.0 in by the node's thickness, ν 0.70: φPn 1588 kip against 339 kip (case 6), AASHTO 5.8.2.5"
+   },
+   {
+    "item": "Node T2: strut-to-node faces of T2-M1",
+    "status": "missing-input",
+    "detail": "No face width given for these struts; their interfaces aren't checked."
+   },
+   {
+    "item": "Node T3: bearing face (external)",
+    "status": "pass",
+    "detail": "24.0 in by the node's thickness, ν 0.63: φPn 1417 kip against 421 kip (case 1), AASHTO 5.8.2.5"
+   },
+   {
+    "item": "Node T3: strut-to-node faces of T3-M1, T3-C1",
+    "status": "missing-input",
+    "detail": "No face width given for these struts; their interfaces aren't checked."
+   },
+   {
+    "item": "Node T4: bearing face (external)",
+    "status": "pass",
+    "detail": "24.0 in by the node's thickness, ν 0.70: φPn 1588 kip against 404 kip (case 2), AASHTO 5.8.2.5"
+   },
+   {
+    "item": "Node T4: strut-to-node faces of T4-C2, T4-C1",
+    "status": "missing-input",
+    "detail": "No face width given for these struts; their interfaces aren't checked."
+   },
+   {
+    "item": "Node T5: bearing face (external)",
+    "status": "pass",
+    "detail": "24.0 in by the node's thickness, ν 0.63: φPn 1417 kip against 381 kip (case 3), AASHTO 5.8.2.5"
+   },
+   {
+    "item": "Node T5: strut-to-node faces of T5-C2",
+    "status": "missing-input",
+    "detail": "No face width given for these struts; their interfaces aren't checked."
+   },
+   {
+    "item": "Node T6: bearing face (external)",
+    "status": "pass",
+    "detail": "24.0 in by the node's thickness, ν 0.70: φPn 1588 kip against 349 kip (case 4), AASHTO 5.8.2.5"
+   },
+   {
+    "item": "Node T6: strut-to-node faces of T6-M3",
+    "status": "missing-input",
+    "detail": "No face width given for these struts; their interfaces aren't checked."
+   },
+   {
+    "item": "Node C1: bearing face (C1-S1)",
+    "status": "pass",
+    "detail": "35.1 in by the node's thickness, ν 0.85: φPn 6776 kip against 1719 kip (case 5), AASHTO 5.8.2.5"
+   },
+   {
+    "item": "Node C1: strut-to-node faces of T3-C1, T4-C1, C1-M1, C1-C2",
+    "status": "missing-input",
+    "detail": "No face width given for these struts; their interfaces aren't checked."
+   },
+   {
+    "item": "Node C2: bearing face (C2-S2)",
+    "status": "pass",
+    "detail": "9.3 in by the node's thickness, ν 0.85: φPn 1784 kip against 1042 kip (case 5), AASHTO 5.8.2.5"
+   },
+   {
+    "item": "Node C2: strut-to-node faces of T4-C2, T5-C2, C1-C2, C2-M4",
+    "status": "missing-input",
+    "detail": "No face width given for these struts; their interfaces aren't checked."
+   },
+   {
+    "item": "Node M1: strut-to-node faces of M1-T7, T2-M1, T3-M1, M1-S3, M1-M2, C1-M1",
+    "status": "not-checked",
+    "detail": "No face of this node is checked (a smeared node may need none, C5.8.2.2; any other node does)."
+   },
+   {
+    "item": "Node M2: strut-to-node faces of T1-M2, M1-M2",
+    "status": "not-checked",
+    "detail": "No face of this node is checked (a smeared node may need none, C5.8.2.2; any other node does)."
+   },
+   {
+    "item": "Node T7: strut-to-node faces of M1-T7",
+    "status": "not-checked",
+    "detail": "No face of this node is checked (a smeared node may need none, C5.8.2.2; any other node does)."
+   },
+   {
+    "item": "Node M3: strut-to-node faces of T6-M3, M3-M4",
+    "status": "not-checked",
+    "detail": "No face of this node is checked (a smeared node may need none, C5.8.2.2; any other node does)."
+   },
+   {
+    "item": "Node T8: strut-to-node faces of T8-M4",
+    "status": "not-checked",
+    "detail": "No face of this node is checked (a smeared node may need none, C5.8.2.2; any other node does)."
+   },
+   {
+    "item": "Node M4: strut-to-node faces of T8-M4, C2-M4, M3-M4",
+    "status": "not-checked",
+    "detail": "No face of this node is checked (a smeared node may need none, C5.8.2.2; any other node does)."
+   },
+   {
+    "item": "Strut T1-M2",
+    "status": "not-implemented",
+    "detail": "Carries 491 kip (case 6). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Strut M1-T7",
+    "status": "not-implemented",
+    "detail": "Carries 422 kip (case 6). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Strut T2-M1",
+    "status": "not-implemented",
+    "detail": "Carries 583 kip (case 6). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Strut T3-M1",
+    "status": "not-implemented",
+    "detail": "Carries 104 kip (case 6). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Strut T4-C2",
+    "status": "not-implemented",
+    "detail": "Carries 417 kip (case 5). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Strut T5-C2",
+    "status": "not-implemented",
+    "detail": "Carries 1227 kip (case 5). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Strut T6-M3",
+    "status": "not-implemented",
+    "detail": "Carries 634 kip (case 4). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Strut T8-M4",
+    "status": "not-implemented",
+    "detail": "Carries 298 kip (case 4). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Strut C1-S1",
+    "status": "not-implemented",
+    "detail": "Carries 1719 kip (case 5). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Strut C2-S2",
+    "status": "not-implemented",
+    "detail": "Carries 1042 kip (case 5). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Strut M1-S3",
+    "status": "not-implemented",
+    "detail": "Carries 721 kip (case 6). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Strut T3-C1",
+    "status": "not-implemented",
+    "detail": "Carries 2044 kip (case 5). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Strut T4-C1",
+    "status": "not-implemented",
+    "detail": "Carries 445 kip (case 6). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Strut M1-M2",
+    "status": "not-implemented",
+    "detail": "Carries 410 kip (case 6). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Strut C1-M1",
+    "status": "not-implemented",
+    "detail": "Carries 1248 kip (case 6). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Strut C1-C2",
+    "status": "not-implemented",
+    "detail": "Carries 1869 kip (case 5). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Strut C2-M4",
+    "status": "not-implemented",
+    "detail": "Carries 663 kip (case 4). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Strut M3-M4",
+    "status": "not-implemented",
+    "detail": "Carries 535 kip (case 4). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Finite nodal zones",
+    "status": "not-implemented",
+    "detail": "Nodes are points: their extent, overlap with neighboring nodes and fit within the concrete aren't evaluated."
+   },
+   {
+    "item": "Reinforcement fit and congestion",
+    "status": "not-implemented",
+    "detail": "The bars' spacing within the section and where systems cross aren't checked."
+   },
+   {
+    "item": "Crack-control grid",
+    "status": "pass",
+    "detail": "AASHTO 5.8.2.6"
+   },
+   {
+    "item": "Diagonal-cracking screen",
+    "status": "missing-input",
+    "detail": "Needs the service shear, shear span and depth."
+   }
+  ],
+  "status": {
+   "equilibrium": true,
+   "mechanisms": 3,
+   "crossings": 0,
+   "angles": true,
+   "finiteGeometry": "not-implemented"
+  },
+  "boundary": {
+   "kind": "linear-stress",
+   "deviation": 2929.6451093641354
+  },
+  "warnings": [
+   "4 load cases turn the column toward the left. This model is laid out for cases turning it toward the right, so they are left out here: check them in a second design built with \"Lay out for: left\".",
+   "Bearings at 1.5 ft, 41.5 ft are more than twice the cap's depth from a column face. That part of the cap is not a disturbed region; sectional design (AASHTO 5.7) may suit it better (AASHTO 5.8.2.1).",
+   "As a pin-jointed truss the model has 3 mechanism(s). It carries these loads in equilibrium, which a strut-and-tie model needs, but check that the surrounding concrete restrains the free motion.",
+   "Tie T3-M1: anchorage not checked at T3 (continuous bars, a curved-bar node or a splice need their own check).",
+   "Tie M1-S3: anchorage not checked at S3 (continuous bars, a curved-bar node or a splice need their own check).",
+   "Tie M2-T7: anchorage not checked at M2 and T7 (continuous bars, a curved-bar node or a splice need their own check).",
+   "Tie M3-T8: anchorage not checked at M3 and T8 (continuous bars, a curved-bar node or a splice need their own check).",
+   "Tie T5-M4: anchorage not checked at T5 and M4 (continuous bars, a curved-bar node or a splice need their own check).",
+   "Tie T1-T7: anchorage not checked at T1 (continuous bars, a curved-bar node or a splice need their own check).",
+   "Tie T6-T8: anchorage not checked at T6 (continuous bars, a curved-bar node or a splice need their own check).",
+   "Nodes not checked: M1, M2, T7, M3, T8, M4. A smeared node or a curved-bar node may need no stress check (C5.8.2.2); any other node does."
+  ],
+  "appliedLoads": [
+   {
+    "label": "G1",
+    "x": 1.5,
+    "P": 321.4,
+    "detail": "DC 110.8, DW 11.0, LL+IM 95.0 kip"
+   },
+   {
+    "label": "G2",
+    "x": 9.5,
+    "P": 332,
+    "detail": "DC 115.3, DW 11.0, LL+IM 97.9 kip"
+   },
+   {
+    "label": "G3",
+    "x": 17.5,
+    "P": 332,
+    "detail": "DC 115.3, DW 11.0, LL+IM 97.9 kip"
+   },
+   {
+    "label": "G4",
+    "x": 25.5,
+    "P": 332,
+    "detail": "DC 115.3, DW 11.0, LL+IM 97.9 kip"
+   },
+   {
+    "label": "G5",
+    "x": 33.5,
+    "P": 332,
+    "detail": "DC 115.3, DW 11.0, LL+IM 97.9 kip"
+   },
+   {
+    "label": "G6",
+    "x": 41.5,
+    "P": 321.4,
+    "detail": "DC 110.8, DW 11.0, LL+IM 95.0 kip"
+   }
+  ],
+  "reversedCases": [
+   "Strength I (1 lane from 0.0 ft off the left curb, trucks left 1 ft)",
+   "Strength I (1 lane from 3.0 ft off the left curb, trucks right 1 ft)",
+   "Strength I (2 lanes from 0.0 ft off the left curb, trucks left 1 ft)",
+   "Strength I, dead loads at minimum (2 lanes from 0.0 ft off the left curb, trucks left 1 ft)"
+  ],
+  "selfWeight": 253.5
+ },
+ "C": {
+  "cases": [
+   {
+    "case": 1,
+    "name": "Strength I (1 lane from 11.0 ft off the left curb, trucks right 1 ft)",
+    "applied": 1494.8,
+    "nodalResidual": 1.7053025658242404e-13,
+    "Fx": 0,
+    "Fy": -2.2737367544323206e-13,
+    "M": -3.637978807091713e-12,
+    "equilibrium": true,
+    "smallestAngle": 25.2,
+    "angleOk": true
+   },
+   {
+    "case": 2,
+    "name": "Strength I (1 lane from 19.0 ft off the left curb, trucks right 1 ft)",
+    "applied": 1494.8,
+    "nodalResidual": 1.1368683772161603e-13,
+    "Fx": 0,
+    "Fy": -2.4158453015843406e-13,
+    "M": -9.094947017729282e-13,
+    "equilibrium": true,
+    "smallestAngle": 25.2,
+    "angleOk": true
+   },
+   {
+    "case": 3,
+    "name": "Strength I (1 lane from 27.0 ft off the left curb, trucks right 1 ft)",
+    "applied": 1494.8,
+    "nodalResidual": 2.2737367544323206e-13,
+    "Fx": 0,
+    "Fy": -2.2737367544323206e-13,
+    "M": -9.094947017729282e-12,
+    "equilibrium": true,
+    "smallestAngle": 25.2,
+    "angleOk": true
+   },
+   {
+    "case": 4,
+    "name": "Strength I (1 lane from 32.0 ft off the left curb, trucks right 1 ft)",
+    "applied": 1494.8,
+    "nodalResidual": 3.410605131648481e-13,
+    "Fx": 0,
+    "Fy": 0,
+    "M": -3.637978807091713e-12,
+    "equilibrium": true,
+    "smallestAngle": 25.2,
+    "angleOk": true
+   },
+   {
+    "case": 5,
+    "name": "Strength I (2 lanes from 20.0 ft off the left curb, trucks right 1 ft)",
+    "applied": 1672.2,
+    "nodalResidual": 4.547473508864641e-13,
+    "Fx": 0,
+    "Fy": -4.547473508864641e-13,
+    "M": -7.275957614183426e-12,
+    "equilibrium": true,
+    "smallestAngle": 25.2,
+    "angleOk": true
+   },
+   {
+    "case": 6,
+    "name": "Strength I (3 lanes from 0.0 ft off the left curb)",
+    "applied": 1794.2,
+    "nodalResidual": 8.526512829121202e-14,
+    "Fx": 0,
+    "Fy": 0,
+    "M": 5.4569682106375694e-12,
+    "equilibrium": true,
+    "smallestAngle": 25.2,
+    "angleOk": true
+   },
+   {
+    "case": 7,
+    "name": "Strength I, dead loads at minimum (2 lanes from 20.0 ft off the left curb, trucks right 1 ft)",
+    "applied": 1299.8,
+    "nodalResidual": 2.2737367544323206e-13,
+    "Fx": 0,
+    "Fy": -2.2737367544323206e-13,
+    "M": -7.275957614183426e-12,
+    "equilibrium": true,
+    "smallestAngle": 25.2,
+    "angleOk": true
+   }
+  ],
+  "members": [
+   {
+    "member": "T1-M2",
+    "role": "strut",
+    "tension": 0,
+    "tensionCase": null,
+    "compression": 491.1,
+    "compressionCase": 6
+   },
+   {
+    "member": "M1-T7",
+    "role": "strut",
+    "tension": 0,
+    "tensionCase": null,
+    "compression": 422.1,
+    "compressionCase": 6
+   },
+   {
+    "member": "T2-M1",
+    "role": "strut",
+    "tension": 0,
+    "tensionCase": null,
+    "compression": 582.9,
+    "compressionCase": 6
+   },
+   {
+    "member": "T3-M1",
+    "role": "tie",
+    "tension": 1463.3,
+    "tensionCase": 5,
+    "compression": 212,
+    "compressionCase": 6
+   },
+   {
+    "member": "T4-C2",
+    "role": "strut",
+    "tension": 0,
+    "tensionCase": null,
+    "compression": 403,
+    "compressionCase": 2
+   },
+   {
+    "member": "T5-C2",
+    "role": "strut",
+    "tension": 0,
+    "tensionCase": null,
+    "compression": 1227.2,
+    "compressionCase": 5
+   },
+   {
+    "member": "T6-M3",
+    "role": "strut",
+    "tension": 0,
+    "tensionCase": null,
+    "compression": 633.8,
+    "compressionCase": 4
+   },
+   {
+    "member": "T8-M4",
+    "role": "strut",
+    "tension": 0,
+    "tensionCase": null,
+    "compression": 298.2,
+    "compressionCase": 4
+   },
+   {
+    "member": "C1-S1",
+    "role": "strut",
+    "tension": 0,
+    "tensionCase": null,
+    "compression": 1710.5,
+    "compressionCase": 5
+   },
+   {
+    "member": "C2-S2",
+    "role": "strut",
+    "tension": 0,
+    "tensionCase": null,
+    "compression": 1029.3,
+    "compressionCase": 5
+   },
+   {
+    "member": "M1-S3",
+    "role": "tie",
+    "tension": 1116.8,
+    "tensionCase": 7,
+    "compression": 828.7,
+    "compressionCase": 6
+   },
+   {
+    "member": "T3-C1",
+    "role": "strut",
+    "tension": 0,
+    "tensionCase": null,
+    "compression": 2033.9,
+    "compressionCase": 5
+   },
+   {
+    "member": "T4-C1",
+    "role": "strut",
+    "tension": 0,
+    "tensionCase": null,
+    "compression": 36.4,
+    "compressionCase": 1
+   },
+   {
+    "member": "M2-T7",
+    "role": "tie",
+    "tension": 211.2,
+    "tensionCase": 6,
+    "compression": 0,
+    "compressionCase": null
+   },
+   {
+    "member": "M3-T8",
+    "role": "tie",
+    "tension": 269.8,
+    "tensionCase": 4,
+    "compression": 0,
+    "compressionCase": null
+   },
+   {
+    "member": "T5-M4",
+    "role": "tie",
+    "tension": 254.1,
+    "tensionCase": 4,
+    "compression": 0,
+    "compressionCase": null
+   },
+   {
+    "member": "T1-T7",
+    "role": "tie",
+    "tension": 404.9,
+    "tensionCase": 6,
+    "compression": 0,
+    "compressionCase": null
+   },
+   {
+    "member": "T2-T7",
+    "role": "tie",
+    "tension": 770.3,
+    "tensionCase": 6,
+    "compression": 0,
+    "compressionCase": null
+   },
+   {
+    "member": "T2-T3",
+    "role": "tie",
+    "tension": 1244.6,
+    "tensionCase": 6,
+    "compression": 0,
+    "compressionCase": null
+   },
+   {
+    "member": "T3-T4",
+    "role": "tie",
+    "tension": 1863.1,
+    "tensionCase": 5,
+    "compression": 0,
+    "compressionCase": null
+   },
+   {
+    "member": "T4-T5",
+    "role": "tie",
+    "tension": 1705.6,
+    "tensionCase": 4,
+    "compression": 0,
+    "compressionCase": null
+   },
+   {
+    "member": "T5-T8",
+    "role": "tie",
+    "tension": 655.9,
+    "tensionCase": 4,
+    "compression": 0,
+    "compressionCase": null
+   },
+   {
+    "member": "T6-T8",
+    "role": "tie",
+    "tension": 528.9,
+    "tensionCase": 4,
+    "compression": 0,
+    "compressionCase": null
+   },
+   {
+    "member": "M1-M2",
+    "role": "strut",
+    "tension": 0,
+    "tensionCase": null,
+    "compression": 410.3,
+    "compressionCase": 6
+   },
+   {
+    "member": "C1-M1",
+    "role": "strut",
+    "tension": 0,
+    "tensionCase": null,
+    "compression": 1250.7,
+    "compressionCase": 6
+   },
+   {
+    "member": "C1-C2",
+    "role": "strut",
+    "tension": 0,
+    "tensionCase": null,
+    "compression": 1863.1,
+    "compressionCase": 5
+   },
+   {
+    "member": "C2-M4",
+    "role": "strut",
+    "tension": 0,
+    "tensionCase": null,
+    "compression": 662.7,
+    "compressionCase": 4
+   },
+   {
+    "member": "M3-M4",
+    "role": "strut",
+    "tension": 0,
+    "tensionCase": null,
+    "compression": 534.9,
+    "compressionCase": 4
+   }
+  ],
+  "supports": [
+   {
+    "node": "S1",
+    "restrains": "x",
+    "reactions": [
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0
+    ],
+    "target": null
+   },
+   {
+    "node": "S1",
+    "restrains": "y",
+    "reactions": [
+     416.5,
+     773,
+     1301.1,
+     1672.1,
+     1710.5,
+     161.4,
+     1572.8
+    ],
+    "target": null
+   },
+   {
+    "node": "S2",
+    "restrains": "y",
+    "reactions": [
+     629.9,
+     801.2,
+     848.6,
+     848.6,
+     1029.3,
+     804.2,
+     843.8
+    ],
+    "target": null
+   },
+   {
+    "node": "S3",
+    "restrains": "y",
+    "reactions": [
+     448.5,
+     -79.4,
+     -654.9,
+     -1025.9,
+     -1067.7,
+     828.7,
+     -1116.8
+    ],
+    "target": null
+   }
+  ],
+  "checks": [
+   {
+    "name": "Strut-tie angles greater than 25°",
+    "demand": 25,
+    "capacity": 25.2,
+    "ok": true
+   },
+   {
+    "name": "Crack-control grid, vertical: Av/(bw sv) ≥ 0.003",
+    "demand": 0,
+    "capacity": 0,
+    "ok": true
+   },
+   {
+    "name": "Crack-control grid, horizontal: Ah/(bw sh) ≥ 0.003",
+    "demand": 0,
+    "capacity": 0,
+    "ok": true
+   },
+   {
+    "name": "Crack-control grid spacing, d/4 and 12 in or less",
+    "demand": 6,
+    "capacity": 12,
+    "ok": true
+   },
+   {
+    "name": "Tie T3-M1: 26 #11",
+    "demand": 1463.3,
+    "capacity": 2190.2,
+    "ok": true
+   },
+   {
+    "name": "Tie M1-S3: 26 #11",
+    "demand": 1116.8,
+    "capacity": 2190.2,
+    "ok": true
+   },
+   {
+    "name": "Tie M2-T7: 48 #5",
+    "demand": 211.2,
+    "capacity": 803.5,
+    "ok": true
+   },
+   {
+    "name": "Tie M3-T8: 48 #5",
+    "demand": 269.8,
+    "capacity": 803.5,
+    "ok": true
+   },
+   {
+    "name": "Tie T5-M4: 16 #5",
+    "demand": 254.1,
+    "capacity": 267.8,
+    "ok": true
+   },
+   {
+    "name": "Tie T1-T7: 26 #11",
+    "demand": 404.9,
+    "capacity": 2190.2,
+    "ok": true
+   },
+   {
+    "name": "Tie T2-T7: 26 #11",
+    "demand": 770.3,
+    "capacity": 2190.2,
+    "ok": true
+   },
+   {
+    "name": "Tie T2-T3: 26 #11",
+    "demand": 1244.6,
+    "capacity": 2190.2,
+    "ok": true
+   },
+   {
+    "name": "Tie T3-T4: 26 #11",
+    "demand": 1863.1,
+    "capacity": 2190.2,
+    "ok": true
+   },
+   {
+    "name": "Tie T4-T5: 26 #11",
+    "demand": 1705.6,
+    "capacity": 2190.2,
+    "ok": true
+   },
+   {
+    "name": "Tie T5-T8: 26 #11",
+    "demand": 655.9,
+    "capacity": 2190.2,
+    "ok": true
+   },
+   {
+    "name": "Tie T6-T8: 26 #11",
+    "demand": 528.9,
+    "capacity": 2190.2,
+    "ok": true
+   },
+   {
+    "name": "Node T1 (CCT): bearing (applied load or reaction)",
+    "demand": 277.9,
+    "capacity": 1587.6,
+    "ok": true
+   },
+   {
+    "name": "Node T2 (CCT): bearing (applied load or reaction)",
+    "demand": 338.8,
+    "capacity": 1587.6,
+    "ok": true
+   },
+   {
+    "name": "Node T3 (CCT): bearing (applied load or reaction)",
+    "demand": 393.2,
+    "capacity": 1587.6,
+    "ok": true
+   },
+   {
+    "name": "Node T4 (CCT): bearing (applied load or reaction)",
+    "demand": 391,
+    "capacity": 1587.6,
+    "ok": true
+   },
+   {
+    "name": "Node T5 (CTT): bearing (applied load or reaction)",
+    "demand": 380.8,
+    "capacity": 1417.5,
+    "ok": true
+   },
+   {
+    "name": "Node T6 (CCT): bearing (applied load or reaction)",
+    "demand": 349.1,
+    "capacity": 1587.6,
+    "ok": true
+   },
+   {
+    "name": "Node C1 (CCC): bearing face, C1-S1",
+    "demand": 1710.5,
+    "capacity": 6775.9,
+    "ok": true
+   },
+   {
+    "name": "Node C2 (CCC): bearing face, C2-S2",
+    "demand": 1029.3,
+    "capacity": 1783.6,
+    "ok": true
+   }
+  ],
+  "failing": [],
+  "coverage": [
+   {
+    "item": "Tie T3-M1",
+    "status": "pass",
+    "detail": "26 #11, φPn 2190 kip against 1463 kip (case 5), AASHTO 5.8.2.4.1"
+   },
+   {
+    "item": "Anchorage of tie T3-M1 at T3",
+    "status": "missing-input",
+    "detail": "Needs the length available from the extended nodal zone, the bars' cover and spacing, and straight or hooked (AASHTO 5.8.2.4.2)."
+   },
+   {
+    "item": "Anchorage of tie T3-M1 at M1",
+    "status": "not-required",
+    "detail": "The bars continue in line into the next scheduled tie."
+   },
+   {
+    "item": "Tie M1-S3",
+    "status": "pass",
+    "detail": "26 #11, φPn 2190 kip against 1117 kip (case 7), AASHTO 5.8.2.4.1"
+   },
+   {
+    "item": "Anchorage of tie M1-S3 at M1",
+    "status": "not-required",
+    "detail": "The bars continue in line into the next scheduled tie."
+   },
+   {
+    "item": "Anchorage of tie M1-S3 at S3",
+    "status": "missing-input",
+    "detail": "Needs the length available from the extended nodal zone, the bars' cover and spacing, and straight or hooked (AASHTO 5.8.2.4.2)."
+   },
+   {
+    "item": "Tie M2-T7",
+    "status": "pass",
+    "detail": "48 #5, φPn 804 kip against 211 kip (case 6), AASHTO 5.8.2.4.1"
+   },
+   {
+    "item": "Anchorage of tie M2-T7 at M2",
+    "status": "missing-input",
+    "detail": "Needs the length available from the extended nodal zone, the bars' cover and spacing, and straight or hooked (AASHTO 5.8.2.4.2)."
+   },
+   {
+    "item": "Anchorage of tie M2-T7 at T7",
+    "status": "missing-input",
+    "detail": "Needs the length available from the extended nodal zone, the bars' cover and spacing, and straight or hooked (AASHTO 5.8.2.4.2)."
+   },
+   {
+    "item": "Tie M3-T8",
+    "status": "pass",
+    "detail": "48 #5, φPn 804 kip against 270 kip (case 4), AASHTO 5.8.2.4.1"
+   },
+   {
+    "item": "Anchorage of tie M3-T8 at M3",
+    "status": "missing-input",
+    "detail": "Needs the length available from the extended nodal zone, the bars' cover and spacing, and straight or hooked (AASHTO 5.8.2.4.2)."
+   },
+   {
+    "item": "Anchorage of tie M3-T8 at T8",
+    "status": "missing-input",
+    "detail": "Needs the length available from the extended nodal zone, the bars' cover and spacing, and straight or hooked (AASHTO 5.8.2.4.2)."
+   },
+   {
+    "item": "Tie T5-M4",
+    "status": "pass",
+    "detail": "16 #5, φPn 268 kip against 254 kip (case 4), AASHTO 5.8.2.4.1"
+   },
+   {
+    "item": "Anchorage of tie T5-M4 at T5",
+    "status": "missing-input",
+    "detail": "Needs the length available from the extended nodal zone, the bars' cover and spacing, and straight or hooked (AASHTO 5.8.2.4.2)."
+   },
+   {
+    "item": "Anchorage of tie T5-M4 at M4",
+    "status": "missing-input",
+    "detail": "Needs the length available from the extended nodal zone, the bars' cover and spacing, and straight or hooked (AASHTO 5.8.2.4.2)."
+   },
+   {
+    "item": "Tie T1-T7",
+    "status": "pass",
+    "detail": "26 #11, φPn 2190 kip against 405 kip (case 6), AASHTO 5.8.2.4.1"
+   },
+   {
+    "item": "Anchorage of tie T1-T7 at T1",
+    "status": "missing-input",
+    "detail": "Needs the length available from the extended nodal zone, the bars' cover and spacing, and straight or hooked (AASHTO 5.8.2.4.2)."
+   },
+   {
+    "item": "Anchorage of tie T1-T7 at T7",
+    "status": "not-required",
+    "detail": "The bars continue in line into the next scheduled tie."
+   },
+   {
+    "item": "Tie T2-T7",
+    "status": "pass",
+    "detail": "26 #11, φPn 2190 kip against 770 kip (case 6), AASHTO 5.8.2.4.1"
+   },
+   {
+    "item": "Anchorage of tie T2-T7 at T2",
+    "status": "not-required",
+    "detail": "The bars continue in line into the next scheduled tie."
+   },
+   {
+    "item": "Anchorage of tie T2-T7 at T7",
+    "status": "not-required",
+    "detail": "The bars continue in line into the next scheduled tie."
+   },
+   {
+    "item": "Tie T2-T3",
+    "status": "pass",
+    "detail": "26 #11, φPn 2190 kip against 1245 kip (case 6), AASHTO 5.8.2.4.1"
+   },
+   {
+    "item": "Anchorage of tie T2-T3 at T2",
+    "status": "not-required",
+    "detail": "The bars continue in line into the next scheduled tie."
+   },
+   {
+    "item": "Anchorage of tie T2-T3 at T3",
+    "status": "not-required",
+    "detail": "The bars continue in line into the next scheduled tie."
+   },
+   {
+    "item": "Tie T3-T4",
+    "status": "pass",
+    "detail": "26 #11, φPn 2190 kip against 1863 kip (case 5), AASHTO 5.8.2.4.1"
+   },
+   {
+    "item": "Anchorage of tie T3-T4 at T3",
+    "status": "not-required",
+    "detail": "The bars continue in line into the next scheduled tie."
+   },
+   {
+    "item": "Anchorage of tie T3-T4 at T4",
+    "status": "not-required",
+    "detail": "The bars continue in line into the next scheduled tie."
+   },
+   {
+    "item": "Tie T4-T5",
+    "status": "pass",
+    "detail": "26 #11, φPn 2190 kip against 1706 kip (case 4), AASHTO 5.8.2.4.1"
+   },
+   {
+    "item": "Anchorage of tie T4-T5 at T4",
+    "status": "not-required",
+    "detail": "The bars continue in line into the next scheduled tie."
+   },
+   {
+    "item": "Anchorage of tie T4-T5 at T5",
+    "status": "not-required",
+    "detail": "The bars continue in line into the next scheduled tie."
+   },
+   {
+    "item": "Tie T5-T8",
+    "status": "pass",
+    "detail": "26 #11, φPn 2190 kip against 656 kip (case 4), AASHTO 5.8.2.4.1"
+   },
+   {
+    "item": "Anchorage of tie T5-T8 at T5",
+    "status": "not-required",
+    "detail": "The bars continue in line into the next scheduled tie."
+   },
+   {
+    "item": "Anchorage of tie T5-T8 at T8",
+    "status": "not-required",
+    "detail": "The bars continue in line into the next scheduled tie."
+   },
+   {
+    "item": "Tie T6-T8",
+    "status": "pass",
+    "detail": "26 #11, φPn 2190 kip against 529 kip (case 4), AASHTO 5.8.2.4.1"
+   },
+   {
+    "item": "Anchorage of tie T6-T8 at T6",
+    "status": "missing-input",
+    "detail": "Needs the length available from the extended nodal zone, the bars' cover and spacing, and straight or hooked (AASHTO 5.8.2.4.2)."
+   },
+   {
+    "item": "Anchorage of tie T6-T8 at T8",
+    "status": "not-required",
+    "detail": "The bars continue in line into the next scheduled tie."
+   },
+   {
+    "item": "Node T1: bearing face (external)",
+    "status": "pass",
+    "detail": "24.0 in by the node's thickness, ν 0.70: φPn 1588 kip against 278 kip (case 6), AASHTO 5.8.2.5"
+   },
+   {
+    "item": "Node T1: strut-to-node faces of T1-M2",
+    "status": "missing-input",
+    "detail": "No face width given for these struts; their interfaces aren't checked."
+   },
+   {
+    "item": "Node T2: bearing face (external)",
+    "status": "pass",
+    "detail": "24.0 in by the node's thickness, ν 0.70: φPn 1588 kip against 339 kip (case 6), AASHTO 5.8.2.5"
+   },
+   {
+    "item": "Node T2: strut-to-node faces of T2-M1",
+    "status": "missing-input",
+    "detail": "No face width given for these struts; their interfaces aren't checked."
+   },
+   {
+    "item": "Node T3: bearing face (external)",
+    "status": "pass",
+    "detail": "24.0 in by the node's thickness, ν 0.70: φPn 1588 kip against 393 kip (case 1), AASHTO 5.8.2.5"
+   },
+   {
+    "item": "Node T3: strut-to-node faces of T3-M1, T3-C1",
+    "status": "missing-input",
+    "detail": "No face width given for these struts; their interfaces aren't checked."
+   },
+   {
+    "item": "Node T4: bearing face (external)",
+    "status": "pass",
+    "detail": "24.0 in by the node's thickness, ν 0.70: φPn 1588 kip against 391 kip (case 2), AASHTO 5.8.2.5"
+   },
+   {
+    "item": "Node T4: strut-to-node faces of T4-C2, T4-C1",
+    "status": "missing-input",
+    "detail": "No face width given for these struts; their interfaces aren't checked."
+   },
+   {
+    "item": "Node T5: bearing face (external)",
+    "status": "pass",
+    "detail": "24.0 in by the node's thickness, ν 0.63: φPn 1417 kip against 381 kip (case 3), AASHTO 5.8.2.5"
+   },
+   {
+    "item": "Node T5: strut-to-node faces of T5-C2",
+    "status": "missing-input",
+    "detail": "No face width given for these struts; their interfaces aren't checked."
+   },
+   {
+    "item": "Node T6: bearing face (external)",
+    "status": "pass",
+    "detail": "24.0 in by the node's thickness, ν 0.70: φPn 1588 kip against 349 kip (case 4), AASHTO 5.8.2.5"
+   },
+   {
+    "item": "Node T6: strut-to-node faces of T6-M3",
+    "status": "missing-input",
+    "detail": "No face width given for these struts; their interfaces aren't checked."
+   },
+   {
+    "item": "Node C1: bearing face (C1-S1)",
+    "status": "pass",
+    "detail": "35.1 in by the node's thickness, ν 0.85: φPn 6776 kip against 1711 kip (case 5), AASHTO 5.8.2.5"
+   },
+   {
+    "item": "Node C1: strut-to-node faces of T3-C1, T4-C1, C1-M1, C1-C2",
+    "status": "missing-input",
+    "detail": "No face width given for these struts; their interfaces aren't checked."
+   },
+   {
+    "item": "Node C2: bearing face (C2-S2)",
+    "status": "pass",
+    "detail": "9.3 in by the node's thickness, ν 0.85: φPn 1784 kip against 1029 kip (case 5), AASHTO 5.8.2.5"
+   },
+   {
+    "item": "Node C2: strut-to-node faces of T4-C2, T5-C2, C1-C2, C2-M4",
+    "status": "missing-input",
+    "detail": "No face width given for these struts; their interfaces aren't checked."
+   },
+   {
+    "item": "Node M1: strut-to-node faces of M1-T7, T2-M1, T3-M1, M1-S3, M1-M2, C1-M1",
+    "status": "not-checked",
+    "detail": "No face of this node is checked (a smeared node may need none, C5.8.2.2; any other node does)."
+   },
+   {
+    "item": "Node M2: strut-to-node faces of T1-M2, M1-M2",
+    "status": "not-checked",
+    "detail": "No face of this node is checked (a smeared node may need none, C5.8.2.2; any other node does)."
+   },
+   {
+    "item": "Node T7: strut-to-node faces of M1-T7",
+    "status": "not-checked",
+    "detail": "No face of this node is checked (a smeared node may need none, C5.8.2.2; any other node does)."
+   },
+   {
+    "item": "Node M3: strut-to-node faces of T6-M3, M3-M4",
+    "status": "not-checked",
+    "detail": "No face of this node is checked (a smeared node may need none, C5.8.2.2; any other node does)."
+   },
+   {
+    "item": "Node T8: strut-to-node faces of T8-M4",
+    "status": "not-checked",
+    "detail": "No face of this node is checked (a smeared node may need none, C5.8.2.2; any other node does)."
+   },
+   {
+    "item": "Node M4: strut-to-node faces of T8-M4, C2-M4, M3-M4",
+    "status": "not-checked",
+    "detail": "No face of this node is checked (a smeared node may need none, C5.8.2.2; any other node does)."
+   },
+   {
+    "item": "Strut T1-M2",
+    "status": "not-implemented",
+    "detail": "Carries 491 kip (case 6). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Strut M1-T7",
+    "status": "not-implemented",
+    "detail": "Carries 422 kip (case 6). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Strut T2-M1",
+    "status": "not-implemented",
+    "detail": "Carries 583 kip (case 6). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Strut T3-M1",
+    "status": "not-implemented",
+    "detail": "Carries 212 kip (case 6). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Strut T4-C2",
+    "status": "not-implemented",
+    "detail": "Carries 403 kip (case 2). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Strut T5-C2",
+    "status": "not-implemented",
+    "detail": "Carries 1227 kip (case 5). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Strut T6-M3",
+    "status": "not-implemented",
+    "detail": "Carries 634 kip (case 4). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Strut T8-M4",
+    "status": "not-implemented",
+    "detail": "Carries 298 kip (case 4). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Strut C1-S1",
+    "status": "not-implemented",
+    "detail": "Carries 1711 kip (case 5). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Strut C2-S2",
+    "status": "not-implemented",
+    "detail": "Carries 1029 kip (case 5). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Strut M1-S3",
+    "status": "not-implemented",
+    "detail": "Carries 829 kip (case 6). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Strut T3-C1",
+    "status": "not-implemented",
+    "detail": "Carries 2034 kip (case 5). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Strut T4-C1",
+    "status": "not-implemented",
+    "detail": "Carries 36 kip (case 1). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Strut M1-M2",
+    "status": "not-implemented",
+    "detail": "Carries 410 kip (case 6). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Strut C1-M1",
+    "status": "not-implemented",
+    "detail": "Carries 1251 kip (case 6). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Strut C1-C2",
+    "status": "not-implemented",
+    "detail": "Carries 1863 kip (case 5). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Strut C2-M4",
+    "status": "not-implemented",
+    "detail": "Carries 663 kip (case 4). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Strut M3-M4",
+    "status": "not-implemented",
+    "detail": "Carries 535 kip (case 4). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Finite nodal zones",
+    "status": "not-implemented",
+    "detail": "Nodes are points: their extent, overlap with neighboring nodes and fit within the concrete aren't evaluated."
+   },
+   {
+    "item": "Reinforcement fit and congestion",
+    "status": "not-implemented",
+    "detail": "The bars' spacing within the section and where systems cross aren't checked."
+   },
+   {
+    "item": "Crack-control grid",
+    "status": "pass",
+    "detail": "AASHTO 5.8.2.6"
+   },
+   {
+    "item": "Diagonal-cracking screen",
+    "status": "missing-input",
+    "detail": "Needs the service shear, shear span and depth."
+   }
+  ],
+  "status": {
+   "equilibrium": true,
+   "mechanisms": 3,
+   "crossings": 0,
+   "angles": true,
+   "finiteGeometry": "not-implemented"
+  },
+  "boundary": {
+   "kind": "solver",
+   "deviation": 0
+  },
+  "warnings": [
+   "4 load cases turn the column toward the left. This model is laid out for cases turning it toward the right, so they are left out here: check them in a second design built with \"Lay out for: left\".",
+   "Bearings at 1.5 ft, 41.5 ft are more than twice the cap's depth from a column face. That part of the cap is not a disturbed region; sectional design (AASHTO 5.7) may suit it better (AASHTO 5.8.2.1).",
+   "As a pin-jointed truss the model has 3 mechanism(s). It carries these loads in equilibrium, which a strut-and-tie model needs, but check that the surrounding concrete restrains the free motion.",
+   "Tie T3-M1: anchorage not checked at T3 (continuous bars, a curved-bar node or a splice need their own check).",
+   "Tie M1-S3: anchorage not checked at S3 (continuous bars, a curved-bar node or a splice need their own check).",
+   "Tie M2-T7: anchorage not checked at M2 and T7 (continuous bars, a curved-bar node or a splice need their own check).",
+   "Tie M3-T8: anchorage not checked at M3 and T8 (continuous bars, a curved-bar node or a splice need their own check).",
+   "Tie T5-M4: anchorage not checked at T5 and M4 (continuous bars, a curved-bar node or a splice need their own check).",
+   "Tie T1-T7: anchorage not checked at T1 (continuous bars, a curved-bar node or a splice need their own check).",
+   "Tie T6-T8: anchorage not checked at T6 (continuous bars, a curved-bar node or a splice need their own check).",
+   "Nodes not checked: M1, M2, T7, M3, T8, M4. A smeared node or a curved-bar node may need no stress check (C5.8.2.2); any other node does."
+  ],
+  "appliedLoads": [
+   {
+    "label": "G1",
+    "x": 1.5,
+    "P": 321.4,
+    "detail": "DC 110.8, DW 11.0, LL+IM 95.0 kip"
+   },
+   {
+    "label": "G2",
+    "x": 9.5,
+    "P": 332,
+    "detail": "DC 115.3, DW 11.0, LL+IM 97.9 kip"
+   },
+   {
+    "label": "G3",
+    "x": 17.5,
+    "P": 332,
+    "detail": "DC 115.3, DW 11.0, LL+IM 97.9 kip"
+   },
+   {
+    "label": "G4",
+    "x": 25.5,
+    "P": 332,
+    "detail": "DC 115.3, DW 11.0, LL+IM 97.9 kip"
+   },
+   {
+    "label": "G5",
+    "x": 33.5,
+    "P": 332,
+    "detail": "DC 115.3, DW 11.0, LL+IM 97.9 kip"
+   },
+   {
+    "label": "G6",
+    "x": 41.5,
+    "P": 321.4,
+    "detail": "DC 110.8, DW 11.0, LL+IM 95.0 kip"
+   }
+  ],
+  "reversedCases": [
+   "Strength I (1 lane from 0.0 ft off the left curb, trucks left 1 ft)",
+   "Strength I (1 lane from 3.0 ft off the left curb, trucks right 1 ft)",
+   "Strength I (2 lanes from 0.0 ft off the left curb, trucks left 1 ft)",
+   "Strength I, dead loads at minimum (2 lanes from 0.0 ft off the left curb, trucks left 1 ft)"
+  ],
+  "selfWeight": 221
+ },
+ "D": {
+  "cases": [
+   {
+    "case": 1,
+    "name": "Strength I (1 lane from 11.0 ft off the left curb, trucks right 1 ft)",
+    "applied": 1494.8,
+    "nodalResidual": 2.2737367544323206e-13,
+    "Fx": 0,
+    "Fy": -3.410605131648481e-13,
+    "M": -9.094947017729282e-13,
+    "equilibrium": true,
+    "smallestAngle": 25.2,
+    "angleOk": true
+   },
+   {
+    "case": 2,
+    "name": "Strength I (1 lane from 19.0 ft off the left curb, trucks right 1 ft)",
+    "applied": 1494.8,
+    "nodalResidual": 2.2737367544323206e-13,
+    "Fx": 0,
+    "Fy": -2.8421709430404007e-13,
+    "M": -1.3642420526593924e-12,
+    "equilibrium": true,
+    "smallestAngle": 25.2,
+    "angleOk": true
+   },
+   {
+    "case": 3,
+    "name": "Strength I (1 lane from 27.0 ft off the left curb, trucks right 1 ft)",
+    "applied": 1494.8,
+    "nodalResidual": 3.865352482534945e-12,
+    "Fx": 0,
+    "Fy": 4.092726157978177e-12,
+    "M": 6.912159733474255e-11,
+    "equilibrium": true,
+    "smallestAngle": 25.2,
+    "angleOk": true
+   },
+   {
+    "case": 4,
+    "name": "Strength I (1 lane from 32.0 ft off the left curb, trucks right 1 ft)",
+    "applied": 1494.8,
+    "nodalResidual": 4.547473508864641e-12,
+    "Fx": 0,
+    "Fy": -4.320099833421409e-12,
+    "M": -7.639755494892597e-11,
+    "equilibrium": true,
+    "smallestAngle": 25.2,
+    "angleOk": true
+   },
+   {
+    "case": 5,
+    "name": "Strength I (2 lanes from 20.0 ft off the left curb, trucks right 1 ft)",
+    "applied": 1672.2,
+    "nodalResidual": 9.094947017729282e-13,
+    "Fx": 0,
+    "Fy": -6.821210263296962e-13,
+    "M": -1.0913936421275139e-11,
+    "equilibrium": true,
+    "smallestAngle": 25.2,
+    "angleOk": true
+   },
+   {
+    "case": 6,
+    "name": "Strength I (3 lanes from 0.0 ft off the left curb)",
+    "applied": 1794.2,
+    "nodalResidual": 2.2737367544323206e-13,
+    "Fx": 0,
+    "Fy": 0,
+    "M": -1.8189894035458565e-12,
+    "equilibrium": true,
+    "smallestAngle": 25.2,
+    "angleOk": true
+   },
+   {
+    "case": 7,
+    "name": "Strength I, dead loads at minimum (2 lanes from 20.0 ft off the left curb, trucks right 1 ft)",
+    "applied": 1299.8,
+    "nodalResidual": 2.2737367544323206e-13,
+    "Fx": 0,
+    "Fy": -2.2737367544323206e-13,
+    "M": -7.275957614183426e-12,
+    "equilibrium": true,
+    "smallestAngle": 25.2,
+    "angleOk": true
+   }
+  ],
+  "members": [
+   {
+    "member": "T1-M2",
+    "role": "strut",
+    "tension": 0,
+    "tensionCase": null,
+    "compression": 491.1,
+    "compressionCase": 6
+   },
+   {
+    "member": "M1-T7",
+    "role": "strut",
+    "tension": 0,
+    "tensionCase": null,
+    "compression": 422.1,
+    "compressionCase": 6
+   },
+   {
+    "member": "T2-M1",
+    "role": "strut",
+    "tension": 0,
+    "tensionCase": null,
+    "compression": 582.9,
+    "compressionCase": 6
+   },
+   {
+    "member": "T3-M1",
+    "role": "tie",
+    "tension": 1463.3,
+    "tensionCase": 5,
+    "compression": 90,
+    "compressionCase": 6
+   },
+   {
+    "member": "T4-C2",
+    "role": "strut",
+    "tension": 0,
+    "tensionCase": null,
+    "compression": 403,
+    "compressionCase": 5
+   },
+   {
+    "member": "T5-C2",
+    "role": "strut",
+    "tension": 0,
+    "tensionCase": null,
+    "compression": 1227.2,
+    "compressionCase": 5
+   },
+   {
+    "member": "T6-M3",
+    "role": "strut",
+    "tension": 0,
+    "tensionCase": null,
+    "compression": 633.8,
+    "compressionCase": 4
+   },
+   {
+    "member": "T8-M4",
+    "role": "strut",
+    "tension": 0,
+    "tensionCase": null,
+    "compression": 298.2,
+    "compressionCase": 4
+   },
+   {
+    "member": "C1-S1",
+    "role": "strut",
+    "tension": 0,
+    "tensionCase": null,
+    "compression": 1710.5,
+    "compressionCase": 5
+   },
+   {
+    "member": "C2-S2",
+    "role": "strut",
+    "tension": 0,
+    "tensionCase": null,
+    "compression": 1029.3,
+    "compressionCase": 5
+   },
+   {
+    "member": "M1-S3",
+    "role": "tie",
+    "tension": 1116.8,
+    "tensionCase": 7,
+    "compression": 706.7,
+    "compressionCase": 6
+   },
+   {
+    "member": "T3-C1",
+    "role": "strut",
+    "tension": 0,
+    "tensionCase": null,
+    "compression": 2033.9,
+    "compressionCase": 5
+   },
+   {
+    "member": "T4-C1",
+    "role": "strut",
+    "tension": 0,
+    "tensionCase": null,
+    "compression": 429.4,
+    "compressionCase": 6
+   },
+   {
+    "member": "M2-T7",
+    "role": "tie",
+    "tension": 211.2,
+    "tensionCase": 6,
+    "compression": 0,
+    "compressionCase": null
+   },
+   {
+    "member": "M3-T8",
+    "role": "tie",
+    "tension": 269.8,
+    "tensionCase": 4,
+    "compression": 0,
+    "compressionCase": null
+   },
+   {
+    "member": "T5-M4",
+    "role": "tie",
+    "tension": 254.1,
+    "tensionCase": 4,
+    "compression": 0,
+    "compressionCase": null
+   },
+   {
+    "member": "T1-T7",
+    "role": "tie",
+    "tension": 404.9,
+    "tensionCase": 6,
+    "compression": 0,
+    "compressionCase": null
+   },
+   {
+    "member": "T2-T7",
+    "role": "tie",
+    "tension": 770.3,
+    "tensionCase": 6,
+    "compression": 0,
+    "compressionCase": null
+   },
+   {
+    "member": "T2-T3",
+    "role": "tie",
+    "tension": 1244.6,
+    "tensionCase": 6,
+    "compression": 0,
+    "compressionCase": null
+   },
+   {
+    "member": "T3-T4",
+    "role": "tie",
+    "tension": 1863.1,
+    "tensionCase": 5,
+    "compression": 0,
+    "compressionCase": null
+   },
+   {
+    "member": "T4-T5",
+    "role": "tie",
+    "tension": 1705.6,
+    "tensionCase": 4,
+    "compression": 0,
+    "compressionCase": null
+   },
+   {
+    "member": "T5-T8",
+    "role": "tie",
+    "tension": 655.9,
+    "tensionCase": 4,
+    "compression": 0,
+    "compressionCase": null
+   },
+   {
+    "member": "T6-T8",
+    "role": "tie",
+    "tension": 528.9,
+    "tensionCase": 4,
+    "compression": 0,
+    "compressionCase": null
+   },
+   {
+    "member": "M1-M2",
+    "role": "strut",
+    "tension": 0,
+    "tensionCase": null,
+    "compression": 410.3,
+    "compressionCase": 6
+   },
+   {
+    "member": "C1-M1",
+    "role": "strut",
+    "tension": 0,
+    "tensionCase": null,
+    "compression": 1247.2,
+    "compressionCase": 6
+   },
+   {
+    "member": "C1-C2",
+    "role": "strut",
+    "tension": 0,
+    "tensionCase": null,
+    "compression": 1863.1,
+    "compressionCase": 5
+   },
+   {
+    "member": "C2-M4",
+    "role": "strut",
+    "tension": 0,
+    "tensionCase": null,
+    "compression": 662.7,
+    "compressionCase": 4
+   },
+   {
+    "member": "M3-M4",
+    "role": "strut",
+    "tension": 0,
+    "tensionCase": null,
+    "compression": 534.9,
+    "compressionCase": 4
+   }
+  ],
+  "supports": [
+   {
+    "node": "S1",
+    "restrains": "x",
+    "reactions": [
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0
+    ],
+    "target": [
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null
+    ]
+   },
+   {
+    "node": "S1",
+    "restrains": "y",
+    "reactions": [
+     727.4,
+     933,
+     1260.4,
+     1631.4,
+     1710.5,
+     601,
+     1572.8
+    ],
+    "target": [
+     727.4,
+     933,
+     1138.5,
+     1266.9,
+     1400.2,
+     779,
+     1193.5
+    ]
+   },
+   {
+    "node": "S2",
+    "restrains": "y",
+    "reactions": [
+     405.2,
+     685.7,
+     878,
+     878,
+     1029.3,
+     486.5,
+     843.8
+    ],
+    "target": [
+     428.3,
+     737.7,
+     1047.1,
+     1240.5,
+     1362.1,
+     372.4,
+     1217
+    ]
+   },
+   {
+    "node": "S3",
+    "restrains": "y",
+    "reactions": [
+     362.2,
+     -123.8,
+     -643.6,
+     -1014.6,
+     -1067.7,
+     706.7,
+     -1116.8
+    ],
+    "target": [
+     339.1,
+     -175.8,
+     -690.7,
+     -1012.6,
+     -1090,
+     642.8,
+     -1110.7
+    ]
+   }
+  ],
+  "checks": [
+   {
+    "name": "Strut-tie angles greater than 25°",
+    "demand": 25,
+    "capacity": 25.2,
+    "ok": true
+   },
+   {
+    "name": "Crack-control grid, vertical: Av/(bw sv) ≥ 0.003",
+    "demand": 0,
+    "capacity": 0,
+    "ok": true
+   },
+   {
+    "name": "Crack-control grid, horizontal: Ah/(bw sh) ≥ 0.003",
+    "demand": 0,
+    "capacity": 0,
+    "ok": true
+   },
+   {
+    "name": "Crack-control grid spacing, d/4 and 12 in or less",
+    "demand": 6,
+    "capacity": 12,
+    "ok": true
+   },
+   {
+    "name": "Tie T3-M1: 26 #11",
+    "demand": 1463.3,
+    "capacity": 2190.2,
+    "ok": true
+   },
+   {
+    "name": "Tie M1-S3: 26 #11",
+    "demand": 1116.8,
+    "capacity": 2190.2,
+    "ok": true
+   },
+   {
+    "name": "Tie M2-T7: 48 #5",
+    "demand": 211.2,
+    "capacity": 803.5,
+    "ok": true
+   },
+   {
+    "name": "Tie M3-T8: 48 #5",
+    "demand": 269.8,
+    "capacity": 803.5,
+    "ok": true
+   },
+   {
+    "name": "Tie T5-M4: 16 #5",
+    "demand": 254.1,
+    "capacity": 267.8,
+    "ok": true
+   },
+   {
+    "name": "Tie T1-T7: 26 #11",
+    "demand": 404.9,
+    "capacity": 2190.2,
+    "ok": true
+   },
+   {
+    "name": "Tie T2-T7: 26 #11",
+    "demand": 770.3,
+    "capacity": 2190.2,
+    "ok": true
+   },
+   {
+    "name": "Tie T2-T3: 26 #11",
+    "demand": 1244.6,
+    "capacity": 2190.2,
+    "ok": true
+   },
+   {
+    "name": "Tie T3-T4: 26 #11",
+    "demand": 1863.1,
+    "capacity": 2190.2,
+    "ok": true
+   },
+   {
+    "name": "Tie T4-T5: 26 #11",
+    "demand": 1705.6,
+    "capacity": 2190.2,
+    "ok": true
+   },
+   {
+    "name": "Tie T5-T8: 26 #11",
+    "demand": 655.9,
+    "capacity": 2190.2,
+    "ok": true
+   },
+   {
+    "name": "Tie T6-T8: 26 #11",
+    "demand": 528.9,
+    "capacity": 2190.2,
+    "ok": true
+   },
+   {
+    "name": "Node T1 (CCT): bearing (applied load or reaction)",
+    "demand": 277.9,
+    "capacity": 1587.6,
+    "ok": true
+   },
+   {
+    "name": "Node T2 (CCT): bearing (applied load or reaction)",
+    "demand": 338.8,
+    "capacity": 1587.6,
+    "ok": true
+   },
+   {
+    "name": "Node T3 (CTT): bearing (applied load or reaction)",
+    "demand": 393.2,
+    "capacity": 1417.5,
+    "ok": true
+   },
+   {
+    "name": "Node T4 (CCT): bearing (applied load or reaction)",
+    "demand": 391,
+    "capacity": 1587.6,
+    "ok": true
+   },
+   {
+    "name": "Node T5 (CTT): bearing (applied load or reaction)",
+    "demand": 380.8,
+    "capacity": 1417.5,
+    "ok": true
+   },
+   {
+    "name": "Node T6 (CCT): bearing (applied load or reaction)",
+    "demand": 349.1,
+    "capacity": 1587.6,
+    "ok": true
+   },
+   {
+    "name": "Node C1 (CCC): bearing face, C1-S1",
+    "demand": 1710.5,
+    "capacity": 6775.9,
+    "ok": true
+   },
+   {
+    "name": "Node C2 (CCC): bearing face, C2-S2",
+    "demand": 1029.3,
+    "capacity": 1783.6,
+    "ok": true
+   }
+  ],
+  "failing": [],
+  "coverage": [
+   {
+    "item": "Tie T3-M1",
+    "status": "pass",
+    "detail": "26 #11, φPn 2190 kip against 1463 kip (case 5), AASHTO 5.8.2.4.1"
+   },
+   {
+    "item": "Anchorage of tie T3-M1 at T3",
+    "status": "missing-input",
+    "detail": "Needs the length available from the extended nodal zone, the bars' cover and spacing, and straight or hooked (AASHTO 5.8.2.4.2)."
+   },
+   {
+    "item": "Anchorage of tie T3-M1 at M1",
+    "status": "not-required",
+    "detail": "The bars continue in line into the next scheduled tie."
+   },
+   {
+    "item": "Tie M1-S3",
+    "status": "pass",
+    "detail": "26 #11, φPn 2190 kip against 1117 kip (case 7), AASHTO 5.8.2.4.1"
+   },
+   {
+    "item": "Anchorage of tie M1-S3 at M1",
+    "status": "not-required",
+    "detail": "The bars continue in line into the next scheduled tie."
+   },
+   {
+    "item": "Anchorage of tie M1-S3 at S3",
+    "status": "missing-input",
+    "detail": "Needs the length available from the extended nodal zone, the bars' cover and spacing, and straight or hooked (AASHTO 5.8.2.4.2)."
+   },
+   {
+    "item": "Tie M2-T7",
+    "status": "pass",
+    "detail": "48 #5, φPn 804 kip against 211 kip (case 6), AASHTO 5.8.2.4.1"
+   },
+   {
+    "item": "Anchorage of tie M2-T7 at M2",
+    "status": "missing-input",
+    "detail": "Needs the length available from the extended nodal zone, the bars' cover and spacing, and straight or hooked (AASHTO 5.8.2.4.2)."
+   },
+   {
+    "item": "Anchorage of tie M2-T7 at T7",
+    "status": "missing-input",
+    "detail": "Needs the length available from the extended nodal zone, the bars' cover and spacing, and straight or hooked (AASHTO 5.8.2.4.2)."
+   },
+   {
+    "item": "Tie M3-T8",
+    "status": "pass",
+    "detail": "48 #5, φPn 804 kip against 270 kip (case 4), AASHTO 5.8.2.4.1"
+   },
+   {
+    "item": "Anchorage of tie M3-T8 at M3",
+    "status": "missing-input",
+    "detail": "Needs the length available from the extended nodal zone, the bars' cover and spacing, and straight or hooked (AASHTO 5.8.2.4.2)."
+   },
+   {
+    "item": "Anchorage of tie M3-T8 at T8",
+    "status": "missing-input",
+    "detail": "Needs the length available from the extended nodal zone, the bars' cover and spacing, and straight or hooked (AASHTO 5.8.2.4.2)."
+   },
+   {
+    "item": "Tie T5-M4",
+    "status": "pass",
+    "detail": "16 #5, φPn 268 kip against 254 kip (case 4), AASHTO 5.8.2.4.1"
+   },
+   {
+    "item": "Anchorage of tie T5-M4 at T5",
+    "status": "missing-input",
+    "detail": "Needs the length available from the extended nodal zone, the bars' cover and spacing, and straight or hooked (AASHTO 5.8.2.4.2)."
+   },
+   {
+    "item": "Anchorage of tie T5-M4 at M4",
+    "status": "missing-input",
+    "detail": "Needs the length available from the extended nodal zone, the bars' cover and spacing, and straight or hooked (AASHTO 5.8.2.4.2)."
+   },
+   {
+    "item": "Tie T1-T7",
+    "status": "pass",
+    "detail": "26 #11, φPn 2190 kip against 405 kip (case 6), AASHTO 5.8.2.4.1"
+   },
+   {
+    "item": "Anchorage of tie T1-T7 at T1",
+    "status": "missing-input",
+    "detail": "Needs the length available from the extended nodal zone, the bars' cover and spacing, and straight or hooked (AASHTO 5.8.2.4.2)."
+   },
+   {
+    "item": "Anchorage of tie T1-T7 at T7",
+    "status": "not-required",
+    "detail": "The bars continue in line into the next scheduled tie."
+   },
+   {
+    "item": "Tie T2-T7",
+    "status": "pass",
+    "detail": "26 #11, φPn 2190 kip against 770 kip (case 6), AASHTO 5.8.2.4.1"
+   },
+   {
+    "item": "Anchorage of tie T2-T7 at T2",
+    "status": "not-required",
+    "detail": "The bars continue in line into the next scheduled tie."
+   },
+   {
+    "item": "Anchorage of tie T2-T7 at T7",
+    "status": "not-required",
+    "detail": "The bars continue in line into the next scheduled tie."
+   },
+   {
+    "item": "Tie T2-T3",
+    "status": "pass",
+    "detail": "26 #11, φPn 2190 kip against 1245 kip (case 6), AASHTO 5.8.2.4.1"
+   },
+   {
+    "item": "Anchorage of tie T2-T3 at T2",
+    "status": "not-required",
+    "detail": "The bars continue in line into the next scheduled tie."
+   },
+   {
+    "item": "Anchorage of tie T2-T3 at T3",
+    "status": "not-required",
+    "detail": "The bars continue in line into the next scheduled tie."
+   },
+   {
+    "item": "Tie T3-T4",
+    "status": "pass",
+    "detail": "26 #11, φPn 2190 kip against 1863 kip (case 5), AASHTO 5.8.2.4.1"
+   },
+   {
+    "item": "Anchorage of tie T3-T4 at T3",
+    "status": "not-required",
+    "detail": "The bars continue in line into the next scheduled tie."
+   },
+   {
+    "item": "Anchorage of tie T3-T4 at T4",
+    "status": "not-required",
+    "detail": "The bars continue in line into the next scheduled tie."
+   },
+   {
+    "item": "Tie T4-T5",
+    "status": "pass",
+    "detail": "26 #11, φPn 2190 kip against 1706 kip (case 4), AASHTO 5.8.2.4.1"
+   },
+   {
+    "item": "Anchorage of tie T4-T5 at T4",
+    "status": "not-required",
+    "detail": "The bars continue in line into the next scheduled tie."
+   },
+   {
+    "item": "Anchorage of tie T4-T5 at T5",
+    "status": "not-required",
+    "detail": "The bars continue in line into the next scheduled tie."
+   },
+   {
+    "item": "Tie T5-T8",
+    "status": "pass",
+    "detail": "26 #11, φPn 2190 kip against 656 kip (case 4), AASHTO 5.8.2.4.1"
+   },
+   {
+    "item": "Anchorage of tie T5-T8 at T5",
+    "status": "not-required",
+    "detail": "The bars continue in line into the next scheduled tie."
+   },
+   {
+    "item": "Anchorage of tie T5-T8 at T8",
+    "status": "not-required",
+    "detail": "The bars continue in line into the next scheduled tie."
+   },
+   {
+    "item": "Tie T6-T8",
+    "status": "pass",
+    "detail": "26 #11, φPn 2190 kip against 529 kip (case 4), AASHTO 5.8.2.4.1"
+   },
+   {
+    "item": "Anchorage of tie T6-T8 at T6",
+    "status": "missing-input",
+    "detail": "Needs the length available from the extended nodal zone, the bars' cover and spacing, and straight or hooked (AASHTO 5.8.2.4.2)."
+   },
+   {
+    "item": "Anchorage of tie T6-T8 at T8",
+    "status": "not-required",
+    "detail": "The bars continue in line into the next scheduled tie."
+   },
+   {
+    "item": "Node T1: bearing face (external)",
+    "status": "pass",
+    "detail": "24.0 in by the node's thickness, ν 0.70: φPn 1588 kip against 278 kip (case 6), AASHTO 5.8.2.5"
+   },
+   {
+    "item": "Node T1: strut-to-node faces of T1-M2",
+    "status": "missing-input",
+    "detail": "No face width given for these struts; their interfaces aren't checked."
+   },
+   {
+    "item": "Node T2: bearing face (external)",
+    "status": "pass",
+    "detail": "24.0 in by the node's thickness, ν 0.70: φPn 1588 kip against 339 kip (case 6), AASHTO 5.8.2.5"
+   },
+   {
+    "item": "Node T2: strut-to-node faces of T2-M1",
+    "status": "missing-input",
+    "detail": "No face width given for these struts; their interfaces aren't checked."
+   },
+   {
+    "item": "Node T3: bearing face (external)",
+    "status": "pass",
+    "detail": "24.0 in by the node's thickness, ν 0.63: φPn 1417 kip against 393 kip (case 1), AASHTO 5.8.2.5"
+   },
+   {
+    "item": "Node T3: strut-to-node faces of T3-M1, T3-C1",
+    "status": "missing-input",
+    "detail": "No face width given for these struts; their interfaces aren't checked."
+   },
+   {
+    "item": "Node T4: bearing face (external)",
+    "status": "pass",
+    "detail": "24.0 in by the node's thickness, ν 0.70: φPn 1588 kip against 391 kip (case 2), AASHTO 5.8.2.5"
+   },
+   {
+    "item": "Node T4: strut-to-node faces of T4-C2, T4-C1",
+    "status": "missing-input",
+    "detail": "No face width given for these struts; their interfaces aren't checked."
+   },
+   {
+    "item": "Node T5: bearing face (external)",
+    "status": "pass",
+    "detail": "24.0 in by the node's thickness, ν 0.63: φPn 1417 kip against 381 kip (case 3), AASHTO 5.8.2.5"
+   },
+   {
+    "item": "Node T5: strut-to-node faces of T5-C2",
+    "status": "missing-input",
+    "detail": "No face width given for these struts; their interfaces aren't checked."
+   },
+   {
+    "item": "Node T6: bearing face (external)",
+    "status": "pass",
+    "detail": "24.0 in by the node's thickness, ν 0.70: φPn 1588 kip against 349 kip (case 4), AASHTO 5.8.2.5"
+   },
+   {
+    "item": "Node T6: strut-to-node faces of T6-M3",
+    "status": "missing-input",
+    "detail": "No face width given for these struts; their interfaces aren't checked."
+   },
+   {
+    "item": "Node C1: bearing face (C1-S1)",
+    "status": "pass",
+    "detail": "35.1 in by the node's thickness, ν 0.85: φPn 6776 kip against 1711 kip (case 5), AASHTO 5.8.2.5"
+   },
+   {
+    "item": "Node C1: strut-to-node faces of T3-C1, T4-C1, C1-M1, C1-C2",
+    "status": "missing-input",
+    "detail": "No face width given for these struts; their interfaces aren't checked."
+   },
+   {
+    "item": "Node C2: bearing face (C2-S2)",
+    "status": "pass",
+    "detail": "9.3 in by the node's thickness, ν 0.85: φPn 1784 kip against 1029 kip (case 5), AASHTO 5.8.2.5"
+   },
+   {
+    "item": "Node C2: strut-to-node faces of T4-C2, T5-C2, C1-C2, C2-M4",
+    "status": "missing-input",
+    "detail": "No face width given for these struts; their interfaces aren't checked."
+   },
+   {
+    "item": "Node M1: strut-to-node faces of M1-T7, T2-M1, T3-M1, M1-S3, M1-M2, C1-M1",
+    "status": "not-checked",
+    "detail": "No face of this node is checked (a smeared node may need none, C5.8.2.2; any other node does)."
+   },
+   {
+    "item": "Node M2: strut-to-node faces of T1-M2, M1-M2",
+    "status": "not-checked",
+    "detail": "No face of this node is checked (a smeared node may need none, C5.8.2.2; any other node does)."
+   },
+   {
+    "item": "Node T7: strut-to-node faces of M1-T7",
+    "status": "not-checked",
+    "detail": "No face of this node is checked (a smeared node may need none, C5.8.2.2; any other node does)."
+   },
+   {
+    "item": "Node M3: strut-to-node faces of T6-M3, M3-M4",
+    "status": "not-checked",
+    "detail": "No face of this node is checked (a smeared node may need none, C5.8.2.2; any other node does)."
+   },
+   {
+    "item": "Node T8: strut-to-node faces of T8-M4",
+    "status": "not-checked",
+    "detail": "No face of this node is checked (a smeared node may need none, C5.8.2.2; any other node does)."
+   },
+   {
+    "item": "Node M4: strut-to-node faces of T8-M4, C2-M4, M3-M4",
+    "status": "not-checked",
+    "detail": "No face of this node is checked (a smeared node may need none, C5.8.2.2; any other node does)."
+   },
+   {
+    "item": "Strut T1-M2",
+    "status": "not-implemented",
+    "detail": "Carries 491 kip (case 6). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Strut M1-T7",
+    "status": "not-implemented",
+    "detail": "Carries 422 kip (case 6). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Strut T2-M1",
+    "status": "not-implemented",
+    "detail": "Carries 583 kip (case 6). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Strut T3-M1",
+    "status": "not-implemented",
+    "detail": "Carries 90 kip (case 6). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Strut T4-C2",
+    "status": "not-implemented",
+    "detail": "Carries 403 kip (case 5). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Strut T5-C2",
+    "status": "not-implemented",
+    "detail": "Carries 1227 kip (case 5). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Strut T6-M3",
+    "status": "not-implemented",
+    "detail": "Carries 634 kip (case 4). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Strut T8-M4",
+    "status": "not-implemented",
+    "detail": "Carries 298 kip (case 4). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Strut C1-S1",
+    "status": "not-implemented",
+    "detail": "Carries 1711 kip (case 5). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Strut C2-S2",
+    "status": "not-implemented",
+    "detail": "Carries 1029 kip (case 5). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Strut M1-S3",
+    "status": "not-implemented",
+    "detail": "Carries 707 kip (case 6). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Strut T3-C1",
+    "status": "not-implemented",
+    "detail": "Carries 2034 kip (case 5). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Strut T4-C1",
+    "status": "not-implemented",
+    "detail": "Carries 429 kip (case 6). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Strut M1-M2",
+    "status": "not-implemented",
+    "detail": "Carries 410 kip (case 6). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Strut C1-M1",
+    "status": "not-implemented",
+    "detail": "Carries 1247 kip (case 6). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Strut C1-C2",
+    "status": "not-implemented",
+    "detail": "Carries 1863 kip (case 5). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Strut C2-M4",
+    "status": "not-implemented",
+    "detail": "Carries 663 kip (case 4). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Strut M3-M4",
+    "status": "not-implemented",
+    "detail": "Carries 535 kip (case 4). Its finite width and fit within the outline aren't evaluated; only its centerline is."
+   },
+   {
+    "item": "Finite nodal zones",
+    "status": "not-implemented",
+    "detail": "Nodes are points: their extent, overlap with neighboring nodes and fit within the concrete aren't evaluated."
+   },
+   {
+    "item": "Reinforcement fit and congestion",
+    "status": "not-implemented",
+    "detail": "The bars' spacing within the section and where systems cross aren't checked."
+   },
+   {
+    "item": "Crack-control grid",
+    "status": "pass",
+    "detail": "AASHTO 5.8.2.6"
+   },
+   {
+    "item": "Diagonal-cracking screen",
+    "status": "missing-input",
+    "detail": "Needs the service shear, shear span and depth."
+   }
+  ],
+  "status": {
+   "equilibrium": true,
+   "mechanisms": 3,
+   "crossings": 0,
+   "angles": true,
+   "finiteGeometry": "not-implemented"
+  },
+  "boundary": {
+   "kind": "linear-stress",
+   "deviation": 2997.537633417014
+  },
+  "warnings": [
+   "4 load cases turn the column toward the left. This model is laid out for cases turning it toward the right, so they are left out here: check them in a second design built with \"Lay out for: left\".",
+   "Bearings at 1.5 ft, 41.5 ft are more than twice the cap's depth from a column face. That part of the cap is not a disturbed region; sectional design (AASHTO 5.7) may suit it better (AASHTO 5.8.2.1).",
+   "As a pin-jointed truss the model has 3 mechanism(s). It carries these loads in equilibrium, which a strut-and-tie model needs, but check that the surrounding concrete restrains the free motion.",
+   "Tie T3-M1: anchorage not checked at T3 (continuous bars, a curved-bar node or a splice need their own check).",
+   "Tie M1-S3: anchorage not checked at S3 (continuous bars, a curved-bar node or a splice need their own check).",
+   "Tie M2-T7: anchorage not checked at M2 and T7 (continuous bars, a curved-bar node or a splice need their own check).",
+   "Tie M3-T8: anchorage not checked at M3 and T8 (continuous bars, a curved-bar node or a splice need their own check).",
+   "Tie T5-M4: anchorage not checked at T5 and M4 (continuous bars, a curved-bar node or a splice need their own check).",
+   "Tie T1-T7: anchorage not checked at T1 (continuous bars, a curved-bar node or a splice need their own check).",
+   "Tie T6-T8: anchorage not checked at T6 (continuous bars, a curved-bar node or a splice need their own check).",
+   "Nodes not checked: M1, M2, T7, M3, T8, M4. A smeared node or a curved-bar node may need no stress check (C5.8.2.2); any other node does."
+  ],
+  "appliedLoads": [
+   {
+    "label": "G1",
+    "x": 1.5,
+    "P": 321.4,
+    "detail": "DC 110.8, DW 11.0, LL+IM 95.0 kip"
+   },
+   {
+    "label": "G2",
+    "x": 9.5,
+    "P": 332,
+    "detail": "DC 115.3, DW 11.0, LL+IM 97.9 kip"
+   },
+   {
+    "label": "G3",
+    "x": 17.5,
+    "P": 332,
+    "detail": "DC 115.3, DW 11.0, LL+IM 97.9 kip"
+   },
+   {
+    "label": "G4",
+    "x": 25.5,
+    "P": 332,
+    "detail": "DC 115.3, DW 11.0, LL+IM 97.9 kip"
+   },
+   {
+    "label": "G5",
+    "x": 33.5,
+    "P": 332,
+    "detail": "DC 115.3, DW 11.0, LL+IM 97.9 kip"
+   },
+   {
+    "label": "G6",
+    "x": 41.5,
+    "P": 321.4,
+    "detail": "DC 110.8, DW 11.0, LL+IM 95.0 kip"
+   }
+  ],
+  "reversedCases": [
+   "Strength I (1 lane from 0.0 ft off the left curb, trucks left 1 ft)",
+   "Strength I (1 lane from 3.0 ft off the left curb, trucks right 1 ft)",
+   "Strength I (2 lanes from 0.0 ft off the left curb, trucks left 1 ft)",
+   "Strength I, dead loads at minimum (2 lanes from 0.0 ft off the left curb, trucks left 1 ft)"
+  ],
+  "selfWeight": 221
+ }
+}

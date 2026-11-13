@@ -1,0 +1,475 @@
+{
+ "id": "6f71455b-d8a2-401e-bc54-474c2af8c415",
+ "name": "Strut-and-Tie Model 1",
+ "kind": "stm-d-region",
+ "updated_at": "2026-11-10T02:43:26.316Z",
+ "inputs": {
+  "b": 72,
+  "fc": 4.5,
+  "fy": 60,
+  "grid": {
+   "d": 78,
+   "Ah": 1.58,
+   "Av": 1.76,
+   "sh": 5,
+   "sv": 6,
+   "provided": true
+  },
+  "ties": [
+   {
+    "bars": 26,
+    "ends": [],
+    "member": "T3-M1",
+    "barSize": 11
+   },
+   {
+    "bars": 26,
+    "ends": [],
+    "member": "M1-S3",
+    "barSize": 11
+   },
+   {
+    "bars": 48,
+    "ends": [],
+    "member": "M2-T7",
+    "barSize": 5
+   },
+   {
+    "bars": 48,
+    "ends": [],
+    "member": "M3-T8",
+    "barSize": 5
+   },
+   {
+    "bars": 16,
+    "ends": [],
+    "member": "M4-T5",
+    "barSize": 5
+   },
+   {
+    "bars": 26,
+    "ends": [],
+    "member": "T1-T7",
+    "barSize": 11
+   },
+   {
+    "bars": 26,
+    "ends": [],
+    "member": "T7-T2",
+    "barSize": 11
+   },
+   {
+    "bars": 26,
+    "ends": [],
+    "member": "T2-T3",
+    "barSize": 11
+   },
+   {
+    "bars": 26,
+    "ends": [],
+    "member": "T3-T4",
+    "barSize": 11
+   },
+   {
+    "bars": 26,
+    "ends": [],
+    "member": "T4-T5",
+    "barSize": 11
+   },
+   {
+    "bars": 26,
+    "ends": [],
+    "member": "T5-T8",
+    "barSize": 11
+   },
+   {
+    "bars": 26,
+    "ends": [],
+    "member": "T8-T6",
+    "barSize": 11
+   }
+  ],
+  "cases": [
+   {
+    "name": "Strength I",
+    "loads": []
+   }
+  ],
+  "nodes": [
+   {
+    "x": 1.5,
+    "y": 6.5,
+    "label": "T1"
+   },
+   {
+    "x": 9.5,
+    "y": 6.5,
+    "label": "T2"
+   },
+   {
+    "x": 17.5,
+    "y": 6.5,
+    "label": "T3"
+   },
+   {
+    "x": 25.5,
+    "y": 6.5,
+    "label": "T4"
+   },
+   {
+    "x": 33.5,
+    "y": 6.5,
+    "label": "T5"
+   },
+   {
+    "x": 41.5,
+    "y": 6.5,
+    "label": "T6"
+   },
+   {
+    "x": 21.2526,
+    "y": 0.6667,
+    "label": "C1"
+   },
+   {
+    "x": 22.6294,
+    "y": 0.6667,
+    "label": "C2"
+   },
+   {
+    "x": 17.6667,
+    "y": 0.6667,
+    "label": "M1"
+   },
+   {
+    "x": 7.5742,
+    "y": 2.33,
+    "label": "M2"
+   },
+   {
+    "x": 7.5742,
+    "y": 6.5,
+    "label": "T7"
+   },
+   {
+    "x": 35.5037,
+    "y": 2.5422,
+    "label": "M3"
+   },
+   {
+    "x": 35.5037,
+    "y": 6.5,
+    "label": "T8"
+   },
+   {
+    "x": 33.5,
+    "y": 2.2417,
+    "label": "M4"
+   },
+   {
+    "x": 21.2526,
+    "y": -6,
+    "label": "S1"
+   },
+   {
+    "x": 22.6294,
+    "y": -6,
+    "label": "S2"
+   },
+   {
+    "x": 17.6667,
+    "y": -6,
+    "label": "S3"
+   }
+  ],
+  "study": {
+   "tension": 60,
+   "compression": 5
+  },
+  "layout": "entered",
+  "girders": {
+   "wc": 0.15,
+   "x0": 21.5,
+   "back": {
+    "L": 120,
+    "S": 8,
+    "n": 6,
+    "dc": {
+     "exterior": 110.84921874999999,
+     "interior": 115.28671875
+    },
+    "dw": {
+     "exterior": 11,
+     "interior": 11
+    },
+    "name": "LRFD Bridge Design Check 1",
+    "skew": 0,
+    "span": 0,
+    "designId": "dfcab4af-19af-4e40-9143-1accb746d3f2",
+    "overhang": 3.5,
+    "continuous": false,
+    "barrierWidth": 1.5
+   },
+   "ahead": null,
+   "soffit": -10,
+   "enabled": true,
+   "reverse": false,
+   "loadNodes": [
+    "T1",
+    "T2",
+    "T3",
+    "T4",
+    "T5",
+    "T6"
+   ],
+   "selfWeight": true
+  },
+  "members": [
+   "T1-M2:strut",
+   "T7-M1:strut",
+   "T2-M1:strut",
+   "T3-M1",
+   "T4-C2:strut",
+   "T5-C2:strut",
+   "T6-M3:strut",
+   "T8-M4:strut",
+   "C1-S1",
+   "C2-S2",
+   "M1-S3",
+   "T3-C1:strut",
+   "T4-C1:strut",
+   "M2-T7",
+   "M3-T8",
+   "M4-T5",
+   "T1-T7",
+   "T7-T2",
+   "T2-T3",
+   "T3-T4",
+   "T4-T5",
+   "T5-T8",
+   "T8-T6",
+   "M2-M1",
+   "M1-C1",
+   "C1-C2",
+   "C2-M4",
+   "M4-M3"
+  ],
+  "outline": [
+   [
+    0,
+    3
+   ],
+   [
+    17,
+    0
+   ],
+   [
+    17,
+    -6
+   ],
+   [
+    23,
+    -6
+   ],
+   [
+    23,
+    0
+   ],
+   [
+    43,
+    3
+   ],
+   [
+    43,
+    7
+   ],
+   [
+    0,
+    7
+   ]
+  ],
+  "service": {
+   "V": 0,
+   "a": 0,
+   "d": 78,
+   "check": false
+  },
+  "supports": [
+   {
+    "x": true,
+    "y": true,
+    "node": "S1",
+    "upwardOnly": false
+   },
+   {
+    "x": false,
+    "y": true,
+    "node": "S2",
+    "upwardOnly": false
+   },
+   {
+    "x": false,
+    "y": true,
+    "node": "S3",
+    "upwardOnly": false
+   }
+  ],
+  "template": {
+   "kind": "hammerhead",
+   "depth": 7,
+   "length": 43,
+   "columns": [
+    20
+   ],
+   "topBars": {
+    "size": 11,
+    "count": 26
+   },
+   "bearings": [
+    {
+     "P": 0,
+     "x": 1.5
+    },
+    {
+     "P": 0,
+     "x": 9.5
+    },
+    {
+     "P": 0,
+     "x": 17.5
+    },
+    {
+     "P": 0,
+     "x": 25.5
+    },
+    {
+     "P": 0,
+     "x": 33.5
+    },
+    {
+     "P": 0,
+     "x": 41.5
+    }
+   ],
+   "capWidth": 72,
+   "stirrups": {
+    "legs": 4,
+    "size": 5,
+    "spacing": 6
+   },
+   "tipDepth": 4,
+   "topCover": 6,
+   "direction": "auto",
+   "bottomBars": {
+    "size": 9,
+    "count": 8
+   },
+   "layoutSign": 1,
+   "bottomCover": 8,
+   "columnModel": "two",
+   "columnWidth": 6,
+   "bearingWidth": 30,
+   "bearingLength": 24,
+   "columnBarInset": 8
+  },
+  "component": "pier_cap",
+  "nodeChecks": [
+   {
+    "node": "T1",
+    "faces": [
+     {
+      "type": "bearing",
+      "width": 24,
+      "source": "external"
+     }
+    ],
+    "thickness": 30,
+    "confinement": null
+   },
+   {
+    "node": "T2",
+    "faces": [
+     {
+      "type": "bearing",
+      "width": 24,
+      "source": "external"
+     }
+    ],
+    "thickness": 30,
+    "confinement": null
+   },
+   {
+    "node": "T3",
+    "faces": [
+     {
+      "type": "bearing",
+      "width": 24,
+      "source": "external"
+     }
+    ],
+    "thickness": 30,
+    "confinement": null
+   },
+   {
+    "node": "T4",
+    "faces": [
+     {
+      "type": "bearing",
+      "width": 24,
+      "source": "external"
+     }
+    ],
+    "thickness": 30,
+    "confinement": null
+   },
+   {
+    "node": "T5",
+    "faces": [
+     {
+      "type": "bearing",
+      "width": 24,
+      "source": "external"
+     }
+    ],
+    "thickness": 30,
+    "confinement": null
+   },
+   {
+    "node": "T6",
+    "faces": [
+     {
+      "type": "bearing",
+      "width": 24,
+      "source": "external"
+     }
+    ],
+    "thickness": 30,
+    "confinement": null
+   },
+   {
+    "node": "C1",
+    "faces": [
+     {
+      "type": "bearing",
+      "width": 35.1486,
+      "source": "C1-S1"
+     }
+    ],
+    "thickness": 72,
+    "confinement": null
+   },
+   {
+    "node": "C2",
+    "faces": [
+     {
+      "type": "bearing",
+      "width": 9.2522,
+      "source": "C2-S2"
+     }
+    ],
+    "thickness": 72,
+    "confinement": null
+   }
+  ]
+ }
+}

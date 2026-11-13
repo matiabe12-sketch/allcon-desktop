@@ -1,7 +1,7 @@
 "use client";
 
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
-import { Activity, AlertCircle, Anchor, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, ArrowDownUp, ArrowLeft, ArrowUpFromLine, Box, Check, Cuboid, Database, Frame, Maximize, Moon, Palette, Route, Tag, ChevronDown, ChevronRight, ClipboardCheck, Columns3, EyeOff, FileText, Grid3x3, Layers, Loader2, MoveVertical, PanelBottom, PencilRuler, Play, Ruler, Spline, Table2, TriangleAlert, Truck, Weight } from "lucide-react";
+import { Focus, Activity, AlertCircle, Anchor, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, ArrowDownUp, ArrowLeft, ArrowUpFromLine, Box, Check, Cuboid, Database, Frame, Maximize, Moon, Palette, Route, Tag, ChevronDown, ChevronRight, ClipboardCheck, Columns3, EyeOff, FileText, Grid3x3, Layers, Loader2, MoveVertical, PanelBottom, PencilRuler, Play, Ruler, Spline, Table2, TriangleAlert, Truck, Weight } from "lucide-react";
 import { toast } from "sonner";
 import { createBridgeCalc, exportBridgeIfc, renameBridge, saveBridgeDefinition, setBridgeProject } from "@/app/actions/bridge";
 import { DesignErrorCard, fmt } from "@/components/design/design-kit";
@@ -66,6 +66,15 @@ export function BridgeWorkspace({ bridge, projects }: { bridge: { id: string; na
   const [tab, setTab] = useState<Tab>("structure");
   const [form, setForm] = useState<FormKey | null>("layout");
   const [memberId, setMemberId] = useState<string | null>(null);
+  // Parts shown alone in the 3D view (a member, or a group of them from the tree), the rest ghosted.
+  const [isolation, setIsolation] = useState<{ label: string; members: string[] } | null>(null);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement || e.target instanceof HTMLTextAreaElement)) setIsolation(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   const [selKey, setSelKey] = useState("combination:Strength I");
   const [show, setShow] = useState<Show>("My");
   const [table, setTable] = useState<Table | null>(null);
@@ -174,6 +183,8 @@ export function BridgeWorkspace({ bridge, projects }: { bridge: { id: string; na
   const members = useMemo(() => a?.generated.members ?? [], [a]);
   const member = members.find((m) => m.id === memberId) ?? null;
   const selected = useMemo(() => new Set(member?.elements ?? []), [member]);
+  const isolated = useMemo(() => (isolation ? members.filter((m) => isolation.members.includes(m.id)) : null), [isolation, members]);
+  const isolate = useMemo(() => (isolated?.length ? new Set(isolated.flatMap((m) => m.elements)) : null), [isolated]);
   const displacements = useMemo(() => (a && show === "deformed" && sel.kind !== "live" ? a.displacements(sel) : null), [a, sel, show]);
 
   // The result on the model: every member's values along it (an envelope's governing value with
@@ -182,7 +193,8 @@ export function BridgeWorkspace({ bridge, projects }: { bridge: { id: string; na
   const field = useMemo(() => {
     if (!a || show === "none" || show === "deformed") return null;
     const total = a.generated.stations[a.generated.stations.length - 1];
-    const rows = members.map((m) => ({ m, st: a.member(m, sel, 2, live) }));
+    // Shown alone: the result on those parts only (their extremes, and the diagrams scaled to them).
+    const rows = (isolated?.length ? isolated : members).map((m) => ({ m, st: a.member(m, sel, 2, live) }));
     let peak = 0;
     let max = { v: -Infinity, where: "", p: [0, 0, 0] as Vec3 };
     let min = { v: Infinity, where: "", p: [0, 0, 0] as Vec3 };
@@ -216,7 +228,7 @@ export function BridgeWorkspace({ bridge, projects }: { bridge: { id: string; na
         }
     }
     return { overlay: { outline: new Float32Array(outline), hatch: new Float32Array(hatch), color: SHOW[show].color } as Overlay, contour, max, min, rows };
-  }, [a, members, sel, show, live]);
+  }, [a, members, isolated, sel, show, live]);
   const diagram = field;
 
   // The solids, and what is drawn over them.
@@ -291,6 +303,12 @@ export function BridgeWorkspace({ bridge, projects }: { bridge: { id: string; na
     setPanels((p) => ({ ...p, properties: true }));
     setForm(f);
     setMemberId(null);
+    setIsolation(null);
+  };
+  /** A member picked in the tree: selected, and shown alone. */
+  const showMember = (m: Member) => {
+    pickMember(m.id);
+    setIsolation({ label: m.name, members: [m.id] });
   };
   const lanes = live?.arrangements[0].length ?? 0;
   const selectionLabel = sel.kind === "live" ? "LL+IM (HL-93)" : sel.name;
@@ -496,9 +514,15 @@ export function BridgeWorkspace({ bridge, projects }: { bridge: { id: string; na
           {(["girder", "cap", "column"] as const).map((kind) => {
             const list = members.filter((m) => m.kind === kind);
             return list.length ? (
-              <Tree key={kind} title={`${kind === "girder" ? "Girders" : kind === "cap" ? "Pier caps" : "Pier columns"} (${list.length})`} closed={kind === "girder" && list.length > 12}>
+              <Tree
+                key={kind}
+                title={`${kind === "girder" ? "Girders" : kind === "cap" ? "Pier caps" : "Pier columns"} (${list.length})`}
+                closed={kind === "girder" && list.length > 12}
+                onShow={() => setIsolation({ label: kind === "girder" ? "The girders" : kind === "cap" ? "The pier caps" : "The pier columns", members: list.map((m) => m.id) })}
+                showing={!!isolation && isolation.members.length === list.length && list.every((m) => isolation.members.includes(m.id))}
+              >
                 {list.map((m) => (
-                  <Leaf key={m.id} label={m.name} active={memberId === m.id} onClick={() => pickMember(m.id)} />
+                  <Leaf key={m.id} label={m.name} active={memberId === m.id} onClick={() => showMember(m)} />
                 ))}
               </Tree>
             ) : null;
@@ -532,6 +556,7 @@ export function BridgeWorkspace({ bridge, projects }: { bridge: { id: string; na
               overlay={field && !useContour ? field.overlay : null}
               contour={field && useContour ? field.contour : null}
               selected={selected}
+              isolate={isolate}
               labels={labels}
               arrows={arrows}
               strips={strips}
@@ -543,6 +568,16 @@ export function BridgeWorkspace({ bridge, projects }: { bridge: { id: string; na
           ) : (
             <div className="p-6">
               <DesignErrorCard message={outcome.error ?? "The bridge could not be analyzed."} />
+            </div>
+          )}
+          {a && isolation && (
+            <div className="absolute top-2 left-1/2 z-10 flex -translate-x-1/2 items-center gap-2 rounded-full border bg-background/95 px-3 py-1 text-[11px] shadow-sm">
+              <span>
+                <span className="font-medium">{isolation.label}</span> alone
+              </span>
+              <button type="button" onClick={() => setIsolation(null)} className="rounded-full border px-2 py-0.5 font-medium hover:bg-accent" title="Show the whole bridge (Esc)">
+                Show all
+              </button>
             </div>
           )}
           {a && (
@@ -688,14 +723,21 @@ export function BridgeWorkspace({ bridge, projects }: { bridge: { id: string; na
   );
 }
 
-function Tree({ title, children, closed = false }: { title: string; children: React.ReactNode; closed?: boolean }) {
+function Tree({ title, children, closed = false, onShow, showing }: { title: string; children: React.ReactNode; closed?: boolean; /** Show the group alone in the 3D view. */ onShow?: () => void; showing?: boolean }) {
   const [open, setOpen] = useState(!closed);
   return (
     <div>
-      <button type="button" onClick={() => setOpen((o) => !o)} className="flex w-full items-center gap-1 px-2 py-1 text-left font-semibold hover:bg-accent">
-        {open ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
-        {title}
-      </button>
+      <div className="group flex items-center hover:bg-accent">
+        <button type="button" onClick={() => setOpen((o) => !o)} className="flex flex-1 items-center gap-1 px-2 py-1 text-left font-semibold">
+          {open ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
+          {title}
+        </button>
+        {onShow && (
+          <button type="button" onClick={onShow} aria-label={`Show ${title} alone`} title="Show these alone (the rest ghosted)" className={cn("mr-1 rounded p-0.5 text-muted-foreground hover:bg-background hover:text-foreground", showing ? "text-primary" : "opacity-0 group-hover:opacity-100")}>
+            <Focus className="size-3.5" />
+          </button>
+        )}
+      </div>
       {open && <div className="pb-1">{children}</div>}
     </div>
   );

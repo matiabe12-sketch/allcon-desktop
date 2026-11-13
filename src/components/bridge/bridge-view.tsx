@@ -60,6 +60,8 @@ export type BridgeViewProps = {
   overlay?: Overlay | null;
   contour?: Contour | null;
   selected?: Set<number>;
+  /** Elements shown alone: the rest of the bridge drawn as a faint ghost, and the camera framed on these. */
+  isolate?: Set<number> | null;
   onPick?: (elementId: number | null) => void;
   labels?: Label[];
   arrows?: Arrow[];
@@ -71,7 +73,7 @@ export type BridgeViewProps = {
   className?: string;
 };
 
-export const BridgeView = forwardRef<BridgeViewHandle, BridgeViewProps>(function BridgeView({ model, solids, mode = "solid", hidden, displacements, overlay, contour, selected, onPick, labels, arrows, strips, grid = true, dark = false, plain, className }, ref) {
+export const BridgeView = forwardRef<BridgeViewHandle, BridgeViewProps>(function BridgeView({ model, solids, mode = "solid", hidden, displacements, overlay, contour, selected, isolate, onPick, labels, arrows, strips, grid = true, dark = false, plain, className }, ref) {
   const host = useRef<HTMLDivElement>(null);
   const layer = useRef<HTMLDivElement>(null);
   const state = useRef<State | null>(null);
@@ -238,7 +240,25 @@ export const BridgeView = forwardRef<BridgeViewHandle, BridgeViewProps>(function
     const at = new Map(model.nodes.map((n) => [n.id, n]));
     const box = new THREE.Box3();
     for (const n of model.nodes) box.expandByPoint(new THREE.Vector3(n.x, n.y, n.z));
-    s.box = box;
+    // Isolated: the camera frames those elements (with a little room), the rest is a ghost.
+    const alone = isolate && isolate.size ? isolate : null;
+    const ghost = (element: number | undefined) => !!alone && (element === undefined || !alone.has(element));
+    let frameBox = box;
+    if (alone) {
+      const at0 = new Map(model.nodes.map((n) => [n.id, n]));
+      const b = new THREE.Box3();
+      for (const e of model.elements)
+        if (alone.has(e.id))
+          for (const id of [e.n1, e.n2]) {
+            const n = at0.get(id);
+            if (n) b.expandByPoint(new THREE.Vector3(n.x, n.y, n.z));
+          }
+      if (!b.isEmpty()) {
+        const pad = Math.max(4, b.getSize(new THREE.Vector3()).length() * 0.15);
+        frameBox = b.expandByScalar(pad);
+      }
+    }
+    s.box = frameBox;
     const size = box.getSize(new THREE.Vector3());
     const span = Math.max(size.x, size.y, size.z, 1);
     const busy = !!displacements || !!overlay;
@@ -266,6 +286,11 @@ export const BridgeView = forwardRef<BridgeViewHandle, BridgeViewProps>(function
     if (drawSolids) {
       const fade = busy ? 0.28 : 1;
       const paint = (geometry: THREE.BufferGeometry, kind: SolidKind, element: number | undefined, along: ((p: THREE.Vector3) => number) | null) => {
+        if (ghost(element)) {
+          const m = new THREE.Mesh(geometry, new THREE.MeshLambertMaterial({ color: dark ? 0x94a3b8 : 0x64748b, transparent: true, opacity: 0.08, depthWrite: false }));
+          m.userData.ghost = true;
+          return m;
+        }
         const picked = element !== undefined && selected?.has(element);
         const values = element !== undefined && contour ? contour.values.get(element) : undefined;
         let material: THREE.Material;
@@ -291,6 +316,7 @@ export const BridgeView = forwardRef<BridgeViewHandle, BridgeViewProps>(function
       };
       const place = (mesh: THREE.Mesh, edges: boolean, element?: number) => {
         s.group.add(mesh);
+        if (mesh.userData.ghost) return; // a ghost: seen through, not picked, no edges
         if (element !== undefined) {
           mesh.userData.element = element;
           s.pickable.push(mesh);
@@ -349,13 +375,17 @@ export const BridgeView = forwardRef<BridgeViewHandle, BridgeViewProps>(function
       const picked: [number, number][] = [];
       for (const e of model.elements) {
         if (!at.has(e.n1) || !at.has(e.n2)) continue;
-        const k = plain ? "girder" : kindOf(e.sec);
+        const k = ghost(e.id) ? "ghost" : plain ? "girder" : kindOf(e.sec);
         const cur = byKind.get(k) ?? byKind.set(k, { pairs: [], ids: [] }).get(k)!;
         cur.pairs.push([e.n1, e.n2]);
         cur.ids.push(e.id);
         if (selected?.has(e.id)) picked.push([e.n1, e.n2]);
       }
       for (const [k, { pairs, ids }] of byKind) {
+        if (k === "ghost") {
+          lines(segments(pairs), dark ? 0x94a3b8 : 0x64748b, 0.12);
+          continue;
+        }
         const color = k === "girder" && dark ? 0xe2e8f0 : WIRE[k as keyof typeof WIRE];
         const mesh = lines(segments(pairs), color, k === "strip" ? (busy ? 0.35 : 0.8) : busy ? 0.6 : 1);
         if (k !== "strip" && k !== "diaphragm") {
@@ -444,7 +474,7 @@ export const BridgeView = forwardRef<BridgeViewHandle, BridgeViewProps>(function
     }
 
     // Frame the model when its extents change, not on every edit of a load.
-    const key = [box.min.x, box.min.y, box.min.z, box.max.x, box.max.y, box.max.z].map((v) => v.toFixed(1)).join(",");
+    const key = [frameBox.min.x, frameBox.min.y, frameBox.min.z, frameBox.max.x, frameBox.max.y, frameBox.max.z].map((v) => v.toFixed(1)).join(",");
     if (key !== s.framed) {
       s.framed = key;
       look("iso", true);
@@ -452,7 +482,7 @@ export const BridgeView = forwardRef<BridgeViewHandle, BridgeViewProps>(function
     s.render();
     // `look` reads the view's state through a ref: it isn't something this drawing depends on.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [model, solids, mode, hidden, displacements, overlay, contour, selected, labels, arrows, strips, grid, dark, plain]);
+  }, [model, solids, mode, hidden, displacements, overlay, contour, selected, isolate, labels, arrows, strips, grid, dark, plain]);
 
   return (
     <div className={className}>

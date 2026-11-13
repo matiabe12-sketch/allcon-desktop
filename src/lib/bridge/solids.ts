@@ -1,3 +1,4 @@
+import { barrierShape } from "../design/bridge/ifc";
 import { customShape, shapeById } from "../design/girders/sections";
 import type { BridgeDefinition } from "./definition";
 import type { Generated } from "./generate";
@@ -104,9 +105,20 @@ export function bridgeSolids(d: BridgeDefinition, g: Generated): { solids: Solid
   // Between two lines along the bridge, from the first support line to the last (each at its own skew).
   const strip = (ya: number, yc: number): [number, number][] => g.layout.plan(ya, yc);
   solids.push({ type: "slab", kind: "deck", plan: strip(deck[0], deck[1]), z0, z1 });
+  // The bridge rail along each edge in its own shape (a CDOT standard rail's outline, its steel tubes too;
+  // otherwise a 42 in parapet the barrier's width at its base), span by span between the support lines.
   if (d.loads.barrierWidth > 0 && d.loads.barrierWeight > 0) {
-    solids.push({ type: "slab", kind: "barrier", plan: strip(deck[0], deck[0] + d.loads.barrierWidth), z0: z1, z1: z1 + 2.75 });
-    solids.push({ type: "slab", kind: "barrier", plan: strip(deck[1] - d.loads.barrierWidth, deck[1]), z0: z1, z1: z1 + 2.75 });
+    const rail = barrierShape({ rail: d.geometry?.rail, barrierWidth: d.loads.barrierWidth });
+    const tubes = rail.def?.posts?.tubes ?? [];
+    const lines = g.supportStations.map((_, sl) => sl);
+    for (const [y, inward] of [[deck[0], 1], [deck[1], -1]] as const) {
+      // The outline across (y, inward from the edge) and up (z, from the deck's top), ft.
+      const at = (pts: [number, number][]): [number, number][] => pts.map(([x, h]) => [(inward * x) / 12, h / 12]);
+      const segments = lines.slice(1).map((sl) => ({ a: [g.layout.plan(y, y)[sl - 1][0], y, z1] as Vec3, b: [g.layout.plan(y, y)[sl][0], y, z1] as Vec3 }));
+      solids.push({ type: "prism", kind: "barrier", section: { outline: at(rail.outline) }, segments });
+      for (const t of tubes)
+        solids.push({ type: "prism", kind: "barrier", section: { outline: at([[t.x0, t.y0], [t.x1, t.y0], [t.x1, t.y1], [t.x0, t.y1]]) }, segments });
+    }
   }
   return { solids, deckTop: z1 };
 }

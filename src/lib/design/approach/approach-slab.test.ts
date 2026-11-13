@@ -7,11 +7,12 @@ import { readingOrder } from "@/lib/calcs/types";
 import { approachSlabInputs } from "../kinds";
 import { takeoffFor, takeoffPayLines } from "../takeoff";
 import { unitWeight } from "../rebar/bars";
-import { APPROACH_SLAB_DEFAULTS, designApproachSlab, movingLoad, TANDEM, TRUCK_AXLE, type ApproachSlabInputs } from "./approach-slab";
+import { APPROACH_SLAB_DEFAULTS, designApproachSlab, movingLoad, SLEEPER_OF, TANDEM, TRUCK_AXLE, type ApproachSlabInputs } from "./approach-slab";
 import { approachSlabCalcLines } from "./approach-slab-calc";
+import { slabLength, sleeperBentBar } from "./approach-slab-detail";
 
 // The approach slab against a hand calculation of the default slab (20 ft long, so a 10 ft design
-// span by CDOT's 50%, 44 ft wide, 12 in thick, B-601-1EA's #6 @ 6 in bottom), the calc package worked out by
+// span by CDOT's 50%, 44 ft wide, 12 in thick under 3 in of HMA, B-601-1EA's #6 @ 6 in bottom), the calc package worked out by
 // Calcs against the engine, and the take-off.
 
 const close = (a: number, b: number, tol = 1e-3) => expect(Math.abs(a - b)).toBeLessThanOrEqual(tol * Math.max(1, Math.abs(b)));
@@ -36,9 +37,10 @@ describe("approach slab: hand calculation of the default", () => {
   it("moments and shear per foot", () => {
     close(r.loads.MDC, (0.15 * 100) / 8); // 1.875
     close(r.loads.MLL, (80 * 1.33) / (96.603 / 12)); // 13.217
-    close(r.loads.Mu, 1.25 * 1.875 + 1.75 * 13.217); // 25.474
+    close(r.loads.MDW, (0.14667 * 0.25 * 100) / 8); // 0.458, 3 in of HMA
+    close(r.loads.Mu, 1.25 * 1.875 + 1.5 * 0.45834 + 1.75 * 13.217); // 26.162
     close(r.loads.VLL, (40 * 1.33) / (96.603 / 12)); // 6.609
-    close(r.loads.Vu, 1.25 * 0.75 + 1.75 * 6.609);
+    close(r.loads.Vu, 1.25 * 0.75 + 1.5 * 0.18334 + 1.75 * 6.609);
   });
   it("main bars: #6 @ 6 in, de = 8.625 in, φMn = 31.88 kip·ft/ft", () => {
     close(r.main.de, 12 - 3 - 0.375);
@@ -122,28 +124,56 @@ describe("approach slab take-off", () => {
   it("two slabs by default: concrete, epoxy bars, CDOT pay items", () => {
     const i = approachSlabInputs({});
     const t = takeoffFor("approach-slab", i)!;
-    // 2 × (20 × 44 × 1 ft) / 27 + 2 sleepers (4 ft × 1 ft + the 1 ft × 1 ft block) × 44 / 27
-    close(t.schedule.concreteTotal, (2 * 20 * 44) / 27 + (2 * 5 * 44) / 27);
+    // 2 × (20 ft + the 6 in seat) × 44 × 1 ft / 27 + 2 sleepers (4 ft × 1 ft + the 1 ft × 1'-3" block) × 44 / 27
+    expect(slabLength(i)).toBe(246);
+    close(t.schedule.concreteTotal, (2 * 20.5 * 44) / 27 + (2 * 5.25 * 44) / 27);
     const main = t.schedule.groups.filter((g) => g.use === "Main bars, bottom");
-    // 88 bars across 44 ft at 6 in per slab, 2 slabs; each 20 ft less 4 in clear (under 60 ft stock: one piece)
+    // 88 bars across 44 ft at 6 in per slab, 2 slabs; each 20'-6" less 4 in clear (under 60 ft stock: one piece)
     expect(main.reduce((s, g) => s + g.count, 0)).toBe(2 * 88);
-    expect(main[0].length).toBe(236);
+    expect(main[0].length).toBe(242);
+    // The #4 top bar is one ⊏: 1'-0" returns, down 7 in at both ends, 20'-2" along the top
+    const top = t.schedule.groups.find((g) => g.use === "Longitudinal, top")!;
+    expect(top.shape).toEqual({ kind: "bent", dims: [12, 7, 242, 7, 12], hooks: 0 });
+    expect(t.schedule.groups.some((g) => g.use === "End bars at the abutment")).toBe(false);
+    // The sleeper: two #5 bars (2'-8", 7", 2'-2", 1'-9", 8") at each 1'-0", 44 places, 2 slabs; Tot 10 along it; Tot 2 in the block
+    expect(sleeperBentBar(i)).toEqual([32, 7, 26, 21, 8]);
+    const sl = t.schedule.groups.find((g) => g.use === "Sleeper bars")!;
+    expect(sl.count).toBe(2 * 2 * 44);
+    expect(sl.length).toBe(94);
+    // 44 ft bars, lapped: two end pieces each
+    expect(t.schedule.groups.find((g) => g.use === "Sleeper, along")!.count).toBe(2 * 2 * 10);
+    expect(t.schedule.groups.find((g) => g.use === "Sleeper, in the block")!.count).toBe(2 * 2 * 2);
     const lines = takeoffPayLines("approach-slab", t, {}, i);
-    expect(lines.map((l) => l.code).sort()).toEqual(["408-01100", "518-01004", "601-03056", "602-00020"]);
+    expect(lines.map((l) => l.code).sort()).toEqual(["408-01100", "515-00120", "518-01004", "601-03056", "602-00020"]);
     close(t.quantities.sealant!.value, 2 * 44);
     close(t.quantities.joint!.value, 2 * 44);
     // The anchorage bars: #5, 2'-9" + 10" (B-601-1EA)
-    expect(t.schedule.groups.find((g) => g.use === "Anchorage dowels")!.length).toBe(43);
+    expect(t.schedule.groups.find((g) => g.use === "Anchorage bars")!.length).toBe(43);
     expect(t.schedule.total).toBeCloseTo(t.schedule.bySize.reduce((s, b) => s + b.weight, 0), 6);
     expect(unitWeight(6)).toBe(1.502);
   });
   it("an overlay adds the waterproofing and a joint its skewed length", () => {
     const i = approachSlabInputs({ wearing: 3, joint: "device", skew: 30 });
     const t = takeoffFor("approach-slab", i, { length: 1 })!;
-    close(t.quantities.waterproofing!.value, (20 * 44) / 9);
+    close(t.quantities.waterproofing!.value, ((slabLength(i) / 12) * 44) / 9);
+    close(slabLength(i), 240 + 6 / Math.cos(Math.PI / 6));
     close(t.quantities.joint!.value, 44 / Math.cos(Math.PI / 6));
     const codes = takeoffPayLines("approach-slab", t, {}, i).map((l) => l.code);
     expect(codes).toContain("515-00120");
     expect(codes).toContain("518-01004");
+  });
+  it("without the device, B-601-1's sleeper: 3'-0\" by 1'-0\", #4 closed hoops @ 1'-6\", #5 (6 Tot), no block", () => {
+    const i = approachSlabInputs({ joint: "none", ...SLEEPER_OF.none });
+    const t = takeoffFor("approach-slab", i)!;
+    const hoops = t.schedule.groups.find((g) => g.use === "Sleeper hoops")!;
+    expect(hoops.shape).toMatchObject({ kind: "closed", dims: [30, 6] });
+    expect(hoops.size).toBe(4);
+    expect(t.schedule.groups.find((g) => g.use === "Sleeper, along")!.count).toBe(2 * 2 * 6);
+    expect(t.schedule.groups.some((g) => g.use === "Sleeper, in the block")).toBe(false);
+    close(t.schedule.concreteTotal, (2 * 20.5 * 44) / 27 + (2 * 3 * 44) / 27);
+    // Its narrower sleeper bears about 4.5 ksf factored: over the 4 ksf default resistance, within 5 ksf
+    const fails = (q: number) => designApproachSlab({ ...i, qR: q }).checks.filter((c) => !c.ok && !c.advisory).map((c) => c.id);
+    expect(fails(4)).toEqual(["sleeper-bearing"]);
+    expect(fails(5)).toEqual([]);
   });
 });

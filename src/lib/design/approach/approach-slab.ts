@@ -19,7 +19,7 @@ import { development } from "../stm/anchorage";
 // the device.
 
 export type ApproachSlabInputs = {
-  L: number; // ft, the slab's length along the roadway, from the back of the abutment's notch
+  L: number; // ft, along the roadway from the abutment's back face to the slab's end (B-601-1EA's 20'-0"); the slab also sits `seat` on the notch
   W: number; // ft, the slab's width, normal to the roadway
   roadway: number; // ft, clear roadway width on the slab (for the number of design lanes)
   skew: number; // deg
@@ -42,7 +42,7 @@ export type ApproachSlabInputs = {
   dowelSlab: number; // in, embedment into the slab
   dowelAbut: number; // in, embedment into the abutment, hooked
   dowelHook: number; // in, the anchorage bar's hooked leg (B-601-1EA: 10")
-  seat: number; // in, the notch's seat width under the slab
+  seat: number; // in, the slab's seat on the notch, normal to the abutment (B-601-1EA: 6")
   // Sleeper slab under the free end
   sleeper: boolean;
   sleeperB: number; // ft, its width along the roadway
@@ -68,7 +68,7 @@ export const APPROACH_SLAB_DEFAULTS: ApproachSlabInputs = {
   skew: 0,
   t: 12,
   supportLoss: 0.5,
-  wearing: 0,
+  wearing: 3,
   gammaWS: 0.14667,
   fc: 4.5,
   fy: 60,
@@ -84,7 +84,7 @@ export const APPROACH_SLAB_DEFAULTS: ApproachSlabInputs = {
   dowelSlab: 18,
   dowelAbut: 15,
   dowelHook: 10,
-  seat: 12,
+  seat: 6,
   sleeper: true,
   sleeperB: 4,
   sleeperT: 12,
@@ -98,6 +98,12 @@ export const APPROACH_SLAB_DEFAULTS: ApproachSlabInputs = {
   T: 7,
   joint: "device",
 };
+
+/** The sleeper slab of each worksheet: B-601-1EA's 4'-0" by 1'-0" under the device (two #5 bars at each 1'-0", #5 Tot 10 along it, the slab on 1'-6"), B-601-1's 3'-0" by 1'-0" without it (#4 closed hoops @ 1'-6", #5 6 Tot, 1'-0" past the slab's end). */
+export const SLEEPER_OF = {
+  device: { sleeperB: 4, sleeperT: 12, sleeperBars: { bar: 5, spacing: 12 }, sleeperLong: { bar: 5, spacing: 10.5 }, sleeperSeat: 18 },
+  none: { sleeperB: 3, sleeperT: 12, sleeperBars: { bar: 4, spacing: 18 }, sleeperLong: { bar: 5, spacing: 15 }, sleeperSeat: 24 },
+} satisfies Record<ApproachSlabInputs["joint"], Partial<ApproachSlabInputs>>;
 
 /** B-601-1EA's bottom bars for a slab of this length: #6 @ 6" at 20 ft, #9 @ 6" over 20 ft and under 31 ft; none beyond (a special design). */
 export function worksheetMainBars(L: number): { bar: number; spacing: number } | null {
@@ -250,7 +256,8 @@ export function designApproachSlab(i: ApproachSlabInputs) {
     const RDC = VDC;
     const RDW = VDW;
     const RLL = VLL; // the end reaction: an axle over the sleeper
-    const wS = (i.gammaC * (i.sleeperT + (i.t * i.blockW) / (12 * i.sleeperB))) / 12; // ksf, its own weight with the device block, spread over its width
+    const blockH = i.joint === "device" ? i.t + i.wearing : 0; // in, the block under the device, up to the roadway's surface
+    const wS = (i.gammaC * (i.sleeperT + (blockH * i.blockW) / (12 * i.sleeperB))) / 12; // ksf, its own weight with the device block, spread over its width
     const Pu = 1.25 * RDC + 1.5 * RDW + 1.75 * RLL; // kip/ft along the sleeper
     const qu = Pu / i.sleeperB + 1.25 * wS; // ksf
     add({ id: "sleeper-bearing", name: "Sleeper slab: factored bearing pressure", demand: qu, capacity: i.qR, unit: "ksf", ref: "AASHTO 10.6.3.1" });

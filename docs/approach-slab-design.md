@@ -28,16 +28,32 @@ Manual (BDM), with its bars detailed, a bar schedule and its quantities under CD
   reference) and B-601-1 (the same without the device, for movement ≤ ¾ in). Both are served at
   codot.gov's `structural-worksheets-pdfs/b-600/sheet_b-601-1ea.pdf` (and `sheet_b-601-1.pdf`)
   though the index pages don't list them. What the tool takes from B-601-1EA:
-  - 20'-0" minimum along the roadway, ends parallel to the abutment (20'-0" sin θ normal to it),
-    1'-0" thick, Concrete Class DF (Note 1, so 601-03056 is the default pay item), 2 in top and
-    3 in bottom clear.
+  - 20'-0" minimum along the roadway from the abutment's back face to the slab's end, ends parallel
+    to the abutment (20'-0" sin θ normal to it), plus the slab's 6" seat on the notch (Section A;
+    B-601-1 dimensions the 6" separately): the slab is L + the seat long. 1'-0" thick under 3" of
+    HMA over waterproofing, Concrete Class DF (Note 1, so 601-03056 is the default pay item), 2 in
+    top and 3 in bottom clear.
+  - Layers: the #6 main bars at the bottom and the #4 longitudinal bars at the top, the #5
+    transverse bars inside both (the design's d takes the main bars outermost).
   - Bars: #6 @ 6" bottom along the roadway ("use #9 for approach slabs greater than 20' and less
     than 31' long"; an information check compares the design's bars with the worksheet's),
-    #5 @ 1'-0" bottom and top transverse, #4 @ 1'-6" top longitudinal, #5 @ 1'-0" anchorage bars
-    2'-9" with a 10" leg projecting 1'-6" into the slab (Detail 1), #4 ⊏ @ 1'-6" at the slab's end.
-  - Sleeper slab 4'-0" by 1'-0", the slab on a 1'-6" ledge, a 1'-0" block under the 0–4 in device,
-    #5 @ 1'-0" bent bars (two at each place), #5 (Tot 10) along it, #5 (Tot 2) in the block.
-    The C-bars' legs and the bent bars' shapes are read off the sketches: check against the sheet.
+    #5 @ 1'-0" bottom and top transverse, #4 ⊏ @ 1'-6" top longitudinal: one bar the slab's length,
+    down both ends with 1'-0" returns along the bottom (the plan's sketch: 6½" by 1'-0"; ◆ the
+    contractor may use straight bars and ⊏ end pieces with 1'-0" legs and 7" instead). #5 @ 1'-0"
+    anchorage bars 2'-9" with a 10" leg (Detail 1): straight at the slab's mid-depth through the
+    ½" joint material, projecting 1'-6" into the slab, the leg turned down in the abutment about
+    11" behind the joint, rotated as required to avoid a girder.
+  - B-601-1EA's sleeper slab: 4'-0" by 1'-0", the slab on a 1'-6" ledge, a 1'-0" block under the
+    0–4 in device rising 1'-3" to the roadway's surface. Two #5 bars at each 1'-0" ("2 Ea place"),
+    the same bar mirrored: 2'-8" top leg, 7" down, 2'-2" along the bottom, 1'-9" up into the block,
+    8" across its top; the pair laps top and bottom into a hoop round the sleeper and a closed
+    stirrup in the block. #5 (Tot 10) along it: six along the bottom (two at the stirrup's
+    corners), four along the top; #5 (Tot 2) at the block's top. The device's own anchor bars
+    (drawn in the slab's end and the block) come with the device (Note 3), not this schedule.
+  - B-601-1's sleeper (no device): 3'-0" by 1'-0", the slab on 2'-0" of it and 1'-0" past its end,
+    #4 closed hoops @ 1'-6", #5 (6 Tot) along it. Choosing the joint in the editor sets the
+    matching sleeper. With the tool's 4 ksf default bearing resistance its bearing doesn't pass
+    (≈4.5 ksf factored): the geotechnical report decides.
   - The ½ in expansion joint material and 20 Ga sheet metal are included in the work; the poured
     joint at the abutment end (both ends without the device) is Item 408-01100 Joint Sealant (LF);
     the device is 518-01004 (LF) along the skewed end.

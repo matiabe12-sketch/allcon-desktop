@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
-import { designApproachSlab, type ApproachSlabInputs } from "@/lib/design/approach/approach-slab";
+import { designApproachSlab, SLEEPER_OF, type ApproachSlabInputs } from "@/lib/design/approach/approach-slab";
 import { APPROACH_GROUPS } from "@/lib/design/approach/approach-slab-calc";
 import { DesignError } from "@/lib/design/walls/cip";
 import { BarsField, ChecksBanner, ChecksTable, Choice, DesignErrorCard, DesignHeader, Field, fmt, KeyValues, Section, Toggle } from "./design-kit";
@@ -29,20 +29,20 @@ export function ApproachSlabEditor({ design, projects }: { design: { id: string;
 
   return (
     <div className="space-y-4">
-      <DesignHeader design={design} projects={projects} inputs={inputs} label="Approach Slab · AASHTO LRFD, CDOT BDM 11.3.7 and B-601-1EA" canMakeCalc={!!r} />
+      <DesignHeader design={design} projects={projects} inputs={inputs} label={`Approach Slab · AASHTO LRFD, CDOT BDM 11.3.7 and ${inputs.joint === "device" ? "B-601-1EA" : "B-601-1"}`} canMakeCalc={!!r} />
 
       <div className="grid gap-4 lg:grid-cols-[minmax(300px,360px)_1fr]">
         <Card className="self-start">
           <CardContent className="py-2">
             <Section title="Slab" open>
-              <Field label="Length from the back of the notch" unit="ft" value={inputs.L} onChange={set("L")} hint={r?.worksheet ? `B-601-1EA: #${r.worksheet.bar} @ ${r.worksheet.spacing} in bottom at this length` : "B-601-1EA covers 20 ft up to 31 ft"} />
+              <Field label="Length, abutment back face to the slab's end" unit="ft" value={inputs.L} onChange={set("L")} hint={r?.worksheet ? `B-601-1EA: #${r.worksheet.bar} @ ${r.worksheet.spacing} in bottom at this length` : "B-601-1EA covers 20 ft up to 31 ft"} />
               <Field label="Width" unit="ft" value={inputs.W} onChange={set("W")} />
               <Field label="Clear roadway width (for lanes)" unit="ft" value={inputs.roadway} onChange={set("roadway")} />
               <Field label="Skew" unit="deg" value={inputs.skew} onChange={set("skew")} />
               <Field label="Thickness" unit="in" value={inputs.t} onChange={set("t")} step={0.5} />
               <Field label="Design span / length (CDOT 0.5)" value={inputs.supportLoss} onChange={set("supportLoss")} step={0.05} hint="CDOT BDM 11.3.7: designed for 50% of the slab's length (PCI). 1.0 spans the whole length." />
               <Field label="HMA overlay (0 for bare concrete)" unit="in" value={inputs.wearing} onChange={set("wearing")} step={0.5} />
-              <Choice label="Joint at the slab's end (BDM 14.4.2)" value={inputs.joint} options={[{ value: "device", label: "0–4 in expansion device on the sleeper (B-601-1EA)" }, { value: "none", label: "Poured joint only, movement ≤ ¾ in (B-601-1)" }]} onChange={set("joint")} />
+              <Choice label="Joint at the slab's end (BDM 14.4.2)" value={inputs.joint} options={[{ value: "device", label: "0–4 in expansion device on the sleeper (B-601-1EA)" }, { value: "none", label: "Poured joint only, movement ≤ ¾ in (B-601-1)" }]} onChange={(v) => setInputs((s) => ({ ...s, joint: v, ...SLEEPER_OF[v] }))} />
             </Section>
             <Section title="Concrete and bars" open>
               <Field label="f'c" unit="ksi" value={inputs.fc} onChange={set("fc")} step={0.5} />
@@ -61,7 +61,7 @@ export function ApproachSlabEditor({ design, projects }: { design: { id: string;
               <Field label="Embedment into the slab" unit="in" value={inputs.dowelSlab} onChange={set("dowelSlab")} />
               <Field label="Embedment into the abutment (hooked)" unit="in" value={inputs.dowelAbut} onChange={set("dowelAbut")} />
               <Field label="Hooked leg" unit="in" value={inputs.dowelHook} onChange={set("dowelHook")} />
-              <Field label="Notch seat width" unit="in" value={inputs.seat} onChange={set("seat")} />
+              <Field label="Seat on the notch (B-601-1EA: 6 in)" unit="in" value={inputs.seat} onChange={set("seat")} />
             </Section>
             <Section title="Sleeper slab" open>
               <Toggle label="Sleeper slab under the free end" value={inputs.sleeper} onChange={set("sleeper")} />
@@ -72,7 +72,7 @@ export function ApproachSlabEditor({ design, projects }: { design: { id: string;
                   <Field label="The slab's ledge on it" unit="in" value={inputs.sleeperSeat} onChange={set("sleeperSeat")} />
                   <Field label="Block under the device, width" unit="in" value={inputs.blockW} onChange={set("blockW")} />
                   <Field label="Factored bearing resistance (geotech)" unit="ksf" value={inputs.qR} onChange={set("qR")} step={0.5} />
-                  <BarsField label="Bottom, across its width" value={inputs.sleeperBars} onChange={set("sleeperBars")} />
+                  <BarsField label={inputs.joint === "device" ? "Bent bars, 2 each place" : "Closed hoops"} value={inputs.sleeperBars} onChange={set("sleeperBars")} />
                   <BarsField label="Along it, each face" value={inputs.sleeperLong} onChange={set("sleeperLong")} />
                 </>
               )}

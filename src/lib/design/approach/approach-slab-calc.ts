@@ -147,7 +147,7 @@ export function approachSlabCalcLines(i: ApproachSlabInputs, title: string, figu
   }
 
   text("Anchorage to the abutment (CDOT BDM 2.13)", "subheading", { keepWithNext: true });
-  text(`Dowels:- #${i.dowels.bar} at ${num(i.dowels.spacing)} in come up out of the notch's seat into the slab, hooked in the abutment. Their development lengths, epoxy coated, are worked out by AASHTO 5.10.8.2.1 (straight, in the slab) and 5.10.8.2.4 (hooked, in the abutment).`);
+  text(`Dowels:- #${i.dowels.bar} at ${num(i.dowels.spacing)} in run straight through the joint at the slab's mid-depth, their leg turned down in the abutment (CDOT B-601-1EA Detail 1). Their development lengths, epoxy coated, are worked out by AASHTO 5.10.8.2.1 (straight, in the slab) and 5.10.8.2.4 (hooked, in the abutment).`);
   given(`l_{d}\\coloneq ${num(r.dowels.ld)}\\mathrm{in}`, "Straight, AASHTO 5.10.8.2.1");
   m(`l_{s}\\coloneq ${num(i.dowelSlab)}\\mathrm{in}`, "Embedment into the slab");
   m(ok("l_{d}", "l_{s}"), "Developed in the slab");
@@ -158,13 +158,16 @@ export function approachSlabCalcLines(i: ApproachSlabInputs, title: string, figu
   if (r.sleeper) {
     const sb = BARS[i.sleeperBars.bar];
     text("Sleeper slab", "subheading", { keepWithNext: true });
-    text("Sleeper:- as CDOT worksheet B-601-1EA lays it out, 4'-0\" by 1'-0\" with a block under the expansion device and the slab on a ledge. The slab's end reaction (the span next to the sleeper) is spread uniformly over the sleeper's width; its own weight and the block's bear directly. Its bars across its width take the soil's pressure on the part beyond the slab's ledge as a cantilever.");
+    text(`Sleeper:- ${i.joint === "device" ? "as CDOT worksheet B-601-1EA lays it out, 4'-0\" by 1'-0\" with a block under the expansion device and the slab on a ledge" : "as CDOT worksheet B-601-1 lays it out, 3'-0\" by 1'-0\" with the slab on it and 1'-0\" past the slab's end"}. The slab's end reaction (the span next to the sleeper) is spread uniformly over the sleeper's width; its own weight${i.joint === "device" ? " and the block's" : ""} bear${i.joint === "device" ? "" : "s"} directly. Its bars across its width take the soil's pressure on the part beyond the slab's ledge as a cantilever.`);
     m(`B_{sl}\\coloneq ${num(i.sleeperB)}\\mathrm{ft}`, "Width along the roadway");
     m(`t_{sl}\\coloneq ${num(i.sleeperT)}\\mathrm{in}`, "Thickness");
     m(`b_{seat}\\coloneq ${num(i.sleeperSeat)}\\mathrm{in}`, "The slab's ledge on it");
     m(`P_u\\coloneq1.25\\cdot V_{DC}${dw ? "+1.5\\cdot V_{DW}" : ""}+1.75\\cdot V_{LL}=`, "Strength I end reaction", "kip/ft");
-    m(`b_{blk}\\coloneq ${num(i.blockW)}\\mathrm{in}`, "The block under the device, as deep as the slab");
-    m("q_u\\coloneq\\frac{P_u}{B_{sl}}+1.25\\cdot\\gamma_c\\cdot\\left(t_{sl}+\\frac{t_s\\cdot b_{blk}}{B_{sl}}\\right)=", "Factored bearing pressure", "ksf");
+    if (i.joint === "device") {
+      m(`b_{blk}\\coloneq ${num(i.blockW)}\\mathrm{in}`, "The block under the device");
+      m(`h_{blk}\\coloneq t_s+${num(i.wearing)}\\mathrm{in}=`, "Its height, up to the roadway's surface", "in");
+      m("q_u\\coloneq\\frac{P_u}{B_{sl}}+1.25\\cdot\\gamma_c\\cdot\\left(t_{sl}+\\frac{h_{blk}\\cdot b_{blk}}{B_{sl}}\\right)=", "Factored bearing pressure", "ksf");
+    } else m("q_u\\coloneq\\frac{P_u}{B_{sl}}+1.25\\cdot\\gamma_c\\cdot t_{sl}=", "Factored bearing pressure", "ksf");
     m(`q_R\\coloneq ${num(i.qR)}\\mathrm{ksf}`, "Factored bearing resistance, geotechnical report, AASHTO 10.6.3.1");
     m(ok("q_u", "q_R"), "Bearing");
     m("c_{sl}\\coloneq B_{sl}-b_{seat}=", "Beyond the slab's ledge", "ft");

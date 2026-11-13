@@ -10,7 +10,9 @@ import type { ColumnInputs, ColumnLink } from "../piers/column";
 import type { ApproachSlabInputs } from "../approach/approach-slab";
 import type { WingwallInputs } from "../walls/wingwall";
 import type { ColumnResult } from "../piers/column";
-import type { GirderInputs } from "../girders/prestressed";
+import { GIRDER_DEFAULTS, girderShape, type GirderInputs } from "../girders/prestressed";
+import type { DeckInputs } from "../decks/deck";
+import type { BearingInputs } from "../bearings/elastomeric";
 import { spacingAt, spanGroups, type BridgeInputs, type BridgeRun, type PierShape } from "./bridge";
 
 // The load path from a Bridge run down through its linked designs (docs/bridge-model.md): each
@@ -179,4 +181,73 @@ export function changedKeys(before: object, after: object) {
   const a = before as Record<string, unknown>;
   const b = after as Record<string, unknown>;
   return Object.keys(b).filter((k) => JSON.stringify(a[k]) !== JSON.stringify(b[k]));
+}
+
+/**
+ * The deck slab from the Bridge: the girders and their widest spacing, the overhang to the deck's edge,
+ * the deck's thickness and concrete, the top flange's width, the rail, and the future wearing surface.
+ * Tied to the girder design, which carries the deck's concrete and the rail in its quantities.
+ */
+export function deckFromBridge(b: BridgeInputs, run: BridgeRun, current: DeckInputs, girder: { id: string; name: string } | null): DeckInputs {
+  const shape = girderShape({ ...GIRDER_DEFAULTS, shape: b.shape });
+  const S = Math.max(...b.supports.map((s) => spacingAt(b, s)));
+  const t = b.deckT;
+  return {
+    ...current,
+    nGirders: b.nGirders,
+    S,
+    overhang: Math.round(run.layout.overhang * 1000) / 1000,
+    t,
+    tEdge: Math.max(current.tEdge, t),
+    tFlange: Math.max(current.tFlange, t),
+    flange: shape.topWidth,
+    fc: b.fcDeck,
+    barrierWidth: b.barrierWidth * 12,
+    wearing: Math.round(((b.fws / 1000 / current.gammaWS) * 12) * 1000) / 1000,
+    ...(b.rail ? { rail: b.rail } : {}),
+    fromGirder: girder,
+  };
+}
+
+/**
+ * A support's bearing pads: each girder's service loads there and the movement it takes.
+ * - Where the girders are cast into a diaphragm (an integral abutment, a continuous pier) the pads are leveling
+ *   pads: they carry the girder, deck and diaphragms until the diaphragm is cast (DC1), then the diaphragm
+ *   carries the bridge; no live load, and no movement (the girder moves with the abutment or pier).
+ * - Elsewhere the pad carries DC + DW and the live load without IM (14.4.1), and moves with the distance to the
+ *   unit's fixed point (the bridge's middle); a deck joint at a seat abutment or a simple pier.
+ */
+export function bearingFromBridge(b: BridgeInputs, run: BridgeRun, support: number, current: BearingInputs): BearingInputs {
+  const r = run.reactions[support];
+  const s = b.supports[support];
+  const first = b.supports[0].station;
+  const last = b.supports[b.supports.length - 1].station;
+  const leveling = s.type === "integral-abutment" || s.type === "continuous-pier";
+  // Each line of bearings carries its own span's end: at a pier with a line each side, the heavier side.
+  const own = (key: "DC1" | "DC" | "DW" | "LL") => (r.sides.length > 1 && s.bearingOffset > 0 ? Math.max(...r.sides.map((x) => Math.max(x.interior[key], x.exterior[key]))) : r[key]);
+  return {
+    ...current,
+    DL: Math.round((leveling ? own("DC1") : own("DC") + own("DW")) * 10) / 10,
+    LL: leveling ? 0 : Math.round(own("LL") * 10) / 10,
+    expansionLength: leveling ? 0 : Math.round(Math.abs(s.station - (first + last) / 2) * 100) / 100,
+    ...(leveling ? { otherStatic: 0, cyclic: 0 } : {}),
+    jointed: s.type === "seat-abutment" || s.type === "simple-pier",
+  };
+}
+
+/**
+ * The deck's length for its quantities, as CDOT measures it: back face to back face of the abutments along
+ * the alignment (the deck runs over an integral abutment's diaphragm, or to a seat abutment's backwall).
+ * From the bearing line: half an integral abutment's cap width behind it, else the stem behind it; along
+ * the alignment, divided by the cosine of the skew.
+ */
+export function deckLengthFor(b: BridgeInputs, abutments: [AbutmentInputs | null, AbutmentInputs | null]) {
+  const first = b.supports[0];
+  const last = b.supports[b.supports.length - 1];
+  const behind = (s: typeof first, a: AbutmentInputs | null) => {
+    if (!a) return s.endDistance; // without the abutment: the girder's end
+    const d = a.type.startsWith("integral") ? a.capWidth / 2 : Math.max(0, a.stemT - s.bearingOffset);
+    return d / Math.cos((s.skew * Math.PI) / 180);
+  };
+  return Math.round((last.station - first.station + behind(first, abutments[0]) + behind(last, abutments[1])) * 100) / 100;
 }

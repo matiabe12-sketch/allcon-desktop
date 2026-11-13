@@ -10,6 +10,7 @@ import { SHAFT_DEFAULTS } from "../foundations/shaft";
 import { GIRDER_DEFAULTS, girderShape } from "../girders/prestressed";
 import type { ApproachSlabInputs } from "../approach/approach-slab";
 import { APPROACH_SLAB_DEFAULTS } from "../approach/approach-slab";
+import { railDef } from "../decks/rails";
 import { deckElevation, horizontalElements, offsetPoint, pointAt, profileAt, profileGeometry, sectionAt, stationOffset } from "./alignment";
 import type { BridgeInputs, BridgeRun } from "./bridge";
 
@@ -43,8 +44,22 @@ export type IfcElement = {
   profile: Profile;
   depth: number; // ft, along zdir
   material: string;
+  /** The surface colour the viewer draws it in (0–1 RGB): concrete, steel, elastomer told apart. */
+  color?: [number, number, number];
   psets: Record<string, Record<string, string | number | boolean>>;
 };
+
+/** Colours by what an element is, so the deck, girders, barriers and substructure read apart. */
+export const COLORS = {
+  deck: [0.78, 0.76, 0.72],
+  girder: [0.62, 0.64, 0.68],
+  barrier: [0.86, 0.85, 0.82],
+  sub: [0.55, 0.55, 0.53],
+  foundation: [0.47, 0.45, 0.42],
+  steel: [0.36, 0.43, 0.52],
+  bearing: [0.15, 0.15, 0.15],
+  approach: [0.72, 0.7, 0.66],
+} as const satisfies Record<string, [number, number, number]>;
 /** A horizontal alignment segment as IfcAlignmentHorizontalSegment takes it: its start, direction (rad), radii (+ left, 0 straight) and length. */
 export type IfcSegment = { type: "LINE" | "CIRCULARARC" | "CLOTHOID"; start: [number, number]; dir: number; r0: number; r1: number; length: number };
 export type IfcPart = { key: string; type: "SUPERSTRUCTURE" | "SUBSTRUCTURE" | "ABUTMENT" | "PIER" | "FOUNDATION"; name: string; parent: string | null };
@@ -61,6 +76,7 @@ export type BridgeComponents = {
   abutments?: Record<number, { id?: string | null; inputs?: AbutmentInputs } | undefined>;
   approachSlabs?: Record<number, { id?: string | null; inputs?: ApproachSlabInputs } | undefined>;
   foundations?: Record<number, { id?: string | null; kind: "spread-footing" | "pile-foundation" | "drilled-shaft"; inputs?: FootingInputs | PileInputs | ShaftInputs } | undefined>;
+  deckId?: string | null;
   ids?: { girders?: (string | null)[]; caps?: Record<number, string | null>; columns?: Record<number, string | null> };
 };
 
@@ -97,7 +113,80 @@ export function gridSolid(top: V3[][], t: number) {
     quad(T(0, j), B(0, j), B(0, j + 1), T(0, j + 1)); // the back end
     quad(T(n - 1, j), T(n - 1, j + 1), B(n - 1, j + 1), B(n - 1, j));
   }
-  return { pts, tris };
+  return outward({ pts, tris });
+}
+
+/** A mesh's volume by the divergence theorem (+ when its faces point outward). */
+export function meshVolume(pts: V3[], tris: [number, number, number][]) {
+  return tris.reduce((v, [a, b, c]) => {
+    const [p, q, r] = [pts[a], pts[b], pts[c]];
+    return v + (p[0] * (q[1] * r[2] - q[2] * r[1]) - p[1] * (q[0] * r[2] - q[2] * r[0]) + p[2] * (q[0] * r[1] - q[1] * r[0])) / 6;
+  }, 0);
+}
+
+/** The same mesh with its faces turned outward (a viewer draws only a face's front). */
+export function outward(m: { pts: V3[]; tris: [number, number, number][] }) {
+  return meshVolume(m.pts, m.tris) < 0 ? { pts: m.pts, tris: m.tris.map(([a, b, c]) => [a, c, b] as [number, number, number]) } : m;
+}
+
+/** A simple polygon's triangles by ear clipping (indices into it), either winding. */
+export function earcut(poly: [number, number][]): [number, number, number][] {
+  const area = poly.reduce((s, p, k) => s + (poly[(k + poly.length - 1) % poly.length][0] - p[0]) * (poly[(k + poly.length - 1) % poly.length][1] + p[1]), 0);
+  const idx = poly.map((_, k) => k);
+  if (area < 0) idx.reverse(); // counterclockwise (the sum above is + for a counterclockwise outline)
+  const cross = (a: number, b: number, c: number) => (poly[b][0] - poly[a][0]) * (poly[c][1] - poly[a][1]) - (poly[b][1] - poly[a][1]) * (poly[c][0] - poly[a][0]);
+  const inside = (p: number, a: number, b: number, c: number) => cross(a, b, p) >= 0 && cross(b, c, p) >= 0 && cross(c, a, p) >= 0;
+  const out: [number, number, number][] = [];
+  let guard = 0;
+  while (idx.length > 3 && guard++ < 10000) {
+    let cut = false;
+    for (let k = 0; k < idx.length; k++) {
+      const a = idx[(k + idx.length - 1) % idx.length];
+      const b = idx[k];
+      const c = idx[(k + 1) % idx.length];
+      if (cross(a, b, c) <= 1e-12) continue; // reflex
+      if (idx.some((p) => p !== a && p !== b && p !== c && inside(p, a, b, c))) continue;
+      out.push([a, b, c]);
+      idx.splice(k, 1);
+      cut = true;
+      break;
+    }
+    if (!cut) break; // degenerate: give up on the rest
+  }
+  if (idx.length === 3) out.push([idx[0], idx[1], idx[2]]);
+  return out;
+}
+
+/**
+ * A closed solid swept through frames: the outline's (x, y) placed at each frame's point p + x·u + y·v, the
+ * sides between frames, the ends capped. Outward-facing.
+ */
+export function sweepSolid(frames: { p: V3; u: V3; v: V3 }[], shape: [number, number][]) {
+  // Counterclockwise, so the sides and the caps turn the same way (outward() then faces them all out).
+  const signed = shape.reduce((t, p, k) => t + p[0] * shape[(k + 1) % shape.length][1] - shape[(k + 1) % shape.length][0] * p[1], 0);
+  const outline = signed < 0 ? [...shape].reverse() : shape;
+  const m = outline.length;
+  const pts: V3[] = frames.flatMap((f) => outline.map(([x, y]) => v3([f.p[0] + x * f.u[0] + y * f.v[0], f.p[1] + x * f.u[1] + y * f.v[1], f.p[2] + x * f.u[2] + y * f.v[2]])));
+  const tris: [number, number, number][] = [];
+  for (let i = 0; i < frames.length - 1; i++)
+    for (let j = 0; j < m; j++) {
+      const a = i * m + j;
+      const b = i * m + ((j + 1) % m);
+      tris.push([a, b, b + m], [a, b + m, a + m]);
+    }
+  const cap = earcut(outline);
+  const last = (frames.length - 1) * m;
+  for (const [a, b, c] of cap) tris.push([a, c, b], [last + a, last + b, last + c]);
+  return outward({ pts, tris });
+}
+
+/** The barrier's concrete outline (in, x from the deck's edge inward, y up from the deck's top) and steel, by rail. */
+export function barrierShape(b: Pick<BridgeInputs, "rail" | "barrierWidth">) {
+  const def = b.rail ? railDef(b.rail.type) : null;
+  if (def) return { def, outline: def.outline.map(([x, y]) => [x, y] as [number, number]), name: def.name, payItem: def.payItem };
+  // A generic 42 in parapet, the barrier width at its base, 9 in at its top.
+  const w = Math.max(9, b.barrierWidth * 12);
+  return { def: null, outline: [[0, 0], [w, 0], [w - 3, 10], [9, 42], [0, 42]] as [number, number][], name: "Concrete barrier", payItem: "606 (bridge rail)" };
 }
 
 /** A horizontal frame: x along a plan direction, z up. */
@@ -227,8 +316,40 @@ export function bridgeIfc(b: BridgeInputs, run: BridgeRun, c: BridgeComponents =
       profile: { kind: "mesh", ...gridSolid(top, b.deckT / 12) },
       depth: r6(b.deckT / 12),
       material: `Concrete Class DF, f'c ${b.fcDeck} ksi`,
-      psets: { ALLCON_Design: { DesignKind: "deck-slab", Thickness_in: b.deckT, PayItem: "601-03056 Concrete Class DF" } },
+      color: [...COLORS.deck],
+      psets: { ALLCON_Design: { DesignKind: "deck-slab", DesignId: c.deckId ?? "", Verdict: verdict(c.deckId), Thickness_in: b.deckT, PayItem: "601-03056 Concrete Class DF" } },
     });
+    // The bridge rail on both edges, swept along them on the deck's top (its traffic face inward).
+    const railShape = barrierShape(b);
+    for (const [side, o, inward] of [["left", oL, 1], ["right", oR, -1]] as const) {
+      const frames = Array.from({ length: n }, (_, k) => {
+        const st = corner(sa, o) + ((corner(sb, o) - corner(sa, o)) * k) / (n - 1);
+        const p = offsetPoint(b.alignment, st, o, cache);
+        const nAz = ((p.az + 90) * Math.PI) / 180; // to the right
+        const u: V3 = [(inward * Math.sin(nAz)) / 12, (inward * Math.cos(nAz)) / 12, 0];
+        return { p: P(p.x, p.y, deckElevation(b.profile, b.roadway, st, o, vcs)), u, v: [0, 0, 1 / 12] as V3 };
+      });
+      // The outline mirrored on the right edge keeps the sweep's faces consistent; outward() fixes any turn.
+      els.push({
+        cls: "IfcRailing",
+        type: "GUARDRAIL",
+        name: `${railShape.name}, ${side}, span ${span.index + 1}`,
+        part: "super",
+        origin: [0, 0, 0],
+        xdir: [1, 0, 0],
+        zdir: UP,
+        profile: { kind: "mesh", ...sweepSolid(frames, railShape.outline) },
+        depth: 1,
+        material: "Concrete Class D (Bridge)",
+        color: [...COLORS.barrier],
+        psets: { ALLCON_Design: { DesignKind: "bridge-rail", Rail: railShape.name, PayItem: railShape.payItem } },
+      });
+      // Steel tubes on a curb-and-post rail.
+      for (const [t, tube] of (railShape.def?.posts?.tubes ?? []).entries()) {
+        const box: [number, number][] = [[tube.x0, tube.y0], [tube.x1, tube.y0], [tube.x1, tube.y1], [tube.x0, tube.y1]];
+        els.push({ cls: "IfcRailing", type: "GUARDRAIL", name: `${railShape.name} tube ${t + 1}, ${side}, span ${span.index + 1}`, part: "super", origin: [0, 0, 0], xdir: [1, 0, 0], zdir: UP, profile: { kind: "mesh", ...sweepSolid(frames, box) }, depth: 1, material: "Structural steel (galvanized)", color: [...COLORS.steel], psets: { ALLCON_Design: { DesignKind: "bridge-rail", Rail: railShape.name, PayItem: railShape.payItem } } });
+      }
+    }
   }
 
   // --- each support's substructure -----------------------------------------------------------------------------------
@@ -322,6 +443,19 @@ export function bridgeIfc(b: BridgeInputs, run: BridgeRun, c: BridgeComponents =
       }
     });
   });
+
+  // Every element a colour by what it is.
+  for (const e of els) {
+    if (e.color) continue;
+    const col =
+      e.cls === "IfcBearing" ? COLORS.bearing
+      : e.cls === "IfcBeam" && e.type === "GIRDER_SEGMENT" ? COLORS.girder
+      : e.cls === "IfcPile" && e.type === "DRIVEN" ? COLORS.steel
+      : e.cls === "IfcPile" || e.cls === "IfcFooting" ? COLORS.foundation
+      : e.cls === "IfcSlab" ? COLORS.approach
+      : COLORS.sub;
+    e.color = [...col];
+  }
 
   return {
     name,

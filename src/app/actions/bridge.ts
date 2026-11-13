@@ -6,14 +6,16 @@ import { Prisma } from "@/generated/prisma/client";
 import { getCurrentUser, isUuid } from "@/lib/auth/session";
 import { bridgeInputs } from "@/lib/design/bridge/kinds";
 import { girderInputsFor, runBridge, spanGroups, type BridgeInputs } from "@/lib/design/bridge/bridge";
-import { abutmentFromBridge, approachSlabFromBridge, capFromBridge, changedKeys, columnFromBridge, footingFromColumn, pilesFromColumn, shaftFromColumn, wingwallFromBridge } from "@/lib/design/bridge/loadpath";
+import { designBearing } from "@/lib/design/bearings/elastomeric";
+import { designDeck } from "@/lib/design/decks/deck";
+import { abutmentFromBridge, approachSlabFromBridge, bearingFromBridge, deckFromBridge, capFromBridge, changedKeys, columnFromBridge, footingFromColumn, pilesFromColumn, shaftFromColumn, wingwallFromBridge } from "@/lib/design/bridge/loadpath";
 import { designApproachSlab } from "@/lib/design/approach/approach-slab";
 import { designWingwall } from "@/lib/design/walls/wingwall";
 import { nodeLpSolver } from "@/lib/design/stm/lp-node";
 import { abutmentInputs, footingInputs, pileFoundationInputs, shaftInputs } from "@/lib/design/foundations/kinds";
 import { runFoundation } from "@/lib/design/foundations/run";
 import type { GirderInputs } from "@/lib/design/girders/prestressed";
-import { approachSlabInputs, designInputs, girderInputs, kindInfo, wingwallInputs } from "@/lib/design/kinds";
+import { approachSlabInputs, bearingInputs, deckInputs, designInputs, girderInputs, kindInfo, wingwallInputs } from "@/lib/design/kinds";
 import { columnInputs, designColumn } from "@/lib/design/piers/column";
 import { columnLinkFrom } from "@/lib/design/piers/column-link";
 import { designStm, stmInputs } from "@/lib/design/stm/strut-tie";
@@ -40,7 +42,7 @@ async function ownBridge(bridgeId: string) {
 export async function bridgeCandidates(): Promise<Record<string, { id: string; name: string }[]>> {
   const user = await getCurrentUser();
   if (!user) throw new Error("Sign in");
-  const kinds = ["lrfd-girder-check", "abutment", "approach-slab", "cantilever-wingwall", "stm-d-region", "pier-column", "spread-footing", "pile-foundation", "drilled-shaft"];
+  const kinds = ["lrfd-girder-check", "deck-slab", "elastomeric-bearing", "abutment", "approach-slab", "cantilever-wingwall", "stm-d-region", "pier-column", "spread-footing", "pile-foundation", "drilled-shaft"];
   const rows = await db.design.findMany({ where: { orgId: user.orgId, kind: { in: kinds } }, orderBy: { updatedAt: "desc" }, select: { id: true, name: true, kind: true }, take: 500 });
   return Object.fromEntries(kinds.map((k) => [k, rows.filter((r) => r.kind === k).map((r) => ({ id: r.id, name: r.name }))]));
 }
@@ -119,8 +121,19 @@ export async function syncBridge(bridgeId: string, inputsNow: unknown, create: b
   const girders = new Map<string, GirderInputs>();
   for (let gi = 0; gi < groups.length; gi++) if (girderIds[gi]) girders.set(girderIds[gi]!, run.groups[gi].inputs);
 
+  // --- the deck slab (the deck between the girders, the overhang and the rail) ----------------------------------------
+  const dd = await load(b.deckDesignId, "deck-slab");
+  const dBefore = deckInputs(dd?.inputs ?? {});
+  const dNext = deckFromBridge(b, run, dBefore, girderIds[0] ? { id: girderIds[0], name: names[0] || `${design.name}, girders` } : null);
+  const deckId = await upsert("Deck, overhang and rail", "deck-slab", dd, dBefore, dNext, verdictTry(() => designDeck(dNext).checks), `${design.name}, deck`);
+
   for (const c of comps) {
     const s = b.supports[c.support];
+    // The bearing pads under the girders here.
+    const bd = await load(c.bearingId, "elastomeric-bearing");
+    const bBefore = bearingInputs(bd?.inputs ?? {});
+    const bNext = bearingFromBridge(b, run, c.support, bBefore);
+    c.bearingId = await upsert(`${s.name}, bearings`, "elastomeric-bearing", bd, bBefore, bNext, verdictTry(() => designBearing(bNext).checks), `${design.name}, ${s.name} bearings`);
     if (s.type.endsWith("abutment")) {
       const d = await load(c.abutmentId, "abutment");
       const before = d ? abutmentInputs(d.inputs) : abutmentInputs({});
@@ -185,7 +198,8 @@ export async function syncBridge(bridgeId: string, inputsNow: unknown, create: b
   const next: BridgeInputs = {
     ...b,
     girderDesignIds: girderIds,
-    components: comps.map(({ support, abutmentId, approachSlabId, wingwallId, capId, columnId, foundationId, foundationKind }) => ({ support, abutmentId: abutmentId ?? null, approachSlabId: approachSlabId ?? null, wingwallId: wingwallId ?? null, capId: capId ?? null, columnId: columnId ?? null, foundationId: foundationId ?? null, foundationKind: foundationKind ?? null })),
+    deckDesignId: deckId,
+    components: comps.map(({ support, bearingId, abutmentId, approachSlabId, wingwallId, capId, columnId, foundationId, foundationKind }) => ({ support, bearingId: bearingId ?? null, abutmentId: abutmentId ?? null, approachSlabId: approachSlabId ?? null, wingwallId: wingwallId ?? null, capId: capId ?? null, columnId: columnId ?? null, foundationId: foundationId ?? null, foundationKind: foundationKind ?? null })),
   };
   await db.design.update({ where: { id: design.id }, data: { inputs: next as unknown as Prisma.InputJsonValue } });
   revalidatePath("/design");

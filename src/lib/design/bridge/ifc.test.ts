@@ -2,7 +2,7 @@ import { writeFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { pointAt } from "./alignment";
 import { BRIDGE_DEFAULTS, runBridge, type BridgeInputs } from "./bridge";
-import { bridgeIfc, type IfcElement } from "./ifc";
+import { bridgeIfc, earcut, meshVolume, type IfcElement } from "./ifc";
 
 const dot = (a: number[], b: number[]) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 const count = (els: IfcElement[], cls: string) => els.filter((e) => e.cls === cls).length;
@@ -91,6 +91,7 @@ describe("a curved, superelevated, flared bridge as IFC", () => {
         { station: 1100, leftSlope: 0.06, rightSlope: -0.06, crownOffset: 0 },
       ],
     },
+    rail: { type: "type10-mash", testLevel: "TL-5", steel: "A1035" },
     supports: BRIDGE_DEFAULTS.supports.map((s, k) => ({ ...s, skew: 10, spacing: k === 2 ? 7.5 : 8, ...(s.pier ? { pier: { ...s.pier, foundation: "pile-foundation" as const } } : {}) })),
   };
   const m = bridgeIfc(b, runBridge(b));
@@ -120,5 +121,40 @@ describe("a curved, superelevated, flared bridge as IFC", () => {
     // Across the deck at the pier end the right edge is lower than the left (6% falling right) by about width × 0.06.
     const zs = deck.profile.pts.slice(0, deck.profile.pts.length / 2).map((p) => p[2]);
     expect(Math.max(...zs) - Math.min(...zs)).toBeGreaterThan(47 * 0.05);
+  });
+});
+
+describe("barriers and colours", () => {
+  it("sweeps the bridge rail along both deck edges, a closed solid of the rail's section", () => {
+    const b: BridgeInputs = { ...BRIDGE_DEFAULTS, rail: { type: "type9-4", testLevel: "TL-5", steel: "A1035" } };
+    const m = bridgeIfc(b, runBridge(b));
+    const rails = m.elements.filter((e) => e.cls === "IfcRailing");
+    expect(rails).toHaveLength(4); // two edges × two spans
+    const r = rails[0];
+    if (r.profile.kind !== "mesh") throw new Error("mesh");
+    // Volume ≈ the Type 9 section × the span: about 0.12 CY per foot (the worksheet's quantity, 8 in deck).
+    const vol = meshVolume(r.profile.pts, r.profile.tris);
+    const lay = runBridge(b).layout;
+    const L = lay.supports[1].station - lay.supports[0].station;
+    expect(vol / L / 27).toBeGreaterThan(0.1);
+    expect(vol / L / 27).toBeLessThan(0.14);
+  });
+
+  it("adds the steel tubes of a curb-and-post rail", () => {
+    const b: BridgeInputs = { ...BRIDGE_DEFAULTS, rail: { type: "type10-mash", testLevel: "TL-5", steel: "A1035" } };
+    expect(bridgeIfc(b, runBridge(b)).elements.filter((e) => e.cls === "IfcRailing")).toHaveLength(4 + 8);
+  });
+
+  it("gives every element a colour", () => {
+    const m = bridgeIfc(BRIDGE_DEFAULTS, runBridge(BRIDGE_DEFAULTS));
+    expect(m.elements.every((e) => e.color && e.color.length === 3)).toBe(true);
+  });
+
+  it("triangulates a non-convex outline by ear clipping", () => {
+    const L: [number, number][] = [[0, 0], [4, 0], [4, 1], [1, 1], [1, 3], [0, 3]];
+    const t = earcut(L);
+    expect(t).toHaveLength(4);
+    const area = t.reduce((s, [a, b, c]) => s + Math.abs((L[b][0] - L[a][0]) * (L[c][1] - L[a][1]) - (L[c][0] - L[a][0]) * (L[b][1] - L[a][1])) / 2, 0);
+    expect(area).toBeCloseTo(6, 9);
   });
 });

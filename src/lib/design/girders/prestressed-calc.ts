@@ -793,7 +793,7 @@ function phase4Section(p: {
     const s = pr.reduce((a, b) => (b.principal!.ft > a.principal!.ft ? b : a));
     const q = s.principal!;
     text(`Principal tension in the web (AASHTO 5.9.2.3.3), Service III, at its largest: ${s.label} (x = ${num(s.x, 2)} ft), the ${q.where}`, "subheading");
-    text("f′c above 10 ksi, so the check applies. The LRFD method (as PGSuper): the total Service III shear on the composite section; the axial stress at the elevation interpolated between the girder's top and bottom, from the moments that give the least compression there.", "note");
+    text("f′c above 10 ksi, so the check applies. The LRFD method: the total Service III shear on the composite section; the axial stress at the elevation interpolated between the girder's top and bottom, from the moments that give the least compression there.", "note");
     given(`V_{3}\\coloneq ${num(q.V, 6)}\\mathrm{kip}`, "Service III shear");
     given(`V_{p3}\\coloneq ${num(q.Vp, 6)}\\mathrm{kip}`, "Harped strands' vertical component");
     given(`Q_{w}\\coloneq ${num(q.Q, 4)}\\mathrm{in}^{3}`, `First moment above y = ${num(q.y, 3)} in, about the composite centroid`);
@@ -808,7 +808,7 @@ function phase4Section(p: {
   const sp = g.splitting;
   const cf = g.confinement;
   text("Anchorage zone (AASHTO 5.9.4.4)", "subheading");
-  given(`F_{pi}\\coloneq ${num(sp.Fpi, 4)}\\mathrm{kip}`, "The strands bonded at the end, just after transfer (as PGSuper)");
+  given(`F_{pi}\\coloneq ${num(sp.Fpi, 4)}\\mathrm{kip}`, "The strands bonded at the end, just after transfer");
   m("h_{sp}\\coloneq\\frac{H}{4}=", "The splitting zone from the end", "in");
   given(`A_{sp}\\coloneq ${num(sp.As, 6)}\\mathrm{in}^{2}`, "Vertical bars within it: legs × area × length in the zone ÷ spacing, from the stirrup zones");
   m("P_{rs}\\coloneq20\\mathrm{ksi}\\cdot A_{sp}=", "fs not more than 20 ksi, AASHTO 5.9.4.4.1", "kip");
@@ -833,7 +833,7 @@ function phase4Section(p: {
     return best;
   };
   const fab = i.criteria === "cdot";
-  text(fab ? "Lifting from the form (AASHTO 5.5.4.3; PCI CB-02-16-E), for information" : "Lifting from the form (AASHTO 5.5.4.3; PCI CB-02-16-E, as WSDOT's PGSuper)", "subheading");
+  text(fab ? "Lifting from the form (AASHTO 5.5.4.3; PCI CB-02-16-E), for information" : "Lifting from the form (AASHTO 5.5.4.3; PCI CB-02-16-E)", "subheading");
   if (fab) text("Shipping and handling are the fabricator's design (CDOT BDM 5.5.1.8): lifting and hauling are worked out here for information and don't decide the design.", "note");
   if (p.handlingFigure) p.lines.push({ region: p.handlingFigure });
   text("The girder hangs from vertical lifting devices and rolls about the axis through them; its weight's lateral deflection, the sweep and the devices' placement tolerance tilt it. Stresses here: tension +. Worked without impact or wind; the minimum factors of safety over every case follow.", "note");

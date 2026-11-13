@@ -75,7 +75,7 @@ const SPEC: SectionSpec[] = [
         type: "list",
         key: "roadway.sections",
         label: "Superelevation (roadway section templates)",
-        note: "As PGSuper's roadway section templates: the slopes and the crown's offset at stations, straight-line between them (the transitions), constant before the first and after the last. None: the section above everywhere.",
+        note: "Roadway section templates: the slopes and the crown's offset at stations, straight-line between them (the transitions), constant before the first and after the last. None: the section above everywhere.",
         columns: [
           { key: "station", label: "Station" },
           { key: "leftSlope", label: "Left ft/ft" },
@@ -94,7 +94,7 @@ const SPEC: SectionSpec[] = [
         type: "list",
         key: "supports",
         label: "From the first abutment to the last",
-        note: "Skew: the support line from the alignment's normal, + clockwise (PGSuper's R). End distance and bearing offset along the girder and normal to the support, as PGSuper measures them. Spacing: the girder spacing at the support (0: the bridge's); spacings that differ flare the girders.",
+        note: "Skew: the support line from the alignment's normal, + clockwise. End distance along the girder; bearing offset normal to the support. Spacing: the girder spacing at the support (0: the bridge's); spacings that differ flare the girders.",
         columns: [
           { key: "name", label: "Name", kind: "text", width: "6rem" },
           { key: "station", label: "Station" },
@@ -119,6 +119,17 @@ const SPEC: SectionSpec[] = [
       { type: "number", key: "bridgeLineOffset", label: "Bridge line from the alignment (+ right)", unit: "ft", step: 0.5 },
       { type: "number", key: "leftEdge", label: "Bridge line to the deck's left edge", unit: "ft", step: 0.25 },
       { type: "number", key: "rightEdge", label: "Bridge line to the deck's right edge", unit: "ft", step: 0.25 },
+      {
+        type: "choice",
+        key: "rail.type",
+        label: "Bridge rail (CDOT B-606)",
+        options: [
+          { value: "custom", label: "Custom barrier (width below)" },
+          { value: "type9-4", label: "Type 9 (#4 option)" },
+          { value: "type9-3", label: "Type 9 (#3 option)" },
+          { value: "type10-mash", label: "Type 10 MASH" },
+        ],
+      },
       { type: "number", key: "barrierWidth", label: "Deck edge to the barrier's face", unit: "ft", step: 0.25 },
       { type: "number", key: "deckT", label: "Deck thickness", unit: "in", step: 0.25 },
       { type: "number", key: "sacrificial", label: "Sacrificial depth", unit: "in", step: 0.25 },
@@ -201,7 +212,7 @@ export function BridgeEditor({
   const failing = allChecks.filter((c) => !c.ok && !c.advisory);
   return (
     <div className="space-y-4">
-      <DesignHeader design={design} projects={projects} inputs={inputs} label="Bridge · alignment, layout, girder check and load path (PGSuper-style bridge description)" canMakeCalc={false} />
+      <DesignHeader design={design} projects={projects} inputs={inputs} label="Bridge · alignment, layout, girder check and load path" canMakeCalc />
       <div className="grid gap-4 lg:grid-cols-[minmax(340px,440px)_1fr]">
         <Card className="self-start">
           <CardContent className="py-2">
@@ -212,7 +223,7 @@ export function BridgeEditor({
                 ))}
               </Section>
             ))}
-            <Section title="Piers (PGSuper's physical pier)" open>
+            <Section title="Piers" open>
               {inputs.supports.map((s, i) =>
                 s.type.endsWith("pier") ? (
                   <div key={i} className="border-b pb-1 last:border-b-0">
@@ -244,15 +255,18 @@ export function BridgeEditor({
             </Section>
             <Section title="Linked designs" open>
               {groups.map((g, gi) => pick(`Girders, span${g.length > 1 ? "s" : ""} ${g.map((j) => j + 1).join("–")}`, "lrfd-girder-check", inputs.girderDesignIds[gi], (v) => setInputs((s) => ({ ...s, girderDesignIds: groups.map((_, k) => (k === gi ? v : (s.girderDesignIds[k] ?? null))) }))))}
+              {pick("Deck, overhang and rail", "deck-slab", inputs.deckDesignId, (v) => setInputs((s) => ({ ...s, deckDesignId: v })))}
               {inputs.supports.map((s, i) =>
                 s.type.endsWith("abutment") ? (
                   <div key={i} className="border-t pt-1">
+                    {pick(`${s.name}, bearings`, "elastomeric-bearing", comp(i).bearingId, (v) => setComp(i, { bearingId: v }))}
                     {pick(s.name, "abutment", comp(i).abutmentId, (v) => setComp(i, { abutmentId: v }))}
                     {pick(`${s.name}, approach slab`, "approach-slab", comp(i).approachSlabId, (v) => setComp(i, { approachSlabId: v }))}
                     {pick(`${s.name}, wingwall`, "cantilever-wingwall", comp(i).wingwallId, (v) => setComp(i, { wingwallId: v }))}
                   </div>
                 ) : (
                   <div key={i} className="border-t pt-1">
+                    {pick(`${s.name}, bearings`, "elastomeric-bearing", comp(i).bearingId, (v) => setComp(i, { bearingId: v }))}
                     {pick(`${s.name}, cap`, "stm-d-region", comp(i).capId, (v) => setComp(i, { capId: v }))}
                     {pick(`${s.name}, column`, "pier-column", comp(i).columnId, (v) => setComp(i, { columnId: v }))}
                     {s.pier && pick(`${s.name}, foundation`, s.pier.foundation, comp(i).foundationKind === s.pier.foundation ? comp(i).foundationId : null, (v) => setComp(i, { foundationId: v, foundationKind: s.pier!.foundation }))}

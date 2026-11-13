@@ -40,6 +40,7 @@ import { cipAsdUCalcLines } from "@/lib/design/walls/cip-asd-u-calc";
 import { mseCalcLines } from "@/lib/design/walls/mse-calc";
 import { wingwallCalcLines } from "@/lib/design/walls/wingwall-calc";
 import { db } from "@/lib/db";
+import { bridgePackageLines } from "@/lib/design/bridge/package";
 import { deleteFiles, putFile } from "@/lib/storage";
 
 const name = z.string().trim().min(1, "Give the design a name").max(200);
@@ -285,7 +286,10 @@ export async function createCalcFromDesign(designId: string, variant?: "asd" | "
       : cipAsdCalcLines(cipInputs(design.inputs), design.name, figures(() => cipFigures(cipInputs(design.inputs))))
     : null;
   const foundationLines = (FOUNDATION_KINDS as readonly string[]).includes(design.kind) ? foundationCalcLines(design.kind as FoundationKind, foundationInputs(design.kind, design.inputs), design.name, figures(() => foundationFigures(design.kind as FoundationKind, foundationInputs(design.kind, design.inputs)!))) : null;
-  const lines = takeoffLines ?? stmLines ?? asdLines ?? foundationLines ??
+  // The Bridge: its whole calc, every linked design in load-path order, and its summary of quantities.
+  if (quantities && design.kind === "bridge") throw new Error("The Bridge calc package includes its quantities");
+  const bridgeLines = design.kind === "bridge" ? await bridgePackageLines(design, user.orgId) : null;
+  const lines = bridgeLines ?? takeoffLines ?? stmLines ?? asdLines ?? foundationLines ??
     (design.kind === "dt-load-rating"
       ? dtRatingCalcLines(dtRatingInputs(design.inputs), design.name, figures(() => dtFigures(dtRatingInputs(design.inputs))))
       : design.kind === "lrfd-girder-check"

@@ -14,6 +14,8 @@ import { CapDetailSketch } from "@/components/design/cap-detail-sketch";
 import { DetailSketch } from "@/components/design/detail-sketch";
 import type { Takeoff } from "./takeoff/types";
 import { ApproachSlabSketch } from "@/components/design/approach-slab-sketch";
+import { BridgePlan, BridgeProfile } from "@/components/design/bridge-sketch";
+import type { BridgeInputs, BridgeLayout } from "./bridge/bridge";
 import { FoundationSketch, LateralPlot } from "@/components/design/foundation-sketch";
 import type { FoundationKind } from "./foundations/kinds";
 import { runFoundation } from "./foundations/run";
@@ -158,3 +160,6 @@ export const takeoffFigures = (t: Takeoff) => t.views.map((v) => figure(<DetailS
 
 /** A standard cap's reinforcement: elevation and sections. */
 export const capDetailFigures = (d: CapDetail) => ({ details: figure(<CapDetailSketch detail={d} />) });
+
+/** The Bridge's plan and profile, as the editor draws them. */
+export const bridgeFigures = (b: BridgeInputs, lay: BridgeLayout) => ({ plan: figure(<BridgePlan b={b} lay={lay} />), profile: figure(<BridgeProfile b={b} lay={lay} />) });

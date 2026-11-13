@@ -60,9 +60,13 @@ export type BridgeInputs = {
   slabOffset: number; // in, the top of the deck to the top of the girder at the bearings ("A")
   fcDeck: number;
   fws: number; // psf
+  /** The bridge rail on both edges: a CDOT standard rail (B-606) or "custom" (the barrier width above, a generic parapet in the model). */
+  rail?: GirderInputs["rail"];
+  /** The deck slab's design (the deck between the girders, the overhang and the rail), set and created by the Bridge. */
+  deckDesignId?: string | null;
   // The linked designs (the Bridge sets their layout and loads)
   girderDesignIds: (string | null)[]; // one per group of spans (continuous across continuous piers)
-  components: { support: number; abutmentId?: string | null; approachSlabId?: string | null; wingwallId?: string | null; capId?: string | null; columnId?: string | null; foundationId?: string | null; foundationKind?: "spread-footing" | "pile-foundation" | "drilled-shaft" | null }[];
+  components: { support: number; bearingId?: string | null; abutmentId?: string | null; approachSlabId?: string | null; wingwallId?: string | null; capId?: string | null; columnId?: string | null; foundationId?: string | null; foundationKind?: "spread-footing" | "pile-foundation" | "drilled-shaft" | null }[];
 };
 
 /** A two-span continuous BT-72 bridge, 120 ft spans, on a tangent with a sag vertical curve, integral abutments. */
@@ -203,8 +207,13 @@ export function girderInputsFor(b: BridgeInputs, lay: BridgeLayout, group: numbe
   const ordinates = spans.map((s) => s.girders.reduce((a, g) => (Math.abs(g.ordinate) > Math.abs(a) ? g.ordinate : a), 0));
   const pier = group.length > 1 ? b.supports[group[0] + 1] : null;
   const inner = b.supports[group[0]];
+  // Harped strands that end above the section (a starting pattern for a deeper girder) brought down to
+  // 11 in below its top, so a new girder design of any section can run.
+  const depth = girderShape({ ...GIRDER_DEFAULTS, shape: b.shape }).depth;
+  const fit = <H extends { count: number; yEnd: number } | null | undefined>(h: H): H => (h && h.count > 0 && h.yEnd > depth - 6 ? { ...h, yEnd: Math.round(depth - 11) } : h);
   return {
     ...base,
+    harped: fit(base.harped),
     shape: b.shape,
     L: first.L,
     endDist: inner.endDistance,
@@ -221,7 +230,8 @@ export function girderInputsFor(b: BridgeInputs, lay: BridgeLayout, group: numbe
     profileOrdinate: ordinates[0],
     fcDeck: b.fcDeck,
     fws: b.fws,
-    extraSpans: spans.slice(1).map((s, k) => ({ L: s.L, strands: base.extraSpans[k]?.strands ?? null, harped: base.extraSpans[k]?.harped ?? null })),
+    ...(b.rail ? { rail: b.rail } : {}),
+    extraSpans: spans.slice(1).map((s, k) => ({ L: s.L, strands: base.extraSpans[k]?.strands ?? null, harped: fit(base.extraSpans[k]?.harped ?? null) })),
     pierBearingOffset: pier ? pier.bearingOffset : base.pierBearingOffset,
   };
 }
@@ -230,11 +240,12 @@ export function girderInputsFor(b: BridgeInputs, lay: BridgeLayout, group: numbe
 function endReaction(line: ReturnType<typeof designGirder>["interior"], L: number) {
   const ld = line.loads;
   const nDia = ld.diaphragmAt.length;
-  const DC = (ld.wg * ld.Lg) / 2 + ((ld.wDeck + ld.wDC2) * L) / 2 + (ld.Pdia * nDia) / 2;
+  const DC1 = (ld.wg * ld.Lg) / 2 + (ld.wDeck * L) / 2 + (ld.Pdia * nDia) / 2; // the girder, deck and diaphragms: what a pad carries before the deck is made composite
+  const DC = DC1 + (ld.wDC2 * L) / 2;
   const DW = (ld.wDW * L) / 2;
   const lane = liveLoad(L, 0, 0).V;
   const laneIM = liveLoad(L, 0, 0.33).V;
-  return { DC, DW, LL: lane * line.df.shear, LLIM: laneIM * line.df.shear };
+  return { DC, DC1, DW, LL: lane * line.df.shear, LLIM: laneIM * line.df.shear };
 }
 
 /** The Bridge run: its layout, the girder check on each group of spans, and each support's reactions per girder. */
@@ -255,8 +266,8 @@ export function runBridge(b: BridgeInputs, bases: (GirderInputs | null | undefin
       const sd = g.result.spans[g.spans.indexOf(j)] ?? g.result.spans[0];
       sides.push({ span: j, interior: endReaction(sd.interior, lay.spans[j].L), exterior: endReaction(sd.exterior, lay.spans[j].L) });
     }
-    const sum = (side: "interior" | "exterior", key: "DC" | "DW" | "LL" | "LLIM") => sides.reduce((t, x) => t + x[side][key], 0);
-    const per = (key: "DC" | "DW" | "LL" | "LLIM") => Math.max(sum("interior", key), sum("exterior", key));
+    const sum = (side: "interior" | "exterior", key: "DC" | "DC1" | "DW" | "LL" | "LLIM") => sides.reduce((t, x) => t + x[side][key], 0);
+    const per = (key: "DC" | "DC1" | "DW" | "LL" | "LLIM") => Math.max(sum("interior", key), sum("exterior", key));
     const continuous = s.type === "continuous-pier";
     if (continuous) {
       // Over a continuous pier (5.12.3.3): the girders and deck are simple (their ends add); the barrier,
@@ -279,14 +290,14 @@ export function runBridge(b: BridgeInputs, bases: (GirderInputs | null | undefin
           return r.truck.back + r.truck.ahead + r.lane.back + r.lane.ahead;
         };
         const df = Math.max(lines[0][k].df.shear, lines[1][k].df.shear);
-        return { DC: DC1 + DC2, DW, LL: lane(0) * df, LLIM: lane(0.33) * df };
+        return { DC: DC1 + DC2, DC1, DW, LL: lane(0) * df, LLIM: lane(0.33) * df };
       };
       const int = side("interior");
       const ext = side("exterior");
-      const pick = (key: "DC" | "DW" | "LL" | "LLIM") => Math.max(int[key], ext[key]);
-      return { support: i, name: s.name, sides, DC: pick("DC"), DW: pick("DW"), LL: pick("LL"), LLIM: pick("LLIM"), continuous };
+      const pick = (key: "DC" | "DC1" | "DW" | "LL" | "LLIM") => Math.max(int[key], ext[key]);
+      return { support: i, name: s.name, sides, DC: pick("DC"), DC1: pick("DC1"), DW: pick("DW"), LL: pick("LL"), LLIM: pick("LLIM"), continuous };
     }
-    return { support: i, name: s.name, sides, DC: per("DC"), DW: per("DW"), LL: per("LL"), LLIM: per("LLIM"), continuous };
+    return { support: i, name: s.name, sides, DC: per("DC"), DC1: per("DC1"), DW: per("DW"), LL: per("LL"), LLIM: per("LLIM"), continuous };
   });
   const ok = groups.every((g) => g.result.ok);
   return { layout: lay, groups, reactions, ok };

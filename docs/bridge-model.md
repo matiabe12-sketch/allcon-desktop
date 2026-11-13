@@ -125,3 +125,58 @@ station, orientation, connection, girder end distance and bearing offset).
   validation, every element tessellates, and IfcOpenShell's own evaluation of a spiral alignment lies
   within 0.0001 ft of ours.
 - Not modelled yet: wingwalls, barriers, diaphragms at piers, rebar and strands, the deck's haunch.
+
+## The Bridge's calc package (built 2026-11-13)
+
+"Create calc package" on a Bridge writes the whole bridge's design calculations, laid out as a DOT bridge's
+are bound (the 24610 sealed calcs were the model):
+
+1. A front page with the bridge rendered in 3D (`bridge/render3d.ts`: the IFC description's elements as
+   triangles, an axonometric view from above one side, shaded, hidden faces dropped, drawn far to near; an
+   SVG), the description, the overall result, references and contents.
+2. The bridge's description and layout: alignment, curves and spirals, profile, roadway and superelevation,
+   girders, deck and rail; the supports; every girder's span, length and seat elevations; plan and profile.
+3. The summary of design checks: a table of every component with its verdict, then every check, grouped
+   superstructure and substructure.
+4. Part 1, Superstructure: the deck, overhang and rail; the girders of each group; the load path (each
+   support's reactions per girder).
+5. Part 2, Substructure, support by support in load-path order: the loads it receives, its bearings, its
+   abutment (or pier cap and columns), its foundation, its approach slab and wingwalls.
+6. Part 3, Quantities: the summary of quantities under CDOT's pay items, a column per part of the bridge
+   (Superstructure, each support, Approach Slabs) and the total, then each part's tabulation.
+
+Each component's own calc is included as its tool writes it; the whole package is worked out as one
+worksheet (`bridge/calc.test.ts` checks it has no errors and that every component's checks come out as
+they do alone). Code: `bridge/calc.ts` (the layout, pure), `bridge/package.ts` (reads the linked designs).
+
+With it, the Bridge now also links a **deck slab** (its girders, spacing, overhang, thickness, flange, rail
+and wearing surface from the Bridge) and **bearings** at each support. Under girders cast into a diaphragm
+(integral abutments, continuous piers) the pads are leveling pads: the girder, deck and diaphragms until the
+diaphragm is cast (DC1), no live load, no movement; each line of bearings carries its own span's end. The
+Bridge has a **bridge rail** choice (CDOT B-606 Types 9 and 10 MASH); the IFC model sweeps it along both
+deck edges (IfcRailing, the curb-and-post rail's steel tubes too), and every element has a colour.
+
+## Test: CDOT 24610, I-18-BC (Airport Rd over Powers Blvd, WB)
+
+The whole bridge entered from its documents (sealed calcs, FOR quantities, girder schedule, status-set
+plans B17/B20/B22, boring logs, pile calc): `bridge/i18bc.fixture.ts` (numbers only), `i18bc.test.ts`,
+`i18bc-chain.test.ts`, and in the app, project "24610 Airport Rd over Powers Blvd (I-18-BC)".
+
+- Layout: all 24 of the sealed calc's bearing seat elevations within 0.01 ft (profile, single 2 % slope,
+  25°03'55" skew, girder offsets, the deck–haunch–girder–pad stack).
+- Design: girders with the schedule's 38 strands (c.g. 3.41 / 10.67 in, 0.40 L harp) pass 158 of 160
+  checks; pads, abutments and piles, columns, drilled shafts and wingwalls pass every check, as in the
+  sealed calcs. The 1,500-region package works out with no errors.
+- Quantities against the FOR: girders 1,239 LF (0 %), deck 211.42 ft back face to back face (211.4), rail
+  on the bridge 423 LF (0 %), superstructure bars 122,150 LB (+1.8 %, with the deck's #9 over the pier),
+  all epoxy bars +2.2 %.
+- Fixed by the test: the starting strand pattern now fits a shallower section; leveling pads; deck length
+  back face to back face; the girder's take-off counts the negative moment bars over piers (pierBars); a
+  drilled shaft's bars are paid in item 503.
+- Still different (reported, not fixed): the pier cap is designed in one stage on its 5 ft first-stage
+  depth, where the sealed calc checks the completed cap with the diaphragm (5 of 77 checks fail, ties at
+  1.09); the girders' longitudinal reinforcement at the bearing (1.09; the 10 strands extended into the
+  diaphragm aren't counted); the overhang's Case 1 at the limit (1.00); the approach slab's bottom
+  transverse distribution (CDOT's #5 at 12 in, 2.04); the 12'-6" sidewalk isn't modelled (waterproofing on
+  58.5 ft, not 46 ft); no rail on the approach slabs; three shafts in the plans, four in the FOR; which
+  concrete class columns and diaphragms are paid under.

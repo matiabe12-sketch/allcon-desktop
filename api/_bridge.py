@@ -23,11 +23,12 @@ import ifcopenshell.api.geometry
 import ifcopenshell.api.material
 import ifcopenshell.api.pset
 import ifcopenshell.api.root
+import ifcopenshell.api.style
 import ifcopenshell.api.spatial
 import ifcopenshell.util.alignment
 import numpy
 
-CLASSES = {"IfcBeam", "IfcBearing", "IfcColumn", "IfcFooting", "IfcPile", "IfcSlab", "IfcWall", "IfcMember", "IfcPlate"}
+CLASSES = {"IfcBeam", "IfcBearing", "IfcColumn", "IfcFooting", "IfcPile", "IfcSlab", "IfcWall", "IfcMember", "IfcPlate", "IfcRailing"}
 PART_TYPES = {"SUPERSTRUCTURE", "SUBSTRUCTURE", "ABUTMENT", "PIER", "FOUNDATION", "DECK"}
 MAX_ELEMENTS = 5000
 
@@ -180,6 +181,7 @@ def build(params):
         parts[p.get("key")] = part
 
     materials = {}
+    styles = {}
     counts = {}
     for e in elements:
         cls = e.get("cls")
@@ -208,6 +210,14 @@ def build(params):
             )
             rep = model.createIfcShapeRepresentation(body, "Body", "SweptSolid", [solid])
         api.geometry.assign_representation(model, product=element, representation=rep)
+        color = e.get("color")
+        if isinstance(color, (list, tuple)) and len(color) == 3:
+            key = tuple(round(min(1.0, max(0.0, _num(v, "a colour"))), 3) for v in color)
+            if key not in styles:
+                style = api.style.add_style(model, name=f"ALLCON {key[0]:.2f} {key[1]:.2f} {key[2]:.2f}")
+                api.style.add_surface_style(model, style=style, ifc_class="IfcSurfaceStyleShading", attributes={"SurfaceColour": {"Name": None, "Red": key[0], "Green": key[1], "Blue": key[2]}, "Transparency": 0.0})
+                styles[key] = style
+            api.style.assign_representation_styles(model, shape_representation=rep, styles=[styles[key]])
         name = str(e.get("material") or "")
         if name:
             if name not in materials:

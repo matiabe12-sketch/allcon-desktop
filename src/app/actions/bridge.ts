@@ -19,8 +19,8 @@ import { stmInputs } from "@/lib/design/stm/strut-tie";
 import { db } from "@/lib/db";
 import { bridgeIfc, type BridgeComponents } from "@/lib/design/bridge/ifc";
 import { runLoadPath, verdictOf, type SyncRow } from "@/lib/design/bridge/load-path.server";
-import { attachRebar, rebarOnSpecs, rebarSources, sectionRebarSources, type RebarDesigns } from "@/lib/design/bridge/ifc-rebar";
-import { newModelFileKey, workerBridge, workerBridgeModel, WorkerError, type WorkerSummary } from "@/lib/ifc/worker";
+import { attachRebar, rebarSources, type RebarDesigns } from "@/lib/design/bridge/ifc-rebar";
+import { newModelFileKey, workerBridgeModel, WorkerError } from "@/lib/ifc/worker";
 import { gzipSync } from "node:zlib";
 import { redirect } from "next/navigation";
 import { z } from "zod";
@@ -32,7 +32,6 @@ import { designPrefill, designTargets } from "@/lib/bridge/design-links";
 import { importedOf } from "@/lib/bridge/imported";
 import { movingLoad } from "@/lib/bridge/moving";
 import { bridgeCalcLines } from "@/lib/bridge/report";
-import { ifcElements } from "@/lib/bridge/solids";
 import { layout } from "@/lib/calcs/library/templates";
 import { CALC_FILE, newCalcKey } from "@/lib/calcs/server";
 import { emptyCalc } from "@/lib/calcs/types";
@@ -74,16 +73,13 @@ export async function syncBridge(bridgeId: string, inputsNow: unknown, create: b
 }
 
 /**
- * The Bridge's IFC 4.3 model (phase 2, docs/bridge-model.md): the alignment, the bridge's parts and every
- * element at its designed size and place, from the Bridge and its linked designs, saved as a 3D model in
- * the Bridge's project. Returns the model's link.
+ * A bridge's IFC 4.3 description (src/lib/design/bridge/ifc.ts) from its description and the designs it links:
+ * the girder check run with its girder designs, each linked design's inputs and verdict for its elements, and
+ * their bars (ifc-rebar.ts). Shared by the Bridge design's and the Bridge section's IFC models.
  */
-export async function buildBridgeModel(bridgeId: string, inputsNow: unknown): Promise<{ link: string; elements: number } | { error: string }> {
-  const { user, design } = await ownBridgeDesign(bridgeId);
-  if (!design.projectId) return { error: "Put the Bridge in a project first (the project picker at the top): the model is saved there." };
-  const b = bridgeInputs(inputsNow ?? design.inputs);
+async function describeBridgeModel(orgId: string, b: BridgeInputs, name: string): Promise<{ description: ReturnType<typeof bridgeIfc>; run: ReturnType<typeof runBridge> } | { error: string }> {
   const ids = b.girderDesignIds.filter((x): x is string => !!x && isUuid(x));
-  const linked = await db.design.findMany({ where: { id: { in: ids }, orgId: user.orgId, kind: "lrfd-girder-check" }, select: { id: true, inputs: true } });
+  const linked = await db.design.findMany({ where: { id: { in: ids }, orgId: orgId, kind: "lrfd-girder-check" }, select: { id: true, inputs: true } });
   let run: ReturnType<typeof runBridge>;
   try {
     run = runBridge(b, b.girderDesignIds.map((id) => { const d = linked.find((x) => x.id === id); return d ? girderInputs(d.inputs) : null; }));
@@ -103,7 +99,7 @@ export async function buildBridgeModel(bridgeId: string, inputsNow: unknown): Pr
     const id = b.girderDesignIds[gi];
     if (id) verdicts[id] = g.result.ok ? "all checks pass" : "some checks fail";
   });
-  const load = async (id: string | null | undefined, kind: string) => (id && isUuid(id) ? db.design.findFirst({ where: { id, orgId: user.orgId, kind }, select: { id: true, inputs: true } }) : null);
+  const load = async (id: string | null | undefined, kind: string) => (id && isUuid(id) ? db.design.findFirst({ where: { id, orgId: orgId, kind }, select: { id: true, inputs: true } }) : null);
   const deck = await load(b.deckDesignId, "deck-slab");
   const comps: BridgeComponents = { verdicts, abutments: {}, approachSlabs: {}, foundations: {}, deckId: deck?.id ?? null, ids: { girders: b.girderDesignIds, caps: {}, columns: {} } };
   // The designs whose bars go in the model besides those comps carries.
@@ -140,7 +136,22 @@ export async function buildBridgeModel(bridgeId: string, inputsNow: unknown): Pr
       verdictTry(f.id, () => runFoundation(kind, inputs).checks);
     }
   }
-  const description = attachRebar(bridgeIfc(b, run, comps, design.name), rebarSources(comps, rebar));
+  const description = attachRebar(bridgeIfc(b, run, comps, name), rebarSources(comps, rebar));
+  return { description, run };
+}
+
+/**
+ * The Bridge's IFC 4.3 model (phase 2, docs/bridge-model.md): the alignment, the bridge's parts and every
+ * element at its designed size and place, from the Bridge and its linked designs, saved as a 3D model in
+ * the Bridge's project. Returns the model's link.
+ */
+export async function buildBridgeModel(bridgeId: string, inputsNow: unknown): Promise<{ link: string; elements: number } | { error: string }> {
+  const { user, design } = await ownBridgeDesign(bridgeId);
+  if (!design.projectId) return { error: "Put the Bridge in a project first (the project picker at the top): the model is saved there." };
+  const b = bridgeInputs(inputsNow ?? design.inputs);
+  const described = await describeBridgeModel(user.orgId, b, design.name);
+  if ("error" in described) return described;
+  const { description, run } = described;
   const id = randomUUID();
   const fileKey = newModelFileKey(id);
   let made: Awaited<ReturnType<typeof workerBridgeModel>>;
@@ -347,27 +358,20 @@ export async function exportBridgeIfc(bridgeId: string): Promise<{ modelId: stri
   const project = await db.project.findFirst({ where: { id: bridge.projectId, orgId: user.orgId } });
   if (!project) throw new Error("Project not found");
   const definition = bridgeDefinition(bridge.definition);
-  const elements = ifcElements(definition, analyzeBridge(definition).generated);
-  // The linked designs' bars (the deck's and each pier's columns') in the elements they detail.
-  const linked = async (target: string, kind: string) => {
-    const link = definition.designs.find((x) => x.target === target && x.kind === kind);
-    return link && isUuid(link.id) ? db.design.findFirst({ where: { id: link.id, orgId: user.orgId, kind }, select: { id: true, inputs: true } }) : null;
-  };
-  const deckDesign = await linked("deck", "deck-slab");
-  const columnDesigns = (
-    await Promise.all(definition.designs.filter((x) => /^column-\d+$/.test(x.target)).map(async (x) => ({ pier: Number(x.target.slice(7)), d: await linked(x.target, "pier-column") })))
-  ).flatMap(({ pier, d }) => (d ? [{ pier, id: d.id, inputs: columnInputs(d.inputs) }] : []));
-  rebarOnSpecs(elements, sectionRebarSources({ deck: deckDesign ? { id: deckDesign.id, inputs: deckInputs(deckDesign.inputs) } : null, columns: columnDesigns }));
+  // The bridge as the IFC 4.3 bridge model (IfcBridge, its parts by support, the alignment, every element
+  // from its linked design with its quantities and bars), as the Bridge design built it.
+  const described = await describeBridgeModel(user.orgId, withLinks(toBridgeInputs(definition), definition.designs), bridge.name);
+  if ("error" in described) throw new Error(described.error);
   const existing = definition.ifcModelId ? await db.ifcModel.findFirst({ where: { id: definition.ifcModelId, projectId: project.id } }) : null;
   const id = existing?.id ?? crypto.randomUUID();
   const fileKey = newModelFileKey(id);
-  let made: { summary: WorkerSummary; size: number | null };
+  let made: Awaited<ReturnType<typeof workerBridgeModel>>;
   try {
-    made = await workerBridge(fileKey, { name: bridge.name, elements, location: project.latitude !== null && project.longitude !== null ? { lat: project.latitude, lon: project.longitude, heading: 0 } : undefined });
+    made = await workerBridgeModel(fileKey, { ...described.description, project: project.name || bridge.name, ...(project.latitude !== null && project.longitude !== null ? { location: { lat: project.latitude, lon: project.longitude, heading: 0 } } : {}) });
   } catch (e) {
     throw new Error(e instanceof WorkerError ? e.message : "The IFC engine couldn't write the model");
   }
-  const data = { name: bridge.name, description: `Exported from the bridge "${bridge.name}" (Bridge section).`, fileKey, fileSize: made.size, summary: made.summary as unknown as Prisma.InputJsonValue, elementCount: made.summary.elements, editedAt: new Date() };
+  const data = { name: bridge.name, description: `Exported from the bridge "${bridge.name}" (Bridge section): the alignment, ${described.run.layout.spans.length} span(s) and ${described.run.layout.supports.length} supports, each element from its linked design, with quantities and bars.`, fileKey, fileSize: made.size, summary: made.summary as unknown as Prisma.InputJsonValue, elementCount: made.summary.elements, editedAt: new Date() };
   if (existing) {
     await db.ifcModel.update({ where: { id }, data: { ...data, revision: existing.revision + 1, backupKey: existing.fileKey, backupRevision: existing.revision } });
     await deleteFiles([existing.backupKey]).catch(() => undefined);

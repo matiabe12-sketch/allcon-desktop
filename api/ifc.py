@@ -873,8 +873,11 @@ def handle(payload):
     if action == "dxf_import":
         return dxf_import(payload, params)
     if action == "bridge_model":
-        # The Bridge design's IFC 4.3 model (desktop: api/_bridge.py); "bridge" below is the Bridge section's.
+        # The IFC 4.3 bridge model (api/_bridge.py), georeferenced at the project's place when given; "bridge" below is the web's simpler export.
         model, handles = bridge_module().build(params)
+        loc = params.get("location")
+        if isinstance(loc, dict) and all(isinstance(loc.get(k), (int, float)) for k in ("lat", "lon")):
+            set_location(model, model.by_id(handles["site"]), float(loc["lat"]), float(loc["lon"]), float(loc.get("heading") or 0))
         return {"size": dump(model, payload), "handles": handles, "summary": summary(model)}
     if action == "create":
         model, handles = create(params)

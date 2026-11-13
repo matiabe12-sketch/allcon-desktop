@@ -21,6 +21,7 @@ import { columnLinkFrom } from "@/lib/design/piers/column-link";
 import { designStm, stmInputs } from "@/lib/design/stm/strut-tie";
 import { db } from "@/lib/db";
 import { bridgeIfc, type BridgeComponents } from "@/lib/design/bridge/ifc";
+import { attachRebar, rebarSources, type RebarDesigns } from "@/lib/design/bridge/ifc-rebar";
 import { newModelFileKey, workerBridge, WorkerError } from "@/lib/ifc/worker";
 
 // The Bridge's load path through its linked designs (docs/bridge-model.md): each linked design's
@@ -237,7 +238,10 @@ export async function buildBridgeModel(bridgeId: string, inputsNow: unknown): Pr
     if (id) verdicts[id] = g.result.ok ? "all checks pass" : "some checks fail";
   });
   const load = async (id: string | null | undefined, kind: string) => (id && isUuid(id) ? db.design.findFirst({ where: { id, orgId: user.orgId, kind }, select: { id: true, inputs: true } }) : null);
-  const comps: BridgeComponents = { verdicts, abutments: {}, approachSlabs: {}, foundations: {}, ids: { girders: b.girderDesignIds, caps: {}, columns: {} } };
+  const deck = await load(b.deckDesignId, "deck-slab");
+  const comps: BridgeComponents = { verdicts, abutments: {}, approachSlabs: {}, foundations: {}, deckId: deck?.id ?? null, ids: { girders: b.girderDesignIds, caps: {}, columns: {} } };
+  // The designs whose bars go in the model besides those comps carries.
+  const rebar: RebarDesigns = { deck: deck ? { id: deck.id, inputs: deckInputs(deck.inputs) } : null, caps: {}, columns: {} };
   for (const c of b.components) {
     const s = b.supports[c.support];
     if (!s) continue;
@@ -258,6 +262,10 @@ export async function buildBridgeModel(bridgeId: string, inputsNow: unknown): Pr
     }
     comps.ids!.caps![c.support] = c.capId ?? null;
     comps.ids!.columns![c.support] = c.columnId ?? null;
+    const cap = await load(c.capId, "stm-d-region");
+    if (cap) rebar.caps![c.support] = { id: cap.id, inputs: stmInputs(cap.inputs) };
+    const col = await load(c.columnId, "pier-column");
+    if (col) rebar.columns![c.support] = { id: col.id, inputs: columnInputs(col.inputs) };
     const kind = s.pier?.foundation;
     const f = kind && c.foundationKind === kind ? await load(c.foundationId, kind) : null;
     if (f && kind) {
@@ -266,7 +274,7 @@ export async function buildBridgeModel(bridgeId: string, inputsNow: unknown): Pr
       verdictTry(f.id, () => runFoundation(kind, inputs).checks);
     }
   }
-  const description = bridgeIfc(b, run, comps, design.name);
+  const description = attachRebar(bridgeIfc(b, run, comps, design.name), rebarSources(comps, rebar));
   const id = randomUUID();
   const fileKey = newModelFileKey(id);
   let made: Awaited<ReturnType<typeof workerBridge>>;

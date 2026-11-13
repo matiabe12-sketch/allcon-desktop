@@ -13,6 +13,7 @@ import { APPROACH_SLAB_DEFAULTS } from "../approach/approach-slab";
 import { railDef } from "../decks/rails";
 import { deckElevation, horizontalElements, offsetPoint, pointAt, profileAt, profileGeometry, sectionAt, stationOffset } from "./alignment";
 import type { BridgeInputs, BridgeRun } from "./bridge";
+import type { IfcRebar, RebarBox } from "./ifc-rebar";
 
 // The Bridge as an IFC 4.3 model (phase 2, docs/bridge-model.md): a neutral description the IFC
 // worker (api/_bridge.py) writes with IfcOpenShell: the alignment by the PI method (horizontal PIs
@@ -47,6 +48,12 @@ export type IfcElement = {
   /** The surface colour the viewer draws it in (0–1 RGB): concrete, steel, elastomer told apart. */
   color?: [number, number, number];
   psets: Record<string, Record<string, string | number | boolean>>;
+  /** ft, its run's length, for a swept element whose quantities need it (a barrier along the deck's edge). */
+  length?: number;
+  /** Its reinforcing bars (ifc-rebar.ts attachRebar): written as IfcReinforcingBar sets aggregated into it. */
+  rebar?: IfcRebar;
+  /** Where its bars are laid out, when its profile doesn't say (a deck span's surface solid). */
+  box?: RebarBox;
 };
 
 /** Colours by what an element is, so the deck, girders, barriers and substructure read apart. */
@@ -189,6 +196,9 @@ export function barrierShape(b: Pick<BridgeInputs, "rail" | "barrierWidth">) {
   return { def: null, outline: [[0, 0], [w, 0], [w - 3, 10], [9, 42], [0, 42]] as [number, number][], name: "Concrete barrier", payItem: "606 (bridge rail)" };
 }
 
+/** A sweep's length through its frames' points (ft). */
+const runLength = (frames: { p: V3 }[]) => r6(frames.slice(1).reduce((t, f, k) => t + Math.hypot(...sub(f.p, frames[k].p)), 0));
+
 /** A horizontal frame: x along a plan direction, z up. */
 const flat = (dirX: number, dirY: number) => ({ xdir: unit([dirX, dirY, 0]), zdir: UP });
 
@@ -318,7 +328,21 @@ export function bridgeIfc(b: BridgeInputs, run: BridgeRun, c: BridgeComponents =
       material: `Concrete Class DF, f'c ${b.fcDeck} ksi`,
       color: [...COLORS.deck],
       psets: { ALLCON_Design: { DesignKind: "deck-slab", DesignId: c.deckId ?? "", Verdict: verdict(c.deckId), Thickness_in: b.deckT, PayItem: "601-03056 Concrete Class DF" } },
+      box: deckBox(),
     });
+    // The span's deck as a box for its bars: along the chord at mid-width, across the deck, its thickness.
+    function deckBox(): RebarBox {
+      const om = (oL + oR) / 2;
+      const end = (s: typeof sa): V3 => {
+        const st = corner(s, om);
+        const p = offsetPoint(b.alignment, st, om, cache);
+        return P(p.x, p.y, deckElevation(b.profile, b.roadway, st, om, vcs) - b.deckT / 24);
+      };
+      const [A, B] = [end(sa), end(sb)];
+      const x = unit(sub(B, A));
+      const y = unit(cross(UP, x));
+      return { c: v3(mul([A[0] + B[0], A[1] + B[1], A[2] + B[2]], 0.5)), ax: [v3(x), v3(y), v3(cross(x, y))], half: [r6(Math.hypot(...sub(B, A)) / 2), r6((oR - oL) / 2), r6(b.deckT / 24)] };
+    }
     // The bridge rail on both edges, swept along them on the deck's top (its traffic face inward).
     const railShape = barrierShape(b);
     for (const [side, o, inward] of [["left", oL, 1], ["right", oR, -1]] as const) {
@@ -340,6 +364,7 @@ export function bridgeIfc(b: BridgeInputs, run: BridgeRun, c: BridgeComponents =
         zdir: UP,
         profile: { kind: "mesh", ...sweepSolid(frames, railShape.outline) },
         depth: 1,
+        length: runLength(frames),
         material: "Concrete Class D (Bridge)",
         color: [...COLORS.barrier],
         psets: { ALLCON_Design: { DesignKind: "bridge-rail", Rail: railShape.name, PayItem: railShape.payItem } },
@@ -347,7 +372,7 @@ export function bridgeIfc(b: BridgeInputs, run: BridgeRun, c: BridgeComponents =
       // Steel tubes on a curb-and-post rail.
       for (const [t, tube] of (railShape.def?.posts?.tubes ?? []).entries()) {
         const box: [number, number][] = [[tube.x0, tube.y0], [tube.x1, tube.y0], [tube.x1, tube.y1], [tube.x0, tube.y1]];
-        els.push({ cls: "IfcRailing", type: "GUARDRAIL", name: `${railShape.name} tube ${t + 1}, ${side}, span ${span.index + 1}`, part: "super", origin: [0, 0, 0], xdir: [1, 0, 0], zdir: UP, profile: { kind: "mesh", ...sweepSolid(frames, box) }, depth: 1, material: "Structural steel (galvanized)", color: [...COLORS.steel], psets: { ALLCON_Design: { DesignKind: "bridge-rail", Rail: railShape.name, PayItem: railShape.payItem } } });
+        els.push({ cls: "IfcRailing", type: "GUARDRAIL", name: `${railShape.name} tube ${t + 1}, ${side}, span ${span.index + 1}`, part: "super", origin: [0, 0, 0], xdir: [1, 0, 0], zdir: UP, profile: { kind: "mesh", ...sweepSolid(frames, box) }, depth: 1, length: runLength(frames), material: "Structural steel (galvanized)", color: [...COLORS.steel], psets: { ALLCON_Design: { DesignKind: "bridge-rail", Rail: railShape.name, PayItem: railShape.payItem } } });
       }
     }
   }

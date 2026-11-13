@@ -74,6 +74,8 @@ export const CDOT_ITEMS: PayItem[] = [
   item("518-01201", "Bridge Expansion Device (Type 1)", "LF"),
   item("518-00100", "Waterstop", "LF"),
   item("518-03000", "Sawing and Sealing Bridge Joint", "LF"),
+  // 408 Joint sealant
+  item("408-01100", "Joint Sealant", "LF"),
   // 606 Bridge rail
   item("606-10900", "Bridge Rail Type 9", "LF"),
   item("606-10905", "Bridge Rail Type 9 (Special)", "LF"),
@@ -101,7 +103,7 @@ export const CDOT_ITEMS: PayItem[] = [
 export const payItem = (code: string) => CDOT_ITEMS.find((p) => p.code === code) ?? null;
 
 /** What a quantity is, for choosing its pay item. */
-export type QuantityRole = "concrete" | "rebar" | "excavation" | "backfill" | "refill" | "bedding" | "girder" | "bearing" | "joint" | "waterproofing" | "shaft" | "facing" | "soil-reinforcement" | "rail" | "removal";
+export type QuantityRole = "concrete" | "rebar" | "excavation" | "backfill" | "refill" | "bedding" | "girder" | "bearing" | "joint" | "waterproofing" | "shaft" | "facing" | "soil-reinforcement" | "rail" | "removal" | "sealant";
 
 /**
  * Each tool's quantities and the pay items each may go to (first: the default). Defaults follow
@@ -127,7 +129,7 @@ export const TOOL_PAY_ITEMS: Record<string, Partial<Record<QuantityRole, string[
   "pier-column": { concrete: ["601-03040", "601-03041", "601-03000"], rebar: ["602-00020", "602-00000", "602-00010", "602-00011", "602-00025"], excavation: ["206-00000"], backfill: ["206-00200", "206-00100"] },
   "elastomeric-bearing": { bearing: ["512-00101", "512-00102", "512-00103", "512-00114", "512-00115", "512-00118"] },
   "ptfe-bearing": { bearing: ["512-00118", "512-00103", "512-00114", "512-00115"] },
-  "approach-slab": { concrete: ["601-03040", "601-03056", "601-03000"], rebar: ["602-00020", "602-00000", "602-00025"], waterproofing: ["515-00120"], joint: ["518-01004", "518-03000", "518-01002"] },
+  "approach-slab": { concrete: ["601-03056", "601-03040", "601-03000"], rebar: ["602-00020", "602-00000", "602-00025"], waterproofing: ["515-00120"], joint: ["518-01004", "518-01002"], sealant: ["408-01100"] },
   "strip-seal-joint": { joint: ["518-01004", "518-01002", "518-01006", "518-01009", "518-01012", "518-01201"] },
   "sign-cantilever": { shaft: ["503-00036", "503-00024", "503-00030", "503-00042", "503-00048", "503-00054", "503-00060", "503-00072"], rebar: ["602-00000"] },
 };

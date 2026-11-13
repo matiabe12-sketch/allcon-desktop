@@ -1,6 +1,6 @@
 import { bar } from "../stm/aashto";
 import type { Pt } from "../stm/geometry";
-import { ftIn, hookLeg, roundDown } from "../rebar/bars";
+import { ftIn, roundDown } from "../rebar/bars";
 import { countAt, runGroups, type PreGroup, type RunOptions } from "../rebar/runs";
 import { markGroups, schedule, type ConcreteItem } from "../rebar/schedule";
 import { ftT, inT } from "../takeoff/tex";
@@ -14,6 +14,11 @@ import type { ApproachSlabInputs } from "./approach-slab";
 // Manual 4.7); the transverse bars run parallel to the slab's ends (skewed with the abutment); the
 // dowels come up out of the notch, hooked in the abutment; the sleeper slab has its own mats. Clear
 // to the slab's edges and ends 2 in (Bridge Detail Manual 4.8). All bars epoxy coated (BDM 5.4.5).
+// The details follow CDOT worksheet B-601-1EA (Approach Slab Details, Asphalt with 0–4" Joint):
+// the #5 anchorage bars (2'-9" with a 10" leg, 1'-6" into the slab), #4 C-bars at 1'-6" around the
+// slab's end at the abutment, and the sleeper's #5 bent bars at 1'-0" (two at each place), #5 (Tot
+// 10) along it and #5 (Tot 2) in the block under the device. Shapes the worksheet only sketches are
+// noted as read off it.
 
 const C = 2; // in, clear to the edges and ends
 const fit = (n: number) => Math.round(n * 1000) / 1000;
@@ -47,18 +52,28 @@ export function approachSlabTakeoff(i: ApproachSlabInputs, count = 2): Takeoff {
 
   // --- anchorage dowels out of the notch (hooked in the abutment) ---------------------------------------------
   const nDowel = countAt(Wsk - 2 * C, i.dowels.spacing);
-  const leg = hookLeg(i.dowels.bar).leg;
+  const leg = i.dowelHook;
   const dowelStraight = i.dowelAbut + i.dowelSlab;
-  pre.push({ size: i.dowels.bar, count: N * nDowel, shape: { kind: "hooked", dims: [roundDown(leg), roundDown(dowelStraight)], hooks: 1 }, length: roundDown(leg + dowelStraight), use: "Anchorage dowels", callout: `#${i.dowels.bar} @ ${ftIn(i.dowels.spacing)} (into the abutment)`, where: "notch to slab" });
+  pre.push({ size: i.dowels.bar, count: N * nDowel, shape: { kind: "hooked", dims: [roundDown(leg), roundDown(dowelStraight)], hooks: 1 }, length: roundDown(leg + dowelStraight), use: "Anchorage dowels", callout: `#${i.dowels.bar} @ ${ftIn(i.dowels.spacing)} (project ${ftIn(i.dowelSlab)} into the approach slab)`, where: "notch to slab" });
+  // #4 C-bars around the slab's end at the abutment (B-601-1EA Detail 1), 1'-0" legs.
+  const nC = countAt(Wsk - 2 * C, 18);
+  const cH = i.t - i.coverTop - i.coverBot;
+  pre.push({ size: 4, count: N * nC, shape: { kind: "bent", dims: [12, roundDown(cH), 12], hooks: 0 }, length: roundDown(24 + cH), use: "End bars at the abutment", callout: `#4 ⊏ @ 1'-6" (slab's end at the abutment)`, where: "abutment end" });
 
   // --- the sleeper slab --------------------------------------------------------------------------------------------
   const B = i.sleeperB * 12;
   const sc = 3; // in, cast against earth (BDM 5.4.3)
   if (i.sleeper) {
     const nAcross = countAt(Wsk - 2 * C, i.sleeperBars.spacing);
-    run({ size: i.sleeperBars.bar, count: nAcross, straight: B - 2 * sc, use: "Sleeper, bottom across", callout: call(i.sleeperBars, "sleeper, bottom"), cover: sc, spacing: i.sleeperBars.spacing });
+    const sb = i.sleeperBars.bar;
+    if (i.joint === "device") {
+      // Two bent bars at each place (B-601-1EA's sleeper section, shapes as read off it): one up into the block with an 8" leg over its top, one across the bottom with a 7" leg.
+      pre.push({ size: sb, count: N * nAcross, shape: { kind: "bent", dims: [8, 21, 32], hooks: 0 }, length: 61, use: "Sleeper, bent into the block", callout: `#${sb} @ ${ftIn(i.sleeperBars.spacing)} (sleeper, 2 each place)`, where: "sleeper" });
+      pre.push({ size: sb, count: N * nAcross, shape: { kind: "bent", dims: [7, 26], hooks: 0 }, length: 33, use: "Sleeper, across the bottom", callout: `#${sb} @ ${ftIn(i.sleeperBars.spacing)} (sleeper, 2 each place)`, where: "sleeper" });
+    } else run({ size: sb, count: nAcross, straight: B - 2 * sc, use: "Sleeper, across the bottom", callout: call(i.sleeperBars, "sleeper, bottom"), cover: sc, spacing: i.sleeperBars.spacing });
     const nAlong = countAt(B - 2 * sc, i.sleeperLong.spacing);
-    run({ size: i.sleeperLong.bar, count: 2 * nAlong, straight: Wsk - 2 * C, use: "Sleeper, along", callout: `${call(i.sleeperLong, "sleeper, along it")} top and bottom`, cover: sc, spacing: i.sleeperLong.spacing });
+    run({ size: i.sleeperLong.bar, count: 2 * nAlong, straight: Wsk - 2 * C, use: "Sleeper, along", callout: `#${i.sleeperLong.bar} (Tot ${2 * nAlong}) along the sleeper, top and bottom`, cover: sc, spacing: i.sleeperLong.spacing });
+    if (i.joint === "device") run({ size: 5, count: 2, straight: Wsk - 2 * C, use: "Sleeper, in the block", callout: "#5 (Tot 2) in the block under the device", cover: 2, spacing: 6 });
   }
 
   // --- concrete and other quantities ---------------------------------------------------------------------------------
@@ -68,14 +83,20 @@ export function approachSlabTakeoff(i: ApproachSlabInputs, count = 2): Takeoff {
   ];
   if (i.sleeper) {
     const len = Wsk / 12;
-    concrete.push({ label: N > 1 ? "Sleeper slabs" : "Sleeper slab", cy: (N * i.sleeperB * len * (i.sleeperT / 12)) / 27, basis: `${each("sleepers")}${i.sleeperB} ft by ${fit(len)} ft (along the skewed end) by ${i.sleeperT} in`, math: `${times}${ftT(i.sleeperB)}\\cdot\\frac{${ftT(i.W)}}{\\cos\\left(${i.skew}\\mathrm{deg}\\right)}\\cdot ${inT(i.sleeperT)}`, ref: "Sleeper slab: width × its length along the slab's end × thickness" });
+    const block = i.joint === "device";
+    const area = i.sleeperB * (i.sleeperT / 12) + (block ? (i.blockW / 12) * (i.t / 12) : 0);
+    const section = block ? `\\left(${ftT(i.sleeperB)}\\cdot ${inT(i.sleeperT)}+${inT(i.blockW)}\\cdot ${inT(i.t)}\\right)` : `${ftT(i.sleeperB)}\\cdot ${inT(i.sleeperT)}`;
+    concrete.push({ label: N > 1 ? "Sleeper slabs" : "Sleeper slab", cy: (N * area * len) / 27, basis: `${each("sleepers")}${i.sleeperB} ft by ${i.sleeperT} in${block ? `, with a ${i.blockW} by ${i.t} in block under the device` : ""}, ${fit(len)} ft long (along the skewed end)`, math: `${times}${section}\\cdot\\frac{${ftT(i.W)}}{\\cos\\left(${i.skew}\\mathrm{deg}\\right)}`, ref: block ? "Sleeper slab: (base + block under the device) × its length along the slab's end" : "Sleeper slab: width × thickness × its length along the slab's end" });
   }
   const groups = markGroups(pre);
   const sch = schedule(groups, concrete);
   const markOf = (use: string) => groups.find((g) => g.use === use)?.mark ?? "";
   const quantities: Takeoff["quantities"] = {};
   if (i.wearing > 0) quantities.waterproofing = { value: (N * i.L * i.W) / 9, basis: `${each("slabs")}the slab's top under the ${i.wearing} in overlay, ${i.L} ft by ${i.W} ft`, math: `${times}${ftT(i.L)}\\cdot ${ftT(i.W)}`, ref: "the slab's top under the overlay: length × width" };
-  if (i.joint !== "none") quantities.joint = { value: (N * Wsk) / 12, basis: `${each("joints")}across the slab's end, ${fit(Wsk / 12)} ft along the skew`, math: `${times}\\frac{${ftT(i.W)}}{\\cos\\left(${i.skew}\\mathrm{deg}\\right)}`, ref: "the joint along the slab's skewed end" };
+  // The poured joint (Item 408) at the abutment end; with no device, at the sleeper end too (B-601-1).
+  const nSeal = i.joint === "device" ? 1 : 2;
+  quantities.sealant = { value: (N * nSeal * Wsk) / 12, basis: `the poured joint along ${nSeal === 1 ? "the slab's end at the abutment" : "both of the slab's ends"}`, math: `${N * nSeal > 1 ? `${N * nSeal}\\cdot ` : ""}\\frac{${ftT(i.W)}}{\\cos\\left(${i.skew}\\mathrm{deg}\\right)}`, ref: "the poured joint sealant along the skewed end(s), Item 408" };
+  if (i.joint === "device") quantities.joint = { value: (N * Wsk) / 12, basis: `${each("joints")}across the slab's end, ${fit(Wsk / 12)} ft along the skew`, math: `${times}\\frac{${ftT(i.W)}}{\\cos\\left(${i.skew}\\mathrm{deg}\\right)}`, ref: "the joint along the slab's skewed end" };
 
   // --- views (inches, y up) -------------------------------------------------------------------------------------------
   // Longitudinal section along the roadway: the abutment's backwall and notch at the left, the slab, the sleeper at the right.
@@ -85,29 +106,40 @@ export function approachSlabTakeoff(i: ApproachSlabInputs, count = 2): Takeoff {
   const below = 36;
   const xEnd = Lr;
   const sT = i.sleeperT;
+  // The slab sits on the sleeper's ledge (B-601-1EA): the sleeper starts `ledge` back from the slab's end; with the device, a block as deep as the slab next to the end.
+  const ledge = i.sleeperSeat;
+  const block = i.sleeper && i.joint === "device";
+  const sx0 = Lr - ledge; // the sleeper's back edge
   const polys: DetailView["polys"] = [
     { pts: [[-wall, t + 2], [0, t + 2], [0, 0], [seatW, 0], [seatW, -below], [-wall, -below]], style: "concrete" }, // backwall with the notch's seat
     { pts: rect(0, 0, Lr, t), style: "concrete" },
-    { pts: [[seatW, 0], [Lr - (i.sleeper ? B : 0), 0], [Lr - (i.sleeper ? B : 0), -below], [seatW, -below]], style: "earth" },
+    { pts: [[seatW, 0], [i.sleeper ? sx0 : Lr, 0], [i.sleeper ? sx0 : Lr, -below], [seatW, -below]], style: "earth" },
   ];
-  if (i.sleeper) polys.push({ pts: rect(Lr - B / 2 - B / 2, -sT, Lr, 0), style: "concrete" });
+  if (i.sleeper) polys.push({ pts: rect(sx0, -sT, sx0 + B, 0), style: "concrete" });
+  if (block) polys.push({ pts: rect(Lr + 0.5, 0, Lr + 0.5 + i.blockW, t), style: "concrete" });
   const yBot = i.coverBot + bar(i.distBars.bar).db + bar(i.mainBars.bar).db / 2;
   const yTop = t - i.coverTop - bar(i.topTrans.bar).db - bar(i.topLong.bar).db / 2;
   const lines: DetailView["lines"] = [
     { pts: [[C, yBot], [xEnd - C, yBot]], mark: markOf("Main bars, bottom"), kind: "main" },
     { pts: [[C, yTop], [xEnd - C, yTop]], mark: markOf("Longitudinal, top"), kind: "secondary" },
     { pts: [[-wall + 4, -i.dowelAbut + leg], [-wall + 4, -i.dowelAbut], [seatW / 2, -i.dowelAbut], [seatW / 2, t / 2], [seatW / 2 + i.dowelSlab, t / 2]], mark: markOf("Anchorage dowels"), kind: "stirrup" },
+    { pts: [[C + 12, t - i.coverTop], [C, t - i.coverTop], [C, t - i.coverTop - cH], [C + 12, i.coverBot]], mark: markOf("End bars at the abutment"), kind: "stirrup" },
   ];
   const dots: DetailView["dots"] = [];
   const shown = (len: number, s: number) => Math.min(countAt(len, s), 80);
   for (let k = 0; k < shown(Lr - 2 * C, i.distBars.spacing); k++) dots.push({ x: C + k * i.distBars.spacing, y: i.coverBot + bar(i.distBars.bar).db / 2, d: bar(i.distBars.bar).db, mark: markOf("Transverse, bottom") });
   for (let k = 0; k < shown(Lr - 2 * C, i.topTrans.spacing); k++) dots.push({ x: C + k * i.topTrans.spacing, y: t - i.coverTop - bar(i.topTrans.bar).db / 2, d: bar(i.topTrans.bar).db, mark: markOf("Transverse, top") });
   if (i.sleeper) {
-    const x0 = Lr - B;
-    lines.push({ pts: [[x0 + sc, -sT + sc], [Lr - sc, -sT + sc]], mark: markOf("Sleeper, bottom across"), kind: "main" });
+    const yb = -sT + sc;
+    if (block) {
+      const xb = Lr + 0.5 + i.blockW / 2;
+      lines.push({ pts: [[xb - 4, t - 2], [xb + 4, t - 2], [xb + 4, yb], [sx0 + sc, yb]], mark: markOf("Sleeper, bent into the block"), kind: "stirrup" });
+      lines.push({ pts: [[sx0 + B - sc, yb + 7], [sx0 + B - sc, yb], [sx0 + B - sc - 26, yb]], mark: markOf("Sleeper, across the bottom"), kind: "main" });
+      for (const x of [xb - 3, xb + 3]) dots.push({ x, y: t - 3, d: bar(5).db, mark: markOf("Sleeper, in the block") });
+    } else lines.push({ pts: [[sx0 + sc, yb], [sx0 + B - sc, yb]], mark: markOf("Sleeper, across the bottom"), kind: "main" });
     for (let k = 0; k < shown(B - 2 * sc, i.sleeperLong.spacing); k++) {
-      const x = x0 + sc + k * i.sleeperLong.spacing;
-      dots.push({ x, y: -sT + sc + bar(i.sleeperBars.bar).db + bar(i.sleeperLong.bar).db / 2, d: bar(i.sleeperLong.bar).db, mark: markOf("Sleeper, along") });
+      const x = sx0 + sc + k * i.sleeperLong.spacing;
+      dots.push({ x, y: yb + bar(i.sleeperBars.bar).db + bar(i.sleeperLong.bar).db / 2, d: bar(i.sleeperLong.bar).db, mark: markOf("Sleeper, along") });
       dots.push({ x, y: -sc - bar(i.sleeperLong.bar).db / 2, d: bar(i.sleeperLong.bar).db, mark: markOf("Sleeper, along") });
     }
   }
@@ -119,17 +151,18 @@ export function approachSlabTakeoff(i: ApproachSlabInputs, count = 2): Takeoff {
     labels: [
       { x: -wall / 2, y: t + 8, text: "Abutment backwall", anchor: "middle" },
       { x: 30, y: t + 8, text: `Approach slab (${ftIn(Lr)} from the back of the notch)`, anchor: "start" },
-      ...(i.sleeper ? [{ x: Lr - B / 2, y: -sT - 8, text: "Sleeper slab", anchor: "middle" as const }, { x: Lr - B - 20, y: t + 8, text: "Approach slab", anchor: "middle" as const }] : [{ x: Lr - 20, y: t + 8, text: "End of slab", anchor: "middle" as const }]),
+      ...(i.sleeper ? [{ x: sx0 + B / 2, y: -sT - 8, text: `Sleeper slab, ${ftIn(B)}`, anchor: "middle" as const }, { x: Lr - 30, y: t + 8, text: "Approach slab", anchor: "middle" as const }] : [{ x: Lr - 20, y: t + 8, text: "End of slab", anchor: "middle" as const }]),
+      ...(block ? [{ x: Lr + i.blockW / 2, y: t + 8, text: "0–4 in device", anchor: "middle" as const }] : []),
     ],
   };
   // The slab is too long and thin to read at one scale: CDOT's sheets show its two ends.
   const atAbutment = cropView(full, -wall - 2, Math.max(seatW + i.dowelSlab + 18, 72), "Section at the abutment");
-  const atEnd = cropView(full, Lr - (i.sleeper ? B : 0) - 30, Lr + 2, i.sleeper ? "Section at the sleeper slab" : "Section at the slab's end");
+  const atEnd = cropView(full, (i.sleeper ? sx0 : Lr) - 30, i.sleeper ? sx0 + B + 2 : Lr + 2, i.sleeper ? "Section at the sleeper slab" : "Section at the slab's end");
   // Plan: the slab's outline (skewed ends) with a few bars of each mat.
   const off = Wn * Math.tan((i.skew * Math.PI) / 180); // the far edge's shift along the roadway
   const plan: DetailView = {
     title: "Plan",
-    polys: [{ pts: [[0, 0], [Lr, 0], [Lr + off, Wn], [off, Wn]], style: "concrete" }, ...(i.sleeper ? [{ pts: [[Lr - B, 0], [Lr, 0], [Lr + off, Wn], [Lr - B + off, Wn]] as Pt[], style: "dashed" as const }] : [])],
+    polys: [{ pts: [[0, 0], [Lr, 0], [Lr + off, Wn], [off, Wn]], style: "concrete" }, ...(i.sleeper ? [{ pts: [[sx0, 0], [sx0 + B, 0], [sx0 + B + off, Wn], [sx0 + off, Wn]] as Pt[], style: "dashed" as const }] : [])],
     lines: [
       ...Array.from({ length: Math.min(nMain, 12) }, (_, k) => {
         const y = C + ((Wn - 2 * C) * k) / Math.max(1, Math.min(nMain, 12) - 1);
@@ -149,7 +182,9 @@ export function approachSlabTakeoff(i: ApproachSlabInputs, count = 2): Takeoff {
   };
 
   const notes = [
+    "Details after CDOT worksheet B-601-1EA (Approach Slab Details, Asphalt with 0–4\" Joint): Concrete Class DF (its Note 1), 2 in top and 3 in bottom clear. The C-bars' legs and the sleeper's bent bars are as read off the worksheet's sketches; check them against the sheet for the project.",
     "All reinforcing steel is epoxy coated (CDOT BDM 5.4.5: approach slabs, every layer).",
+    `${i.joint === "device" ? "The 0–4 in expansion device (518) sits on the sleeper's block, with 20 Ga galvanized sheet metal under it (included in the work)." : "No expansion device (B-601-1: bridge movement ¾ in or less, asphalt approach)."} The ½ in expansion joint material (AASHTO M213) is included in the work; the poured joint sealant is Item 408.`,
     `Concrete is measured from the back of the approach notch (BDM Section 19). The ${N * nDowel} anchorage dowels are listed here; CDOT's summary of quantities carries the anchorage bars into the abutment with the superstructure.`,
     `Transverse bars run parallel to the slab's ends${i.skew > 0 ? ` (skewed ${i.skew}°), spaced along the roadway` : ""}. Where the skew is 30° or more, BDM 2.2.1.1 asks for the slab's far end square to the roadway where practical: detail that end's fanned bars by hand.`,
     "Drains on the high side of the joint (BDM 2.13), the notch's own bars and the curb or rail transition's bars are not included.",

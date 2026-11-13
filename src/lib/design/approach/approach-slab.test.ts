@@ -11,7 +11,7 @@ import { APPROACH_SLAB_DEFAULTS, designApproachSlab, movingLoad, TANDEM, TRUCK_A
 import { approachSlabCalcLines } from "./approach-slab-calc";
 
 // The approach slab against a hand calculation of the default slab (20 ft long, so a 10 ft design
-// span by CDOT's 50%, 44 ft wide, 12 in thick, #7 @ 6 in bottom), the calc package worked out by
+// span by CDOT's 50%, 44 ft wide, 12 in thick, B-601-1EA's #6 @ 6 in bottom), the calc package worked out by
 // Calcs against the engine, and the take-off.
 
 const close = (a: number, b: number, tol = 1e-3) => expect(Math.abs(a - b)).toBeLessThanOrEqual(tol * Math.max(1, Math.abs(b)));
@@ -40,12 +40,12 @@ describe("approach slab: hand calculation of the default", () => {
     close(r.loads.VLL, (40 * 1.33) / (96.603 / 12)); // 6.609
     close(r.loads.Vu, 1.25 * 0.75 + 1.75 * 6.609);
   });
-  it("main bars: #7 @ 6 in, de = 8.5625 in, φMn = 42.00 kip·ft/ft", () => {
-    close(r.main.de, 12 - 3 - 0.4375);
-    const As = 1.2;
+  it("main bars: #6 @ 6 in, de = 8.625 in, φMn = 31.88 kip·ft/ft", () => {
+    close(r.main.de, 12 - 3 - 0.375);
+    const As = 0.88;
     const a = (As * 60) / (0.85 * 4.5 * 12);
-    close(r.main.MR, (0.9 * As * 60 * (8.5625 - a / 2)) / 12);
-    close(r.main.MR, 42.00, 2e-3);
+    close(r.main.MR, (0.9 * As * 60 * (8.625 - a / 2)) / 12);
+    close(r.main.MR, 31.88, 2e-3);
   });
   it("fatigue: one 32 kip axle, 15% IM, the one-lane strip × 1.2", () => {
     close(r.fatigue.Mfat, (80 * 1.15) / ((1.2 * 96.603) / 12));
@@ -53,8 +53,12 @@ describe("approach slab: hand calculation of the default", () => {
   it("distribution: 100/√10 = 31.6% of the main bars", () => {
     close(r.dist.pct, 1 / Math.sqrt(10));
   });
-  it("the default passes every check", () => {
-    expect(r.checks.filter((c) => !c.ok).map((c) => c.id)).toEqual([]);
+  it("the default (the worksheet's slab) passes every required check; fatigue, for information, does not", () => {
+    expect(r.checks.filter((c) => !c.ok && !c.advisory).map((c) => c.id)).toEqual([]);
+    expect(r.checks.find((c) => c.id === "main-fatigue")!.ok).toBe(false);
+    expect(r.worksheet).toEqual({ bar: 6, spacing: 6 });
+    expect(designApproachSlab({ ...APPROACH_SLAB_DEFAULTS, L: 25 }).worksheet).toEqual({ bar: 9, spacing: 6 });
+    expect(designApproachSlab({ ...APPROACH_SLAB_DEFAULTS, L: 31 }).worksheet).toBeNull();
   });
   it("over 15 ft the full HL-93 with the lane load applies (3.6.1.3.3)", () => {
     const f = designApproachSlab({ ...APPROACH_SLAB_DEFAULTS, L: 30, supportLoss: 1 });
@@ -118,19 +122,23 @@ describe("approach slab take-off", () => {
   it("two slabs by default: concrete, epoxy bars, CDOT pay items", () => {
     const i = approachSlabInputs({});
     const t = takeoffFor("approach-slab", i)!;
-    // 2 × (20 × 44 × 1 ft) / 27 + 2 sleepers 4 × 44 × 1 / 27
-    close(t.schedule.concreteTotal, (2 * 20 * 44) / 27 + (2 * 4 * 44) / 27);
+    // 2 × (20 × 44 × 1 ft) / 27 + 2 sleepers (4 ft × 1 ft + the 1 ft × 1 ft block) × 44 / 27
+    close(t.schedule.concreteTotal, (2 * 20 * 44) / 27 + (2 * 5 * 44) / 27);
     const main = t.schedule.groups.filter((g) => g.use === "Main bars, bottom");
     // 88 bars across 44 ft at 6 in per slab, 2 slabs; each 20 ft less 4 in clear (under 60 ft stock: one piece)
     expect(main.reduce((s, g) => s + g.count, 0)).toBe(2 * 88);
     expect(main[0].length).toBe(236);
     const lines = takeoffPayLines("approach-slab", t, {}, i);
-    expect(lines.map((l) => l.code)).toEqual(["601-03040", "602-00020"]);
+    expect(lines.map((l) => l.code).sort()).toEqual(["408-01100", "518-01004", "601-03056", "602-00020"]);
+    close(t.quantities.sealant!.value, 2 * 44);
+    close(t.quantities.joint!.value, 2 * 44);
+    // The anchorage bars: #5, 2'-9" + 10" (B-601-1EA)
+    expect(t.schedule.groups.find((g) => g.use === "Anchorage dowels")!.length).toBe(43);
     expect(t.schedule.total).toBeCloseTo(t.schedule.bySize.reduce((s, b) => s + b.weight, 0), 6);
     expect(unitWeight(6)).toBe(1.502);
   });
   it("an overlay adds the waterproofing and a joint its skewed length", () => {
-    const i = approachSlabInputs({ wearing: 3, joint: "strip-seal", skew: 30 });
+    const i = approachSlabInputs({ wearing: 3, joint: "device", skew: 30 });
     const t = takeoffFor("approach-slab", i, { length: 1 })!;
     close(t.quantities.waterproofing!.value, (20 * 44) / 9);
     close(t.quantities.joint!.value, 44 / Math.cos(Math.PI / 6));

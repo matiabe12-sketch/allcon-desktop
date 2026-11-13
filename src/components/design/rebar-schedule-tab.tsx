@@ -35,6 +35,7 @@ const ROLE_LABEL: Record<QuantityRole, string> = {
   "soil-reinforcement": "Reinforced soil",
   rail: "Bridge rail",
   removal: "Removal",
+  sealant: "Joint sealant",
 };
 
 /** The design's quantities into its project's line items, under CDOT pay items. */

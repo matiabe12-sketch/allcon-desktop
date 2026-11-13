@@ -10,6 +10,13 @@ import { development } from "../stm/anchorage";
 // main bars (flexure, minimum, crack control, fatigue), shear, distribution bars (9.7.3.2),
 // temperature bars (5.10.6), the dowels into the abutment, the sleeper slab, and a barrier on the
 // slab's edge if there is one (A13.4.1). Per foot of width; kip, foot, and inches for sections.
+//
+// The layout, bars and sleeper are CDOT worksheet B-601-1EA's (Approach Slab Details, Asphalt with
+// 0–4" Joint; B-601-1 without the device): 20'-0" minimum along the roadway, 1'-0" thick, Class DF,
+// #6 @ 6" bottom (#9 for slabs over 20 ft and under 31 ft), #5 @ 1'-0" bottom transverse, #5 @ 1'-0"
+// top transverse, #4 @ 1'-6" top longitudinal, 2" top and 3" bottom clear, #5 @ 1'-0" anchorage bars
+// projecting 1'-6" into the slab, and a 4'-0" by 1'-0" sleeper slab with a 1'-0" wide block under
+// the device.
 
 export type ApproachSlabInputs = {
   L: number; // ft, the slab's length along the roadway, from the back of the abutment's notch
@@ -34,6 +41,7 @@ export type ApproachSlabInputs = {
   dowels: Bars;
   dowelSlab: number; // in, embedment into the slab
   dowelAbut: number; // in, embedment into the abutment, hooked
+  dowelHook: number; // in, the anchorage bar's hooked leg (B-601-1EA: 10")
   seat: number; // in, the notch's seat width under the slab
   // Sleeper slab under the free end
   sleeper: boolean;
@@ -42,16 +50,17 @@ export type ApproachSlabInputs = {
   sleeperBars: Bars; // bottom, across its width (along the roadway)
   sleeperLong: Bars; // along its length (across the roadway), top and bottom
   sleeperSeat: number; // in, width of the slab's bearing on it
+  blockW: number; // in, the block under the expansion device (B-601-1EA: 1'-0")
   qR: number; // ksf, factored bearing resistance (geotechnical report)
   // A barrier on the slab's edge
   barrier: boolean;
   Mc: number; // kip·ft/ft
   T: number; // kip/ft
-  // The joint at the slab's end (BDM 14.4.2)
-  joint: "none" | "strip-seal" | "silicone";
+  // The joint at the slab's end (BDM 14.4.2): B-601-1EA's 0–4" expansion device on the sleeper, or B-601-1's poured joint (movement ≤ ¾" and an asphalt approach)
+  joint: "device" | "none";
 };
 
-/** The defaults: a 20 ft by 44 ft approach slab, 12 in thick, square to the roadway, on a 4 ft sleeper slab. */
+/** The defaults: B-601-1EA's slab, 20 ft by 44 ft, square to the roadway, with its bars and sleeper. */
 export const APPROACH_SLAB_DEFAULTS: ApproachSlabInputs = {
   L: 20,
   W: 44,
@@ -64,29 +73,38 @@ export const APPROACH_SLAB_DEFAULTS: ApproachSlabInputs = {
   fc: 4.5,
   fy: 60,
   gammaC: 0.15,
-  coverTop: 2.5,
+  coverTop: 2,
   coverBot: 3,
   exposure: 1,
-  mainBars: { bar: 7, spacing: 6 },
-  distBars: { bar: 5, spacing: 9 },
-  topLong: { bar: 5, spacing: 12 },
+  mainBars: { bar: 6, spacing: 6 },
+  distBars: { bar: 5, spacing: 12 },
+  topLong: { bar: 4, spacing: 18 },
   topTrans: { bar: 5, spacing: 12 },
-  dowels: { bar: 6, spacing: 12 },
-  dowelSlab: 36,
-  dowelAbut: 18,
+  dowels: { bar: 5, spacing: 12 },
+  dowelSlab: 18,
+  dowelAbut: 15,
+  dowelHook: 10,
   seat: 12,
   sleeper: true,
   sleeperB: 4,
   sleeperT: 12,
   sleeperBars: { bar: 5, spacing: 12 },
-  sleeperLong: { bar: 5, spacing: 12 },
-  sleeperSeat: 12,
+  sleeperLong: { bar: 5, spacing: 10.5 },
+  sleeperSeat: 18,
+  blockW: 12,
   qR: 4,
   barrier: false,
   Mc: 17,
   T: 7,
-  joint: "none",
+  joint: "device",
 };
+
+/** B-601-1EA's bottom bars for a slab of this length: #6 @ 6" at 20 ft, #9 @ 6" over 20 ft and under 31 ft; none beyond (a special design). */
+export function worksheetMainBars(L: number): { bar: number; spacing: number } | null {
+  if (L <= 20 + 1e-9) return { bar: 6, spacing: 6 };
+  if (L < 31) return { bar: 9, spacing: 6 };
+  return null;
+}
 
 /** A vehicle: axle loads (kip) and their positions from the first (ft). */
 type Vehicle = { name: string; axles: { P: number; x: number }[]; lane?: number };
@@ -122,6 +140,9 @@ export function movingLoad(v: Vehicle, S: number) {
   }
   return { M, R, at };
 }
+
+/** The sleeper's bars across its bottom: with the device, B-601-1EA's two bent bars at each place. */
+export const sleeperBottom = (i: ApproachSlabInputs): Bars => (i.joint === "device" ? { bar: i.sleeperBars.bar, spacing: i.sleeperBars.spacing / 2 } : i.sleeperBars);
 
 export function designApproachSlab(i: ApproachSlabInputs) {
   if (!(i.L > 0 && i.W > 0 && i.t > 0)) throw new DesignError("The slab needs a length, a width and a thickness.");
@@ -163,11 +184,15 @@ export function designApproachSlab(i: ApproachSlabInputs) {
   const Vu = 1.25 * VDC + 1.5 * VDW + 1.75 * VLL;
 
   // --- concrete -----------------------------------------------------------------------------------------
+  const area = (b: Bars) => (BARS[b.bar].area * 12) / b.spacing;
   const beta1 = Math.min(0.85, Math.max(0.65, 0.85 - (i.fc - 4) * 0.05));
   const Ec = 120000 * i.gammaC ** 2 * i.fc ** 0.33; // Eq. 5.4.2.4-1
   const n = 29000 / Ec;
   const common = { fc: i.fc, fy: i.fy, Es: 29000, phiF: 0.9, exposure: i.exposure, n, beta1 };
   add({ id: "depth", name: "Slab depth, at least 7.0 in", demand: 7, capacity: i.t, unit: "in", ref: "AASHTO 9.7.1.1" });
+  add({ id: "main-length", name: "Slab length, at least B-601-1EA's 20'-0\" minimum", demand: 20, capacity: i.L, unit: "ft", ref: "CDOT B-601-1EA", advisory: true });
+  const ws = worksheetMainBars(i.L);
+  const wsAs = ws ? (BARS[ws.bar].area * 12) / ws.spacing : 0;
 
   // --- main bars (bottom, along the roadway) -----------------------------------------------------------
   const main = flexure({ ...common, Mu, Ms, h: i.t, cover: i.coverBot, bars: i.mainBars });
@@ -185,7 +210,10 @@ export function designApproachSlab(i: ApproachSlabInputs) {
   const fRange = (1.75 * Mfat * 12) / (main.As * jd);
   const fMin = ((MDC + MDW) * 12) / (main.As * jd);
   const thresh = 26 - (22 * fMin) / i.fy; // Eq. 5.5.3.2-1
-  add({ id: "main-fatigue", name: "Main bars, fatigue stress range (Fatigue I)", demand: fRange, capacity: thresh, unit: "ksi", ref: "AASHTO 5.5.3.2" });
+  // CDOT's predesigned worksheet (the PCI method, BDM 11.3.7) doesn't check fatigue; shown for information.
+  add({ id: "main-fatigue", name: "Main bars, fatigue stress range (Fatigue I), for information", demand: fRange, capacity: thresh, unit: "ksi", ref: "AASHTO 5.5.3.2", advisory: true });
+  if (ws) add({ id: "main-worksheet", name: `Main bars, at least B-601-1EA's #${ws.bar} @ ${ws.spacing}" for a ${i.L} ft slab`, demand: wsAs, capacity: area(i.mainBars), unit: "in²/ft", ref: "CDOT B-601-1EA", advisory: true });
+  else add({ id: "main-worksheet", name: "Slab under 31 ft, B-601-1EA's range (longer: a special design)", demand: i.L, capacity: 31, unit: "ft", ref: "CDOT B-601-1EA", advisory: true, ok: false });
 
   // --- shear ------------------------------------------------------------------------------------------
   const dv = Math.max(0.9 * main.de, 0.72 * i.t);
@@ -193,7 +221,6 @@ export function designApproachSlab(i: ApproachSlabInputs) {
   add({ id: "shear", name: "Shear at the support, φVc (β = 2)", demand: Vu, capacity: 0.9 * Vc, unit: "kip/ft", ref: "AASHTO 5.7.3.3, 5.12.2.1", advisory: true });
 
   // --- distribution and temperature bars --------------------------------------------------------------
-  const area = (b: Bars) => (BARS[b.bar].area * 12) / b.spacing;
   const pct = Math.min(100 / Math.sqrt(S), 50) / 100; // 9.7.3.2, main bars parallel to traffic
   const distRequired = pct * area(i.mainBars);
   add({ id: "dist", name: `Bottom transverse: distribution, ${(pct * 100).toFixed(1)}% of the main bars`, demand: distRequired, capacity: area(i.distBars), unit: "in²/ft", ref: "AASHTO 9.7.3.2" });
@@ -223,15 +250,15 @@ export function designApproachSlab(i: ApproachSlabInputs) {
     const RDC = VDC;
     const RDW = VDW;
     const RLL = VLL; // the end reaction: an axle over the sleeper
-    const wS = (i.gammaC * i.sleeperT) / 12; // ksf, its own weight
+    const wS = (i.gammaC * (i.sleeperT + (i.t * i.blockW) / (12 * i.sleeperB))) / 12; // ksf, its own weight with the device block, spread over its width
     const Pu = 1.25 * RDC + 1.5 * RDW + 1.75 * RLL; // kip/ft along the sleeper
     const qu = Pu / i.sleeperB + 1.25 * wS; // ksf
     add({ id: "sleeper-bearing", name: "Sleeper slab: factored bearing pressure", demand: qu, capacity: i.qR, unit: "ksf", ref: "AASHTO 10.6.3.1" });
-    const c = (i.sleeperB - seat) / 2; // ft, each cantilever from the seat
+    const c = i.sleeperB - seat; // ft, the sleeper beyond the slab's ledge (B-601-1EA), a cantilever under uniform soil pressure
     const qNet = Pu / i.sleeperB; // the soil's pressure from the slab's reaction (its own weight goes straight down)
     const Mus = (qNet * c ** 2) / 2;
     const Mss = (((RDC + RDW + RLL) / i.sleeperB) * c ** 2) / 2;
-    const f = flexure({ ...common, Mu: Mus, Ms: Mss, h: i.sleeperT, cover: 3, bars: i.sleeperBars });
+    const f = flexure({ ...common, Mu: Mus, Ms: Mss, h: i.sleeperT, cover: 3, bars: sleeperBottom(i) });
     add({ id: "sleeper-flexure", name: "Sleeper slab: bottom bars, flexure", demand: Mus, capacity: f.MR, unit: "kip·ft/ft", ref: "AASHTO 5.6.3.2" });
     add({ id: "sleeper-min", name: "Sleeper slab: minimum reinforcement", demand: f.minRequired, capacity: f.MR, unit: "kip·ft/ft", ref: "AASHTO 5.6.3.3" });
     const sTempS = (1.3 * i.sleeperB * 12 * i.sleeperT) / (2 * (i.sleeperB * 12 + i.sleeperT) * i.fy);
@@ -252,6 +279,7 @@ export function designApproachSlab(i: ApproachSlabInputs) {
   }
 
   return {
+    worksheet: ws,
     ok: checks.every((c) => c.ok || c.advisory),
     checks,
     span: { S, NL, L1, E1, Em, E, r, axlesOnly },

@@ -174,7 +174,9 @@ export function ptfeInputs(saved: unknown): BearingInputs {
 /** An approach slab's inputs as saved, filled in from the defaults. */
 export function approachSlabInputs(saved: unknown): ApproachSlabInputs {
   const s = (saved && typeof saved === "object" ? saved : {}) as Partial<ApproachSlabInputs>;
-  const joint = s.joint === "strip-seal" || s.joint === "silicone" ? s.joint : "none";
+  // Saved before B-601-1EA: a strip seal is its 0–4" device; anything else B-601-1's poured joint.
+  const was = (s as { joint?: string }).joint;
+  const joint = was === "none" || was === "silicone" ? "none" : "device";
   return { ...APPROACH_SLAB_DEFAULTS, ...s, joint, sleeper: s.sleeper !== false, barrier: s.barrier === true };
 }
 

@@ -24,11 +24,28 @@ Manual (BDM), with its bars detailed, a bar schedule and its quantities under CD
   of the approach slab: required against concrete pavement, otherwise when movement > ¾ in),
   Section 19 quantities (an approach slab column in the SOQ, measured from the back of the
   approach notch; the anchorage bar into the abutment carried in the superstructure quantities).
-- CDOT Staff Bridge worksheets (June 2026 zip): CDOT no longer posts the approach slab worksheet
-  itself as a PDF (only the DGN set, which nothing here reads). The sleeper versions of the rail
-  transitions (B-606-9B, -9D, -10MASHA-S, -10MASHC-S) show the approach slab on a sleeper slab and
-  refer to "the approach slab sheet"; B-206-F1 / M1 show it over the abutment backfill; B-518-1 the
-  0–4 in joint at its end; B-100-1 the SOQ.
+- **CDOT worksheet B-601-1EA** (Approach Slab Details, Asphalt with 0–4" Joint; the owner's main
+  reference) and B-601-1 (the same without the device, for movement ≤ ¾ in). Both are served at
+  codot.gov's `structural-worksheets-pdfs/b-600/sheet_b-601-1ea.pdf` (and `sheet_b-601-1.pdf`)
+  though the index pages don't list them. What the tool takes from B-601-1EA:
+  - 20'-0" minimum along the roadway, ends parallel to the abutment (20'-0" sin θ normal to it),
+    1'-0" thick, Concrete Class DF (Note 1, so 601-03056 is the default pay item), 2 in top and
+    3 in bottom clear.
+  - Bars: #6 @ 6" bottom along the roadway ("use #9 for approach slabs greater than 20' and less
+    than 31' long"; an information check compares the design's bars with the worksheet's),
+    #5 @ 1'-0" bottom and top transverse, #4 @ 1'-6" top longitudinal, #5 @ 1'-0" anchorage bars
+    2'-9" with a 10" leg projecting 1'-6" into the slab (Detail 1), #4 ⊏ @ 1'-6" at the slab's end.
+  - Sleeper slab 4'-0" by 1'-0", the slab on a 1'-6" ledge, a 1'-0" block under the 0–4 in device,
+    #5 @ 1'-0" bent bars (two at each place), #5 (Tot 10) along it, #5 (Tot 2) in the block.
+    The C-bars' legs and the bent bars' shapes are read off the sketches: check against the sheet.
+  - The ½ in expansion joint material and 20 Ga sheet metal are included in the work; the poured
+    joint at the abutment end (both ends without the device) is Item 408-01100 Joint Sealant (LF);
+    the device is 518-01004 (LF) along the skewed end.
+  - CDOT's worksheet is predesigned (PCI method) and doesn't check fatigue: with its #6 @ 6" the
+    AASHTO 5.5.3 fatigue check doesn't pass (≈29 ksi against ≈25 ksi), so fatigue is shown for
+    information only.
+- Other worksheets: the sleeper versions of the rail transitions (B-606-9B, -9D, -10MASHA-S,
+  -10MASHC-S), B-206-F1 / M1, B-518-1, B-100-1.
 
 ## Method
 
@@ -72,10 +89,10 @@ Manual (BDM), with its bars detailed, a bar schedule and its quantities under CD
 - Details: plan of the slab with the bars, longitudinal section through the notch, slab and
   sleeper; bar schedule (CDOT callouts by size and use, splices on 40/60 ft stock, lengths rounded
   down to the inch).
-- Quantities (CDOT SOQ approach slab column): 601-03040 Concrete Class D (Bridge) (slab from the
-  back of the notch, plus the sleeper slab), 602-00020 Reinforcing Steel (Epoxy Coated),
-  515-00120 Waterproofing (Membrane) when there's an HMA overlay, 518 joint at the slab's end when
-  chosen (B-518-1 0–4 in by default), by the joint's skewed length.
+- Quantities (CDOT SOQ approach slab column): 601-03056 Concrete Class DF (B-601-1EA Note 1; slab from the
+  back of the notch, plus the sleeper slab and its block), 602-00020 Reinforcing Steel (Epoxy
+  Coated), 515-00120 Waterproofing (Membrane) under an HMA overlay, 518-01004 for the 0–4 in device
+  and 408-01100 Joint Sealant for the poured joint, by the skewed lengths.
 
 ## Where CDOT differs from AASHTO
 
@@ -86,6 +103,5 @@ Manual (BDM), with its bars detailed, a bar schedule and its quantities under CD
 - Corrosion protection: CDOT requires epoxy-coated bars in approach slabs (BDM 5.4.5).
 - Quantities: CDOT measures from the back of the notch and carries the anchorage bars in the
   superstructure column; the schedule lists the anchorage bars and says so.
-- CDOT's own worksheet (not public as a PDF) is "predesigned"; a design check of the worksheet's
-  bars only applies where a project departs from it. The default bars here are the tool's, sized
-  to pass the default 20 ft slab, not the worksheet's.
+- CDOT's B-601-1EA is "predesigned"; the defaults are its slab and bars, and the design check
+  shows where a project departs from it (fatigue, which the worksheet doesn't check, for information).

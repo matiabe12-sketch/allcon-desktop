@@ -3,7 +3,7 @@ import { checksSummary } from "../checks-summary";
 import { COLOR_NOTE, INPUT_COLOR, isInput, num } from "../calc-style";
 import type { Figure } from "../figures";
 import { BARS, type Bars } from "../walls/cip";
-import { designApproachSlab, type ApproachSlabInputs } from "./approach-slab";
+import { designApproachSlab, sleeperBottom, type ApproachSlabInputs } from "./approach-slab";
 
 // An approach slab as a Calcs worksheet: the design span and the equivalent strip, the dead load
 // moments, the main bars, fatigue, shear, distribution and temperature bars, the dowels and the
@@ -34,7 +34,7 @@ export function approachSlabCalcLines(i: ApproachSlabInputs, title: string, figu
   text(title.toUpperCase(), "heading");
   text(`Purpose:- The design of a ${num(i.t)} in cast-in-place approach slab, ${num(i.L)} ft long from the back of the abutment's notch and ${num(i.W)} ft wide${i.skew > 0 ? `, skewed ${num(i.skew)}°` : ""}, anchored to the abutment${i.sleeper ? " and resting on a sleeper slab at its far end" : ""}, to AASHTO LRFD (10th Edition) and the CDOT Bridge Design Manual.`);
   text(
-    `Method:- The slab spans along the roadway as a one-way slab. The fill beneath it is taken to settle away from it over ${num(i.supportLoss * 100)}% of its length, which it then spans as a simple span (CDOT BDM 11.3.7, the PCI method). The vehicle's ${r.span.axlesOnly ? "axles alone (the span is 15 ft or less)" : "full HL-93 load (the span is over 15 ft)"} act on it (AASHTO 3.6.1.3.3), over the equivalent strip of a slab-type bridge (AASHTO 4.6.2.3). Its bars are epoxy coated (CDOT BDM 5.4.5).`,
+    `Method:- The slab spans along the roadway as a one-way slab. The fill beneath it is taken to settle away from it over ${num(i.supportLoss * 100)}% of its length, which it then spans as a simple span (CDOT BDM 11.3.7, the PCI method). The vehicle's ${r.span.axlesOnly ? "axles alone (the span is 15 ft or less)" : "full HL-93 load (the span is over 15 ft)"} act on it (AASHTO 3.6.1.3.3), over the equivalent strip of a slab-type bridge (AASHTO 4.6.2.3). Its bars are epoxy coated (CDOT BDM 5.4.5). The layout, bars and sleeper slab follow CDOT worksheet B-601-1EA.`,
   );
   text(COLOR_NOTE, "note");
 
@@ -46,6 +46,7 @@ export function approachSlabCalcLines(i: ApproachSlabInputs, title: string, figu
   m(`\\theta\\coloneq ${num(i.skew)}\\mathrm{deg}`, "Skew");
   m(`t_s\\coloneq ${num(i.t)}\\mathrm{in}`, "Slab thickness");
   m(ok("7\\mathrm{in}", "t_s"), "Least depth, AASHTO 9.7.1.1");
+  m(ok("20\\mathrm{ft}", "L_s"), "For information: the worksheet's least length, CDOT B-601-1EA");
   m(`k_s\\coloneq ${num(i.supportLoss)}`, "The design span as a fraction of the length, CDOT BDM 11.3.7");
   m("S_d\\coloneq k_s\\cdot L_s=", "Design span", "ft");
   m(`f'_{c}\\coloneq ${num(i.fc)}\\mathrm{ksi}`);
@@ -98,6 +99,14 @@ export function approachSlabCalcLines(i: ApproachSlabInputs, title: string, figu
   m("a\\coloneq\\frac{A_s\\cdot f_y}{0.85\\cdot f'_{c}}=", "Stress block", "in");
   m("M_r\\coloneq0.9\\cdot A_s\\cdot f_y\\cdot\\left(d_e-\\frac{a}{2}\\right)=", "AASHTO 5.6.3.2", "kip*ft/ft");
   m(ok("M_u", "M_r"), "Flexure");
+  if (r.worksheet) {
+    text(`Worksheet:- CDOT B-601-1EA puts #${r.worksheet.bar} bars at ${r.worksheet.spacing} in in the bottom of a ${num(i.L)} ft slab (#6 at 20 ft, #9 over 20 ft and under 31 ft).`, "note");
+    m(`A_{ws}\\coloneq\\frac{${num(BARS[r.worksheet.bar].area)}\\mathrm{in}^{2}}{${num(r.worksheet.spacing)}\\mathrm{in}}=`, "The worksheet's bars", "in^2/ft");
+    m(ok("A_{ws}", "A_s"), "For information: at least the worksheet's, CDOT B-601-1EA");
+  } else {
+    text("Worksheet:- CDOT B-601-1EA covers slabs under 31 ft; this one is a special design.", "note");
+    m(ok("L_s", "31\\mathrm{ft}"), "For information: within the worksheet's range");
+  }
   m("M_{cr}\\coloneq0.67\\cdot1.6\\cdot f_r\\cdot\\frac{t_s^{2}}{6}=", "AASHTO Eq. 5.6.3.3-1", "kip*ft/ft");
   m(ok("\\min\\left(1.33\\cdot M_u,M_{cr}\\right)", "M_r"), "Minimum reinforcement, AASHTO 5.6.3.3");
   m("\\rho\\coloneq\\frac{A_s}{d_e}=");
@@ -111,14 +120,14 @@ export function approachSlabCalcLines(i: ApproachSlabInputs, title: string, figu
   m(ok("s_m", "s_{max}"), "Bar spacing");
   m(ok("s_m", "\\min\\left(1.5\\cdot t_s,18\\mathrm{in}\\right)"), "Spacing of primary bars, AASHTO 5.10.3.2");
 
-  text("Fatigue of the main bars (AASHTO 5.5.3.2)", "subheading", { keepWithNext: true });
+  text("Fatigue of the main bars (AASHTO 5.5.3.2), for information", "subheading", { keepWithNext: true });
   text("Fatigue I:- one fatigue truck (AASHTO 3.6.1.4.1), its rear axles 30 ft apart, with IM 15%, over the one-lane strip with its multiple presence factor of 1.2 taken back out (AASHTO C4.6.2.3, 3.6.1.4.3b).");
   given(`M_{fv}\\coloneq ${num(r.fatigue.M)}\\mathrm{kip}\\cdot\\mathrm{ft}`, "The fatigue truck moved across the span");
   m("M_f\\coloneq\\frac{1.15\\cdot M_{fv}}{1.2\\cdot E_1}\\cdot r_{sk}=", undefined, "kip*ft/ft");
   m("f_{rng}\\coloneq\\frac{1.75\\cdot M_f}{A_s\\cdot j\\cdot d_e}=", "Stress range, γ = 1.75", "ksi");
   m(`f_{min}\\coloneq\\frac{M_{DC}${dw ? "+M_{DW}" : ""}}{A_s\\cdot j\\cdot d_e}=`, "Under the permanent loads", "ksi");
   m("F_{TH}\\coloneq26\\mathrm{ksi}-22\\cdot\\frac{f_{min}}{f_y}\\cdot\\mathrm{ksi}=", "AASHTO Eq. 5.5.3.2-1", "ksi");
-  m(ok("f_{rng}", "F_{TH}"), "Fatigue");
+  m(ok("f_{rng}", "F_{TH}"), "For information: CDOT's predesigned worksheet does not check fatigue");
 
   text("Shear (AASHTO 5.12.2.1, 5.7.3.3)", "subheading", { keepWithNext: true });
   text("Shear:- slabs designed for moment by AASHTO 4.6.2.3 may be taken as satisfactory for shear (AASHTO 5.12.2.1). The concrete's resistance with β = 2 is shown as well.");
@@ -149,18 +158,19 @@ export function approachSlabCalcLines(i: ApproachSlabInputs, title: string, figu
   if (r.sleeper) {
     const sb = BARS[i.sleeperBars.bar];
     text("Sleeper slab", "subheading", { keepWithNext: true });
-    text("Sleeper:- the slab's end reaction (the span next to the sleeper) is spread over the sleeper's width; the sleeper's own weight bears directly. Its bottom bars across its width take the soil's pressure as two cantilevers from the slab's seat.");
+    text("Sleeper:- as CDOT worksheet B-601-1EA lays it out, 4'-0\" by 1'-0\" with a block under the expansion device and the slab on a ledge. The slab's end reaction (the span next to the sleeper) is spread uniformly over the sleeper's width; its own weight and the block's bear directly. Its bars across its width take the soil's pressure on the part beyond the slab's ledge as a cantilever.");
     m(`B_{sl}\\coloneq ${num(i.sleeperB)}\\mathrm{ft}`, "Width along the roadway");
     m(`t_{sl}\\coloneq ${num(i.sleeperT)}\\mathrm{in}`, "Thickness");
-    m(`b_{seat}\\coloneq ${num(i.sleeperSeat)}\\mathrm{in}`, "The slab's seat on it");
+    m(`b_{seat}\\coloneq ${num(i.sleeperSeat)}\\mathrm{in}`, "The slab's ledge on it");
     m(`P_u\\coloneq1.25\\cdot V_{DC}${dw ? "+1.5\\cdot V_{DW}" : ""}+1.75\\cdot V_{LL}=`, "Strength I end reaction", "kip/ft");
-    m("q_u\\coloneq\\frac{P_u}{B_{sl}}+1.25\\cdot\\gamma_c\\cdot t_{sl}=", "Factored bearing pressure", "ksf");
+    m(`b_{blk}\\coloneq ${num(i.blockW)}\\mathrm{in}`, "The block under the device, as deep as the slab");
+    m("q_u\\coloneq\\frac{P_u}{B_{sl}}+1.25\\cdot\\gamma_c\\cdot\\left(t_{sl}+\\frac{t_s\\cdot b_{blk}}{B_{sl}}\\right)=", "Factored bearing pressure", "ksf");
     m(`q_R\\coloneq ${num(i.qR)}\\mathrm{ksf}`, "Factored bearing resistance, geotechnical report, AASHTO 10.6.3.1");
     m(ok("q_u", "q_R"), "Bearing");
-    m("c_{sl}\\coloneq\\frac{B_{sl}-b_{seat}}{2}=", "Each cantilever", "ft");
+    m("c_{sl}\\coloneq B_{sl}-b_{seat}=", "Beyond the slab's ledge", "ft");
     m("M_{usl}\\coloneq\\frac{P_u}{B_{sl}}\\cdot\\frac{c_{sl}^{2}}{2}=", undefined, "kip*ft/ft");
     m(`d_{sl}\\coloneq t_{sl}-3\\mathrm{in}-\\frac{${num(sb.dia)}\\mathrm{in}}{2}=`, `#${i.sleeperBars.bar} at ${num(i.sleeperBars.spacing)} in, 3 in cover`, "in");
-    m(`A_{sl}\\coloneq ${barArea(i.sleeperBars)}=`, undefined, "in^2/ft");
+    m(`A_{sl}\\coloneq ${barArea(sleeperBottom(i))}=`, i.joint === "device" ? "Two bars at each place, CDOT B-601-1EA" : undefined, "in^2/ft");
     m("M_{rsl}\\coloneq0.9\\cdot A_{sl}\\cdot f_y\\cdot\\left(d_{sl}-\\frac{A_{sl}\\cdot f_y}{2\\cdot0.85\\cdot f'_{c}}\\right)=", "AASHTO 5.6.3.2", "kip*ft/ft");
     m(ok("M_{usl}", "M_{rsl}"), "Flexure");
     m("M_{crsl}\\coloneq0.67\\cdot1.6\\cdot f_r\\cdot\\frac{t_{sl}^{2}}{6}=", "AASHTO Eq. 5.6.3.3-1", "kip*ft/ft");

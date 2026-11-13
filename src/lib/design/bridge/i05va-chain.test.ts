@@ -10,6 +10,9 @@ describe("I-05-VA through the Bridge, end to end", async () => {
     b: I05VA,
     girder: I05VA_GIRDER,
     pad: I05VA_PAD,
+    // B11/B10 (deck reinforcing, superstructure section): #5 @ 6 top transverse, #4 hairpins @ 6 at the deck
+    // edge, #4 @ 6 top longitudinal; precast deck panels (their strands are the bottom transverse steel).
+    deck: { topBars: { bar: 5, spacing: 6 }, overhangBars: { bar: 4, spacing: 6 }, topLong: { bar: 4, spacing: 6 } },
     // Abutments: 9 HP 14x89 (B02: 201 and 203 LF, each about 22.4 ft with 1.5 ft in the cap); the cap 3 ft wide
     // (its back face 1'-6" behind the bearings, B03), 7.5 ft deep to its bottom (El. 5009.0 under seats at 5016.5).
     abutment: (k) => ({ type: "integral-piles", section: "HP14x89", nPiles: 9, pileLength: (k === 0 ? 201 : 203) / 9 - 1.5, embed: 18, capWidth: 3, capDepth: 7.5, soil: I05VA_ABUT_SOIL, prebore: 0 }),

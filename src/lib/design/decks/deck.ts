@@ -34,6 +34,8 @@ export type DeckInputs = {
   botBars: Bars; // transverse, bottom
   topLong: Bars; // longitudinal, top
   botLong: Bars; // longitudinal, bottom (distribution)
+  /** More top transverse bars in the overhang (CDOT's #4 hairpins at the deck edge), counted with the top bars in the collision cases. */
+  overhangBars?: Bars | null;
   // Overhang, for vehicle collision (Table A13.2-1 and the barrier's own analysis)
   Mc: number; // kip·ft/ft, the barrier's flexural resistance at its base
   T: number; // kip/ft, axial tension, Rw / (Lc + 2H) (Eq. A13.4.2-1)
@@ -45,6 +47,9 @@ export type DeckInputs = {
   /** Started from a girder design, which carries the deck's concrete, the rails and the waterproofing in its quantities: this design adds the bars. */
   fromGirder?: { id: string; name: string } | null;
 };
+
+/** CDOT BDM Example 6.2 (Type 10 MASH, TL-4): the deck overhang's moment and tension at the curb face. */
+export const CDOT_T10_TL4 = { Mc: 19.66, T: 7.26 };
 
 export const RAIL_DEFAULT: NonNullable<DeckInputs["rail"]> = { type: "custom", testLevel: "TL-5", steel: "A1035" };
 
@@ -66,6 +71,9 @@ export function withRail(i: DeckInputs) {
       la: r.la,
       // The deck develops the wall's Mc as the yield lines take it, averaged over its varying height (A13.4.2, CA13.3.1).
       ...(parapet ? { Mc: parapet.interior.Mc, T: parapet.interior.T } : {}),
+      // Type 10 MASH (curb and posts): the curb face's moment and tension from the post and rail capacities, as
+      // CDOT's BDM Example 6.2 works them out for TL-4 (impact at a post controls).
+      ...(choice.type === "type10-mash" && choice.testLevel === "TL-4" ? CDOT_T10_TL4 : {}),
     },
     rail: { ...r, choice },
   };
@@ -319,11 +327,12 @@ export function designDeck(entered: DeckInputs) {
   };
   // Case 1: transverse collision at the barrier face, the barrier's moment with the axial tension.
   const h1 = thickness(bw);
-  const case1 = { x: bw, h: h1, MDC: dcAt(bw), MDW: dwAt(bw), Mu: dcAt(bw) + dwAt(bw) + i.Mc, As: asTop - (0.5 * i.T) / i.fy, MR: 0 };
+  const asOH = asTop + (i.overhangBars ? area(i.overhangBars) : 0); // the top bars where the collision cases act
+  const case1 = { x: bw, h: h1, MDC: dcAt(bw), MDW: dwAt(bw), Mu: dcAt(bw) + dwAt(bw) + i.Mc, As: asOH - (0.5 * i.T) / i.fy, MR: 0 };
   case1.MR = capacity(h1, case1.As, 1.0);
   add({ id: "oh-case1", name: "Overhang, Case 1: transverse collision at the barrier face", demand: case1.Mu, capacity: case1.MR, unit: "kip·ft/ft", ref: "AASHTO A13.4.1" });
   // Case 2: vertical collision.
-  const case2 = { Mv: (i.Fv * i.la) / i.Lv, Mu: dcAt(bw) + (i.Fv * i.la) / i.Lv, MR: capacity(h1, asTop, 1.0) };
+  const case2 = { Mv: (i.Fv * i.la) / i.Lv, Mu: dcAt(bw) + (i.Fv * i.la) / i.Lv, MR: capacity(h1, asOH, 1.0) };
   add({ id: "oh-case2", name: "Overhang, Case 2: vertical collision", demand: case2.Mu, capacity: case2.MR, unit: "kip·ft/ft", ref: "AASHTO A13.4.1" });
   // Case 3: Strength I at the design section by the exterior girder.
   const x3 = i.overhang - d;
@@ -348,7 +357,7 @@ export function designDeck(entered: DeckInputs) {
       add({ id: "rail-rw-end", name: `Rail resistance Rw at an end or joint, ${rail.choice.testLevel}`, demand: f.Ft, capacity: p.end.Rw, unit: "kip", ref: "AASHTO A13.3.1", advisory: true, ok: p.end.Rw >= f.Ft });
       // At the rail's ends (its end zones' closer bars): the deck there carries the larger Mc and T.
       const McE = p.end.Mc;
-      const AsE = asTop - (0.5 * p.end.T) / i.fy;
+      const AsE = asOH - (0.5 * p.end.T) / i.fy;
       endCase1 = { Mc: McE, T: p.end.T, Mu: dcAt(bw) + dwAt(bw) + McE, MR: capacity(h1, AsE, 1.0) };
       add({ id: "oh-case1-end", name: "Overhang, Case 1 at the rail's ends and joints (its end zones)", demand: endCase1.Mu, capacity: endCase1.MR, unit: "kip·ft/ft", ref: "AASHTO A13.4.2", advisory: true, ok: endCase1.Mu <= endCase1.MR });
     }

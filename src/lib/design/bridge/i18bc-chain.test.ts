@@ -53,7 +53,11 @@ async function build() {
   const g = run.groups[0].inputs;
   const report: string[] = [];
   const superParts: CalcPart[] = [];
-  const deck = { ...deckFromBridge(b, run, deckInputs({}), { id: "g", name: "Girders" }), topBars: { bar: 5, spacing: 6 }, botBars: { bar: 5, spacing: 6 }, topLong: { bar: 4, spacing: 6 }, botLong: { bar: 4, spacing: 5 } };
+  // B22: #5 @ 6 top and bottom transverse, #4 @ 6 top longitudinal. The rail is a Type 10 MASH with a 2 in taller
+  // curb, evaluated for the project ("Modified Bridge Rail Type 10 MASH Evaluation", TL-4): at the curb face
+  // Mct = 11.484 kip·ft/ft (three-span mechanism) with T = 6.714 kip/ft, in place of the standard's (BDM Ex. 6.2).
+  const fromBridge = deckFromBridge(b, run, deckInputs({}), { id: "g", name: "Girders" });
+  const deck = { ...fromBridge, rail: { ...fromBridge.rail!, type: "custom" as const }, barrierWeight: 0.289 + (2 / 12) * 1.5 * 0.15, barrierCg: 12.63, Mc: 11.484, T: 6.714, topBars: { bar: 5, spacing: 6 }, botBars: { bar: 5, spacing: 6 }, topLong: { bar: 4, spacing: 6 }, botLong: { bar: 4, spacing: 5 } };
   superParts.push({ label: "Deck, overhang and rail", name: "I-18-BC deck", lines: deckCalcLines(deck, "I-18-BC deck"), checks: [{ checks: designDeck(deck).checks }] });
   const gr = run.groups[0].result;
   superParts.push({ label: "Girders, spans 1–2", name: "I-18-BC girders", lines: girderCalcLines(g, "I-18-BC girders"), checks: [...gr.spans.flatMap((s) => [s.interior, s.exterior].map((x) => ({ title: `span ${s.index + 1} ${x.exterior ? "exterior" : "interior"}`, checks: x.checks }))), ...gr.piers.flatMap((p) => (["interior", "exterior"] as const).map((side) => ({ title: `pier ${side}`, checks: p[side].checks })))] });

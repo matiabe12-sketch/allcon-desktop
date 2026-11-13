@@ -5,7 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { designDeck, RAIL_DEFAULT, type DeckInputs } from "@/lib/design/decks/deck";
 import { RAILS, type RailKey, type RailSteel, type TestLevel } from "@/lib/design/decks/rails";
 import { DesignError } from "@/lib/design/walls/cip";
-import { BarsField, ChecksBanner, ChecksTable, Choice, DesignErrorCard, DesignHeader, Field, fmt, KeyValues, Section } from "./design-kit";
+import { BarsField, ChecksBanner, ChecksTable, Choice, DesignErrorCard, DesignHeader, Field, fmt, KeyValues, Section, Toggle } from "./design-kit";
 import { TakeoffPanel } from "./takeoff-panel";
 import { DeckSketch } from "./deck-sketch";
 
@@ -84,6 +84,8 @@ export function DeckEditor({ design, projects }: { design: { id: string; name: s
               <BarsField label="Bottom transverse" value={inputs.botBars} onChange={set("botBars")} />
               <BarsField label="Top longitudinal" value={inputs.topLong} onChange={set("topLong")} />
               <BarsField label="Bottom longitudinal" value={inputs.botLong} onChange={set("botLong")} />
+              <Toggle label="More top bars in the overhang (hairpins)" value={!!inputs.overhangBars} onChange={(v) => set("overhangBars")(v ? { bar: 4, spacing: 6 } : null)} />
+              {inputs.overhangBars && <BarsField label="Overhang top bars" value={inputs.overhangBars} onChange={set("overhangBars")} />}
             </Section>
             {!(r?.rail?.resistance) && (
               <Section title="Overhang: vehicle collision (A13)">

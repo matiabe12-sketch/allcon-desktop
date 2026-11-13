@@ -218,7 +218,9 @@ export function deckFromBridge(b: BridgeInputs, run: BridgeRun, current: DeckInp
     overhang: Math.round(run.layout.overhang * 1000) / 1000,
     t,
     tEdge: Math.max(current.tEdge, t),
-    tFlange: Math.max(current.tFlange, t),
+    // CDOT BDM 9.7.1: the overhang's soffit 1 in below the top of the girder's flange, so at the flange's edge
+    // the deck, the haunch and 1 in; the haunch taken as none there (the least it can be), which is conservative.
+    tFlange: Math.max(current.tFlange, t + 1),
     flange: shape.topWidth,
     fc: b.fcDeck,
     barrierWidth: b.barrierWidth * 12,

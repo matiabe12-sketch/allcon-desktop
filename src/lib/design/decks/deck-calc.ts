@@ -121,14 +121,17 @@ export function deckCalcLines(i: DeckInputs, title: string, figures?: { section?
     m("M_c\\coloneq M_{cw}=", "The parapet's Mc as its yield lines take it, averaged over its height (AASHTO A13.4.2, CA13.3.1)", "kip*ft/ft");
     m("T\\coloneq\\frac{R_w}{L_c+2\\cdot H_w}=", "Axial tension, AASHTO Eq. A13.4.2-1", "kip/ft");
   } else {
-    m(`M_c\\coloneq ${num(a.Mc)}${kft}`, "The barrier's flexural resistance at its base");
+    m(`M_c\\coloneq ${num(a.Mc)}${kft}`, a.rail?.type === "type10-mash" ? "At the curb face, from the posts and rails (CDOT BDM Example 6.2, TL-4)" : "The barrier's flexural resistance at its base");
     m(`T\\coloneq ${num(a.T)}\\frac{\\mathrm{kip}}{\\mathrm{ft}}`, "Axial tension, Rw / (Lc + 2H), AASHTO Eq. A13.4.2-1");
   }
   given(`h_1\\coloneq ${num(case1.h, 8)}\\mathrm{in}`, "Overhang depth at the barrier face");
   given(`M_{DC1}\\coloneq ${num(case1.MDC, 8)}${kft}`, "Barrier and slab, about the barrier face");
   given(`M_{DW1}\\coloneq ${num(case1.MDW, 8)}${kft}`);
   m("M_{u1}\\coloneq M_{DC1}+M_{DW1}+M_c=", "Case 1, Extreme Event II", "kip*ft/ft");
-  m("A_{s1}\\coloneq A_{st}-\\frac{0.5\\cdot T}{f_y}=", "Top bars less half the tension", "in^2/ft");
+  const oh = a.overhangBars;
+  if (oh) m(`A_{so}\\coloneq ${area(oh)}=`, `#${oh.bar} @ ${num(oh.spacing)} in more in the overhang`, "in^2/ft");
+  const Ast = oh ? "\\left(A_{st}+A_{so}\\right)" : "A_{st}";
+  m(`A_{s1}\\coloneq ${Ast}-\\frac{0.5\\cdot T}{f_y}=`, "Top bars less half the tension", "in^2/ft");
   m("d_1\\coloneq h_1-c_t-\\frac{d_{bt}}{2}=", undefined, "in");
   m("M_{r1}\\coloneq1.0\\cdot A_{s1}\\cdot f_y\\cdot\\left(d_1-\\frac{A_{s1}\\cdot f_y}{2\\cdot0.85\\cdot f'_{c}}\\right)=", "φ = 1.0", "kip*ft/ft");
   m(ok("M_{u1}", "M_{r1}"), "Case 1: transverse collision");
@@ -137,7 +140,7 @@ export function deckCalcLines(i: DeckInputs, title: string, figures?: { section?
   m(`L_v\\coloneq ${num(a.Lv)}\\mathrm{ft}`);
   m(`l_a\\coloneq ${num(a.la)}\\mathrm{ft}`, "Its lever arm, the rail's top to its traffic face");
   m("M_{u2}\\coloneq M_{DC1}+\\frac{F_v\\cdot l_a}{L_v}=", "Case 2, Extreme Event II", "kip*ft/ft");
-  m("M_{r2}\\coloneq1.0\\cdot A_{st}\\cdot f_y\\cdot\\left(d_1-\\frac{A_{st}\\cdot f_y}{2\\cdot0.85\\cdot f'_{c}}\\right)=", undefined, "kip*ft/ft");
+  m(`M_{r2}\\coloneq1.0\\cdot ${Ast}\\cdot f_y\\cdot\\left(d_1-\\frac{${Ast}\\cdot f_y}{2\\cdot0.85\\cdot f'_{c}}\\right)=`, undefined, "kip*ft/ft");
   m(ok("M_{u2}", "M_{r2}"), "Case 2: vertical collision");
   given(`h_3\\coloneq ${num(case3.h, 8)}\\mathrm{in}`, "Overhang depth at the design section by the girder");
   given(`M_{DC3}\\coloneq ${num(case3.MDC, 8)}${kft}`);

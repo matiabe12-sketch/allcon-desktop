@@ -15,6 +15,8 @@ import { haunchCalcLines } from "@/lib/design/girders/haunch-calc";
 import { toConfirm } from "@/lib/design/girders/from-plans";
 import { girderCalcLines } from "@/lib/design/girders/prestressed-calc";
 import { approachSlabCalcLines } from "@/lib/design/approach/approach-slab-calc";
+import { foundationCalcLines } from "@/lib/design/foundations/calc";
+import { FOUNDATION_KINDS, foundationInputs, type FoundationKind } from "@/lib/design/foundations/kinds";
 import { stripSealCalcLines } from "@/lib/design/joints/strip-seal-calc";
 import { dtRatingCalcLines } from "@/lib/design/rating/double-tee-calc";
 import { missingInputs } from "@/lib/design/rating/sources";
@@ -25,7 +27,7 @@ import { columnCalcLines } from "@/lib/design/piers/column-calc";
 import { columnLinkFrom } from "@/lib/design/piers/column-link";
 import { zone1CalcLines } from "@/lib/design/seismic/zone1-calc";
 import { cbcCalcLines } from "@/lib/design/culverts/cbc-calc";
-import { approachSlabFigures, bearingFigures, capDetailFigures, takeoffFigures, cbcFigures, cipFigures, uStairFigures, columnFigures, deckFigures, dtFigures, girderFigures, haunchFigures, mseFigures, signFigures, stmFigures, stripSealFigures, wingwallFigures } from "@/lib/design/figures";
+import { approachSlabFigures, foundationFigures, bearingFigures, capDetailFigures, takeoffFigures, cbcFigures, cipFigures, uStairFigures, columnFigures, deckFigures, dtFigures, girderFigures, haunchFigures, mseFigures, signFigures, stmFigures, stripSealFigures, wingwallFigures } from "@/lib/design/figures";
 import { girderSide, type GirderSide } from "@/lib/design/stm/cap-loads";
 import { nodeLpSolver } from "@/lib/design/stm/lp-node";
 import { designStm, stmInputs, type StmInputs } from "@/lib/design/stm/strut-tie";
@@ -282,7 +284,8 @@ export async function createCalcFromDesign(designId: string, variant?: "asd" | "
       ? cipAsdUCalcLines(cipInputs(design.inputs), design.name, figures(() => uStairFigures(cipInputs(design.inputs))))
       : cipAsdCalcLines(cipInputs(design.inputs), design.name, figures(() => cipFigures(cipInputs(design.inputs))))
     : null;
-  const lines = takeoffLines ?? stmLines ?? asdLines ??
+  const foundationLines = (FOUNDATION_KINDS as readonly string[]).includes(design.kind) ? foundationCalcLines(design.kind as FoundationKind, foundationInputs(design.kind, design.inputs), design.name, figures(() => foundationFigures(design.kind as FoundationKind, foundationInputs(design.kind, design.inputs)!))) : null;
+  const lines = takeoffLines ?? stmLines ?? asdLines ?? foundationLines ??
     (design.kind === "dt-load-rating"
       ? dtRatingCalcLines(dtRatingInputs(design.inputs), design.name, figures(() => dtFigures(dtRatingInputs(design.inputs))))
       : design.kind === "lrfd-girder-check"

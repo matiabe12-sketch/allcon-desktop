@@ -36,6 +36,11 @@ const ROLE_LABEL: Record<QuantityRole, string> = {
   rail: "Bridge rail",
   removal: "Removal",
   sealant: "Joint sealant",
+  pile: "Piling",
+  "pile-tip": "Pile tips",
+  prebore: "Prebored holes",
+  testing: "Integrity testing",
+  micropile: "Micropiles",
 };
 
 /** The design's quantities into its project's line items, under CDOT pay items. */

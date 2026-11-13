@@ -14,6 +14,9 @@ import { CapDetailSketch } from "@/components/design/cap-detail-sketch";
 import { DetailSketch } from "@/components/design/detail-sketch";
 import type { Takeoff } from "./takeoff/types";
 import { ApproachSlabSketch } from "@/components/design/approach-slab-sketch";
+import { FoundationSketch, LateralPlot } from "@/components/design/foundation-sketch";
+import type { FoundationKind } from "./foundations/kinds";
+import { runFoundation } from "./foundations/run";
 import { designApproachSlab, type ApproachSlabInputs } from "./approach/approach-slab";
 import { StripSealSketch } from "@/components/design/strip-seal-sketch";
 import { CbcSketch, CipSketch, MseSketch, UStairSketch } from "@/components/design/wall-sketch";
@@ -139,6 +142,11 @@ export function dtFigures(i: DtInputs) {
 }
 
 export const approachSlabFigures = (i: ApproachSlabInputs) => ({ section: figure(<ApproachSlabSketch inputs={i} result={designApproachSlab(i)} />) });
+
+export function foundationFigures(kind: FoundationKind, i: object) {
+  const r = runFoundation(kind, i);
+  return { section: figure(<FoundationSketch kind={kind} inputs={i as Record<string, unknown>} />), ...(r.lateral ? { lateral: figure(<LateralPlot title={`Lateral analysis: ${r.lateral.title}`} r={r.lateral.r} />) } : {}) };
+}
 
 export const stripSealFigures = (i: StripSealInputs) => ({ section: figure(<StripSealSketch inputs={i} result={designStripSeal(i)} />) });
 

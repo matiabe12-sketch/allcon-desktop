@@ -22,6 +22,7 @@ function cleanExtension(v: unknown): CbcInputs["extension"] {
   return { pieces, bar: Math.round(n(o.bar, 5)), length: n(o.length, 36), spacing: n(o.spacing, 12) || 12, removalBackfill: n(o.removalBackfill, 0), waterproofJoints: o.waterproofJoints === true };
 }
 import { APPROACH_SLAB_DEFAULTS, type ApproachSlabInputs } from "./approach/approach-slab";
+import { FOUNDATION_INFO, FOUNDATION_KINDS, foundationInputs } from "./foundations/kinds";
 import { DECK_DEFAULTS, RAIL_DEFAULT, type DeckInputs } from "./decks/deck";
 import { STRIP_SEAL_DEFAULTS, type StripSealInputs } from "./joints/strip-seal";
 import { HAUNCH_DEFAULTS, type HaunchInputs } from "./girders/haunch";
@@ -42,7 +43,7 @@ import { WINGWALL_DEFAULTS, type WingwallInputs } from "./walls/wingwall";
 // The Design section's categories and design types: highway structures to AASHTO LRFD, grouped
 // by element. What can be designed, and what's coming next.
 
-export type DesignKind = "lrfd-girder-check" | "dt-load-rating" | "stm-d-region" | "cip-cantilever-wall" | "mse-wall" | "cantilever-wingwall" | "box-culvert" | "deck-slab" | "seismic-zone1" | "pier-column" | "camber-haunch" | "sign-cantilever" | "elastomeric-bearing" | "ptfe-bearing" | "strip-seal-joint" | "approach-slab";
+export type DesignKind = "lrfd-girder-check" | "dt-load-rating" | "stm-d-region" | "cip-cantilever-wall" | "mse-wall" | "cantilever-wingwall" | "box-culvert" | "deck-slab" | "seismic-zone1" | "pier-column" | "camber-haunch" | "sign-cantilever" | "elastomeric-bearing" | "ptfe-bearing" | "strip-seal-joint" | "approach-slab" | "spread-footing" | "pile-foundation" | "drilled-shaft" | "micropile" | "abutment";
 
 export const CATEGORIES: { id: string; name: string; kinds: { id: DesignKind; name: string; short: string; description: string; available: boolean }[] }[] = [
   {
@@ -59,7 +60,13 @@ export const CATEGORIES: { id: string; name: string; kinds: { id: DesignKind; na
     kinds: [
       { id: "stm-d-region", name: "Strut-and-Tie Model", short: "Pier caps and abutments: struts, ties, nodes", description: "Planar strut-and-tie design of disturbed regions in reinforced concrete pier caps and abutments: the truss layout entered or found by optimization, solved in equilibrium for each load case; the 25° strut-tie angle limit, tie bars, node face strength with nonhydrostatic nodes and confinement, the crack-control grid, anchorage of the ties at the extended nodal zone, and the diagonal-cracking screen. Normalweight, nonprestressed concrete. AASHTO LRFD 5.8.2, 5.10.8.2 and C5.8.2.2.", available: true },
       { id: "pier-column", name: "Pier Column", short: "Round, rectangular or oblong: P–M, slenderness, collision", description: "A pier column under its cap: the forces from the cap's strut-and-tie design (the bent as a plane frame) with braking, wind and temperature along the bridge from the girder designs, or entered; slenderness by moment magnification, axial load with biaxial bending by strain compatibility, shear, bar and tie limits, the optional vehicle collision, and the bars detailed with their quantities. AASHTO LRFD 3.6.4, 3.6.5.1, 3.8, 3.12, 4.5.3.2.2b, 5.6.4 and 5.7.3.3.", available: true },
+      { id: "abutment", ...FOUNDATION_INFO.abutment, available: true },
     ],
+  },
+  {
+    id: "foundations",
+    name: "Foundations",
+    kinds: (["spread-footing", "pile-foundation", "drilled-shaft", "micropile"] as const).map((id) => ({ id, ...FOUNDATION_INFO[id], available: true })),
   },
   {
     id: "walls",
@@ -300,6 +307,7 @@ export function designInputs(kind: string, saved: unknown) {
 }
 
 function parseInputs(kind: string, saved: unknown) {
+  if ((FOUNDATION_KINDS as readonly string[]).includes(kind)) return foundationInputs(kind, saved)!;
   if (kind === "lrfd-girder-check") return girderInputs(saved);
   if (kind === "dt-load-rating") return dtRatingInputs(saved);
   if (kind === "stm-d-region") return stmInputs(saved);

@@ -43,6 +43,8 @@ export async function runLoadPath(o: {
   create: boolean;
   /** Only these parts are saved, created and reported (the rest are still worked out, for the parts that take loads from them). */
   only?: Set<string>;
+  /** A new girder design starts from it (the agency's criteria). */
+  girderBase?: GirderInputs;
 }): Promise<{ rows: SyncRow[]; b: BridgeInputs }> {
   const { b, create, prefix } = o;
   const rows: SyncRow[] = [];
@@ -94,7 +96,7 @@ export async function runLoadPath(o: {
   const girderRows: { id: string; name: string; inputs: unknown }[] = [];
   for (let gi = 0; gi < groups.length; gi++) {
     const d = await load(girderIds[gi], "lrfd-girder-check");
-    bases.push(d ? girderInputs(d.inputs) : null);
+    bases.push(d ? girderInputs(d.inputs) : (o.girderBase ?? null));
     names.push(d?.name ?? "");
     if (d) girderRows[gi] = { id: d.id, name: d.name, inputs: d.inputs };
     else girderIds[gi] = null;
@@ -105,7 +107,7 @@ export async function runLoadPath(o: {
     const next = girderInputsFor(b, run.layout, groups[gi], bases[gi] ?? undefined);
     const verdict = run.groups[gi].result.ok ? "all checks pass" : "some checks fail";
     const newName = `${prefix}, ${label.toLowerCase()}`;
-    const id = await upsert(girderKey(gi), label, "lrfd-girder-check", girderRows[gi] ?? null, bases[gi] ?? {}, next, verdict, newName);
+    const id = await upsert(girderKey(gi), label, "lrfd-girder-check", girderRows[gi] ?? null, girderRows[gi] ? (bases[gi] ?? {}) : {}, next, verdict, newName);
     if (id && !girderIds[gi]) names[gi] = `${newName} (${kindInfo("lrfd-girder-check")!.name})`;
     girderIds[gi] = id;
   }

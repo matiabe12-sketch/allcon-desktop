@@ -95,7 +95,7 @@ export function BridgeWorkspace({ bridge, projects }: { bridge: { id: string; na
     try {
       await saveBridgeDefinition(bridge.id, def);
       const { calcId } = await createBridgeCalc(bridge.id);
-      toast.success("Analysis calc package created in Calcs", { action: { label: "Open", onClick: () => window.open(`/calcs/${calcId}`, "_blank") } });
+      toast.success("Calc package created in Calcs", { action: { label: "Open", onClick: () => window.open(`/calcs/${calcId}`, "_blank") } });
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not create the calc package");
     } finally {

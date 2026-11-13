@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { Prisma } from "@/generated/prisma/client";
 import { getCurrentUser, isUuid, requireUser } from "@/lib/auth/session";
 import { bridgeInputs } from "@/lib/design/bridge/kinds";
-import { runBridge, type BridgeInputs } from "@/lib/design/bridge/bridge";
+import { BRIDGE_GIRDER_BASE, runBridge, type BridgeInputs } from "@/lib/design/bridge/bridge";
 import { designBearing } from "@/lib/design/bearings/elastomeric";
 import { designDeck } from "@/lib/design/decks/deck";
 import { designApproachSlab } from "@/lib/design/approach/approach-slab";
@@ -31,7 +31,8 @@ import { LOAD_PATH_KINDS, linksFrom, withLinks } from "@/lib/bridge/load-links";
 import { designPrefill, designTargets } from "@/lib/bridge/design-links";
 import { importedOf } from "@/lib/bridge/imported";
 import { movingLoad } from "@/lib/bridge/moving";
-import { bridgeCalcLines } from "@/lib/bridge/report";
+import { bridgeCalcLines as bridgeAnalysisLines } from "@/lib/bridge/report";
+import { bridgePackageLines } from "@/lib/design/bridge/package";
 import { layout } from "@/lib/calcs/library/templates";
 import { CALC_FILE, newCalcKey } from "@/lib/calcs/server";
 import { emptyCalc } from "@/lib/calcs/types";
@@ -253,7 +254,10 @@ export async function createBridgeDesign(bridgeId: string, targetKey: string): P
   }
   const analysis = analyzeBridge(definition);
   const live = movingLoad(analysis.generated, analysis.stage(2));
-  const { inputs, name } = designPrefill(target, definition, analysis, live);
+  const prefill = designPrefill(target, definition, analysis, live);
+  const name = prefill.name;
+  // A girder design started under CDOT's rules takes its criteria.
+  const inputs = target.kind === "lrfd-girder-check" && (await agencyOf(user.id)) === "cdot" ? { ...prefill.inputs, criteria: "cdot" } : prefill.inputs;
   const design = await db.design.create({
     data: { orgId: user.orgId, projectId: bridge.projectId, kind: target.kind, name: `${bridge.name}: ${name}`, inputs: designInputs(target.kind, inputs) as unknown as Prisma.InputJsonValue, createdById: user.id },
   });
@@ -274,11 +278,31 @@ const LOAD_PATH_ONLY = new Set(["abutment", "approach-slab", "cantilever-wingwal
  */
 async function sectionLoadPath(user: { id: string; orgId: string }, bridge: { id: string; name: string; projectId: string | null }, definition: BridgeDefinition, o: { create: boolean; only?: Set<string>; replace?: string }) {
   const links = o.replace ? definition.designs.filter((l) => l.target !== o.replace) : definition.designs;
-  const r = await runLoadPath({ orgId: user.orgId, userId: user.id, projectId: bridge.projectId, prefix: bridge.name, b: withLinks(toBridgeInputs(definition), links), create: o.create, only: o.only });
+  const cdot = (await agencyOf(user.id)) === "cdot";
+  const r = await runLoadPath({ orgId: user.orgId, userId: user.id, projectId: bridge.projectId, prefix: bridge.name, b: withLinks(toBridgeInputs(definition), links), create: o.create, only: o.only, ...(cdot ? { girderBase: { ...BRIDGE_GIRDER_BASE, criteria: "cdot" as const } } : {}) });
   const designs = linksFrom(r.b, links, LOAD_PATH_KINDS);
   await db.bridge.update({ where: { id: bridge.id }, data: { definition: { ...definition, designs } as unknown as Prisma.InputJsonValue } });
   revalidatePath("/design");
   return { rows: r.rows, designs };
+}
+
+// --- agency rules: AASHTO LRFD alone, or with CDOT's amendments (the person's setting, user.agency) ---------------------
+
+async function agencyOf(userId: string): Promise<"cdot" | null> {
+  const u = await db.user.findUnique({ where: { id: userId }, select: { agency: true } });
+  return u?.agency === "cdot" ? "cdot" : null;
+}
+
+/** The person's agency rules: null for AASHTO LRFD alone, "cdot" for CDOT's criteria (new girder designs take CDOT's amendments). */
+export async function bridgeAgency(): Promise<"cdot" | null> {
+  const user = await getCurrentUser();
+  return user ? agencyOf(user.id) : null;
+}
+
+export async function setBridgeAgency(agency: "cdot" | null): Promise<void> {
+  const user = await getCurrentUser();
+  if (!user) throw new Error("Sign in");
+  await db.user.update({ where: { id: user.id }, data: { agency: agency === "cdot" ? "cdot" : null } });
 }
 
 /** "Update the linked designs": every design started from the bridge brought up to date down the load path; with `create`, the missing ones made too. */
@@ -336,9 +360,15 @@ export async function createBridgeCalc(bridgeId: string): Promise<{ calcId: stri
   const live = movingLoad(analysis.generated, analysis.stage(2));
   const data = emptyCalc("USCS");
   const project = bridge.projectId ? await db.project.findUnique({ where: { id: bridge.projectId }, select: { name: true } }) : null;
-  data.header = { ...data.header, title: `${bridge.name}: bridge analysis`, project: project?.name ?? "", by: user.name ?? "" };
-  data.regions = layout(bridgeCalcLines(definition, analysis, live, bridge.name), { x: 0, y: 0 }, data.paper);
-  const calc = await db.calc.create({ data: { orgId: user.orgId, projectId: bridge.projectId, name: `${bridge.name} analysis`, createdById: user.id } });
+  data.header = { ...data.header, title: bridge.name, project: project?.name ?? "", by: user.name ?? "" };
+  // The bridge's calc package (as the Bridge design wrote it: its description, plan, profile and 3D view,
+  // the summary of design checks, the superstructure, each support's substructure in load-path order and
+  // the summary of quantities by pay item), then this analysis model and its results.
+  const pkg = await bridgePackageLines({ id: bridge.id, name: bridge.name, inputs: withLinks(toBridgeInputs(definition), definition.designs) }, user.orgId);
+  const analysisLines = bridgeAnalysisLines(definition, analysis, live, `${bridge.name}: analysis model`);
+  if (analysisLines.length && "text" in analysisLines[0]) analysisLines[0] = { ...analysisLines[0], newPage: true };
+  data.regions = layout([...pkg, ...analysisLines], { x: 0, y: 0 }, data.paper);
+  const calc = await db.calc.create({ data: { orgId: user.orgId, projectId: bridge.projectId, name: `${bridge.name} calc package`, createdById: user.id } });
   const key = newCalcKey(calc.id);
   await putFile(key, gzipSync(JSON.stringify(data)), CALC_FILE);
   await db.calc.update({ where: { id: calc.id }, data: { fileKey: key, revision: 1, regionCount: data.regions.length } });

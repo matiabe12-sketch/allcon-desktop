@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowDownToLine, ExternalLink, Loader2, Plus, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
-import { bridgeDesignStatus, createBridgeDesign, updateBridgeDesigns, type BridgeDesignStatus, type SyncRow } from "@/app/actions/bridge";
+import { bridgeAgency, bridgeDesignStatus, createBridgeDesign, setBridgeAgency, updateBridgeDesigns, type BridgeDesignStatus, type SyncRow } from "@/app/actions/bridge";
 import type { BridgeDefinition, DesignLink } from "@/lib/bridge/definition";
 import { designTargets } from "@/lib/bridge/design-links";
 import { cn } from "@/lib/utils";
@@ -17,6 +17,21 @@ export function DesignPanel({ bridgeId, def, saved, onLinks }: { bridgeId: strin
   const [status, setStatus] = useState<BridgeDesignStatus[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [report, setReport] = useState<SyncRow[] | null>(null);
+  const [agency, setAgency] = useState<"cdot" | null | undefined>(undefined);
+  useEffect(() => {
+    bridgeAgency()
+      .then(setAgency)
+      .catch(() => setAgency(null));
+  }, []);
+  const chooseAgency = async (a: "cdot" | null) => {
+    setAgency(a);
+    try {
+      await setBridgeAgency(a);
+      toast.success(a === "cdot" ? "New girder designs take CDOT's criteria" : "New designs follow AASHTO LRFD alone");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not change the rules");
+    }
+  };
   const links = def.designs;
   /** The load path: every linked design brought up to date from the bridge (and the missing ones made, with `create`). */
   const update = async (create: boolean) => {
@@ -63,7 +78,14 @@ export function DesignPanel({ bridgeId, def, saved, onLinks }: { bridgeId: strin
         <button type="button" disabled={!!busy || !saved} onClick={() => void update(true)} className="inline-flex items-center gap-1 rounded border px-2 py-1 hover:bg-accent disabled:opacity-50" title="The same, and a design made for every part that has none">
           {busy === "create" ? <Loader2 className="size-3 animate-spin" /> : <Plus className="size-3" />} Also make the missing ones
         </button>
-        <span className="text-muted-foreground">The loads go down the load path: girders&apos; reactions to the abutments and caps, the caps&apos; model to the columns, the columns&apos; base forces to the foundations.</span>
+        <label className="ml-auto inline-flex items-center gap-1">
+          <span className="text-muted-foreground">Rules</span>
+          <select value={agency ?? ""} disabled={agency === undefined} onChange={(e) => void chooseAgency(e.target.value === "cdot" ? "cdot" : null)} className="h-6 rounded border bg-transparent px-1" title="Your setting: new girder designs take CDOT's amendments to AASHTO LRFD (Bridge Design Manual), or AASHTO alone">
+            <option value="">AASHTO LRFD</option>
+            <option value="cdot">AASHTO LRFD with CDOT&apos;s amendments</option>
+          </select>
+        </label>
+        <span className="w-full text-muted-foreground">The loads go down the load path: girders&apos; reactions to the abutments and caps, the caps&apos; model to the columns, the columns&apos; base forces to the foundations.</span>
       </div>
       {report && (
         <table className="w-full rounded border">

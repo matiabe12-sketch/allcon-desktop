@@ -118,9 +118,10 @@ describe("CDOT criteria", () => {
       expect(Math.abs(loadBot / pg.bot - 1)).toBeLessThan(side === "exterior" ? 0.005 : 0.02);
       expect(Math.abs(m.Mu / pg.Mu - 1)).toBeLessThan(0.02);
       expect(m.strengthIIGoverns).toBe(true);
-      // PGSuper: exterior Service III tension at its limit (rating factor 1.00). PGSuper takes Ec at 155 pcf;
-      // under CDOT's criteria allcon takes it at Table 3.5.1-1's 149 pcf (BDM 5.3.2): about 1% apart.
-      if (pg.svc3) expect(Math.abs(Math.max(0, -m.service.botIII) / pg.svc3 - 1)).toBeLessThan(0.015);
+      // PGSuper: exterior Service III tension at its limit (rating factor 1.00). PGSuper takes Ec and Eci at
+      // 155 pcf; under CDOT's criteria allcon takes Table 3.5.1-1's weights (BDM 5.3.2), 149 pcf at f′c and
+      // 147 at f′ci: the lower Eci's larger elastic shortening puts them about 5% apart.
+      if (pg.svc3) expect(Math.abs(Math.max(0, -m.service.botIII) / pg.svc3 - 1)).toBeLessThan(0.06);
     }
   });
 });
@@ -200,7 +201,8 @@ describe("CDOT BDM 5.5 and sheet B-618-CBT2", () => {
     expect(h.D1! % 0.25).toBeCloseTo(0, 9);
     expect(h.D2!).toBeCloseTo(h.D1! - (c.cDeck + c.dTotal), 9);
     expect(h.D2over! - h.cross).toBeGreaterThanOrEqual(-1e-9);
-    expect(h.D2over! - h.cross).toBeLessThan(0.25 + 1e-9); // the least D1
+    // The least D1, or a ¼ in step above it where the haunch's own weight flips the iteration between two.
+    expect(h.D2over! - h.cross).toBeLessThan(0.5 + 1e-9);
     expect(h.design).toBeCloseTo((2 * h.D1! + 10 * (h.D2! + h.tolerance)) / 12, 9);
     // The loads carry the settled haunch: designing again with it as given changes nothing.
     const again = designGirder(bridge({ haunch: h.design }));

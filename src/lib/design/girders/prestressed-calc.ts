@@ -94,7 +94,8 @@ export function girderCalcLines(entered: GirderInputs, title: string, figures?: 
   m(`w_c\\coloneq ${num(i.wc)}\\mathrm{kcf}`, i.wcLoad ? "Girder unit weight, for Ec" : "Girder unit weight");
   if (i.wcLoad) m(`w_{cw}\\coloneq ${num(i.wcLoad)}\\mathrm{kcf}`, "Girder unit weight with its reinforcement, for its weight");
   m(`K_1\\coloneq ${num(i.K1)}`, "AASHTO 5.4.2.4");
-  m("E_{ci}\\coloneq120000\\cdot K_1\\cdot\\left(\\frac{w_c}{\\mathrm{kcf}}\\right)^{2}\\cdot\\left(\\frac{f'_{ci}}{\\mathrm{ksi}}\\right)^{0.33}\\cdot\\mathrm{ksi}=", "AASHTO Eq. 5.4.2.4-1", "ksi");
+  if (i.wci !== undefined) m(`w_{ci}\\coloneq ${num(i.wci)}\\mathrm{kcf}`, "Girder unit weight at f′ci, for Eci (AASHTO Table 3.5.1-1)");
+  m(i.wci !== undefined ? "E_{ci}\\coloneq120000\\cdot K_1\\cdot\\left(\\frac{w_{ci}}{\\mathrm{kcf}}\\right)^{2}\\cdot\\left(\\frac{f'_{ci}}{\\mathrm{ksi}}\\right)^{0.33}\\cdot\\mathrm{ksi}=" : "E_{ci}\\coloneq120000\\cdot K_1\\cdot\\left(\\frac{w_c}{\\mathrm{kcf}}\\right)^{2}\\cdot\\left(\\frac{f'_{ci}}{\\mathrm{ksi}}\\right)^{0.33}\\cdot\\mathrm{ksi}=", "AASHTO Eq. 5.4.2.4-1", "ksi");
   m("E_c\\coloneq120000\\cdot K_1\\cdot\\left(\\frac{w_c}{\\mathrm{kcf}}\\right)^{2}\\cdot\\left(\\frac{f'_{c}}{\\mathrm{ksi}}\\right)^{0.33}\\cdot\\mathrm{ksi}=", "AASHTO Eq. 5.4.2.4-1", "ksi");
   m(`f'_{cd}\\coloneq ${num(i.fcDeck)}\\mathrm{ksi}`, "Deck");
   m(`w_{cd}\\coloneq ${num(i.wcDeck)}\\mathrm{kcf}`, i.wcDeckLoad ? "Deck unit weight, for Ec" : "Deck unit weight");
@@ -701,7 +702,6 @@ function continuitySection(p: {
   }
 
   if (cdot) {
-    const pj = gov.pr[side];
     const effective = design.restraint![side].effective[gov.pr.index];
     text("Restraint moments (CDOT BDM 5.7.2)", "subheading");
     text("Positive restraint moments from girder creep and shrinkage and deck shrinkage are taken as zero, and restraint moments aren't computed.", "note");
@@ -715,14 +715,25 @@ function continuitySection(p: {
           : `The girders are ${num(i.tContinuity)} days old when continuity is made, less than 60: the joint is non-effective, so simple-span and continuous behavior are enveloped for all loads after continuity (BDM 5.7.3).`,
       "note",
     );
+    const cst = i.connection.strands && i.connection.strands.count > 0 ? i.connection.strands : null;
     m(`A_{sc}\\coloneq ${i.connection.count}\\cdot${num(BARS[i.connection.bar].area)}\\mathrm{in}^{2}=`, `${i.connection.count} #${i.connection.bar} bars from the girder's bottom into the diaphragm`, "in^2");
     m(`d_{sc}\\coloneq h_c-${num(i.connection.y)}\\mathrm{in}=`, undefined, "in");
-    m("a_{sc}\\coloneq\\frac{A_{sc}\\cdot f_y}{\\alpha_1\\cdot f'_{cd}\\cdot b_e}=", "The deck in compression", "in");
-    m("M_{nsc}\\coloneq A_{sc}\\cdot f_y\\cdot\\left(d_{sc}-\\frac{a_{sc}}{2}\\right)=", undefined, "kip*ft");
+    if (cst) {
+      m(`A_{pc}\\coloneq ${cst.count}\\cdot${num(STRANDS[i.strandDia].area)}\\mathrm{in}^{2}=`, `${cst.count} strands extended ${num(cst.length)} in past the girder's end, bent 90°`, "in^2");
+      m(`d_{pc}\\coloneq h_c-${num(cst.y)}\\mathrm{in}=`, undefined, "in");
+      m(`L_{vc}\\coloneq ${num(cst.length)}\\mathrm{in}-8\\mathrm{in}=`, "The straight length before the 8 in hook", "in");
+      m(`f_{pul}\\coloneq\\min\\left(0.9\\cdot ${num(i.fpu)}\\mathrm{ksi},0.017\\cdot ${num(i.fpu)}\\mathrm{ksi}\\cdot\\frac{L_{vc}}{${num(STRANDS[i.strandDia].db)}\\mathrm{in}}\\right)=`, "Pullout capacity of the extended strands (Noppakunwajai et al., cited in AASHTO C5.12.3.3.8b), at most fpy", "ksi");
+      m("T_{sc}\\coloneq A_{sc}\\cdot f_y+A_{pc}\\cdot f_{pul}=", undefined, "kip");
+      m("d_{tc}\\coloneq\\frac{A_{sc}\\cdot f_y\\cdot d_{sc}+A_{pc}\\cdot f_{pul}\\cdot d_{pc}}{T_{sc}}=", "Depth to the steel forces' centroid", "in");
+    } else {
+      m("T_{sc}\\coloneq A_{sc}\\cdot f_y=", undefined, "kip");
+      m("d_{tc}\\coloneq d_{sc}=", undefined, "in");
+    }
+    m("a_{sc}\\coloneq\\frac{T_{sc}}{\\alpha_1\\cdot f'_{cd}\\cdot b_e}=", "The deck in compression", "in");
+    m("M_{nsc}\\coloneq T_{sc}\\cdot\\left(d_{tc}-\\frac{a_{sc}}{2}\\right)=", undefined, "kip*ft");
     m("M_{crd}\\coloneq0.24\\cdot\\sqrt{\\frac{f'_{cd}}{\\mathrm{ksi}}}\\cdot\\mathrm{ksi}\\cdot S_{bc}=", "Cracking moment of the composite section, the diaphragm's (deck's) concrete, AASHTO 5.4.2.6", "kip*ft");
-    given(`M_{LLp}\\coloneq ${num(pj.MllPos, 6)}${kft}`, "The most positive LL + IM moment at the pier");
-    m(`M_{usc}\\coloneq\\max\\left(1.2\\cdot M_{crd},\\eta\\cdot\\left(1.75\\cdot M_{LLp}+${pj.Mdc2 < 0 ? "0.9" : "1.25"}\\cdot${num(pj.Mdc2, 4)}\\mathrm{kip}\\cdot\\mathrm{ft}+${pj.Mdw < 0 ? "0.65" : "1.5"}\\cdot${num(pj.Mdw, 4)}\\mathrm{kip}\\cdot\\mathrm{ft}\\right)\\right)=`, "1.2 Mcr (CDOT BDM 5.7.2), or Strength I if larger", "kip*ft");
-    m(ok("M_{usc}", "0.9\\cdot M_{nsc}"), "Positive moment connection, strength");
+    m("M_{usc}\\coloneq1.2\\cdot M_{crd}=", "CDOT BDM 5.7.2", "kip*ft");
+    m(ok("M_{usc}", "0.9\\cdot M_{nsc}"), "Positive moment connection, resistance (φ = 0.9, AASHTO 5.5.4.2)");
     return;
   }
   // Restraint moments.

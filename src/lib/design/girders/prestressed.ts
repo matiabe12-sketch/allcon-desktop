@@ -52,10 +52,12 @@ export type GirderInputs = {
   /**
    * The haunch as given; worked out by CDOT BDM 5.5.2.1 from the camber (then `haunch` is a first guess);
    * or "supports": `haunchSupport` is the haunch at the bearings and the dead load takes the weighted haunch
-   * of Eq. 5.1 with the predicted camber (`haunch` then a first guess).
+   * of Eq. 5.1 with an under-cambered girder (`haunch` then a first guess).
    */
   haunchMode?: "given" | "computed" | "supports";
   haunchSupport?: number; // in, at the bearings ("supports" mode)
+  /** Internal: a computed support haunch held (when the iteration flips between two ¼ in steps). */
+  haunchD1?: number;
   deckPanels?: boolean; // partial-depth precast deck panels permitted (CDOT's minimum haunches)
   crossSlope?: number; // ft/ft, the deck's cross-slope over a level top flange (default 0.02)
   /** The roadway's crown: at an offset (ft) from the deck's centerline (+ toward the right), or a one-way slope down to the right. */
@@ -71,6 +73,7 @@ export type GirderInputs = {
   fc: number; // ksi at 28 days
   wc: number; // kcf
   wcLoad?: number; // kcf, the girder's weight with its reinforcement (default wc, which sets Ec)
+  wci?: number; // kcf, the girder's unit weight for Eci (default wc)
   K1: number; // 5.4.2.4
   // Strands (low-relaxation, Grade 270)
   strandDia: 0.5 | 0.6;
@@ -778,7 +781,7 @@ function designGirderLine(i: GirderInputs, exterior: boolean, ctx: SpanContext |
   const shape = girderShape(i);
   const g = profileProps(shape.profile);
   const H = shape.depth;
-  const Eci = modulus(i.K1, i.wc, i.fci);
+  const Eci = modulus(i.K1, i.wci ?? i.wc, i.fci);
   const Ec = modulus(i.K1, i.wc, i.fc);
   const Ecd = modulus(1, i.wcDeck, i.fcDeck);
   const nDeck = Ecd / Ec;
@@ -1551,7 +1554,7 @@ function designGirderLine(i: GirderInputs, exterior: boolean, ctx: SpanContext |
       // AASHTO 10th: positive moment connections need not be evaluated at the strength limit state (5.12.3.3.6); CDOT
       // BDM 5.7.2 requires them to resist 1.2 Mcr (the nominal resistance, φ = 1.0).
       if (cdot)
-        addP({ id: "conn-strength", name: "Positive moment connection: resistance (1.2 Mcr)", demand: CDOT.connectionMcr * McrConn, capacity: conn.phiMn, unit: "kip·ft", ref: "CDOT BDM 5.7.2", note: `${conn.label}; Mn, φ = 1.0; Mcr = fr·Sbc = ${McrConn.toFixed(0)} kip·ft, fr = 0.24√f′c of the diaphragm (deck) concrete` });
+        addP({ id: "conn-strength", name: "Positive moment connection: resistance (1.2 Mcr)", demand: CDOT.connectionMcr * McrConn, capacity: conn.phiMn, unit: "kip·ft", ref: "CDOT BDM 5.7.2", note: `${conn.label}; φ = 0.9; Mcr = fr·Sbc = ${McrConn.toFixed(0)} kip·ft, fr = 0.24√f′c of the diaphragm (deck) concrete` });
       void MuPos;
       if (conn.As > 0 || conn.Aps === 0) addP({ id: "conn-stress", name: "Positive moment connection: bar stress at service", demand: fs, capacity: CONNECTION_STRESS, unit: "ksi", ref: "5.12.3.3.8a", note: `Service I moment ${Math.max(0, Ms).toFixed(0)} kip·ft` });
       if (conn.Aps > 0) addP({ id: "conn-strand-stress", name: "Positive moment connection: extended strands' stress at service", demand: conn.strandStress(Ms), capacity: CONNECTION_STRESS, unit: "ksi", ref: "5.12.3.3.8a", note: `Service I moment ${Math.max(0, Ms).toFixed(0)} kip·ft` });
@@ -1952,8 +1955,8 @@ function positiveConnection(i: GirderInputs, comp: Composite, Ecd: number) {
   const steelStress = (Ms: number) => (Ms <= 0 ? 0 : nAs > 0 ? (n * Ms * 12 * (dBars - c)) / Icr : Infinity);
   const strandStress = (Ms: number) => (Ms <= 0 ? 0 : Aps > 0 ? ((EP / Ecd) * Ms * 12 * (dStrands - c)) / Icr : Infinity);
   const label = [As > 0 ? `${i.connection.count} #${i.connection.bar} bars at ${i.connection.y} in` : "", st ? `${st.count} strands extended ${st.length} in at ${st.y} in (pullout fps = 0.017 fpu·Lv/db = ${fpul.toFixed(1)} ksi)` : ""].filter(Boolean).join(" and ") || "none";
-  // φ = 1.0: CDOT's 1.2 Mcr is a resistance requirement, not a strength limit state check (AASHTO 5.12.3.3.6), as CDOT's designs take it.
-  return { As, Aps, fpul, d, a, Mn, phiMn: Mn, n, c, Icr, steelStress, strandStress, label };
+  // φ = 0.9 (5.5.4.2, tension-controlled flexure): BDM 5.7.2 gives the 1.2 Mcr demand but no factor; the conservative reading.
+  return { As, Aps, fpul, d, a, Mn, phiMn: 0.9 * Mn, n, c, Icr, steelStress, strandStress, label };
 }
 
 // --- strands ----------------------------------------------------------------------------------------
@@ -2021,14 +2024,16 @@ export function haunchDesign(i: GirderInputs, shape: GirderShape, c: { cDeck: nu
   const base = { mode: i.haunchMode ?? "given", panels, minSupport, minBetween, tolerance, cross, profile, net };
   if (i.haunchMode === "supports") {
     // The haunch at the bearings is set; at midspan it's what the predicted camber leaves (F: plus the
-    // profile above the chord), and the dead load takes Eq. 5.1 with it, as the plans' deflection does (G).
+    // profile above the chord). The dead load takes Eq. 5.1 with an under-cambered girder's larger haunch,
+    // the conservative choice G allows.
     const D1 = i.haunchSupport ?? i.haunch;
     const D2 = D1 - net + profile;
-    return { ...base, D1, D2, D2over: D2 - tolerance, D2under: D2 + tolerance, design: (2 * D1 + 10 * Math.max(0, D2)) / 12 };
+    const D2under = D2 + tolerance;
+    return { ...base, D1, D2, D2over: D2 - tolerance, D2under, design: (2 * D1 + 10 * Math.max(0, D2under)) / 12 };
   }
   if (i.haunchMode !== "computed") return { ...base, D1: undefined, D2: undefined, D2over: undefined, D2under: undefined, design: i.haunch };
   const need = Math.max(minSupport + cross, minBetween + cross + tolerance + net - profile);
-  const D1 = Math.ceil(need * 4 - 1e-9) / 4;
+  const D1 = i.haunchD1 ?? Math.ceil(need * 4 - 1e-9) / 4;
   const D2 = D1 - net + profile; // predicted, at midspan
   const D2over = D2 - tolerance;
   const D2under = D2 + tolerance;
@@ -2233,14 +2238,15 @@ export const plainUnitWeight = (fc: number) => (fc <= 5 ? 0.145 : Math.round(140
 
 /**
  * The inputs as the criteria take them. Under CDOT's: the relative humidity for creep and shrinkage is
- * 55 % (BDM 5.3.3); Ec takes the unreinforced unit weight of AASHTO Table 3.5.1-1 (BDM 5.3.2); the weights
+ * 55 % (BDM 5.3.3); Ec takes the unreinforced unit weight of AASHTO Table 3.5.1-1 (BDM 5.3.2), Eci the
+ * table's weight at f′ci (the lower, so the conservative reading); the weights
  * add the reinforcement, at least 155 pcf for a precast girder and 150 pcf for the deck (BDM 3.4.4.1).
  */
 export function criteriaInputs(i: GirderInputs): GirderInputs {
   if (i.criteria !== "cdot") return i;
   const wc = plainUnitWeight(i.fc);
   const wcDeck = plainUnitWeight(i.fcDeck);
-  return { ...i, humidity: 55, wc, wcLoad: Math.max(i.wcLoad ?? 0, 0.155, wc + 0.005), wcDeck, wcDeckLoad: Math.max(i.wcDeckLoad ?? 0, wcDeck + 0.005) };
+  return { ...i, humidity: 55, wc, wci: plainUnitWeight(i.fci), wcLoad: Math.max(i.wcLoad ?? 0, 0.155, wc + 0.005), wcDeck, wcDeckLoad: Math.max(i.wcDeckLoad ?? 0, wcDeck + 0.005) };
 }
 
 export function designGirder(entered: GirderInputs) {
@@ -2254,14 +2260,23 @@ export function designGirder(entered: GirderInputs) {
   const ratioOf = (checks: Check[]) => governingRatio(checks, false);
   const sideOf = (ext: number, int: number): Side => (ext >= int - 1e-9 ? "exterior" : "interior");
   // CDOT BDM 5.5.2.1: a haunch worked out from the camber and dead load deflection, which depend on the
-  // haunch's own weight: repeated until it settles (to 0.005 in).
+  // haunch's own weight: repeated until it settles (to 0.005 in). A computed support haunch goes in ¼ in
+  // steps, so it can flip between two of them (the heavier load wanting the smaller); then the larger is
+  // kept, the conservative one, and only the load is settled.
   const solve = (si: GirderInputs, ext: boolean, ctx?: SpanContext) => {
     let r = designGirderLine(si, ext, ctx);
     if (si.haunchMode !== "computed" && si.haunchMode !== "supports") return r;
     let h = si.haunch;
-    for (let k = 0; k < 10 && Math.abs(r.haunch.design - h) >= 0.005; k++) {
+    let run = si;
+    const seen = new Set<number>();
+    for (let k = 0; k < 20 && Math.abs(r.haunch.design - h) >= 0.005; k++) {
+      const D1 = r.haunch.D1;
+      if (run.haunchMode === "computed" && run.haunchD1 === undefined && D1 !== undefined) {
+        if (seen.has(D1) && seen.size > 1) run = { ...run, haunchD1: Math.max(...seen) };
+        seen.add(D1);
+      }
       h = r.haunch.design;
-      r = designGirderLine({ ...si, haunch: h }, ext, ctx);
+      r = designGirderLine({ ...run, haunch: h }, ext, ctx);
     }
     return r;
   };

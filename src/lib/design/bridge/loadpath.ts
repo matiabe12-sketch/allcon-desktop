@@ -187,7 +187,19 @@ export function shaftFromColumn(col: ColumnResult, current: ShaftInputs): ShaftI
 export function changedKeys(before: object, after: object) {
   const a = before as Record<string, unknown>;
   const b = after as Record<string, unknown>;
-  return Object.keys(b).filter((k) => JSON.stringify(a[k]) !== JSON.stringify(b[k]));
+  return Object.keys(b).filter((k) => canonical(a[k]) !== canonical(b[k]));
+}
+
+/** A value as JSON with every object's keys sorted: the database (jsonb) keeps a design's inputs in its own key order. */
+function canonical(v: unknown): string {
+  if (Array.isArray(v)) return `[${v.map(canonical).join(",")}]`;
+  if (v && typeof v === "object")
+    return `{${Object.keys(v as Record<string, unknown>)
+      .filter((k) => (v as Record<string, unknown>)[k] !== undefined)
+      .sort()
+      .map((k) => `${JSON.stringify(k)}:${canonical((v as Record<string, unknown>)[k])}`)
+      .join(",")}}`;
+  return JSON.stringify(v) ?? "null";
 }
 
 /**

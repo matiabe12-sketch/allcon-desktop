@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ExternalLink, Loader2, Plus, RefreshCw } from "lucide-react";
+import { ArrowDownToLine, ExternalLink, Loader2, Plus, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
-import { bridgeDesignStatus, createBridgeDesign, type BridgeDesignStatus } from "@/app/actions/bridge";
+import { bridgeDesignStatus, createBridgeDesign, updateBridgeDesigns, type BridgeDesignStatus, type SyncRow } from "@/app/actions/bridge";
 import type { BridgeDefinition, DesignLink } from "@/lib/bridge/definition";
 import { designTargets } from "@/lib/bridge/design-links";
 import { cn } from "@/lib/utils";
@@ -16,7 +16,23 @@ import { cn } from "@/lib/utils";
 export function DesignPanel({ bridgeId, def, saved, onLinks }: { bridgeId: string; def: BridgeDefinition; /** The bridge as shown is saved (a design is started from the saved bridge). */ saved: boolean; onLinks: (links: DesignLink[]) => void }) {
   const [status, setStatus] = useState<BridgeDesignStatus[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [report, setReport] = useState<SyncRow[] | null>(null);
   const links = def.designs;
+  /** The load path: every linked design brought up to date from the bridge (and the missing ones made, with `create`). */
+  const update = async (create: boolean) => {
+    setBusy(create ? "create" : "update");
+    try {
+      const r = await updateBridgeDesigns(bridgeId, create);
+      onLinks(r.designs);
+      setReport(r.rows);
+      const changed = r.rows.filter((x) => x.action === "updated" || x.action === "created").length;
+      toast.success(changed ? `${changed} design${changed > 1 ? "s" : ""} updated from the bridge` : "The linked designs were already up to date");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not update the designs");
+    } finally {
+      setBusy(null);
+    }
+  };
   useEffect(() => {
     let live = true;
     bridgeDesignStatus(bridgeId)
@@ -40,6 +56,39 @@ export function DesignPanel({ bridgeId, def, saved, onLinks }: { bridgeId: strin
   };
   return (
     <div className="space-y-2 p-3 text-xs">
+      <div className="flex flex-wrap items-center gap-2">
+        <button type="button" disabled={!!busy || !saved} onClick={() => void update(false)} className="inline-flex items-center gap-1 rounded border px-2 py-1 font-medium hover:bg-accent disabled:opacity-50" title="Each linked design's inputs brought up to date from the bridge, top to bottom: girders, deck, bearings, abutments, approach slabs, wingwalls, pier caps, columns, foundations">
+          {busy === "update" ? <Loader2 className="size-3 animate-spin" /> : <ArrowDownToLine className="size-3" />} Update linked designs
+        </button>
+        <button type="button" disabled={!!busy || !saved} onClick={() => void update(true)} className="inline-flex items-center gap-1 rounded border px-2 py-1 hover:bg-accent disabled:opacity-50" title="The same, and a design made for every part that has none">
+          {busy === "create" ? <Loader2 className="size-3 animate-spin" /> : <Plus className="size-3" />} Also make the missing ones
+        </button>
+        <span className="text-muted-foreground">The loads go down the load path: girders&apos; reactions to the abutments and caps, the caps&apos; model to the columns, the columns&apos; base forces to the foundations.</span>
+      </div>
+      {report && (
+        <table className="w-full rounded border">
+          <thead>
+            <tr className="border-b text-left text-muted-foreground">
+              <th className="px-2 py-1 font-medium">Part</th>
+              <th className="px-2 font-medium">Design</th>
+              <th className="px-2 font-medium">Done</th>
+              <th className="px-2 font-medium">What changed</th>
+              <th className="px-2 font-medium">Checks</th>
+            </tr>
+          </thead>
+          <tbody>
+            {report.map((r) => (
+              <tr key={r.key} className="border-b border-border/40 align-top">
+                <td className="px-2 py-1 font-medium">{r.component}</td>
+                <td className="px-2">{r.designId ? <Link href={`/design/${r.designId}`} target="_blank" className="text-primary hover:underline">{r.name}</Link> : <span className="text-muted-foreground">none</span>}</td>
+                <td className="px-2">{r.action}</td>
+                <td className="px-2 text-muted-foreground">{r.changes.length ? r.changes.slice(0, 6).join(", ") + (r.changes.length > 6 ? ` and ${r.changes.length - 6} more` : "") : "—"}</td>
+                <td className={cn("px-2", /fail|can't|couldn't|needed/.test(r.verdict) ? "text-red-600" : "text-emerald-600")}>{r.verdict}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
       <table className="w-full">
         <thead>
           <tr className="border-b text-left text-muted-foreground">
@@ -84,7 +133,7 @@ export function DesignPanel({ bridgeId, def, saved, onLinks }: { bridgeId: strin
       </table>
       <p className="text-muted-foreground">
         A design starts with the bridge&apos;s geometry and the forces from this analysis filled in, and is then an ordinary design: its own checks and calc package, edited in Design. It doesn&apos;t follow later changes to the bridge: &ldquo;Start again&rdquo; makes a new one
-        from the bridge as it is now. The girder check does its own line-girder analysis with AASHTO&apos;s distribution factors, to compare with this model&apos;s. Pier caps (strut-and-tie) are started in Design for now.
+        from the bridge as it is now. The girder check does its own line-girder analysis with AASHTO&apos;s distribution factors, to compare with this model&apos;s. The abutments, approach slabs, wingwalls, pier caps and foundations take their loads down the load path (&ldquo;Update linked designs&rdquo; keeps them all in step).
       </p>
     </div>
   );

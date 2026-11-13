@@ -23,8 +23,12 @@ const targets = designTargets(def);
 const fill = (key: string) => designPrefill(targets.find((t) => t.key === key)!, def, a, live);
 
 describe("designs from the bridge model", () => {
-  it("offers the girders, the deck, each line's bearings, the pier's columns and the expansion abutments' joints", () => {
-    expect(targets.map((t) => t.key)).toEqual(["girders", "deck", "bearing-0", "bearing-1", "bearing-2", "column-1", "joint-0", "joint-2"]);
+  it("offers the girders, the deck, each line's bearings, the pier's columns, the expansion abutments' joints, and the substructure", () => {
+    expect(targets.map((t) => t.key)).toEqual([
+      "girders", "deck", "bearing-0", "bearing-1", "bearing-2", "column-1", "joint-0", "joint-2",
+      "abutment-0", "approach-0", "wingwall-0", "cap-1", "foundation-1", "abutment-2", "approach-2", "wingwall-2",
+    ]);
+    expect(targets.find((t) => t.key === "foundation-1")?.kind).toBe("spread-footing");
   });
   it("the girder check takes the spans, section and loads, and works out", () => {
     const i = girderInputs(designInputs("lrfd-girder-check", fill("girders").inputs));

@@ -184,3 +184,34 @@ export function GeometryForm({ form, def, setDef }: Props & { form: GeometryForm
     </>
   );
 }
+
+/** Each pier on its own (the geometry's piers): its cap, columns and foundation. */
+export function PierShapesForm({ def, setDef }: Props) {
+  const g = geometryOf(def);
+  const setGeo = (update: (g: BridgeGeometry) => BridgeGeometry) => setDef((s) => withGeometry(s, update(geometryOf(s))));
+  const setPier = (k: number, v: Partial<NonNullable<Support["pier"]>>) => setGeo((x) => ({ ...x, supports: x.supports.map((s, j) => (j === k && s.pier ? { ...s, pier: { ...s.pier, ...v } } : s)) }));
+  return (
+    <>
+      {g.supports.map((s, k) => {
+        const p = s.pier;
+        if (!p) return null;
+        return (
+          <div key={k} className="mb-1.5 rounded-md border p-1.5">
+            <p className="pb-0.5 text-xs font-medium">{s.name}</p>
+            <Choice label="Type" value={p.kind} options={[{ value: "multicolumn", label: "Multi-column bent" }, { value: "hammerhead", label: "Hammerhead" }]} onChange={(kind) => setPier(k, { kind, ...(kind === "hammerhead" ? { columns: 1 } : {}) })} />
+            <Field label="Cap length" unit="ft" value={p.capLength} onChange={(v) => setPier(k, { capLength: v })} step={1} hint="Along the support line" />
+            <Field label="Cap depth" unit="ft" value={p.capDepth} onChange={(v) => setPier(k, { capDepth: v })} step={0.25} />
+            <Field label="Cap width" unit="in" value={p.capWidth} onChange={(v) => setPier(k, { capWidth: v })} step={6} hint="Along the bridge" />
+            {p.kind === "multicolumn" && <Field label="Columns" value={p.columns} onChange={(v) => setPier(k, { columns: Math.max(1, Math.round(v)) })} />}
+            {p.kind === "multicolumn" && <Field label="Column spacing" unit="ft" value={p.columnSpacing} onChange={(v) => setPier(k, { columnSpacing: v })} step={1} />}
+            <Choice label="Column shape" value={p.columnShape} options={[{ value: "round", label: "Round" }, { value: "rectangular", label: "Rectangular" }]} onChange={(columnShape) => setPier(k, { columnShape })} />
+            <Field label={p.columnShape === "round" ? "Column diameter" : "Column, across the bridge"} unit="in" value={p.columnSize} onChange={(v) => setPier(k, { columnSize: v })} step={6} />
+            {p.columnShape === "rectangular" && <Field label="Column, along the bridge" unit="in" value={p.columnDepth} onChange={(v) => setPier(k, { columnDepth: v })} step={6} />}
+            <Choice label="Foundation" value={p.foundation} options={[{ value: "spread-footing", label: "Spread footing" }, { value: "pile-foundation", label: "Piles and cap" }, { value: "drilled-shaft", label: "Drilled shafts" }]} onChange={(foundation) => setPier(k, { foundation })} />
+            <Field label="Foundation top" unit="ft" value={p.foundationTop} onChange={(v) => setPier(k, { foundationTop: v })} step={1} hint="Its elevation (0: 20 ft below the cap's soffit); the columns run down to it" />
+          </div>
+        );
+      })}
+    </>
+  );
+}

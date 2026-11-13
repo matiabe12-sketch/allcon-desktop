@@ -1,5 +1,7 @@
 import type { BridgeAnalysis, Selection } from "./bridge";
 import type { BridgeDefinition } from "./definition";
+import { spanGroups } from "../design/bridge/bridge";
+import { geometryOf, toBridgeInputs } from "./geometry";
 import type { LiveLoad } from "./moving";
 
 // From the bridge model to the design tools: which parts of a bridge have a design tool, and the
@@ -20,6 +22,28 @@ export function designTargets(d: BridgeDefinition): DesignTarget[] {
   if (d.piers.model) for (let k = 1; k < d.supports.length - 1; k++) out.push({ key: `column-${k}`, label: `Pier ${k} columns`, tool: "Pier Column", kind: "pier-column", from: "Strength I forces at the top of the hardest-worked column, with their concurrent forces" });
   d.supports.forEach((s, k) => {
     if ((k === 0 || k === d.supports.length - 1) && s.bearing === "expansion") out.push({ key: `joint-${k}`, label: `${lineName(d, k)} joint`, tool: "Strip Seal Expansion Joint", kind: "strip-seal-joint", from: "The expansion length to the fixed bearings; the skew" });
+  });
+  // The substructure and the load path (src/lib/design/bridge/load-path.server.ts): a second group of
+  // girders past a joint, each abutment with its approach slab and wingwall, each pier's cap and foundation.
+  const g = geometryOf(d);
+  let groups = 1;
+  try {
+    groups = spanGroups(toBridgeInputs(d)).length;
+  } catch {
+    // laid out as one group
+  }
+  for (let gi = 1; gi < groups; gi++) out.splice(gi, 0, { key: `girders-${gi}`, label: `Girders, group ${gi + 1}`, tool: "LRFD Bridge Design Check", kind: "lrfd-girder-check", from: "The spans past the joint, girders, deck and loads" });
+  g.supports.forEach((s, k) => {
+    const name = s.name || lineName(d, k);
+    if (k === 0 || k === g.supports.length - 1) {
+      out.push({ key: `abutment-${k}`, label: name, tool: "Abutment", kind: "abutment", from: "Its type, the girders' reactions, the seat and skew" });
+      out.push({ key: `approach-${k}`, label: `${name} approach slab`, tool: "Approach Slab", kind: "approach-slab", from: "The roadway's width, skew and the abutment" });
+      out.push({ key: `wingwall-${k}`, label: `${name} wingwall`, tool: "Cantilever Wingwall", kind: "cantilever-wingwall", from: "The abutment's height and the fill" });
+    } else if (s.pier && d.piers.model) {
+      out.push({ key: `cap-${k}`, label: `${name} cap`, tool: "Strut-and-Tie Model", kind: "stm-d-region", from: "The pier's cap and columns, the girders' reactions at their bearings" });
+      const f = s.pier.foundation;
+      out.push({ key: `foundation-${k}`, label: `${name} foundation`, tool: f === "spread-footing" ? "Spread Footing" : f === "pile-foundation" ? "Pile Foundation" : "Drilled Shaft", kind: f, from: "The column's base forces (start the cap and column first)" });
+    }
   });
   return out;
 }
@@ -95,14 +119,20 @@ export function designPrefill(target: DesignTarget, d: BridgeDefinition, a: Brid
       ];
     });
     const worst = cases.reduce((p, c) => (c[0].score > p[0].score ? c : p));
+    // This pier's own columns (the geometry's pier) and their height in the model.
+    const pier = geometryOf(d).supports[line]?.pier;
+    const col = columns[0] && a.generated.stage2.elements.find((e) => e.id === columns[0].elements[0]);
+    const [n1, n2] = col ? [col.n1, col.n2].map((id) => a.generated.stage2.nodes.find((n) => n.id === id)) : [];
+    const height = n1 && n2 ? +Math.abs(n2.z - n1.z).toFixed(2) : d.piers.columnHeight;
+    const round = !pier || pier.columnShape === "round";
     return {
       name,
       inputs: {
-        shape: "round",
-        T: d.piers.columnDiameter * 12,
-        W: d.piers.columnDiameter * 12,
-        height: d.piers.columnHeight,
-        capDepth: d.piers.capDepth,
+        shape: round ? "round" : "rectangular",
+        T: pier ? pier.columnSize : d.piers.columnDiameter * 12,
+        W: pier ? (round ? pier.columnSize : pier.columnDepth) : d.piers.columnDiameter * 12,
+        height,
+        capDepth: pier ? pier.capDepth : d.piers.capDepth,
         fc: d.piers.fc,
         loads: "entered",
         cases: worst.map(({ score, ...c }) => (void score, c)),

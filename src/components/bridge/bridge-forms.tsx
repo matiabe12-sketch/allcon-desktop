@@ -3,7 +3,7 @@
 import { Choice, Field, Toggle } from "@/components/design/design-kit";
 import { GIRDER_CHOICES, supportsFor, type BridgeDefinition } from "@/lib/bridge/definition";
 import { applyEdit } from "@/lib/bridge/geometry";
-import { GeometryForm } from "./geometry-forms";
+import { GeometryForm, PierShapesForm } from "./geometry-forms";
 
 // The bridge's inputs, in the groups the workspace's ribbon and tree open in the properties panel
 // (as midas Civil's girder bridge wizard groups them: layout, section, boundary, loads).
@@ -112,13 +112,9 @@ export function BridgeForm({ form, def, setDef: setRaw }: Props & { form: FormKe
         <Toggle label="Model the caps and columns" value={def.piers.model} onChange={part("piers")("model")} />
         {def.piers.model ? (
           <>
-            <Field label="Cap width" unit="ft" value={def.piers.capWidth} onChange={part("piers")("capWidth")} step={0.5} />
-            <Field label="Cap depth" unit="ft" value={def.piers.capDepth} onChange={part("piers")("capDepth")} step={0.5} />
-            <Field label="Columns" value={def.piers.columns} onChange={(v) => part("piers")("columns")(Math.round(v))} />
-            <Field label="Column diameter" unit="ft" value={def.piers.columnDiameter} onChange={part("piers")("columnDiameter")} step={0.5} />
-            <Field label="Column height" unit="ft" value={def.piers.columnHeight} onChange={part("piers")("columnHeight")} step={1} hint="Cap's soffit to the fixed base" />
-            <Field label="Column spacing" unit="ft" value={def.piers.columnSpacing} onChange={part("piers")("columnSpacing")} step={1} />
             <Field label="Pier f'c" unit="ksi" value={def.piers.fc} onChange={part("piers")("fc")} step={0.5} />
+            <Field label="Column height" unit="ft" value={def.piers.columnHeight} onChange={part("piers")("columnHeight")} step={1} hint="Cap's soffit to the fixed base, where a pier's foundation top isn't given (0)" />
+            <PierShapesForm def={def} setDef={setRaw} />
           </>
         ) : (
           note("Without the caps and columns, the bearings at each pier stand on fixed supports.")

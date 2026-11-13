@@ -244,7 +244,8 @@ export function generate(d: BridgeDefinition): Generated {
     if (sl === 0 || sl === d.supports.length - 1) return;
     const i = sl - 1;
     const p: PierShape = d.geometry ? (d.geometry.supports[sl]?.pier ?? pierFrom(d)) : { ...pierFrom(d), capWidth: d.piers.capWidth * 12, columnSize: d.piers.columnDiameter * 12, columnDepth: d.piers.columnDiameter * 12, columnSpacing: d.piers.columnSpacing, columns: d.piers.columns };
-    const height = (geo ? geo.columnHeights[sl] : null) ?? d.piers.columnHeight;
+    // A foundation top of 0 means none given: the wizard's column height, as before the geometry.
+    const height = (geo && p.foundationTop !== 0 ? geo.columnHeights[sl] : null) ?? d.piers.columnHeight;
     const [cb, cd] = [p.capWidth / 12, p.capDepth];
     const round = p.columnShape === "round";
     const [cs, cdp] = [p.columnSize / 12, (round ? p.columnSize : p.columnDepth) / 12];

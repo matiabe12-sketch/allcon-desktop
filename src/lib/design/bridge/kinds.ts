@@ -1,15 +1,8 @@
 import { GIRDER_RAIL_DEFAULT } from "../girders/bridge-deck";
 import { BRIDGE_DEFAULTS, PIER_DEFAULTS, type BridgeInputs, type Support } from "./bridge";
 
-// The Bridge in the Design list, and its saved inputs filled in from the defaults (each nested part
+// A Bridge description (the Bridge section's geometry and girders as the engine takes them, toBridgeInputs) filled in from the defaults (each nested part
 // merged, the lists kept as saved).
-
-export const BRIDGE_INFO = {
-  name: "Bridge",
-  short: "Alignment, spans and girders once: the girder check and the loads down to the foundations",
-  description:
-    "A girder bridge described once: the alignment, profile and roadway section, the abutments and piers at their stations with their skews and connections, the girders and deck. It works out the layout (each girder's span, the bearing seat elevations), runs the girder check with it, and passes the reactions down the load path to the abutments, pier caps, columns and foundations it's linked to.",
-};
 
 const obj = (v: unknown) => (v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
 const arr = <T,>(v: unknown, d: T[]) => (Array.isArray(v) ? (v as T[]) : d);

@@ -11,7 +11,8 @@ import type { LiveLoad } from "./moving";
 
 export type DesignTarget = { key: string; label: string; tool: string; kind: string; from: string };
 
-const lineName = (d: BridgeDefinition, k: number) => (k === 0 ? "Abutment 1" : k === d.supports.length - 1 ? "Abutment 2" : `Pier ${k}`);
+/** A support line's name: the bridge's own (its geometry's supports), else by its place. */
+const lineName = (d: BridgeDefinition, k: number) => d.geometry?.supports[k]?.name || (k === 0 ? "Abutment 1" : k === d.supports.length - 1 ? "Abutment 2" : `Pier ${k}`);
 
 export function designTargets(d: BridgeDefinition): DesignTarget[] {
   const out: DesignTarget[] = [

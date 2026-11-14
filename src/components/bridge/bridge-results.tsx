@@ -10,6 +10,7 @@ import type { LiveLoad } from "@/lib/bridge/moving";
 import { customShape, shapeById } from "@/lib/design/girders/sections";
 import { cn } from "@/lib/utils";
 import { Diagram } from "./diagram";
+import { GirderStrands } from "./girder-strands";
 
 // The workspace's tables panel: a member's diagrams and forces, the reactions, and the checks
 // (midas Civil's result tables and message window).
@@ -17,7 +18,7 @@ import { Diagram } from "./diagram";
 const th = "px-2 py-1 text-right font-medium";
 const td = "px-2 py-0.5 text-right";
 
-export function MemberPanel({ a, member, sel, live }: { a: BridgeAnalysis; member: Member; sel: Selection; live: LiveLoad | null }) {
+export function MemberPanel({ a, member, sel, live, bridgeId }: { a: BridgeAnalysis; member: Member; sel: Selection; live: LiveLoad | null; bridgeId?: string }) {
   const stations = useMemo(() => a.member(member, sel, 4, live), [a, member, sel, live]);
   const ends = useMemo(() => a.member(member, sel, 1, live), [a, member, sel, live]);
   const env = !!stations[0]?.max;
@@ -90,6 +91,11 @@ export function MemberPanel({ a, member, sel, live }: { a: BridgeAnalysis; membe
         </table>
         {env && <p className="pt-1 text-[11px] text-muted-foreground">Moments in kip·ft, forces in kip. Each maximum and minimum is its own loading (an envelope).</p>}
       </div>
+      {member.kind === "girder" && member.span && bridgeId && (
+        <div className="border-t pt-2 xl:col-span-2">
+          <GirderStrands bridgeId={bridgeId} span={member.span} girder={member.girder ?? 1} />
+        </div>
+      )}
     </div>
   );
 }

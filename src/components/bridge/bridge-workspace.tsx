@@ -1,7 +1,7 @@
 "use client";
 
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
-import { Focus, Activity, AlertCircle, Anchor, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, ArrowDownUp, ArrowLeft, ArrowUpFromLine, Box, Check, Cuboid, Database, Frame, Maximize, Moon, Palette, Route, Tag, ChevronDown, ChevronRight, ClipboardCheck, Columns3, EyeOff, FileText, Grid3x3, Layers, Loader2, MoveVertical, PanelBottom, PencilRuler, Play, Ruler, Spline, Table2, TriangleAlert, Truck, Weight } from "lucide-react";
+import { Focus, Activity, AlertCircle, Anchor, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, ArrowDownUp, ArrowLeft, ArrowUpFromLine, Box, Calculator, Check, Cuboid, RefreshCw, Database, Frame, Maximize, Moon, Palette, Route, Tag, ChevronDown, ChevronRight, ClipboardCheck, Columns3, EyeOff, FileText, Grid3x3, Layers, Loader2, MoveVertical, PanelBottom, PencilRuler, Play, Ruler, Spline, Table2, TriangleAlert, Truck, Weight } from "lucide-react";
 import { toast } from "sonner";
 import { createBridgeCalc, exportBridgeIfc, renameBridge, saveBridgeDefinition, setBridgeProject } from "@/app/actions/bridge";
 import { DesignErrorCard, fmt } from "@/components/design/design-kit";
@@ -13,6 +13,7 @@ import { LANE_WIDTH, movingLoadSteps, type LiveLoad } from "@/lib/bridge/moving"
 import { bridgeSolids, type SolidKind, type Vec3 } from "@/lib/bridge/solids";
 import { cn } from "@/lib/utils";
 import { DesignPanel } from "./bridge-design";
+import { QuantitiesPanel } from "./bridge-quantities";
 import { BridgeForm, FORM_TITLES, type FormKey } from "./bridge-forms";
 import { ChecksPanel, MemberPanel, ModelDataPanel, ReactionsPanel, SectionSketch } from "./bridge-results";
 import { BridgeView, contourCss, type Arrow, type BridgeViewHandle, type Contour, type Label, type Overlay, type Strip, type ViewName } from "./bridge-view";
@@ -23,9 +24,9 @@ import { BridgeView, contourCss, type Arrow, type BridgeViewHandle, type Contour
 // the right, the result tables below, and a status bar. The model is re-analyzed as its inputs
 // change; the moving load analysis follows a moment later.
 
-type Tab = "structure" | "boundary" | "load" | "analysis" | "results" | "design" | "view";
+type Tab = "structure" | "boundary" | "load" | "analysis" | "results" | "design" | "quantities" | "view";
 type Show = "none" | "deformed" | "My" | "Vz" | "N";
-type Table = "member" | "reactions" | "checks" | "design" | "data";
+type Table = "member" | "reactions" | "checks" | "design" | "quantities" | "data";
 type Display = { solid: boolean; deck: boolean; contour: boolean; values: boolean; names: boolean; reactions: boolean; lanes: boolean; grid: boolean; dark: boolean };
 type Save = "saved" | "saving" | "unsaved" | "error";
 
@@ -79,6 +80,7 @@ export function BridgeWorkspace({ bridge, projects }: { bridge: { id: string; na
   const [selKey, setSelKey] = useState("combination:Strength I");
   const [show, setShow] = useState<Show>("My");
   const [table, setTable] = useState<Table | null>(null);
+  const [qtyVersion, setQtyVersion] = useState(0);
   const [making, setMaking] = useState(false);
   const [display, setDisplay] = useState<Display>({ solid: true, deck: true, contour: true, values: true, names: false, reactions: false, lanes: false, grid: true, dark: false });
   const [panels, setPanels] = useState({ tree: true, properties: true });
@@ -376,10 +378,14 @@ export function BridgeWorkspace({ bridge, projects }: { bridge: { id: string; na
               ["analysis", "Analysis"],
               ["results", "Results"],
               ["design", "Design"],
+              ["quantities", "Quantities"],
               ["view", "View"],
             ] as const
           ).map(([t, label]) => (
-            <button key={t} type="button" onClick={() => setTab(t)} className={cn("rounded-t px-3 py-1", tab === t ? "bg-background font-medium text-foreground shadow-[0_-1px_0_0] shadow-border" : "text-muted-foreground hover:text-foreground")}>
+            <button key={t} type="button" onClick={() => {
+                setTab(t);
+                if (t === "quantities") setTable("quantities");
+              }} className={cn("rounded-t px-3 py-1", tab === t ? "bg-background font-medium text-foreground shadow-[0_-1px_0_0] shadow-border" : "text-muted-foreground hover:text-foreground")}>
               {label}
             </button>
           ))}
@@ -500,6 +506,25 @@ export function BridgeWorkspace({ bridge, projects }: { bridge: { id: string; na
               </Panel>
               <Panel title="How it works">
                 <div className="w-80 pt-1 text-[11px] leading-snug text-muted-foreground">The girders, deck, bearings, pier columns and joints each start a design in the Design section, with the bridge&apos;s geometry and this analysis&apos;s forces filled in.</div>
+              </Panel>
+            </>
+          )}
+          {tab === "quantities" && (
+            <>
+              <Panel title="Quantities">
+                <Big icon={Calculator} label="Summary" title="The summary of quantities under the pay items: a column per part of the bridge and the total" onClick={() => setTable("quantities")} active={table === "quantities"} />
+                <Big
+                  icon={RefreshCw}
+                  label="Refresh"
+                  title="Read the linked designs' quantities again (after changing a design)"
+                  onClick={() => {
+                    setQtyVersion((v) => v + 1);
+                    setTable("quantities");
+                  }}
+                />
+              </Panel>
+              <Panel title="How it works">
+                <div className="w-80 pt-1 text-[11px] leading-snug text-muted-foreground">Each linked design&apos;s takeoff under the pay items, added up by part of the bridge, as Part 3 of the calc package gives it. Link the designs under Design.</div>
               </Panel>
             </>
           )}
@@ -710,6 +735,7 @@ export function BridgeWorkspace({ bridge, projects }: { bridge: { id: string; na
                 ["reactions", "Reactions"],
                 ["checks", "Checks and properties"],
                 ["design", "Design"],
+                ["quantities", "Quantities"],
                 ["data", "Model data"],
               ] as const
             ).map(([k, label]) => (
@@ -717,15 +743,16 @@ export function BridgeWorkspace({ bridge, projects }: { bridge: { id: string; na
                 {label}
               </button>
             ))}
-            <span className="ml-2 text-muted-foreground">{table !== "checks" && table !== "design" && table !== "data" && selectionLabel}</span>
+            <span className="ml-2 text-muted-foreground">{table !== "checks" && table !== "design" && table !== "quantities" && table !== "data" && selectionLabel}</span>
             <button type="button" onClick={() => setTable(null)} className="ml-auto rounded px-2 py-0.5 text-muted-foreground hover:bg-accent hover:text-foreground" aria-label="Close the tables">
               Close
             </button>
           </div>
           <div className="min-h-0 flex-1 overflow-auto">
-            {table === "member" && (member ? <MemberPanel a={a} member={member} sel={sel} live={live} /> : <p className="p-3 text-xs text-muted-foreground">Pick a member in the tree or in the model to see its diagrams and forces.</p>)}
+            {table === "member" && (member ? <MemberPanel a={a} member={member} sel={sel} live={live} bridgeId={bridge.id} /> : <p className="p-3 text-xs text-muted-foreground">Pick a member in the tree or in the model to see its diagrams and forces.</p>)}
             {table === "reactions" && <ReactionsPanel a={a} sel={sel} def={current} live={live} />}
             {table === "checks" && <ChecksPanel a={a} live={live} />}
+            {table === "quantities" && <QuantitiesPanel bridgeId={bridge.id} version={qtyVersion} saved={save === "saved"} />}
             {table === "data" && <ModelDataPanel model={a.generated.stage2} />}
             {table === "design" && <DesignPanel bridgeId={bridge.id} def={def} saved={save === "saved"} onLinks={(designs) => setDefState((d) => ({ ...d, designs }))} />}
           </div>
@@ -754,7 +781,7 @@ export function BridgeWorkspace({ bridge, projects }: { bridge: { id: string; na
             )}
           </span>
         )}
-        <span className="ml-auto flex items-center gap-1" title="The Bridge section is new. Its solver is tested against hand solutions, PGSuper's girder moments and reference HL-93 envelopes, but its results aren't yet for use without a check by another program or by hand.">
+        <span className="ml-auto flex items-center gap-1" title="The Bridge section is new. Its solver is tested against hand solutions, published girder moments and reference HL-93 envelopes, but its results aren't yet for use without a check by another program or by hand.">
           <TriangleAlert className="size-3 text-amber-600" />
           Not verified: check independently
         </span>

@@ -3,13 +3,14 @@
 import { revalidatePath } from "next/cache";
 import { Prisma } from "@/generated/prisma/client";
 import { getCurrentUser, isUuid, requireUser } from "@/lib/auth/session";
-import { BRIDGE_GIRDER_BASE, runBridge, type BridgeInputs } from "@/lib/design/bridge/bridge";
+import { BRIDGE_GIRDER_BASE, runBridge, spanGroups, type BridgeInputs } from "@/lib/design/bridge/bridge";
 import { designBearing } from "@/lib/design/bearings/elastomeric";
 import { designDeck } from "@/lib/design/decks/deck";
 import { designApproachSlab } from "@/lib/design/approach/approach-slab";
 import { abutmentInputs, foundationInputs, footingInputs, pileFoundationInputs, shaftInputs } from "@/lib/design/foundations/kinds";
 import { runFoundation } from "@/lib/design/foundations/run";
-import { designGirder } from "@/lib/design/girders/prestressed";
+import { designGirder, girderShape, type HarpedStrands, type StrandRow } from "@/lib/design/girders/prestressed";
+import type { GirderShape } from "@/lib/design/girders/sections";
 import { approachSlabInputs, bearingInputs, deckInputs, designInputs, girderInputs, stripSealInputs, wingwallInputs } from "@/lib/design/kinds";
 import { designWingwall } from "@/lib/design/walls/wingwall";
 import { columnInputs, designColumn } from "@/lib/design/piers/column";
@@ -30,7 +31,7 @@ import { designPrefill, designTargets } from "@/lib/bridge/design-links";
 import { importedOf } from "@/lib/bridge/imported";
 import { movingLoad } from "@/lib/bridge/moving";
 import { bridgeCalcLines as bridgeAnalysisLines } from "@/lib/bridge/report";
-import { bridgePackageLines } from "@/lib/design/bridge/package";
+import { bridgePackageLines, bridgeQuantities } from "@/lib/design/bridge/package";
 import { layout } from "@/lib/calcs/library/templates";
 import { CALC_FILE, newCalcKey } from "@/lib/calcs/server";
 import { emptyCalc } from "@/lib/calcs/types";
@@ -343,4 +344,47 @@ export async function exportBridgeIfc(bridgeId: string): Promise<{ modelId: stri
   }
   revalidatePath(`/projects/${project.id}`, "layout");
   return { modelId: id, projectId: project.id, elements: made.summary.elements };
+}
+
+/** The bridge's summary of quantities under the pay items, from the saved bridge and its linked designs. */
+export async function bridgeQuantitiesFor(bridgeId: string): Promise<{ columns: string[]; rows: { code: string; description: string; unit: string; values: number[]; total: number }[]; missing: string[] }> {
+  const { user, bridge } = await ownBridge(bridgeId);
+  if (importedOf(bridge.definition)) throw new Error("Quantities are for bridges made with the wizard");
+  const definition = bridgeDefinition(bridge.definition);
+  return bridgeQuantities({ id: bridge.id, name: bridge.name, inputs: withLinks(toBridgeInputs(definition), definition.designs) }, user.orgId);
+}
+
+/**
+ * A span's strands, from the girder design linked to its group of spans: the section, the girder's length
+ * and end distance, and the span's strand rows and harped strands (a later span of the group from the
+ * design's extra spans). Null when no girder design is linked.
+ */
+export async function girderStrandsFor(
+  bridgeId: string,
+  span: number, // 1-based
+): Promise<{ designId: string; designName: string; spanOfDesign: number; shape: GirderShape; L: number; endDist: number; strandDia: number; strands: StrandRow[]; harped: HarpedStrands | null } | null> {
+  const { user, bridge } = await ownBridge(bridgeId);
+  if (importedOf(bridge.definition)) return null;
+  const definition = bridgeDefinition(bridge.definition);
+  const b = withLinks(toBridgeInputs(definition), definition.designs);
+  const groups = spanGroups(b);
+  const gi = groups.findIndex((g) => g.includes(span - 1));
+  const id = gi >= 0 ? b.girderDesignIds[gi] : null;
+  if (!id) return null;
+  const d = await db.design.findFirst({ where: { id, orgId: user.orgId, kind: "lrfd-girder-check" }, select: { id: true, name: true, inputs: true } });
+  if (!d) return null;
+  const i = girderInputs(d.inputs);
+  const p = groups[gi].indexOf(span - 1);
+  const extra = p > 0 ? i.extraSpans?.[p - 1] : undefined;
+  return {
+    designId: d.id,
+    designName: d.name,
+    spanOfDesign: p + 1,
+    shape: girderShape(i),
+    L: extra?.L ?? i.L,
+    endDist: i.endDist,
+    strandDia: i.strandDia,
+    strands: extra?.strands ?? i.strands,
+    harped: extra ? (extra.harped ?? i.harped) : i.harped,
+  };
 }

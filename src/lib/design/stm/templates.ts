@@ -300,8 +300,15 @@ export function buildTemplate(t: StmTemplate, base: StmInputs): StmInputs {
         ? c + f * (w / 2 - inset)
         : NaN;
     // Only the lighter face: cases putting the heavier face in tension belong to a model laid out the other way.
-    const tieL = s > 0 ? tieAt(-1) : NaN;
-    const tieR = s < 0 ? tieAt(1) : NaN;
+    // A bearing within 1 ft inside the tie's line anchors it (the tie's top is that bearing's node): the model needs the
+    // tie to start at a loaded top node, and the shorter lever arm only adds to the tie's force.
+    const snap = (x: number) => {
+      if (!Number.isFinite(x)) return x;
+      const near = bearings.filter((b) => Math.abs(b.x - x) <= 1 && Math.abs(b.x - c) <= Math.abs(x - c) + 1e-9).sort((p, q) => Math.abs(p.x - x) - Math.abs(q.x - x))[0];
+      return near ? near.x : x;
+    };
+    const tieL = snap(s > 0 ? tieAt(-1) : NaN);
+    const tieR = snap(s < 0 ? tieAt(1) : NaN);
     let vD = -w / 4;
     let vE = w / 4;
     let vs = 0;

@@ -202,6 +202,9 @@ export const GIRDER_SHAPES: GirderShape[] = [
   cbt(90, 1160, 1323390, 43.87),
   // 35 x 66 in box (CDOT project 24898 F-19-AGA's IDC: A 996.1 in², yb 15.95 in, I 166,615 in⁴; walls 6 in, bottom slab 6.5 in).
   box(35, 66, 6, 4.1685, 6.5, 996.1, 166615, 15.95, "CDOT 35 in x 66 in box (24898 IDC)"), // the top slab 4.17 in: its void fillets folded in, the area exact
+  // 28 x 50 in box (CDOT project 24057 E-16-FZA's IDC: A 734 in², I 72,889 in⁴, yb 13.09 in); its walls and slabs
+  // solved to give those three (walls 6.135 in, top 4.168 in, bottom 6.18 in: the void's fillets folded in).
+  box(28, 50, 6.135, 4.1683, 6.18, 734, 72889, 13.09, "CDOT 28 in x 50 in box (24057 IDC)"),
 ];
 
 export const shapeById = (id: string) => GIRDER_SHAPES.find((s) => s.id === id);

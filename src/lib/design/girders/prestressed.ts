@@ -508,6 +508,63 @@ export function rigidSection(nGirders: number, S: number, de: number, lanes: num
   return best;
 }
 
+/** A box girder's St. Venant torsional constant, the thin-walled closed section's 4·Ao² / Σ(s/t) (C4.6.2.2.1-3). */
+export function boxTorsion(shape: GirderShape) {
+  const p = shape.profile;
+  const B = 2 * p[0][1];
+  const tb = p[1][0];
+  const tw = p[2][1];
+  const tt = shape.depth - p[3][0];
+  const w = B - tw; // between the walls' midlines
+  const h = shape.depth - (tt + tb) / 2; // between the slabs' midlines
+  return (4 * (w * h) ** 2) / (w / tt + w / tb + (2 * h) / tw);
+}
+
+/**
+ * Side-by-side boxes on a cast-in-place deck, AASHTO type (f) (Table 4.6.2.2.1-1; CDOT BDM 5.5.2.1 G: the 5 in
+ * minimum deck lets the type (f) factors be used): moment T. 4.6.2.2.2b-1 and 4.6.2.2.2d-1, shear
+ * T. 4.6.2.2.3a-1 and 4.6.2.2.3b-1, skew T. 4.6.2.2.2e-1 and 4.6.2.2.3c-1. b, the box's width; I/J, its own.
+ */
+function adjacentBoxFactors(i: GirderInputs, g: SectionProps, shape: GirderShape, Kg: number, eg: number, n: number, lanes: number, exterior: boolean): DistFactors {
+  const { L, nGirders } = i;
+  const b = shape.topWidth;
+  const J = boxTorsion(shape);
+  const IJ = g.I / J;
+  const k = Math.max(1.5, 2.5 * nGirders ** -0.2);
+  const momentOne = k * (b / (33.3 * L)) ** 0.5 * IJ ** 0.25;
+  const momentMulti = k * (b / 305) ** 0.6 * ((b / 12) / L) ** 0.2 * IJ ** 0.06;
+  const shearOne = (b / (130 * L)) ** 0.15 * IJ ** 0.05;
+  const shearMulti = (b / 156) ** 0.4 * ((b / 12) / L) ** 0.1 * IJ ** 0.05 * Math.max(1, b / 48);
+  const out: string[] = [];
+  if (b < 35 || b > 60) out.push(`Box width ${b} in is outside 35–60 in`);
+  if (L < 20 || L > 120) out.push(`Span ${L} ft is outside 20–120 ft`);
+  if (nGirders < 5 || nGirders > 20) out.push(`${nGirders} boxes is outside 5–20`);
+  const th = Math.min(Math.abs(i.skew), 60);
+  const skewMoment = Math.min(1, 1.05 - 0.25 * Math.tan(rad(th)));
+  const skewShearRaw = 1 + ((12 * L) / (90 * shape.depth)) * Math.tan(rad(th)) ** 0.5;
+  const skewShear = exterior || i.skewShearInterior ? skewShearRaw : 1;
+  const base = { Kg, eg, n, lanes, momentOne, momentMulti, shearOne, shearMulti, skewMoment, skewShear, outOfRange: out };
+  if (!exterior) {
+    const m = Math.max(momentOne, lanes > 1 ? momentMulti : 0);
+    const v = Math.max(shearOne, lanes > 1 ? shearMulti : 0);
+    return { ...base, moment: m * skewMoment, shear: v * skewShear, fatigue: (momentOne * skewMoment) / 1.2, governs: { moment: `type (f), ${m === momentOne ? "one lane" : "two or more lanes"}`, shear: `type (f), ${v === shearOne ? "one lane" : "two or more lanes"}` } };
+  }
+  // de: the exterior web's midline to the barrier's inside face (ft).
+  const de = i.overhang - (b / 2 - shape.web / 4) / 12 - i.barrierWidth;
+  if (de < -1 || de > 2) out.push(`de ${de.toFixed(2)} ft is outside −1.0 to 2.0 ft`);
+  const eM1 = Math.max(1, 1.125 + de / 30);
+  const eM2 = Math.max(1, 1.04 + de / 25);
+  const eV1 = Math.max(1, 1.25 + de / 20);
+  const eV2 = Math.max(1, 1 + Math.max(0, (de + b / 12 - 2) / 40) ** 0.5);
+  const mOne = eM1 * momentOne;
+  const mMulti = lanes > 1 ? eM2 * momentMulti : 0;
+  const vOne = eV1 * shearOne;
+  const vMulti = lanes > 1 ? eV2 * shearMulti * Math.min(1, 48 / b) : 0;
+  const m = Math.max(mOne, mMulti);
+  const v = Math.max(vOne, vMulti);
+  return { ...base, moment: m * skewMoment, shear: v * skewShear, fatigue: (mOne * skewMoment) / 1.2, e: { moment: m === mOne ? eM1 : eM2, shear: v === vOne ? eV1 : eV2 }, governs: { moment: `type (f), ${m === mOne ? "one lane" : "two or more lanes"}, e·g interior`, shear: `type (f), ${v === vOne ? "one lane" : "two or more lanes"}, e·g interior` } };
+}
+
 /** Distribution factors for a girder (n: Ec girder / Ec deck; deckCg: the deck's centroid above the girder's bottom). */
 export function distributionFactors(i: GirderInputs, g: SectionProps, ts: number, n: number, deckCg: number, exterior: boolean): DistFactors {
   const { S, L, nGirders } = i;
@@ -519,6 +576,8 @@ export function distributionFactors(i: GirderInputs, g: SectionProps, ts: number
     const lv = leverRuleAll(nGirders, S, i.overhang, i.barrierWidth, exterior);
     return { moment: lv.best, shear: lv.best, fatigue: lv.one / 1.2, Kg, eg, n, lanes, momentOne: lv.one, momentMulti: lv.multi, shearOne: lv.one, shearMulti: lv.multi, lever: lv.best, skewMoment: 1, skewShear: 1, governs: { moment: `lever rule, ${lv.lanes} lane${lv.lanes > 1 ? "s" : ""}`, shear: `lever rule, ${lv.lanes} lane${lv.lanes > 1 ? "s" : ""}` }, outOfRange: [] };
   }
+  const shape = girderShape(i);
+  if (shape.family === "Prestressed box") return adjacentBoxFactors(i, g, shape, Kg, eg, n, lanes, exterior);
   const stiff = (Kg / (12 * L * ts ** 3)) ** 0.1;
   const momentOne = 0.06 + (S / 14) ** 0.4 * (S / L) ** 0.3 * stiff; // T. 4.6.2.2.2b-1
   const momentMulti = 0.075 + (S / 9.5) ** 0.6 * (S / L) ** 0.2 * stiff;

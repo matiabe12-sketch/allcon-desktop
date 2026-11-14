@@ -277,7 +277,7 @@ export async function bridgeDesignStatus(bridgeId: string): Promise<BridgeDesign
         d.kind === "lrfd-girder-check"
           ? designGirder(girderInputs(d.inputs)).ok
           : d.kind === "deck-slab"
-            ? designDeck(deckInputs(d.inputs)).ok
+            ? designDeck(deckInputs(d.inputs)).checks.every((c) => c.ok || c.advisory)
             : d.kind === "elastomeric-bearing"
               ? designBearing(bearingInputs(d.inputs)).ok
               : d.kind === "pier-column"

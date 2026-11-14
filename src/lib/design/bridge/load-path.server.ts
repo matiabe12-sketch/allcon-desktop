@@ -205,7 +205,7 @@ export async function runLoadPath(o: {
       ...b,
       deckDesignId: deckId,
       girderDesignIds: girderIds,
-      components: comps.map(({ support, bearingId, abutmentId, approachSlabId, wingwallId, capId, columnId, foundationId, foundationKind }) => ({ support, bearingId: bearingId ?? null, abutmentId: abutmentId ?? null, approachSlabId: approachSlabId ?? null, wingwallId: wingwallId ?? null, capId: capId ?? null, columnId: columnId ?? null, foundationId: foundationId ?? null, foundationKind: foundationKind ?? null })),
+      components: comps.map(({ support, bearingId, abutmentId, approachSlabId, wingwallId, jointId, capId, columnId, foundationId, foundationKind }) => ({ support, bearingId: bearingId ?? null, abutmentId: abutmentId ?? null, approachSlabId: approachSlabId ?? null, wingwallId: wingwallId ?? null, jointId: jointId ?? null, capId: capId ?? null, columnId: columnId ?? null, foundationId: foundationId ?? null, foundationKind: foundationKind ?? null })),
     },
   };
 }

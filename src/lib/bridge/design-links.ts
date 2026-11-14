@@ -12,7 +12,7 @@ import type { LiveLoad } from "./moving";
 export type DesignTarget = { key: string; label: string; tool: string; kind: string; from: string };
 
 /** A support line's name: the bridge's own (its geometry's supports), else by its place. */
-const lineName = (d: BridgeDefinition, k: number) => d.geometry?.supports[k]?.name || (k === 0 ? "Abutment 1" : k === d.supports.length - 1 ? "Abutment 2" : `Pier ${k}`);
+const lineName = (d: BridgeDefinition, k: number) => d.geometry?.supports[k]?.name || (k === 0 || k === d.supports.length - 1 ? `Abutment ${k + 1}` : `Pier ${k + 1}`);
 
 export function designTargets(d: BridgeDefinition): DesignTarget[] {
   const out: DesignTarget[] = [
@@ -20,7 +20,7 @@ export function designTargets(d: BridgeDefinition): DesignTarget[] {
     { key: "deck", label: "Deck", tool: "Deck Slab", kind: "deck-slab", from: "Girder spacing, overhang, deck, barrier" },
   ];
   d.supports.forEach((_, k) => out.push({ key: `bearing-${k}`, label: `${lineName(d, k)} bearings`, tool: "Elastomeric Bearing", kind: "elastomeric-bearing", from: "The largest bearing reaction on the line, dead and live; the expansion length" }));
-  if (d.piers.model) for (let k = 1; k < d.supports.length - 1; k++) out.push({ key: `column-${k}`, label: `Pier ${k} columns`, tool: "Pier Column", kind: "pier-column", from: "Strength I forces at the top of the hardest-worked column, with their concurrent forces" });
+  if (d.piers.model) for (let k = 1; k < d.supports.length - 1; k++) out.push({ key: `column-${k}`, label: `${lineName(d, k)} columns`, tool: "Pier Column", kind: "pier-column", from: "Strength I forces at the top of the hardest-worked column, with their concurrent forces" });
   // The substructure and the load path (src/lib/design/bridge/load-path.server.ts): a second group of
   // girders past a joint, each abutment with its approach slab and wingwall, each pier's cap and foundation.
   const g = geometryOf(d);

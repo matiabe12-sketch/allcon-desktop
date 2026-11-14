@@ -11,6 +11,7 @@ import { GIRDER_DEFAULTS, girderShape } from "../girders/prestressed";
 import type { ApproachSlabInputs } from "../approach/approach-slab";
 import { APPROACH_SLAB_DEFAULTS } from "../approach/approach-slab";
 import { railDef } from "../decks/rails";
+import type { WingwallInputs } from "../walls/wingwall";
 import { deckElevation, horizontalElements, offsetPoint, pointAt, profileAt, profileGeometry, sectionAt, stationOffset } from "./alignment";
 import type { BridgeInputs, BridgeRun } from "./bridge";
 import type { IfcRebar, RebarBox } from "./ifc-rebar";
@@ -54,6 +55,12 @@ export type IfcElement = {
   rebar?: IfcRebar;
   /** Where its bars are laid out, when its profile doesn't say (a deck span's surface solid). */
   box?: RebarBox;
+  /** A deck span's top surface (world, ft): rows from one support line to the other, columns across from the left edge; each column's stations at the two support lines. For placing its bars; not written to the IFC file. */
+  grid?: { top: V3[][]; stA: number[]; stB: number[] };
+  /** A swept element's frames (a barrier along the deck's edge): each point, and per inch inward (u) and up (v). Not written to the IFC file. */
+  sweep?: { p: V3; u: V3; v: V3 }[];
+  /** A wingwall: which way its sweep (thickness) runs, toward the roadway's fill (+1) or away (−1). */
+  wing?: { inward: 1 | -1 };
 };
 
 /** Colours by what an element is, so the deck, girders, barriers and substructure read apart. */
@@ -82,6 +89,7 @@ export type BridgeComponents = {
   verdicts?: Record<string, string>; // design id → its verdict
   abutments?: Record<number, { id?: string | null; inputs?: AbutmentInputs } | undefined>;
   approachSlabs?: Record<number, { id?: string | null; inputs?: ApproachSlabInputs } | undefined>;
+  wingwalls?: Record<number, { id?: string | null; inputs?: WingwallInputs } | undefined>;
   foundations?: Record<number, { id?: string | null; kind: "spread-footing" | "pile-foundation" | "drilled-shaft"; inputs?: FootingInputs | PileInputs | ShaftInputs } | undefined>;
   deckId?: string | null;
   ids?: { girders?: (string | null)[]; caps?: Record<number, string | null>; columns?: Record<number, string | null> };
@@ -329,6 +337,7 @@ export function bridgeIfc(b: BridgeInputs, run: BridgeRun, c: BridgeComponents =
       color: [...COLORS.deck],
       psets: { ALLCON_Design: { DesignKind: "deck-slab", DesignId: c.deckId ?? "", Verdict: verdict(c.deckId), Thickness_in: b.deckT, PayItem: "601-03056 Concrete Class DF" } },
       box: deckBox(),
+      grid: { top, stA: offs.map((o) => r6(corner(sa, o))), stB: offs.map((o) => r6(corner(sb, o))) },
     });
     // The span's deck as a box for its bars: along the chord at mid-width, across the deck, its thickness.
     function deckBox(): RebarBox {
@@ -368,6 +377,7 @@ export function bridgeIfc(b: BridgeInputs, run: BridgeRun, c: BridgeComponents =
         material: "Concrete Class D (Bridge)",
         color: [...COLORS.barrier],
         psets: { ALLCON_Design: { DesignKind: "bridge-rail", Rail: railShape.name, PayItem: railShape.payItem } },
+        sweep: frames,
       });
       // Steel tubes on a curb-and-post rail.
       for (const [t, tube] of (railShape.def?.posts?.tubes ?? []).entries()) {
@@ -421,6 +431,38 @@ export function bridgeIfc(b: BridgeInputs, run: BridgeRun, c: BridgeComponents =
         els.push({ cls: "IfcWall", type: "PARAPET", name: `${s.name} backwall`, part, origin: v3(P(bw.x, bw.y, capTop)), ...flat(lineX, lineY), profile: { kind: "rect", x: length, y: a.backwallT }, depth: a.backwallH, material: "Concrete Class D (Bridge)", psets: designPset("abutment", aid) });
         const fc = { x: stem.x + sign * fw.x * (a.heel - a.toe) / 2, y: stem.y + sign * fw.y * (a.heel - a.toe) / 2 };
         els.push({ cls: "IfcFooting", type: "STRIP_FOOTING", name: `${s.name} footing`, part, origin: v3(P(fc.x, fc.y, footBottom)), ...flat(lineX, lineY), profile: { kind: "rect", x: length, y: B }, depth: a.footT, material: "Concrete Class D (Bridge)", psets: designPset("abutment", aid) });
+      }
+      // Its wingwalls (when a wingwall design is linked): one at each end of the abutment, from its back face
+      // along the approach, square to the support line, their outer faces flush with the abutment's ends; the
+      // wingwall design's elevation (H at the abutment, h at the tip, its bottom level) and thickness.
+      const wing = c.wingwalls?.[i];
+      if (wing?.inputs) {
+        const w = wing.inputs;
+        const backFace = integral ? a.capWidth - s.bearingOffset : a.stemT;
+        const top = profileAt(b.profile, s.station, vcs).elevation;
+        const x: V3 = [sign * fw.x, sign * fw.y, 0]; // away from the bridge
+        const z = cross(x, UP); // the sweep's direction (the profile's y is then up)
+        for (const end of [-1, 1] as const) {
+          const outer = { x: cc.x + end * (length / 2) * lineX + x[0] * backFace, y: cc.y + end * (length / 2) * lineY + x[1] * backFace };
+          const inwardDir: V3 = [-end * lineX, -end * lineY, 0];
+          const inward = (z[0] * inwardDir[0] + z[1] * inwardDir[1] > 0 ? 1 : -1) as 1 | -1;
+          // The sweep starts at the outer face when it runs inward, at the inner face otherwise.
+          const o = inward === 1 ? outer : { x: outer.x + inwardDir[0] * (w.t / 12), y: outer.y + inwardDir[1] * (w.t / 12) };
+          els.push({
+            cls: "IfcWall",
+            type: "RETAININGWALL",
+            name: `${s.name} wingwall, ${end < 0 ? "left" : "right"}`,
+            part,
+            origin: v3(P(o.x, o.y, top - w.H)),
+            xdir: v3(x),
+            zdir: v3(z),
+            profile: { kind: "poly", pts: [[0, 0], [w.L, 0], [w.L, w.h], [0, w.H]] },
+            depth: r6(w.t / 12),
+            material: "Concrete Class D (Bridge)",
+            psets: designPset("cantilever-wingwall", wing.id ?? null, { PayItem: "601-03040 Concrete Class D (Bridge)" }),
+            wing: { inward },
+          });
+        }
       }
       // The approach slab behind it.
       const ap = c.approachSlabs?.[i]?.inputs ?? APPROACH_SLAB_DEFAULTS;

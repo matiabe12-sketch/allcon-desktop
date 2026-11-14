@@ -3,7 +3,7 @@ import { buildChain } from "./chain.testkit";
 import { F18Y, F18Y_ABUT_SOIL, F18Y_DIAPHRAGM_TOP, F18Y_GIRDER, F18Y_PAD, F18Y_SHAFT_LAYERS } from "./f18y.fixture";
 import { bridgeIfc, type BridgeComponents } from "./ifc";
 import { rebarModel } from "./rebar-model";
-import { stirrupStations, type BarSet3D } from "./rebar3d";
+import { elementFrame, stirrupStations, type BarSet3D } from "./rebar3d";
 
 // The Rebar view's bars on CDOT F-18-Y: every bar placed from its design sits in its concrete.
 
@@ -19,9 +19,17 @@ describe("F-18-Y's bars in 3D", async () => {
     shaft: { D: 48, length: 47, topDepth: 0, layers: F18Y_SHAFT_LAYERS, bar: 10, bars: 30 },
   });
   const p = r.piers[1];
-  const comps: BridgeComponents = { foundations: { 1: { id: "s", kind: "drilled-shaft", inputs: p.shaft } }, ids: { girders: ["g"], caps: { 1: "c" }, columns: { 1: "k" } } };
+  const ab = r.abutments;
+  const comps: BridgeComponents = {
+    foundations: { 1: { id: "s", kind: "drilled-shaft", inputs: p.shaft } },
+    abutments: { 0: { id: "a0", inputs: ab[0].abutment }, 2: { id: "a2", inputs: ab[2].abutment } },
+    approachSlabs: { 0: { id: "p0", inputs: ab[0].approach }, 2: { id: "p2", inputs: ab[2].approach } },
+    wingwalls: { 0: { id: "w0", inputs: ab[0].wingwall }, 2: { id: "w2", inputs: ab[2].wingwall } },
+    deckId: "d",
+    ids: { girders: ["g"], caps: { 1: "c" }, columns: { 1: "k" } },
+  };
   const els = bridgeIfc(F18Y, r.run, comps).elements;
-  const m = rebarModel(F18Y, els, { girders: [F18Y_GIRDER], comps, rebar: { caps: { 1: { id: "c", inputs: p.cap } }, columns: { 1: { id: "k", inputs: p.column } } } });
+  const m = rebarModel(F18Y, els, { girders: [F18Y_GIRDER], comps, rebar: { deck: { id: "d", inputs: r.deck }, caps: { 1: { id: "c", inputs: p.cap } }, columns: { 1: { id: "k", inputs: p.column } } } });
   const of = (cat: string) => m.elements.map((e, k) => ({ e, k })).filter(({ e }) => e.category === cat);
   const setsOn = (k: number) => m.bars.filter((b) => b.host === k);
   const copies = (sets: BarSet3D[]) => sets.reduce((t, s) => t + s.at.length, 0);
@@ -90,5 +98,76 @@ describe("F-18-Y's bars in 3D", async () => {
       expect(copies(sets.filter((s) => s.role === "main"))).toBe(30);
       for (const s of sets) for (const [x, y] of local(s)) expect(Math.hypot(x, y)).toBeLessThan(24 / 12);
     }
+  });
+
+  // --- phase 2 ---
+  const frames = (k: number) => elementFrame(m.elements[k]);
+  /** A set's points in world coordinates. */
+  const worldPts = (s: BarSet3D): [number, number, number][] => {
+    if (s.frame === "world") return s.at.flatMap((a) => s.path.map((q) => [q[0] + a[0], q[1] + a[1], q[2] + a[2]] as [number, number, number]));
+    const f = frames(s.host);
+    return local(s).map(([x, y, z]) => [f.o[0] + f.x[0] * x + f.y[0] * y + f.z[0] * z, f.o[1] + f.x[1] * x + f.y[1] * y + f.z[1] * z, f.o[2] + f.x[2] * x + f.y[2] * y + f.z[2] * z]);
+  };
+  it("every element with a linked design gets its bars from it: nothing schematic is left", () => {
+    expect(m.elements.filter((e) => e.bars === "schematic").map((e) => e.name)).toEqual([]);
+    for (const cat of ["deck", "abutment", "approach", "wingwall", "barrier"]) expect(of(cat).some(({ e }) => e.bars === "design"), cat).toBe(true);
+  });
+  it("the deck's bars stay within its thickness below its top, the transverse bars at the design's spacing over both spans", () => {
+    const decks = of("deck");
+    expect(decks).toHaveLength(2);
+    for (const { e, k } of decks) {
+      const g = els.find((x) => x.name === e.name)!.grid!;
+      const tops = g.top.flat().map((q) => q[2]);
+      const [zTop, zBot] = [Math.max(...tops), Math.min(...tops) - 8 / 12];
+      const sets = setsOn(k);
+      for (const s of sets)
+        for (const q of worldPts(s)) {
+          expect(q[2]).toBeGreaterThan(zBot - 0.01);
+          expect(q[2]).toBeLessThan(zTop + 0.01);
+        }
+      const across = sets.filter((s) => /transverse, top/.test(s.label)).length;
+      // The span's 111.08 ft at the design's spacing, 2 in clear at the abutment end.
+      const want = 111.08 / (r.deck.topBars.spacing / 12);
+      expect(Math.abs(across - want)).toBeLessThan(2);
+    }
+  });
+  it("the transverse bars run parallel to the 7.9° skew (BDM 9.8.1: 25° or less)", () => {
+    const { k } = of("deck")[0];
+    const s = setsOn(k).find((x) => /transverse, top/.test(x.label))!;
+    const [a, b] = [s.path[0], s.path[s.path.length - 1]];
+    const lineAz = r.run.layout.supports[0].lineAz;
+    const barAz = (Math.atan2(b[0] - a[0], b[1] - a[1]) * 180) / Math.PI;
+    const d = Math.abs(((barAz - lineAz + 540) % 180) - 0) % 180;
+    expect(Math.min(d, 180 - d)).toBeLessThan(0.5);
+  });
+  it("the abutment's cap bars are inside its cap, the approach slab's inside the slab, the wingwalls' inside the walls", () => {
+    for (const cat of ["abutment", "approach", "wingwall"])
+      for (const { e, k } of of(cat)) {
+        if (e.profile.kind === "rect" && !/diaphragm|backwall/.test(e.name)) {
+          const prof = e.profile;
+          for (const s of setsOn(k))
+            for (const [x, y, z] of local(s)) {
+              expect(Math.abs(x), e.name).toBeLessThanOrEqual(prof.x / 2 + 1e-3);
+              // Anchorage bars run on into the abutment.
+              if (!/anchorage/.test(s.label)) expect(Math.abs(y), `${e.name} ${s.label}`).toBeLessThanOrEqual(prof.y / 2 + 1e-3);
+              if (!/anchorage/.test(s.label)) {
+                expect(z, e.name).toBeGreaterThanOrEqual(-1e-3);
+                expect(z, e.name).toBeLessThanOrEqual(e.depth + 1e-3);
+              }
+            }
+        }
+        if (cat === "wingwall")
+          for (const s of setsOn(k))
+            for (const [, , z] of local(s)) {
+              expect(z).toBeGreaterThanOrEqual(-1e-3);
+              expect(z).toBeLessThanOrEqual(e.depth + 1e-3);
+            }
+      }
+    expect(of("wingwall")).toHaveLength(4);
+  });
+  it("the bridge rail's bars sit in the barrier along both edges", () => {
+    const rails = of("barrier").filter(({ e }) => e.bars === "design");
+    expect(rails.length).toBe(4); // two edges, two spans
+    expect(setsOn(rails[0].k).length).toBeGreaterThan(100);
   });
 });

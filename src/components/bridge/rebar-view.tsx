@@ -13,9 +13,8 @@ import { cn } from "@/lib/utils";
 
 // The workspace's Rebar view: the whole bridge from its IFC model (girders, deck, barriers, bearings,
 // abutments, approach slabs, wingwalls, pier caps, columns, footings, piles and shafts), the concrete
-// ghosted, and inside it every bar as a tube at its true diameter: the strands and stirrups of the
-// girders, the cap's, columns' and shafts' bars where their designs place them; the other elements'
-// bars schematic (faded). Toggles for the bar types and the concrete; a click on an element shows it
+// ghosted, and inside it every bar as a tube at its true diameter, where its element's linked design
+// places it (rebar3d.ts, rebar3d-more.ts); any the IFC model has that aren't placed, schematic (faded). Toggles for the bar types and the concrete; a click on an element shows it
 // alone, the list shows a support (cap, columns and foundations together) or the superstructure.
 
 CameraControls.install({ THREE });
@@ -313,7 +312,7 @@ function RebarScene({ model, dark, onReload }: { model: RebarModel; dark?: boole
         <div className="space-y-1">{(["main", "stirrup", "spiral", "strand", "sheathed"] as BarRole[]).map(role)}</div>
         <label className="flex items-center gap-1.5">
           <input type="checkbox" checked={show.schematic} onChange={(e) => setShow((s) => ({ ...s, schematic: e.target.checked }))} />
-          Other elements&apos; bars (schematic, faded)
+          Bars not yet placed (schematic, faded)
         </label>
         <div className="flex items-center gap-1">
           <span className="text-muted-foreground">Concrete</span>
@@ -344,7 +343,7 @@ function RebarScene({ model, dark, onReload }: { model: RebarModel; dark?: boole
           ))}
         </select>
         <p className="leading-snug text-muted-foreground">
-          Placed from the designs: girders&apos; strands and stirrups, pier caps, columns and shafts ({designed} elements). Click an element to name it, double-click to see it alone.
+          Each bar placed from its element&apos;s linked design ({designed} elements). Click an element to name it, double-click to see it alone.
         </p>
         {model.notes.map((t) => (
           <p key={t} className="leading-snug text-amber-700 dark:text-amber-400">

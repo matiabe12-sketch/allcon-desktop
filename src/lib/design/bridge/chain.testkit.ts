@@ -82,6 +82,8 @@ export async function buildChain(spec: ChainSpec) {
   const supports: SupportCalc[] = [];
   /** Each pier's cap, column and shaft inputs, for the tests that build on them. */
   const piers: Record<number, { cap: ReturnType<typeof stmInputs>; column: ReturnType<typeof columnInputs>; shaft: ShaftInputs }> = {};
+  /** Each abutment's own, its wingwall and approach slab inputs. */
+  const abutments: Record<number, { abutment: AbutmentInputs; wingwall: ReturnType<typeof wingwallInputs>; approach: ApproachSlabInputs }> = {};
   for (let k = 0; k < b.supports.length; k++) {
     const s = b.supports[k];
     const parts: CalcPart[] = [];
@@ -100,6 +102,7 @@ export async function buildChain(spec: ChainSpec) {
       const ap: ApproachSlabInputs = { ...approachSlabFromBridge(b, k, approachSlabInputs({})), ...(spec.approach ?? {}) };
       parts.push({ label: "Approach slab", name: `${s.name} approach slab`, lines: approachSlabCalcLines(ap, `${s.name} approach slab`), checks: [{ checks: designApproachSlab(ap).checks }] });
       approachPay.push(...pays("approach-slab", ap, { length: 1 }));
+      abutments[k] = { abutment: a, wingwall: w, approach: ap };
     } else {
       const c = spec.cap;
       const cap = capFromBridge(b, run, k, stmInputs(c ? { template: { ...MULTICOLUMN_DEFAULTS, topBars: c.topBars, bottomBars: c.bottomBars, stirrups: c.stirrups }, stages: { enabled: true, diaphragmHeight: 0, topBars: c.diaphragmTop } } : {}), ["g"], ["Girders"]);
@@ -126,7 +129,7 @@ export async function buildChain(spec: ChainSpec) {
   const svg = renderBridgeSvg(m, { width: 720, height: 400 });
   const lines: Line[] = bridgeCalcLines({ title: spec.title, b, run, figures: { render: { kind: "image", width: 720, height: 400, svg } }, superstructure: superParts, supports, pay, tabulations: [], missing: [] });
   const verdicts = Object.fromEntries([...superParts, ...supports.flatMap((s) => s.parts.map((x) => ({ ...x, label: `${s.name}, ${x.label}` })))].map((p) => [p.label, verdict(p.checks)]));
-  return { run, lines, pay, rows: soqRows(pay), verdicts, deckFt, m, piers };
+  return { run, lines, pay, rows: soqRows(pay), verdicts, deckFt, m, piers, abutments, deck };
 }
 
 /** The package worked out as one worksheet: its errors and size. */

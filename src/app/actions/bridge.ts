@@ -87,6 +87,12 @@ async function describeBridgeModel(orgId: string, b: BridgeInputs, name: string)
         comps.abutments![c.support] = { id: a.id, inputs };
         verdictTry(a.id, () => runFoundation("abutment", inputs).checks);
       }
+      const ww = await load(c.wingwallId, "cantilever-wingwall");
+      if (ww) {
+        const inputs = wingwallInputs(ww.inputs);
+        (comps.wingwalls ??= {})[c.support] = { id: ww.id, inputs };
+        verdictTry(ww.id, () => designWingwall(inputs).checks);
+      }
       const ap = await load(c.approachSlabId, "approach-slab");
       if (ap) {
         const inputs = approachSlabInputs(ap.inputs);
@@ -335,7 +341,15 @@ export async function exportBridgeIfc(bridgeId: string): Promise<{ modelId: stri
   const fileKey = newModelFileKey(id);
   let made: Awaited<ReturnType<typeof workerBridgeModel>>;
   try {
-    made = await workerBridgeModel(fileKey, { ...described.description, project: project.name || bridge.name, ...(project.latitude !== null && project.longitude !== null ? { location: { lat: project.latitude, lon: project.longitude, heading: 0 } } : {}) });
+    // The placement-only fields (a deck's surface grid, a barrier's sweep frames) stay out of the file.
+    const elements = described.description.elements.map((e) => {
+      const out = { ...e };
+      delete out.grid;
+      delete out.sweep;
+      delete out.wing;
+      return out;
+    });
+    made = await workerBridgeModel(fileKey, { ...described.description, elements, project: project.name || bridge.name, ...(project.latitude !== null && project.longitude !== null ? { location: { lat: project.latitude, lon: project.longitude, heading: 0 } } : {}) });
   } catch (e) {
     throw new Error(e instanceof WorkerError ? e.message : "The IFC engine couldn't write the model");
   }

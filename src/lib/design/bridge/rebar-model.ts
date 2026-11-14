@@ -5,6 +5,10 @@ import { spanGroups, type BridgeInputs } from "./bridge";
 import type { BridgeComponents, IfcElement, Profile, V3 } from "./ifc";
 import type { RebarDesigns } from "./ifc-rebar";
 import { capBars, columnBars, girderBars, schematicBars, shaftBars, type BarSet3D } from "./rebar3d";
+import { abutmentBars, approachBars, deckBars, footingBars, railBars, wingwallBars, type RailBarDef } from "./rebar3d-more";
+import { railDef } from "../decks/rails";
+import type { FootingInputs } from "../foundations/footing";
+import type { PileInputs } from "../foundations/piles";
 
 // What the workspace's Rebar view draws: the IFC model's elements (placement, profile, a box girder's
 // void) grouped for its toggles, and every bar set (rebar3d.ts), the designs' placement where phase 1
@@ -56,6 +60,9 @@ export function rebarModel(b: BridgeInputs, els: IfcElement[], d: { girders: (Gi
     const m = /^support-(\d+)$/.exec(e.part);
     return m ? Number(m[1]) : null;
   };
+  const deck = d.rebar.deck?.inputs ?? null;
+  const rail = b.rail ? railDef(b.rail.type) : null;
+  const nSpans = b.supports.length - 1;
   const elements: RebarElement[] = els.map((e, host) => {
     let category = categoryOf(e);
     const k = supportOf(e);
@@ -90,6 +97,32 @@ export function rebarModel(b: BridgeInputs, els: IfcElement[], d: { girders: (Gi
         const c = d.rebar.columns?.[k];
         if (c) placed = columnBars(host, e, c.inputs, b.supports[k].pier?.capDepth ?? 4);
         else missing.add(`${b.supports[k].name} columns`);
+      } else if (category === "deck" && e.grid) {
+        const span = Number(/span (\d+)/.exec(e.name)?.[1] ?? 1) - 1;
+        if (deck) placed = deckBars(host, e.grid, deck, Math.max(Math.abs(b.supports[span]?.skew ?? 0), Math.abs(b.supports[span + 1]?.skew ?? 0)), { start: span === 0, end: span === nSpans - 1 });
+        else missing.add("the deck");
+      } else if (category === "barrier" && e.sweep && /oncrete/.test(e.material)) {
+        if (rail && deck) placed = railBars(host, e.sweep, rail as unknown as RailBarDef, deck.coverTop + 1.5);
+      } else if ((category === "abutment" || category === "approach" || category === "wingwall") && k !== null) {
+        const back = (k === 0 ? -1 : 1) as 1 | -1; // the approach's side, in the support's frame
+        const n = e.name.toLowerCase();
+        if (category === "approach") {
+          const ap = d.comps.approachSlabs?.[k]?.inputs;
+          if (ap) placed = approachBars(host, e, ap, back);
+          else missing.add(`${b.supports[k].name} approach slab`);
+        } else if (category === "wingwall") {
+          const w = d.comps.wingwalls?.[k]?.inputs;
+          if (w && e.wing) placed = wingwallBars(host, w, e.wing.inward);
+        } else {
+          const a = d.comps.abutments?.[k]?.inputs;
+          const which = /pile cap/.test(n) ? "cap" : /diaphragm/.test(n) ? "diaphragm" : /stem/.test(n) ? "stem" : /backwall/.test(n) ? "backwall" : /footing/.test(n) ? "footing" : null;
+          if (a && which) placed = abutmentBars(host, e, which, a, back);
+          else if (!a) missing.add(`${b.supports[k].name}`);
+        }
+      } else if (category === "footing" && k !== null) {
+        const f = d.comps.foundations?.[k];
+        if (f?.inputs && (f.kind === "spread-footing" || f.kind === "pile-foundation")) placed = footingBars(host, e, f.inputs as FootingInputs | PileInputs);
+        else missing.add(`${b.supports[k].name} footings`);
       } else if (category === "shaft" && k !== null && !b.supports[k].type.endsWith("abutment")) {
         const f = d.comps.foundations?.[k];
         if (f?.kind === "drilled-shaft" && f.inputs) placed = shaftBars(host, e, f.inputs as ShaftInputs);

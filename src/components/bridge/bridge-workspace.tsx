@@ -533,7 +533,7 @@ export function BridgeWorkspace({ bridge, projects }: { bridge: { id: string; na
           {tab === "rebar" && (
             <Panel title="How it works">
               <div className="w-[34rem] pt-1 text-[11px] leading-snug text-muted-foreground">
-                The bridge in 3D with its reinforcement: the girders&apos; strands and stirrups, the pier caps&apos;, columns&apos; and drilled shafts&apos; bars placed from their linked designs; the deck&apos;s, abutments&apos;, approach slabs&apos;, wingwalls&apos;, footings&apos; and piles&apos; bars schematic for now. From the saved bridge and its designs: Refresh after a change.
+                The bridge in 3D with its reinforcement, each bar placed from its linked design: the girders&apos; strands and stirrups, the deck&apos;s mats and the rails&apos; bars, the abutments, approach slabs and wingwalls, the pier caps, columns, footings and drilled shafts. From the saved bridge and its designs: Refresh after a change.
               </div>
             </Panel>
           )}

@@ -81,6 +81,7 @@ export const SHAFT_DEFAULTS: ShaftInputs = {
     { name: "Strength III", limit: "strength", P: 600, M: 700, H: 55, uplift: 0 },
     { name: "Service I", limit: "service", P: 560, M: 300, H: 22, uplift: 0 },
   ],
+  column: null,
 };
 
 const PA = 2.12; // ksf

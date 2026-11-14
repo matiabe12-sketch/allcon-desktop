@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { shaftInputs } from "../foundations/kinds";
 import { COLUMN_DEFAULTS } from "./column";
 import { columnShaftConnection, type ShaftCage } from "./column-shaft";
 
@@ -40,5 +41,10 @@ describe("column on a drilled shaft (BDM Figure 11-13)", () => {
     const t = c.transverse!;
     // 2π·A_sp·f_ytr·ℓs / (k·Aℓ·f_uℓ): #5 spiral, 60 ksi; ℓs the column bars' Class B lap; 10 #9; k 0.5; 90 ksi.
     expect(t.sMax).toBeCloseTo((2 * Math.PI * 0.31 * 60 * Math.max(12, 1.3 * c.ld)) / (0.5 * 10 * 1.0 * 90), 6);
+  });
+  it("a shaft design keeps its column when saved and read back (the Bridge hands it over)", () => {
+    const col = { ...COLUMN_DEFAULTS, shape: "rectangular" as const, T: 60, W: 36 };
+    expect(shaftInputs(JSON.parse(JSON.stringify({ D: 48, column: col }))).column).toEqual(JSON.parse(JSON.stringify(col)));
+    expect(shaftInputs({}).column).toBeNull();
   });
 });

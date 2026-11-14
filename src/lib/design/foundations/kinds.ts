@@ -52,6 +52,8 @@ const merge = <T extends object>(defaults: T, saved: unknown): T => {
     if (Array.isArray(v)) out[k] = Array.isArray(x) ? x : v;
     else if (v && typeof v === "object") out[k] = { ...(v as object), ...(typeof x === "object" ? (x as object) : {}) };
     else if (typeof v === typeof x) out[k] = x;
+    // An optional object the default leaves empty (a shaft's column).
+    else if (v === null && typeof x === "object") out[k] = x;
   }
   return out as T;
 };

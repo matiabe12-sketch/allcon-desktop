@@ -4,6 +4,8 @@ import { nominalBearing } from "./footing";
 import { axialResistance, fixityEmbedment, flexuralResistance, HP_SECTIONS, interaction, PHI_PILE } from "./hpile";
 import { analyzeLateral, type Layer } from "./lateral";
 import { pMultiplier, toLayers, type SoilLayer } from "./piles";
+import { designMicropile, MICROPILE_DEFAULTS, type MicropileInputs } from "./micropile";
+import { gridPiles, groupForces } from "./micropile-group";
 
 // A bridge abutment, CDOT BDM 11.3 with AASHTO LRFD (10th Edition) 3.11, 3.12, 4.7.4.4, 5, 6.15, 10
 // and 11.6.
@@ -27,7 +29,7 @@ import { pMultiplier, toLayers, type SoilLayer } from "./piles";
 // (4.7.4.4).
 // Kip, foot and inch.
 
-export type AbutmentType = "integral-piles" | "integral-shafts" | "semi-integral" | "seat";
+export type AbutmentType = "integral-piles" | "integral-shafts" | "integral-micropiles" | "semi-integral" | "seat";
 
 export type AbutmentInputs = {
   type: AbutmentType;
@@ -104,6 +106,15 @@ export type AbutmentInputs = {
   shaftBars: number;
   shaftBar: number;
   shaftLength: number; // ft
+  // Integral on micropiles: nPiles in each of mpRows rows, mpRowSpacing apart across the cap, the back rows battered
+  mpRows: number;
+  mpRowSpacing: number; // ft
+  mpBatterFront: number; // deg from vertical, the first row
+  mpBatterBack: number; // deg, the other rows
+  /** kip·ft, the factored (Strength) moment on the group across its rows (the integral frame's, from the bridge's analysis). */
+  groupMoment: number;
+  /** The micropiles' section, lengths and bond (the Micropile design's inputs). */
+  micropile: Partial<MicropileInputs>;
   // Seat on piles: two rows
   rowFront: number; // ft from the toe
   rowBack: number;
@@ -191,6 +202,12 @@ export const ABUTMENT_DEFAULTS: AbutmentInputs = {
   shaftBars: 12,
   shaftBar: 8,
   shaftLength: 30,
+  mpRows: 2,
+  mpRowSpacing: 5,
+  mpBatterFront: 0,
+  mpBatterBack: 6,
+  groupMoment: 0,
+  micropile: { casingOD: 7, casingT: 0.5, casingFy: 80, bar: 20, barFy: 75, fcGrout: 5, holeD: 8, cased: 0, bond: 25, alphaB: 2.4, phiBond: 0.55, embed: 12 },
   rowFront: 1.5,
   rowBack: 12.5,
   pileSpacing: 4,
@@ -273,7 +290,7 @@ export function designAbutment(i: AbutmentInputs) {
   if (!(i.nGirders >= 1)) throw new DesignError("Give the girders.");
   const checks: Check[] = [];
   const add = (c: Omit<Check, "ok"> & { ok?: boolean }) => checks.push({ ...c, ok: c.ok ?? c.demand <= c.capacity });
-  const integral = i.type === "integral-piles" || i.type === "integral-shafts";
+  const integral = i.type === "integral-piles" || i.type === "integral-shafts" || i.type === "integral-micropiles";
   const ec = 120000 * i.gammaC ** 2 * i.fc ** 0.33;
   const beta1 = Math.min(0.85, Math.max(0.65, 0.85 - (i.fc - 4) * 0.05));
   const common = { fc: i.fc, fy: i.fy, Es: 29000, phiF: 0.9, exposure: i.exposure, n: 29000 / ec, beta1 };
@@ -307,11 +324,14 @@ export function designAbutment(i: AbutmentInputs) {
     // Vertical loads on the cap and the foundation (foundation: no IM, BDM 11.3).
     const capW = i.gammaC * i.capWidth * i.totalDepth; // kip/ft, cap and diaphragm (solid)
     const apr = 0.5 * i.approachDC; // kip/ft
-    const n = i.type === "integral-piles" ? i.nPiles : Math.max(2, i.nPiles);
+    const micro = i.type === "integral-micropiles";
+    const rowsMP = micro ? Math.max(1, Math.round(i.mpRows)) : 1;
+    // Along the abutment: the piles of one row (a cap span's supports).
+    const n = i.type === "integral-piles" || micro ? i.nPiles : Math.max(2, i.nPiles);
     const factoredStrength = 1.25 * (totalGirderR.DC + (capW + apr) * i.length) + 1.5 * totalGirderR.DW + 1.75 * totalGirderR.LL;
     const service = totalGirderR.DC + (capW + apr) * i.length + totalGirderR.DW + totalGirderR.LL;
-    const Pu = factoredStrength / n;
-    const Ps = service / n;
+    const Pu = factoredStrength / (n * rowsMP);
+    const Ps = service / (n * rowsMP);
     // Supports along the abutment.
     const edge = (i.length - (n - 1) * ((i.length - 2) / Math.max(1, n - 1))) / 2;
     const sp = n > 1 ? (i.length - 2 * Math.max(1, edge)) / (n - 1) : 0;
@@ -345,6 +365,27 @@ export function designAbutment(i: AbutmentInputs) {
       add({ id: "pile-axial", name: "Pile: structural axial", demand: Pu, capacity: PHI_PILE.axialGood * axOnly.Pn, unit: "kip", ref: "AASHTO 6.15.3.1" });
       add({ id: "pile-geo", name: "Pile: geotechnical axial", demand: Pu, capacity: i.phiDyn * (n <= 3 ? 0.8 : 1) * i.Rn, unit: "kip", ref: "AASHTO 10.5.5.2.3, CDOT BDM 10.5.2.2" });
       foundation = { kind: "piles", lat, inter, KL, Pr, Mry };
+    } else if (micro) {
+      // Micropiles in rows under the cap: the group's forces on a rigid cap, the moment across the rows (FHWA GEC 12 9.8,
+      // as CDOT's micropile array calcs), along a battered pile's axis; each micropile by the Micropile design (AASHTO 10.9);
+      // the movement pushed through each by p–y, its head pinned (BDM 11.3.1), the casing's bending with its axial load.
+      const mp: MicropileInputs = { ...MICROPILE_DEFAULTS, ...i.micropile };
+      const group = gridPiles(n, rowsMP, sp || 1, i.mpRowSpacing, { batterByRow: Array.from({ length: rowsMP }, (_, r) => (r === 0 ? i.mpBatterFront : i.mpBatterBack)) });
+      const fS = groupForces(group, factoredStrength, i.groupMoment, 0);
+      const PmaxS = Math.max(...fS);
+      const PminS = Math.min(...fS);
+      add({ id: "pile-length", name: "Micropiles at least 10 ft below the cap", demand: 10, capacity: mp.cased + mp.bond, unit: "ft", ref: "CDOT BDM 11.3" });
+      const r = designMicropile({ ...mp, spacing: Math.min(sp || 99, i.mpRowSpacing), cases: [{ name: "Strength I", limit: "strength", compression: Math.max(0, PmaxS), tension: Math.max(0, -PminS), H: 0 }, { name: "Service I", limit: "service", compression: Math.max(...groupForces(group, service, 0, 0)), tension: 0, H: 0 }] });
+      for (const ch of r.checks) if (!/^(deflection|interaction)$/.test(ch.id)) checks.push({ ...ch, id: `mp-${ch.id}`, name: `Micropile: ${ch.name}` });
+      const ID = mp.casingOD - 2 * mp.casingT;
+      const Ic = (Math.PI / 64) * (mp.casingOD ** 4 - ID ** 4);
+      const Zc = (mp.casingOD ** 3 - ID ** 3) / 6;
+      const lat = analyzeLateral({ length: mp.cased + mp.bond, D: mp.casingOD, EI: 29000 * Ic, Q: PmaxS, head: { kind: "displaced", y: delta, pinned: true }, layers: toLayers(i.soil) });
+      const Pr = r.checks.find((c) => c.id === "cased-comp")?.capacity ?? r.checks.find((c) => c.id === "uncased-comp")?.capacity ?? 0;
+      const Mr = 1.0 * Math.min(mp.casingFy, 80) * Zc / 12; // kip·ft, the casing (AASHTO 6.12.2.2.3, φf 1.0)
+      const value = (Pr > 0 ? PmaxS / Pr : 1) + (Mr > 0 ? lat.Mmax / Mr : 1);
+      add({ id: "mp-movement", name: "Micropile: axial with the movement's moment (the casing, pinned head)", demand: value, capacity: 1, unit: "", ref: "AASHTO 10.9.3.10.1, 6.9.2.2; CDOT BDM 11.3.1", note: `${PmaxS.toFixed(1)} kip on the most loaded pile (the group's moment ${i.groupMoment} kip·ft across ${rowsMP} rows); ${lat.Mmax.toFixed(1)} kip·ft from ${delta.toFixed(2)} in of movement` });
+      foundation = { kind: "shafts", lat, phiMn: Mr };
     } else {
       add({ id: "shaft-length", name: "Shafts at least 10 ft below the cap", demand: 10, capacity: i.shaftLength, unit: "ft", ref: "CDOT BDM 11.3" });
       add({ id: "shaft-d", name: "Shaft diameter at least 24 in", demand: 24, capacity: i.shaftD, unit: "in", ref: "CDOT BDM 10.6.1.1" });

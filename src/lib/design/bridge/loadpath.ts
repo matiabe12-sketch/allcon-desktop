@@ -48,7 +48,7 @@ export function abutmentFromBridge(b: BridgeInputs, run: BridgeRun, support: num
   const s = b.supports[support];
   const lay = run.layout.supports[support];
   const r = run.reactions[support];
-  const type: AbutmentInputs["type"] = s.type === "integral-abutment" ? (current.type === "integral-shafts" ? "integral-shafts" : "integral-piles") : s.type === "semi-integral-abutment" ? "semi-integral" : "seat";
+  const type: AbutmentInputs["type"] = s.type === "integral-abutment" ? (current.type === "integral-shafts" || current.type === "integral-micropiles" ? current.type : "integral-piles") : s.type === "semi-integral-abutment" ? "semi-integral" : "seat";
   const lanes = designLanes(b);
   const L = unitLength(b, support);
   const braking = brakingPerLane(L).perLane * lanes * multiplePresence(lanes);

@@ -9,6 +9,7 @@ import type { AbutmentInputs } from "./abutment";
 import type { FootingInputs } from "./footing";
 import type { MicropileInputs } from "./micropile";
 import type { PileInputs } from "./piles";
+import { MICROPILE_DEFAULTS } from "./micropile";
 import type { ShaftInputs } from "./shaft";
 import { columnShaftConnection } from "../piers/column-shaft";
 
@@ -77,17 +78,25 @@ export function pileTakeoff(i: PileInputs): Takeoff {
   mat(run, capB, capL, i.barsB, i.barsL, "Bottom", i.cover);
   const groups = markGroups(pre);
   const cy = (capB * capL * (i.capT / 12)) / 27;
-  const n = i.nB * i.nL;
+  const n = i.perimeter ? Math.max(1, i.nB * i.nL - Math.max(0, i.nB - 2) * Math.max(0, i.nL - 2)) : i.nB * i.nL;
   const each = i.length + i.embed / 12;
+  const micro = i.pileType === "micropile";
+  const mp = { ...MICROPILE_DEFAULTS, ...(i.micropile ?? {}) };
+  const mpEach = mp.cased + mp.bond;
+  const piles: Takeoff["quantities"] = micro
+    ? { micropile: { value: n * mpEach, basis: `${n} micropiles × (${mp.cased} ft cased + ${mp.bond} ft bonded)`, math: `${n}\\cdot\\left(${ftT(mp.cased)}+${ftT(mp.bond)}\\right)`, ref: "Section 503: by the foot, casing, bar and grout included" } }
+    : {
+        pile: { value: n * each, basis: `${n} piles × (${i.length} ft + the ${i.embed} in embedment)`, math: `${n}\\cdot\\left(${ftT(i.length)}+${inT(i.embed)}\\right)`, ref: "Section 502: by the foot, cut-off to tip" },
+        "pile-tip": { value: n, basis: `one on each of the ${n} piles (driven to bedrock, BDM 10.5.2.1)`, math: `${n}`, ref: "Section 502" },
+      };
   return {
-    what: "pile cap",
+    what: micro ? "micropile footing" : "pile cap",
     schedule: schedule(groups, [{ label: "Pile cap", cy, basis: `${fit(capB)} ft × ${fit(capL)} ft × ${i.capT} in`, math: `${ftT(fit(capB))}\\cdot ${ftT(fit(capL))}\\cdot ${inT(i.capT)}`, ref: "Cap: B × L × thickness" }]),
     quantities: {
-      pile: { value: n * each, basis: `${n} piles × (${i.length} ft + the ${i.embed} in embedment)`, math: `${n}\\cdot\\left(${ftT(i.length)}+${inT(i.embed)}\\right)`, ref: "Section 502: by the foot, cut-off to tip" },
-      "pile-tip": { value: n, basis: `one on each of the ${n} piles (driven to bedrock, BDM 10.5.2.1)`, math: `${n}`, ref: "Section 502" },
+      ...piles,
       ...excavation(capB, capL, i.Df, cy),
     },
-    views: [section("Pile cap", capB, i.capT, `${n} × ${i.section}, cap ${fit(capB)} × ${fit(capL)} ft`)],
+    views: [section("Pile cap", capB, i.capT, `${n} × ${micro ? `${mp.casingOD} in micropiles` : i.section}, cap ${fit(capB)} × ${fit(capL)} ft`)],
     notes: ["The cap's bottom mat at 3 in cover, the piles passing between its bars and embedded as given.", "Piles by the foot from the cap's bottom less nothing for cut-off: add the plans' estimated lengths when known."],
   };
 }
@@ -149,6 +158,10 @@ export function abutmentTakeoff(i: AbutmentInputs): Takeoff {
       q.pile = { value: i.nPiles * (i.pileLength + i.embed / 12), basis: `${i.nPiles} piles × (${i.pileLength} ft + the ${i.embed} in embedment)`, math: `${i.nPiles}\\cdot\\left(${ftT(i.pileLength)}+${inT(i.embed)}\\right)`, ref: "Section 502" };
       q["pile-tip"] = { value: i.nPiles, basis: `${i.nPiles} piles`, math: `${i.nPiles}`, ref: "Section 502" };
       if (i.prebore > 0) q.prebore = { value: i.nPiles * i.prebore, basis: `${i.nPiles} × ${i.prebore} ft (the pipe sleeve and pea gravel included, BDM 11.3.1 Note 11)`, math: `${i.nPiles}\\cdot ${ftT(i.prebore)}`, ref: "Section 502" };
+    } else if (i.type === "integral-micropiles") {
+      const mp = { ...MICROPILE_DEFAULTS, ...i.micropile };
+      const nm = i.nPiles * Math.max(1, Math.round(i.mpRows));
+      q.micropile = { value: nm * (mp.cased + mp.bond), basis: `${nm} micropiles (${i.mpRows} rows of ${i.nPiles}) × (${mp.cased} ft cased + ${mp.bond} ft bonded)`, math: `${nm}\\cdot\\left(${ftT(mp.cased)}+${ftT(mp.bond)}\\right)`, ref: "Section 503: by the foot, casing, bar and grout included" };
     } else q.shaft = { value: i.nPiles * i.shaftLength, basis: `${i.nPiles} shafts × ${i.shaftLength} ft`, math: `${i.nPiles}\\cdot ${ftT(i.shaftLength)}`, ref: "Section 503" };
     Object.assign(q, excavation(i.capWidth, i.length, i.capDepth + i.capEmbed, cy));
   } else {

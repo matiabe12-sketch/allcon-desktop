@@ -7,6 +7,7 @@ import type { PileInputs } from "../foundations/piles";
 import { PILE_DEFAULTS } from "../foundations/piles";
 import type { ShaftInputs } from "../foundations/shaft";
 import { SHAFT_DEFAULTS } from "../foundations/shaft";
+import { MICROPILE_DEFAULTS } from "../foundations/micropile";
 import { GIRDER_DEFAULTS, girderShape } from "../girders/prestressed";
 import type { ApproachSlabInputs } from "../approach/approach-slab";
 import { APPROACH_SLAB_DEFAULTS } from "../approach/approach-slab";
@@ -411,8 +412,23 @@ export function bridgeIfc(b: BridgeInputs, run: BridgeRun, c: BridgeComponents =
         els.push({ cls: "IfcFooting", type: "PILE_CAP", name: `${s.name} pile cap`, part, origin: v3(P(cap.x, cap.y, bottom)), ...flat(lineX, lineY), profile: { kind: "rect", x: length, y: a.capWidth }, depth: a.capDepth, material: "Concrete Class D (Bridge)", psets: designPset("abutment", aid, { AbutmentType: a.type, PayItem: "601-03040 Concrete Class D (Bridge)" }) });
         const deckTop = profileAt(b.profile, s.station, vcs).elevation;
         els.push({ cls: "IfcBeam", type: "DIAPHRAGM", name: `${s.name} end diaphragm`, part, origin: v3(P(cap.x, cap.y, capTop)), ...flat(lineX, lineY), profile: { kind: "rect", x: length, y: a.capWidth }, depth: r6(Math.max(0.5, deckTop - b.deckT / 12 - capTop)), material: "Concrete Class D (Bridge)", psets: designPset("abutment", aid) });
-        const n = a.type === "integral-piles" ? a.nPiles : a.nPiles;
-        for (let k = 0; k < n; k++) {
+        const n = a.nPiles;
+        if (a.type === "integral-micropiles") {
+          // Micropiles in rows across the cap (the first toward the bridge), the others battered away from it.
+          const mp = { ...MICROPILE_DEFAULTS, ...a.micropile };
+          const rows = Math.max(1, Math.round(a.mpRows));
+          for (let r = 0; r < rows; r++) {
+            const across = -sign * ((rows - 1) * a.mpRowSpacing) / 2 + sign * r * a.mpRowSpacing;
+            const b = ((r === 0 ? a.mpBatterFront : a.mpBatterBack) * Math.PI) / 180;
+            const zdir: V3 = [sign * fw.x * Math.sin(b), sign * fw.y * Math.sin(b), -Math.cos(b)];
+            for (let k = 0; k < n; k++) {
+              const t = -length / 2 + 1.5 + (k * (length - 3)) / Math.max(1, n - 1);
+              const p = { x: cap.x + t * lineX + across * fw.x, y: cap.y + t * lineY + across * fw.y };
+              els.push({ cls: "IfcPile", type: "BORED", name: `${s.name} micropile ${r + 1}-${k + 1}`, part, origin: v3(P(p.x, p.y, bottom + mp.embed / 12)), xdir: v3([lineX, lineY, 0]), zdir: v3(zdir), profile: { kind: "circle", r: r6(mp.casingOD / 24) }, depth: r6(mp.cased + mp.bond + mp.embed / 12), material: "Steel casing, grouted (micropile)", psets: designPset("abutment", aid, { Diameter_in: mp.holeD, PayItem: "503 Micropile" }) });
+            }
+          }
+        }
+        for (let k = 0; k < (a.type === "integral-micropiles" ? 0 : n); k++) {
           const t = -length / 2 + 1 + (k * (length - 2)) / Math.max(1, n - 1);
           const p = { x: cap.x + t * lineX, y: cap.y + t * lineY };
           if (a.type === "integral-piles") {
@@ -498,11 +514,18 @@ export function bridgeIfc(b: BridgeInputs, run: BridgeRun, c: BridgeComponents =
         const bot = lp.foundationTop - pf.capT / 12;
         els.push({ cls: "IfcFooting", type: "PILE_CAP", name: `${s.name} pile cap ${k + 1}`, part, origin: v3(P(q.x, q.y, bot)), ...flat(lineX, lineY), profile: { kind: "rect", x: capB, y: capL }, depth: r6(pf.capT / 12), material: "Concrete Class D (Bridge)", psets: designPset("pile-foundation", f?.id, { PayItem: "601-03040 Concrete Class D (Bridge)" }) });
         const hp = HP_SECTIONS[pf.section] ?? HP_SECTIONS["HP12x53"];
+        const micro = pf.pileType === "micropile";
+        const mp = { ...MICROPILE_DEFAULTS, ...(pf.micropile ?? {}) };
         for (let a = 0; a < pf.nB; a++)
           for (let bb = 0; bb < pf.nL; bb++) {
+            if (pf.perimeter && a > 0 && a < pf.nB - 1 && bb > 0 && bb < pf.nL - 1) continue;
             const u = -((pf.nB - 1) * pf.sB) / 2 + a * pf.sB;
             const w = -((pf.nL - 1) * pf.sL) / 2 + bb * pf.sL;
             const pp = { x: q.x + u * lineX + w * fw.x, y: q.y + u * lineY + w * fw.y };
+            if (micro) {
+              els.push({ cls: "IfcPile", type: "BORED", name: `${s.name} micropile ${k + 1}-${a * pf.nL + bb + 1}`, part, origin: v3(P(pp.x, pp.y, bot + mp.embed / 12)), xdir: v3([lineX, lineY, 0]), zdir: [0, 0, -1], profile: { kind: "circle", r: r6(mp.casingOD / 24) }, depth: r6(mp.cased + mp.bond + mp.embed / 12), material: "Steel casing, grouted (micropile)", psets: designPset("pile-foundation", f?.id, { Diameter_in: mp.holeD, PayItem: "503 Micropile" }) });
+              continue;
+            }
             els.push({ cls: "IfcPile", type: "DRIVEN", name: `${s.name} pile ${k + 1}-${a * pf.nL + bb + 1}`, part, origin: v3(P(pp.x, pp.y, bot + pf.embed / 12)), xdir: v3([lineX, lineY, 0]), zdir: [0, 0, -1], profile: { kind: "ishape", width: r6(hp.bf / 12), depth: r6(hp.d / 12), web: r6(hp.tw / 12), flange: r6(hp.tf / 12) }, depth: r6(pf.length + pf.embed / 12), material: `Steel ${pf.section} Grade 50`, psets: designPset("pile-foundation", f?.id, { Section: pf.section, PayItem: "502 Steel Piling" }) });
           }
       } else {

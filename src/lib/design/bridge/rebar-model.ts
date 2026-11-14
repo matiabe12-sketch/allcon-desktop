@@ -42,7 +42,7 @@ function categoryOf(e: IfcElement): RebarCategory {
   if (e.cls === "IfcRailing") return "barrier";
   if (e.type === "PIERCAP") return "cap";
   if (e.cls === "IfcColumn") return "column";
-  if (e.cls === "IfcPile") return e.type === "BORED" ? "shaft" : "pile";
+  if (e.cls === "IfcPile") return e.type === "BORED" && /oncrete/.test(e.material) ? "shaft" : "pile";
   if (e.type === "APPROACH_SLAB") return "approach";
   if (/wing/.test(n)) return "wingwall";
   if (/diaphragm/.test(n)) return e.part === "super" ? "diaphragm" : "abutment";

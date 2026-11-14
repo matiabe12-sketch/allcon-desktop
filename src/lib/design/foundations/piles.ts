@@ -1,6 +1,7 @@
 import { BARS, DesignError, flexure, type Bars, type Check } from "../walls/cip";
 import { axialResistance, fixityEmbedment, flexuralResistance, HP_SECTIONS, interaction, PHI_PILE } from "./hpile";
 import { analyzeLateral, type Layer } from "./lateral";
+import { designMicropile, MICROPILE_DEFAULTS, type MicropileInputs } from "./micropile";
 
 // A group of driven steel H-piles under a rectangular cap (a pier footing on piles), AASHTO LRFD
 // (10th Edition) with CDOT BDM 10.5 and FHWA GEC 12 (FHWA-NHI-16-009) and GEC 9 (FHWA-HIF-18-031).
@@ -91,6 +92,12 @@ export type PileInputs = {
   barsL: Bars;
   exposure: 1 | 2;
   cases: PileCase[];
+  /** H-piles (the default) or micropiles, each checked by the Micropile design (AASHTO 10.9) under its share of the group's loads. */
+  pileType?: "hpile" | "micropile";
+  /** The micropiles' section, lengths and ground (the Micropile design's inputs; its cases and spacing come from the group). */
+  micropile?: Partial<MicropileInputs> | null;
+  /** Only the piles on the grid's edges (a ring under the cap). */
+  perimeter?: boolean;
 };
 
 /** Nine HP 12x53 piles at 4'-6" under a 13'-6" square cap, 5 ft thick, driven to rock. */
@@ -118,6 +125,9 @@ export const PILE_DEFAULTS: PileInputs = {
     { name: "Silty sand", thickness: 15, kind: "sand", gamma: 60, phi: 34, k: 60, su: 0, e50: 0.007, qu: 0, Em: 0, rqd: 0 },
     { name: "Claystone", thickness: 30, kind: "weak-rock", gamma: 70, phi: 0, k: 0, su: 0, e50: 0, qu: 300, Em: 30000, rqd: 50 },
   ],
+  pileType: "hpile",
+  micropile: { casingOD: 7, casingT: 0.5, casingFy: 80, bar: 20, barFy: 75, fcGrout: 5, holeD: 8, cased: 0, bond: 25, alphaB: 2.4, phiBond: 0.55, embed: 12 },
+  perimeter: false,
   Df: 6,
   gammaSoil: 125,
   colShape: "round",
@@ -153,27 +163,34 @@ export function designPiles(i: PileInputs) {
   if (!i.cases.length) throw new DesignError("Enter at least one load case.");
   const checks: Check[] = [];
   const add = (c: Omit<Check, "ok"> & { ok?: boolean }) => checks.push({ ...c, ok: c.ok ?? (c.lowerIsBetter ? c.demand >= c.capacity : c.demand <= c.capacity) });
-  const n = i.nB * i.nL;
+  const micro = i.pileType === "micropile";
+  const mp: MicropileInputs = { ...MICROPILE_DEFAULTS, ...(i.micropile ?? {}) };
   const capB = (i.nB - 1) * i.sB + 2 * i.edge;
   const capL = (i.nL - 1) * i.sL + 2 * i.edge;
   const piles: { x: number; y: number; row: { B: number; L: number } }[] = [];
-  for (let a = 0; a < i.nB; a++) for (let b = 0; b < i.nL; b++) piles.push({ x: -((i.nB - 1) * i.sB) / 2 + a * i.sB, y: -((i.nL - 1) * i.sL) / 2 + b * i.sL, row: { B: a, L: b } });
+  for (let a = 0; a < i.nB; a++)
+    for (let b = 0; b < i.nL; b++) {
+      if (i.perimeter && a > 0 && a < i.nB - 1 && b > 0 && b < i.nL - 1) continue;
+      piles.push({ x: -((i.nB - 1) * i.sB) / 2 + a * i.sB, y: -((i.nL - 1) * i.sL) / 2 + b * i.sL, row: { B: a, L: b } });
+    }
+  const n = piles.length;
   const Sx2 = piles.reduce((t, p) => t + p.x ** 2, 0);
   const Sy2 = piles.reduce((t, p) => t + p.y ** 2, 0);
   const tCap = i.capT / 12;
   const colArea = i.colShape === "round" ? (Math.PI * (i.colB / 12) ** 2) / 4 : (i.colB / 12) * (i.colL / 12);
   const Wcap = capB * capL * tCap * i.gammaC;
   const Wsoil = Math.max(0, capB * capL - colArea) * Math.max(0, i.Df - tCap) * (i.gammaSoil / 1000);
-  const width = Math.max(s.bf, s.d); // in, facing the soil
-  const pileD = Math.max(s.bf, s.d);
+  const width = micro ? mp.casingOD : Math.max(s.bf, s.d); // in, facing the soil
+  const pileD = micro ? mp.casingOD : Math.max(s.bf, s.d);
 
   // --- layout -------------------------------------------------------------------------------------------------
-  const minSpacing = Math.max(30, 2.5 * pileD) / 12;
+  // Micropiles: 30 in or 3 hole diameters (AASHTO 10.9.1.2); driven piles 30 in or 2.5 widths (10.7.1.2).
+  const minSpacing = (micro ? Math.max(30, 3 * mp.holeD) : Math.max(30, 2.5 * pileD)) / 12;
   if (i.nB > 1) add({ id: "spacing-B", name: "Pile spacing along B", demand: minSpacing, capacity: i.sB, unit: "ft", ref: "AASHTO 10.7.1.2" });
   if (i.nL > 1) add({ id: "spacing-L", name: "Pile spacing along L", demand: minSpacing, capacity: i.sL, unit: "ft", ref: "AASHTO 10.7.1.2" });
   add({ id: "edge", name: "Pile side to the cap's edge", demand: 9, capacity: i.edge * 12 - pileD / 2, unit: "in", ref: "AASHTO 10.7.1.2" });
   const fix = fixityEmbedment(s, i.Fy, i.fc);
-  add({ id: "embed", name: "Embedment for a fixed head", demand: Math.max(12, Math.round(fix)), capacity: i.embed, unit: "in", ref: "CDOT BDM 10.5.3, AASHTO 10.7.1.2" });
+  if (!micro) add({ id: "embed", name: "Embedment for a fixed head", demand: Math.max(12, Math.round(fix)), capacity: i.embed, unit: "in", ref: "CDOT BDM 10.5.3, AASHTO 10.7.1.2" });
   add({ id: "embed-cap", name: "Concrete over the pile heads (at least 12 in)", demand: 12, capacity: i.capT - i.embed, unit: "in", ref: "AASHTO 10.7.1.2, 5.12.8.6.3" });
 
   // --- pile loads, each case ------------------------------------------------------------------------------------
@@ -208,8 +225,8 @@ export function designPiles(i: PileInputs) {
     const loadsMin = pileLoad(Vmin);
     const Pmax = Math.max(...loadsMax);
     const Pmin = Math.min(...loadsMin);
-    const latB = lateral("B", lc.HB, Pmax);
-    const latL = lateral("L", lc.HL, Pmax);
+    const latB = micro ? null : lateral("B", lc.HB, Pmax);
+    const latL = micro ? null : lateral("L", lc.HL, Pmax);
     return { lc, MBb, MLb, Vmax, Vmin, loadsMax, Pmax, Pmin, latB, latL };
   });
 
@@ -217,7 +234,13 @@ export function designPiles(i: PileInputs) {
   const service = cases.filter((c) => c.lc.limit === "service");
   const pick = <T,>(arr: T[], f: (t: T) => number) => arr.reduce((a, b) => (f(b) > f(a) ? b : a), arr[0]);
 
-  if (factored.length) {
+  if (micro) {
+    // Each micropile under the group's worst share, case by case (compression, tension, and the shear spread evenly),
+    // by the Micropile design: bond, structural, lateral and buckling (AASHTO 10.9).
+    const r = designMicropile({ ...mp, spacing: Math.min(i.nB > 1 ? i.sB : Infinity, i.nL > 1 ? i.sL : Infinity, 99), cases: cases.map((c) => ({ name: c.lc.name, limit: c.lc.limit, compression: Math.max(0, c.Pmax), tension: Math.max(0, -c.Pmin), H: Math.hypot(c.lc.HB, c.lc.HL) / n })) });
+    for (const ch of r.checks) if (ch.id !== "spacing") checks.push({ ...ch, id: `mp-${ch.id}`, name: `Micropile: ${ch.name}` });
+  }
+  if (factored.length && !micro) {
     const g = pick(factored, (c) => c.Pmax);
     add({ id: "geo-axial", name: `Geotechnical axial resistance, the most loaded pile (${g.lc.name})`, demand: g.Pmax, capacity: phiGeo * i.Rn, unit: "kip", ref: smallGroup ? "AASHTO 10.5.5.2.3, CDOT BDM 10.5.2.2" : "AASHTO 10.5.5.2.3" });
     const u = factored.reduce((a, b) => (b.Pmin < a.Pmin ? b : a));
@@ -230,7 +253,7 @@ export function designPiles(i: PileInputs) {
   // Axial with flexure for each factored case with lateral load.
   const flexX = flexuralResistance(s, i.Fy, "x");
   const flexY = flexuralResistance(s, i.Fy, "y");
-  const combined = factored.map((c) => {
+  const combined = (micro ? [] : factored).map((c) => {
     const MuBdir = c.latB?.lead.Mmax ?? 0; // kip·ft from loads along B
     const MuLdir = c.latL?.lead.Mmax ?? 0;
     // Which axis each direction bends.
@@ -249,7 +272,7 @@ export function designPiles(i: PileInputs) {
     const g = pick(combined, (x) => x.inter.value);
     add({ id: "interaction", name: `Axial with flexure, the lead row's pile (${g.c.lc.name})`, demand: g.inter.value, capacity: 1, unit: "", ref: `AASHTO 6.15.3.2, Eq. ${g.inter.eq}` });
   }
-  if (service.length) {
+  if (service.length && !micro) {
     const sv = pick(service, (c) => Math.max(c.latB?.group.y0 ?? 0, c.latL?.group.y0 ?? 0));
     const y = Math.max(sv.latB?.group.y0 ?? 0, sv.latL?.group.y0 ?? 0);
     add({ id: "deflection", name: `Lateral deflection of the group (${sv.lc.name})`, demand: y, capacity: i.tolerable, unit: "in", ref: "AASHTO 10.7.2.4" });

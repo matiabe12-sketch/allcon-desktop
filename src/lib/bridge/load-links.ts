@@ -5,13 +5,13 @@ import type { DesignLink } from "./definition";
 // load path (src/lib/design/bridge/load-path.server.ts) reads and writes, and back.
 //
 // Keys: girders (girders-1, … for the groups of spans past a joint), deck, and for support k bearing-k,
-// abutment-k, approach-k, wingwall-k, cap-k, column-k, foundation-k. Joints (joint-k) stay the section's own.
+// abutment-k, approach-k, wingwall-k, joint-k (the abutment's expansion device), cap-k, column-k, foundation-k.
 
-const COMPONENT_KEYS = { bearingId: "bearing", abutmentId: "abutment", approachSlabId: "approach", wingwallId: "wingwall", capId: "cap", columnId: "column", foundationId: "foundation" } as const;
+const COMPONENT_KEYS = { bearingId: "bearing", abutmentId: "abutment", approachSlabId: "approach", wingwallId: "wingwall", jointId: "joint", capId: "cap", columnId: "column", foundationId: "foundation" } as const;
 type ComponentIdKey = keyof typeof COMPONENT_KEYS;
 
 /** The load path's parts, by the keys it reports them under. */
-export const isLoadPathKey = (key: string) => /^(girders(-\d+)?|deck|(bearing|abutment|approach|wingwall|cap|column|foundation)-\d+)$/.test(key);
+export const isLoadPathKey = (key: string) => /^(girders(-\d+)?|deck|(bearing|abutment|approach|wingwall|joint|cap|column|foundation)-\d+)$/.test(key);
 
 /** The description with the designs the bridge links filled in. */
 export function withLinks(b: BridgeInputs, links: DesignLink[]): BridgeInputs {
@@ -47,4 +47,4 @@ export function linksFrom(b: BridgeInputs, before: DesignLink[], kinds: Record<s
   return out;
 }
 
-export const LOAD_PATH_KINDS: Record<string, string> = { bearing: "elastomeric-bearing", abutment: "abutment", approach: "approach-slab", wingwall: "cantilever-wingwall", cap: "stm-d-region", column: "pier-column" };
+export const LOAD_PATH_KINDS: Record<string, string> = { bearing: "elastomeric-bearing", abutment: "abutment", approach: "approach-slab", wingwall: "cantilever-wingwall", joint: "strip-seal-joint", cap: "stm-d-region", column: "pier-column" };

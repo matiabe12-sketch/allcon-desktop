@@ -7,14 +7,15 @@ import { designDeck } from "../decks/deck";
 import { abutmentInputs, footingInputs, pileFoundationInputs, shaftInputs } from "../foundations/kinds";
 import { runFoundation } from "../foundations/run";
 import type { GirderInputs } from "../girders/prestressed";
-import { approachSlabInputs, bearingInputs, deckInputs, designInputs, girderInputs, kindInfo, wingwallInputs } from "../kinds";
+import { approachSlabInputs, bearingInputs, deckInputs, designInputs, girderInputs, kindInfo, stripSealInputs, wingwallInputs } from "../kinds";
+import { designStripSeal } from "../joints/strip-seal";
 import { columnInputs, designColumn } from "../piers/column";
 import { columnLinkFrom } from "../piers/column-link";
 import { nodeLpSolver } from "../stm/lp-node";
 import { designStm, stmInputs } from "../stm/strut-tie";
 import { designWingwall } from "../walls/wingwall";
 import { girderInputsFor, runBridge, spanGroups, type BridgeInputs } from "./bridge";
-import { abutmentFromBridge, approachSlabFromBridge, bearingFromBridge, capFromBridge, changedKeys, columnFromBridge, deckFromBridge, footingFromColumn, pilesFromColumn, shaftCageOf, shaftFromColumn, wingwallFromBridge } from "./loadpath";
+import { abutmentFromBridge, approachSlabFromBridge, bearingFromBridge, capFromBridge, changedKeys, columnFromBridge, deckFromBridge, footingFromColumn, jointFromBridge, pilesFromColumn, shaftCageOf, shaftFromColumn, wingwallFromBridge } from "./loadpath";
 
 // A bridge's load path through its linked designs (docs/bridge-model.md): each linked design's inputs
 // brought up to date from the bridge, top to bottom (girders, deck, bearings; abutments, approach slabs
@@ -142,6 +143,10 @@ export async function runLoadPath(o: {
       const wBefore = wingwallInputs(wd?.inputs ?? {});
       const wNext = wingwallFromBridge(b, k, next, wBefore);
       c.wingwallId = await upsert(`wingwall-${k}`, `${s.name}, wingwall`, "cantilever-wingwall", wd, wBefore, wNext, verdictTry(() => designWingwall(wNext).checks), `${prefix}, ${s.name} wingwall`);
+      const jd = await load(c.jointId, "strip-seal-joint");
+      const jBefore = stripSealInputs(jd?.inputs ?? {});
+      const jNext = jointFromBridge(b, k, sNext.L, jBefore);
+      c.jointId = await upsert(`joint-${k}`, `${s.name}, expansion device`, "strip-seal-joint", jd, jBefore, jNext, verdictTry(() => designStripSeal(jNext).checks), `${prefix}, ${s.name} expansion device`);
       continue;
     }
     // A pier: its cap (strut-and-tie from a standard pier cap), column and foundation, from the bridge's pier.

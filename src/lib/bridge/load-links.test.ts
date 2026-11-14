@@ -28,7 +28,7 @@ describe("the bridge's design links and the load path", () => {
     expect(b.components[0]).toMatchObject({ abutmentId: id(7), bearingId: null });
   });
 
-  it("takes back what the load path made and keeps the section's own links (joints)", () => {
+  it("takes back what the load path made, the expansion devices among them", () => {
     const b = withLinks(toBridgeInputs(d), links);
     const after = { ...b, components: b.components.map((c) => (c.support === 2 ? { ...c, abutmentId: id(9), approachSlabId: id(10) } : c)) };
     const back = linksFrom(after, links, LOAD_PATH_KINDS);
@@ -36,7 +36,8 @@ describe("the bridge's design links and the load path", () => {
     expect(back.find((l) => l.target === "abutment-2")).toEqual({ id: id(9), target: "abutment-2", kind: "abutment" });
     expect(back.find((l) => l.target === "approach-2")).toEqual({ id: id(10), target: "approach-2", kind: "approach-slab" });
     expect(back.find((l) => l.target === "foundation-1")?.kind).toBe("drilled-shaft");
-    expect(back.filter((l) => isLoadPathKey(l.target))).toHaveLength(9);
+    expect(back.find((l) => l.target === "joint-2")?.kind).toBe("strip-seal-joint");
+    expect(back.filter((l) => isLoadPathKey(l.target))).toHaveLength(10);
   });
 });
 

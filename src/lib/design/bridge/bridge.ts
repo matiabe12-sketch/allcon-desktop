@@ -69,7 +69,7 @@ export type BridgeInputs = {
   deckDesignId?: string | null;
   // The linked designs (the Bridge sets their layout and loads)
   girderDesignIds: (string | null)[]; // one per group of spans (continuous across continuous piers)
-  components: { support: number; bearingId?: string | null; abutmentId?: string | null; approachSlabId?: string | null; wingwallId?: string | null; capId?: string | null; columnId?: string | null; foundationId?: string | null; foundationKind?: "spread-footing" | "pile-foundation" | "drilled-shaft" | null }[];
+  components: { support: number; bearingId?: string | null; abutmentId?: string | null; approachSlabId?: string | null; wingwallId?: string | null; jointId?: string | null; capId?: string | null; columnId?: string | null; foundationId?: string | null; foundationKind?: "spread-footing" | "pile-foundation" | "drilled-shaft" | null }[];
 };
 
 /** A two-span continuous BT-72 bridge, 120 ft spans, on a tangent with a sag vertical curve, integral abutments. */

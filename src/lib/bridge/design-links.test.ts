@@ -10,6 +10,8 @@ import { columnInputs, designColumn } from "../design/piers/column";
 import { analyzeBridge } from "./bridge";
 import { BRIDGE_DEFAULTS, bridgeDefinition, supportsFor } from "./definition";
 import { designPrefill, designTargets } from "./design-links";
+import { toBridgeInputs } from "./geometry";
+import { jointFromBridge } from "../design/bridge/loadpath";
 import { movingLoad } from "./moving";
 import { bridgeCalcLines } from "./report";
 
@@ -23,10 +25,10 @@ const targets = designTargets(def);
 const fill = (key: string) => designPrefill(targets.find((t) => t.key === key)!, def, a, live);
 
 describe("designs from the bridge model", () => {
-  it("offers the girders, the deck, each line's bearings, the pier's columns, the expansion abutments' joints, and the substructure", () => {
+  it("offers the girders, the deck, each line's bearings, the pier's columns, and the substructure with each abutment's expansion device", () => {
     expect(targets.map((t) => t.key)).toEqual([
-      "girders", "deck", "bearing-0", "bearing-1", "bearing-2", "column-1", "joint-0", "joint-2",
-      "abutment-0", "approach-0", "wingwall-0", "cap-1", "foundation-1", "abutment-2", "approach-2", "wingwall-2",
+      "girders", "deck", "bearing-0", "bearing-1", "bearing-2", "column-1",
+      "abutment-0", "approach-0", "wingwall-0", "joint-0", "cap-1", "foundation-1", "abutment-2", "approach-2", "wingwall-2", "joint-2",
     ]);
     expect(targets.find((t) => t.key === "foundation-1")?.kind).toBe("spread-footing");
   });
@@ -59,9 +61,14 @@ describe("designs from the bridge model", () => {
     expect(i.T).toBe(42);
     expect(designColumn(i).checks.length).toBeGreaterThan(5);
   });
-  it("a joint takes the expansion length and the skew", () => {
-    const i = stripSealInputs(fill("joint-0").inputs);
-    expect([i.L, i.skew]).toEqual([100, 15]);
+  it("an expansion device takes the length from the bridge's middle, plus the approach slab at an integral abutment, and the skew", () => {
+    const b = toBridgeInputs(def);
+    const k = b.supports.length - 1;
+    const half = Math.abs(b.supports[k].station - (b.supports[0].station + b.supports[k].station) / 2);
+    const i = jointFromBridge(b, k, 20, stripSealInputs({}));
+    expect(i.L).toBeCloseTo(half + (b.supports[k].type === "integral-abutment" ? 20 : 0), 2);
+    expect(i.skew).toBe(Math.abs(b.supports[k].skew));
+    expect(jointFromBridge({ ...b, supports: b.supports.map((s, j) => (j === k ? { ...s, type: "integral-abutment" as const } : s)) }, k, 20, stripSealInputs({})).L).toBeCloseTo(half + 20, 2);
     expect(designStripSeal(i).checks.length).toBeGreaterThan(0);
   });
   it("the analysis calc package lays out, with its tables, and nothing in it fails to work out", () => {

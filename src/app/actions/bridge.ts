@@ -14,7 +14,8 @@ import type { GirderShape } from "@/lib/design/girders/sections";
 import { approachSlabInputs, bearingInputs, deckInputs, designInputs, girderInputs, stripSealInputs, wingwallInputs } from "@/lib/design/kinds";
 import { designWingwall } from "@/lib/design/walls/wingwall";
 import { columnInputs, designColumn } from "@/lib/design/piers/column";
-import { stmInputs } from "@/lib/design/stm/strut-tie";
+import { designStm, stmInputs } from "@/lib/design/stm/strut-tie";
+import { nodeLpSolver } from "@/lib/design/stm/lp-node";
 import { db } from "@/lib/db";
 import { bridgeIfc, type BridgeComponents } from "@/lib/design/bridge/ifc";
 import { runLoadPath, verdictOf, type SyncRow } from "@/lib/design/bridge/load-path.server";
@@ -216,7 +217,7 @@ export async function createBridgeDesign(bridgeId: string, targetKey: string): P
 }
 
 /** Design kinds the section starts only through the load path (they take the girders' reactions, the cap's model or the column's base forces). */
-const LOAD_PATH_ONLY = new Set(["abutment", "approach-slab", "cantilever-wingwall", "stm-d-region", "spread-footing", "pile-foundation", "drilled-shaft"]);
+const LOAD_PATH_ONLY = new Set(["abutment", "approach-slab", "cantilever-wingwall", "strip-seal-joint", "stm-d-region", "spread-footing", "pile-foundation", "drilled-shaft"]);
 
 /**
  * The load path through the bridge's designs (src/lib/design/bridge/load-path.server.ts) for a Bridge
@@ -268,13 +269,15 @@ export async function bridgeDesignStatus(bridgeId: string): Promise<BridgeDesign
   const links = importedOf(bridge.definition) ? [] : bridgeDefinition(bridge.definition).designs;
   if (!links.length) return [];
   const designs = await db.design.findMany({ where: { orgId: user.orgId, id: { in: links.map((l) => l.id) } }, select: { id: true, kind: true, name: true, inputs: true } });
-  return links.flatMap((l) => {
+  const rows = await Promise.all(links.map(async (l): Promise<BridgeDesignStatus | null> => {
     const d = designs.find((x) => x.id === l.id);
-    if (!d) return [];
+    if (!d) return null;
     let ok: boolean | null = null;
     try {
       ok =
-        d.kind === "lrfd-girder-check"
+        d.kind === "stm-d-region"
+          ? (await designStm(stmInputs(d.inputs), nodeLpSolver)).checks.every((c) => c.ok || c.advisory)
+          : d.kind === "lrfd-girder-check"
           ? designGirder(girderInputs(d.inputs)).ok
           : d.kind === "deck-slab"
             ? designDeck(deckInputs(d.inputs)).checks.every((c) => c.ok || c.advisory)
@@ -294,8 +297,9 @@ export async function bridgeDesignStatus(bridgeId: string): Promise<BridgeDesign
     } catch {
       ok = null;
     }
-    return [{ id: d.id, target: l.target, name: d.name, ok }];
-  });
+    return { id: d.id, target: l.target, name: d.name, ok };
+  }));
+  return rows.filter((r): r is BridgeDesignStatus => r !== null);
 }
 
 /** The bridge's analysis written out as a Calcs worksheet, filed with the bridge's project. */

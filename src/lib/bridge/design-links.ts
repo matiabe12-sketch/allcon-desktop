@@ -21,9 +21,6 @@ export function designTargets(d: BridgeDefinition): DesignTarget[] {
   ];
   d.supports.forEach((_, k) => out.push({ key: `bearing-${k}`, label: `${lineName(d, k)} bearings`, tool: "Elastomeric Bearing", kind: "elastomeric-bearing", from: "The largest bearing reaction on the line, dead and live; the expansion length" }));
   if (d.piers.model) for (let k = 1; k < d.supports.length - 1; k++) out.push({ key: `column-${k}`, label: `Pier ${k} columns`, tool: "Pier Column", kind: "pier-column", from: "Strength I forces at the top of the hardest-worked column, with their concurrent forces" });
-  d.supports.forEach((s, k) => {
-    if ((k === 0 || k === d.supports.length - 1) && s.bearing === "expansion") out.push({ key: `joint-${k}`, label: `${lineName(d, k)} joint`, tool: "Strip Seal Expansion Joint", kind: "strip-seal-joint", from: "The expansion length to the fixed bearings; the skew" });
-  });
   // The substructure and the load path (src/lib/design/bridge/load-path.server.ts): a second group of
   // girders past a joint, each abutment with its approach slab and wingwall, each pier's cap and foundation.
   const g = geometryOf(d);
@@ -40,6 +37,7 @@ export function designTargets(d: BridgeDefinition): DesignTarget[] {
       out.push({ key: `abutment-${k}`, label: name, tool: "Abutment", kind: "abutment", from: "Its type, the girders' reactions, the seat and skew" });
       out.push({ key: `approach-${k}`, label: `${name} approach slab`, tool: "Approach Slab", kind: "approach-slab", from: "The roadway's width, skew and the abutment" });
       out.push({ key: `wingwall-${k}`, label: `${name} wingwall`, tool: "Cantilever Wingwall", kind: "cantilever-wingwall", from: "The abutment's height and the fill" });
+      out.push({ key: `joint-${k}`, label: `${name} expansion device`, tool: "Strip Seal Expansion Joint", kind: "strip-seal-joint", from: "The length from the bridge's middle (and the approach slab, at an integral abutment); the skew" });
     } else if (s.pier && d.piers.model) {
       out.push({ key: `cap-${k}`, label: `${name} cap`, tool: "Strut-and-Tie Model", kind: "stm-d-region", from: "The pier's cap and columns, the girders' reactions at their bearings" });
       const f = s.pier.foundation;

@@ -9,6 +9,7 @@ import type { StmInputs } from "../stm/strut-tie";
 import { bearingsFromLink, buildTemplate, HAMMERHEAD_DEFAULTS, MULTICOLUMN_DEFAULTS, type StmTemplate } from "../stm/templates";
 import type { ColumnInputs, ColumnLink } from "../piers/column";
 import type { ApproachSlabInputs } from "../approach/approach-slab";
+import type { StripSealInputs } from "../joints/strip-seal";
 import type { WingwallInputs } from "../walls/wingwall";
 import type { ColumnResult } from "../piers/column";
 import { GIRDER_DEFAULTS, girderShape, type GirderInputs } from "../girders/prestressed";
@@ -139,6 +140,20 @@ export function columnFromBridge(b: BridgeInputs, run: BridgeRun, support: numbe
     loads: "stm",
     link,
   };
+}
+
+/**
+ * An abutment's expansion device: the length that moves toward it and the skew of the line it runs along.
+ * The length runs from the bridge's middle (its fixed point, as the bearings take it). At a seat abutment the
+ * device is at the backwall; at an integral abutment the bridge pushes the approach slab, tied to the abutment,
+ * so the device is at the slab's far end and the slab's own length is added (the conservative choice).
+ */
+export function jointFromBridge(b: BridgeInputs, support: number, approachL: number, current: StripSealInputs): StripSealInputs {
+  const s = b.supports[support];
+  const middle = (b.supports[0].station + b.supports[b.supports.length - 1].station) / 2;
+  const integral = s.type === "integral-abutment";
+  const L = Math.abs(s.station - middle) + (integral ? approachL : 0);
+  return { ...current, L: Math.round(L * 100) / 100, skew: Math.abs(s.skew) };
 }
 
 /** The approach slab at an abutment: the deck's width and the roadway between the barriers, the abutment's skew. */

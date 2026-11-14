@@ -23,7 +23,7 @@ export function NewCalcDialog({ label = "New worksheet", projects }: { label?: s
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>New worksheet</DialogTitle>
-          <DialogDescription>Math with units, laid out on pages like Mathcad. It opens full screen.</DialogDescription>
+          <DialogDescription>Math with units, laid out on pages. It opens full screen.</DialogDescription>
         </DialogHeader>
         <form action={action} className="grid gap-4">
           <div className="grid gap-1.5">

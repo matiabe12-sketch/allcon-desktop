@@ -523,11 +523,11 @@ export function CalcRibbon({
                     <option value="fine">Fine</option>
                   </select>
                 </label>
-                <label className="flex items-center gap-2" title="Darker lines every inch (25 mm on A4), as Mathcad's Show Major Gridlines">
+                <label className="flex items-center gap-2" title="Darker lines every inch (25 mm on A4)">
                   <input type="checkbox" checked={doc.grid.major !== false} onChange={(e) => doc.setMeta({ grid: { ...doc.grid, major: e.target.checked } })} />
                   Major Gridlines
                 </label>
-                <label className="flex items-center gap-2" title="Show values entered (a name := a number and unit) in blue; Mathcad shows them black">
+                <label className="flex items-center gap-2" title="Show values entered (a name := a number and unit) in blue; otherwise they're black">
                   <input type="checkbox" checked={!!doc.grid.inputsBlue} onChange={(e) => doc.setMeta({ grid: { ...doc.grid, inputsBlue: e.target.checked } })} />
                   Inputs in Blue
                 </label>

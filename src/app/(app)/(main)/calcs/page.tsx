@@ -31,7 +31,7 @@ export default async function CalcsPage() {
 
   return (
     <PageBody>
-      <PageHeader title="Calcs" description="Engineering calculations with units, laid out on pages the way you would in Mathcad." actions={
+      <PageHeader title="Calcs" description="Engineering calculations with units, laid out on pages." actions={
           <div className="flex gap-2">
             <ImportCalcDialog projects={projects} />
             {calcs.length > 0 && <NewCalcDialog projects={projects} />}

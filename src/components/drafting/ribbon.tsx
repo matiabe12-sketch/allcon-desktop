@@ -609,7 +609,7 @@ function InsertTab({ editor, onPalette, palettes }: { editor: Editor; onPalette:
         <Big icon={FileText} label="Attach PDF" title="Attach a PDF page under the drawing" onClick={() => run(editor, "PDFATTACH")} />
       </Panel>
       <Panel title="Export">
-        <Big icon={FileDown} label="Export DXF" title="Download as DXF for AutoCAD and other CAD programs (DXFOUT)" onClick={() => run(editor, "DXFOUT")} />
+        <Big icon={FileDown} label="Export DXF" title="Download as DXF for other CAD programs (DXFOUT)" onClick={() => run(editor, "DXFOUT")} />
       </Panel>
     </>
   );
@@ -649,7 +649,7 @@ function OutputTab({ editor, state }: { editor: Editor; state: Snapshot }) {
         <Big icon={FileStack} label="Publish" title="Publish layouts to Sheets or a PDF (PUBLISH)" onClick={() => run(editor, "PUBLISH")} />
       </Panel>
       <Panel title="Export">
-        <Big icon={FileDown} label="Export DXF" title="Download as DXF for AutoCAD and other CAD programs (DXFOUT)" onClick={() => run(editor, "DXFOUT")} />
+        <Big icon={FileDown} label="Export DXF" title="Download as DXF for other CAD programs (DXFOUT)" onClick={() => run(editor, "DXFOUT")} />
       </Panel>
     </>
   );

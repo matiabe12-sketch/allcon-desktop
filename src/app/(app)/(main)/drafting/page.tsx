@@ -26,7 +26,7 @@ export default async function DraftingPage() {
     <PageBody>
       <PageHeader
         title="Drafting"
-        description="2D drawings, drafted the way you would in AutoCAD."
+        description="2D drawings and details, drafted with commands."
         actions={
           <div className="flex gap-2">
             <ImportDxfDialog />
@@ -42,7 +42,7 @@ export default async function DraftingPage() {
             </div>
             <div className="space-y-1">
               <p className="font-medium">No drawings yet</p>
-              <p className="max-w-md text-sm text-muted-foreground">Draw and edit with the commands, object snaps, polar tracking, layers and command line you know from AutoCAD.</p>
+              <p className="max-w-md text-sm text-muted-foreground">Draw and edit with the familiar CAD commands, object snaps, polar tracking, layers and command line.</p>
             </div>
             <NewDrawingDialog label="Create your first drawing" templates={options} />
           </CardContent>

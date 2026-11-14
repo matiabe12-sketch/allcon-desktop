@@ -68,7 +68,7 @@ function SaveAs({ editor, request }: { editor: Editor; request: Of<"save-as"> })
           {type === "template"
             ? "New drawings can start from a template: its layers, styles, layouts, title block, notes and details come along."
             : type === "dxf"
-              ? "Downloads the drawing as a DXF for AutoCAD and other CAD programs."
+              ? "Downloads the drawing as a DXF for other CAD programs."
               : "A copy under a new name, which opens for you to go on working in."}
         </DialogDescription>
       </DialogHeader>

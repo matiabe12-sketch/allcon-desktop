@@ -232,7 +232,7 @@ export function ChecksPanel({ a, live }: { a: BridgeAnalysis; live: LiveLoad | n
           ]}
         />
         <p className="text-muted-foreground">
-          The model is a grillage of beam elements, as midas Civil&apos;s girder bridge wizard builds its &ldquo;All Frame&rdquo; model: each girder a line of elements with the composite section&apos;s properties, deck strips between them, bearings as links to the abutments and
+          The model is a grillage of beam elements: each girder a line of elements with the composite section&apos;s properties, deck strips between them, bearings as links to the abutments and
           pier caps. The girders alone carry their weight, the deck and the diaphragms on simple spans; the composite bridge carries the barriers, the wearing surface and live load.
         </p>
       </div>

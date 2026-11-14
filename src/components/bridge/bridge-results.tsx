@@ -104,7 +104,8 @@ export function ReactionsPanel({ a, sel, def, live }: { a: BridgeAnalysis; sel: 
   const bearings = useMemo(() => a.bearings(sel, live), [a, sel, live]);
   const reactions = useMemo(() => a.reactions(sel), [a, sel]);
   const lines = def.supports.map((_, k) => k + 1);
-  const lineName = (k: number) => (k === 1 ? "Abutment 1" : k === lines.length ? "Abutment 2" : `Pier ${k - 1}`);
+  // Support line k (from 1): its name in the bridge's geometry, else numbered as the geometry numbers them (Abutment 1, Pier 2, …).
+  const lineName = (k: number) => def.geometry?.supports[k - 1]?.name || (k === 1 || k === lines.length ? `Abutment ${k}` : `Pier ${k}`);
   const girders = Array.from({ length: def.nGirders }, (_, k) => k + 1);
   const bases = reactions.filter((r) => r.node >= 400000 && r.node < 500000);
   const env = bearings[0]?.max !== undefined;
@@ -165,7 +166,7 @@ export function ReactionsPanel({ a, sel, def, live }: { a: BridgeAnalysis; sel: 
               {bases.map((r) => (
                 <tr key={r.node} className="border-b border-border/40">
                   <td className="py-0.5 pr-2">
-                    Pier {Math.floor((r.node - 400000) / 1000)}, column {(r.node % 1000) + 1}
+                    {lineName(Math.floor((r.node - 400000) / 1000) + 1)}, column {(r.node % 1000) + 1}
                   </td>
                   <td className={td}>{fmt(r.R[2], 1)}</td>
                   <td className={td}>{fmt(r.R[0], 1)}</td>

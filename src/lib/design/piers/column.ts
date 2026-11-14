@@ -2,6 +2,7 @@ import { bar } from "../stm/aashto";
 import { multiplePresence } from "../stm/cap-loads";
 import { DesignError, type Check } from "../walls/cip";
 import { columnSection, concreteE, ES, type ColumnShape } from "./column-section";
+import { assumedShaft, columnShaftConnection, type ShaftCage } from "./column-shaft";
 import { solveFrame, type FrameLoad, type FrameMember, type FrameNode } from "./frame2d";
 
 // A pier column, AASHTO LRFD 10th Edition: its forces at the base and under the cap from a pier
@@ -71,6 +72,8 @@ export type ColumnInputs = {
   ground: number; // ft, the ground above the column's base
   base: "footing" | "shaft";
   shaftD: number; // in
+  /** The linked drilled shaft's cage (the Bridge sets it), for the column-to-shaft connection; else assumed (column-shaft.ts). */
+  shaftCage?: ShaftCage | null;
   fixity: number; // ft, below the top of the shaft to its point of fixity
   K: { T: number; L: number }; // effective length factors (4.6.2.5), unbraced
   wc: number; // kcf
@@ -456,6 +459,19 @@ export function designColumn(i: ColumnInputs) {
       restrained = restrainedGaps(i, sec.bars);
       const worst = restrained.reduce((p, x) => (x.gap > p.gap ? x : p), { face: "", gap: 0 });
       add({ id: "tie-restrained", name: `Restrained bars along the tie, ${worst.face}`, demand: worst.gap, capacity: 24, unit: "in", ref: "AASHTO 5.10.4.3", note: "Add tie legs (cross-ties) in that direction" });
+    }
+  }
+
+  // --- On a drilled shaft: the column-to-shaft splice (CDOT BDM Figure 11-13, AASHTO 5.10.8.4.2a) ----------------------------
+  if (i.base === "shaft") {
+    try {
+      const conn = columnShaftConnection(i, i.shaftCage ?? assumedShaft(i, i.shaftD));
+      const assumed = i.shaftCage ? "" : "; the shaft's cage assumed (link a shaft design)";
+      if (conn.transverse)
+        add({ id: "shaft-splice", name: `Splice zone: ${conn.transverse.what} spacing (bars ${conn.S.toFixed(1)} in apart)`, demand: conn.transverse.s, capacity: conn.transverse.sMax, unit: "in", ref: "AASHTO Eq. 5.10.8.4.2a-1, CDOT BDM Figure 11-13", note: `noncontact lap ${conn.lap.toFixed(1)} in; spliced bars farther apart than ${conn.limit.toFixed(1)} in (the greater of lap/5 and 6 in); k = 0.5${assumed}` });
+      else add({ id: "shaft-splice", name: `Column-to-shaft splice: bars ${conn.S.toFixed(1)} in apart`, demand: conn.S, capacity: conn.limit, unit: "in", ref: "AASHTO 5.10.8.4.2a, CDOT BDM Figure 11-13", note: `${conn.kind} shaft; ${conn.kind === "aligned" ? "tension" : "noncontact"} lap ${conn.lap.toFixed(1)} in${assumed}` });
+    } catch {
+      /* the section's own checks report what's missing */
     }
   }
 

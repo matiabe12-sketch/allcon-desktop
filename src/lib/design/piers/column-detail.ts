@@ -8,6 +8,7 @@ import { ftT, inT as inTex } from "../takeoff/tex";
 import type { DetailView, Takeoff } from "../takeoff/types";
 import { barPositions, outline } from "./column-section";
 import type { ColumnInputs } from "./column";
+import { assumedShaft, columnShaftConnection } from "./column-shaft";
 
 // A pier column's bars as CDOT details them and its quantities: the longitudinal bars run up into
 // the cap with standard hooks (AASHTO 5.10.2.1) and lap the footing's dowels (hooked into the
@@ -39,7 +40,10 @@ export function columnTakeoff(i: ColumnInputs, count?: number): Takeoff {
   const lap = classBLap(i.bar, lapOpts);
   // Up into the cap to 6 in under its top, with a standard 90° hook turned into the cap.
   const intoCap = Math.max(0, capDepth - 6);
-  const lapAtBase = lap ?? 0;
+  // On a drilled shaft, CDOT's connection (BDM Figure 11-13): into an oversized shaft the column's bars run down a
+  // noncontact lap; on an undersized one the shaft's bars run up into the column and the column's start at its top.
+  const conn = i.base === "shaft" ? columnShaftConnection(i, i.shaftCage ?? assumedShaft(i, i.shaftD)) : null;
+  const lapAtBase = conn ? (conn.projecting === "column" ? conn.lap : 0) : (lap ?? 0);
   pre.push(...runGroups({ size: i.bar, count: nb * n, straight: lapAtBase + H + intoCap, hooks: [false, true], use: "Column bars", callout: `#${i.bar} (Tot ${nb}) each column`, lap: lapOpts }).groups);
   if (i.base === "footing") {
     // Dowels: a hooked development into the footing (5.10.8.2.4), the lap above it.
@@ -51,7 +55,7 @@ export function columnTakeoff(i: ColumnInputs, count?: number): Takeoff {
     }
     pre.push(...runGroups({ size: i.bar, count: nb * n, straight: ldh + lapAtBase, hooks: [true, false], use: "Footing dowels", callout: `#${i.bar} (Tot ${nb}) each column`, lap: lapOpts }).groups);
     notes.push(`The column bars lap the footing's dowels at the top of the footing (Class B, ${ftIn(roundDown(lapAtBase))}); the dowels are hooked into the footing, developed ${ftIn(Math.ceil(ldh))} (AASHTO 5.10.8.2.4).`);
-  } else notes.push(`The column bars lap the drilled shaft's bars at the top of the shaft (Class B, ${ftIn(roundDown(lapAtBase))}); the shaft's bars are scheduled with the shaft.`);
+  } else if (conn) notes.push(`${conn.text}${conn.projecting === "shaft" ? " The shaft's bars and their lap are scheduled with the shaft (paid in Item 503)." : " The shaft's bars are scheduled with the shaft."}${i.shaftCage ? "" : " The shaft's cage is assumed (3 in cover, the column's bar sizes, bars about 6 in apart): link a shaft design for its own."}`);
   notes.push("The column bars run up into the cap with standard 90° hooks (AASHTO 5.10.2.1). All reinforcing steel is epoxy coated (CDOT B-100-1).");
 
   // Transverse reinforcement over the column's height (and into the cap to the lowest bars, 5.10.4.2/5.10.4.3).

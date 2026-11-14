@@ -7,6 +7,8 @@ import { placeIfcRebar } from "./ifc-placed";
 import { buildChain } from "./chain.testkit";
 import { F18Y, F18Y_ABUT_SOIL, F18Y_DIAPHRAGM_TOP, F18Y_GIRDER, F18Y_PAD, F18Y_SHAFT_LAYERS } from "./f18y.fixture";
 import { bridgeIfc, type BridgeComponents } from "./ifc";
+import { columnShaftConnection } from "../piers/column-shaft";
+import { shaftCageOf } from "./loadpath";
 import { attachRebar, rebarSources, type RebarDesigns } from "./ifc-rebar";
 import { rebarModel } from "./rebar-model";
 import { elementFrame, stirrupStations, type BarSet3D } from "./rebar3d";
@@ -94,6 +96,19 @@ describe("F-18-Y's bars in 3D", async () => {
           expect(Math.abs(a[1])).toBeLessThan(prof.y / 2);
         }
       expect(Math.max(...main.flatMap((s) => s.path.map((q) => q[2])))).toBeGreaterThan(e.depth);
+    }
+  });
+  it("the 48 in shafts are smaller than the 36 x 60 in columns: their bars run up into the columns, the columns' start at the shafts' tops (BDM Figure 11-13)", () => {
+    const conn = columnShaftConnection(p.column, shaftCageOf(p.shaft));
+    expect(conn.kind).toBe("undersized");
+    for (const { k } of of("column")) {
+      const main = setsOn(k).filter((s) => s.role === "main");
+      expect(Math.min(...main.flatMap((s) => s.path.map((q) => q[2])))).toBeGreaterThanOrEqual(-1e-6);
+    }
+    for (const { k } of of("shaft").filter(({ e }) => e.part === "support-1")) {
+      const bars = setsOn(k).find((s) => s.role === "main")!;
+      // The shaft's z runs down: up into the column is negative.
+      expect(bars.path[0][2]).toBeCloseTo(-conn.lap / 12, 3);
     }
   });
   it("each shaft's cage: 30 bars and a spiral inside its 48 in", () => {

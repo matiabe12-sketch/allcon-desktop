@@ -10,6 +10,7 @@ import type { FootingInputs } from "./footing";
 import type { MicropileInputs } from "./micropile";
 import type { PileInputs } from "./piles";
 import type { ShaftInputs } from "./shaft";
+import { columnShaftConnection } from "../piers/column-shaft";
 
 // The foundation tools' bars and quantities, CDOT's way: the bars the design sizes, cut at stock
 // lengths and lapped (Bridge Detail Manual 4.7), and the other quantities by pay item: piles by the
@@ -94,7 +95,10 @@ export function pileTakeoff(i: PileInputs): Takeoff {
 export function shaftTakeoff(i: ShaftInputs): Takeoff {
   const { pre, run } = runner(i.fy, i.fc);
   const L = i.length * 12;
-  run({ size: i.bar, count: i.bars, straight: L - 6, use: "Longitudinal", callout: `${i.bars} #${i.bar} (longitudinal)`, cover: i.cover, spacing: 6 });
+  // Smaller than its column: its bars run up into the column by the noncontact lap (CDOT BDM Figure 11-13).
+  const conn = i.column ? columnShaftConnection(i.column, { D: i.D, cover: i.cover, bar: i.bar, bars: i.bars, tieBar: i.tieBar, pitch: i.pitch, fc: i.fc, fy: i.fy }) : null;
+  const up = conn?.projecting === "shaft" ? conn.lap : 0;
+  run({ size: i.bar, count: i.bars, straight: L - 6 + up, use: "Longitudinal", callout: `${i.bars} #${i.bar} (longitudinal)${up ? `, ${ftIn(roundDown(up))} into the column` : ""}`, cover: i.cover, spacing: 6 });
   const Dsp = i.D - 2 * i.cover - BARS[i.tieBar].dia;
   const turns = Math.ceil(L / i.pitch) + 3;
   pre.push({ size: i.tieBar, count: 1, shape: { kind: "straight", dims: [roundDown(turns * Math.PI * Dsp)] }, length: roundDown(turns * Math.PI * Dsp), use: "Spiral", callout: `#${i.tieBar} spiral @ ${ftIn(i.pitch)} pitch (${turns} turns, ${fit(Dsp)} in)`, where: "spiral" });
@@ -107,7 +111,7 @@ export function shaftTakeoff(i: ShaftInputs): Takeoff {
       testing: { value: 1, basis: "crosshole sonic logging of the shaft (non-redundant shafts, BDM 10.6.3.2)", math: "1", ref: "Section 503" },
     },
     views: [section("Shaft", i.D / 12, 24, `${i.D} in, ${i.bars} #${i.bar}`)],
-    notes: ["The shaft's concrete is paid in the drilled shaft item. The cage's bars run its length; laps to the column's bars are detailed with the column.", "CSL testing: drop it where the shafts are redundant and not in water or cased holes (BDM 10.6.3.2)."],
+    notes: [`The shaft's concrete is paid in the drilled shaft item. ${conn ? conn.text : "The cage's bars run its length; laps to the column's bars are detailed with the column."}`, "CSL testing: drop it where the shafts are redundant and not in water or cased holes (BDM 10.6.3.2)."],
     length: { label: "Shafts", value: 1, unit: "EA" },
   };
 }

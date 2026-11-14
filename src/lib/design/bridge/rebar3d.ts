@@ -5,6 +5,7 @@ import { girderShape } from "../girders/prestressed";
 import { strandLayout, strandY } from "../girders/strand-layout";
 import type { ColumnInputs } from "../piers/column";
 import { barPositions } from "../piers/column-section";
+import type { Connection } from "../piers/column-shaft";
 import { hookLeg } from "../rebar/bars";
 import type { ShaftInputs } from "../foundations/shaft";
 import { detailCap } from "../stm/detail";
@@ -203,7 +204,7 @@ export function capBars(host: number, e: IfcElement, i: StmInputs): BarSet3D[] {
 // --- pier columns -------------------------------------------------------------------------------------------------
 
 /** A column's bars in its element's frame (x along the pier line, y across it, z up from its base); `capDepth` ft, `lapIn` in below its base. */
-export function columnBars(host: number, e: IfcElement, i: ColumnInputs, capDepth: number): BarSet3D[] {
+export function columnBars(host: number, e: IfcElement, i: ColumnInputs, capDepth: number, conn?: Connection | null): BarSet3D[] {
   const W = i.shape === "round" ? i.T : i.W;
   const out: BarSet3D[] = [];
   const H = e.depth;
@@ -213,7 +214,9 @@ export function columnBars(host: number, e: IfcElement, i: ColumnInputs, capDept
   const pos = barPositions({ shape: i.shape, T: i.T, W, cover: i.cover, bar: i.bar, bars: i.bars, barsT: i.barsT, barsL: i.barsL, barsEnd: i.barsEnd, tieBar: i.tieBar, transverse: i.transverse, fc: i.fc, fy: i.fy });
   const db = barDiameter(i.bar);
   const dt = barDiameter(i.tieBar);
-  const lap = 40 * db; // in, shown below the base (the design's Class B lap is in its calc)
+  // Below its base: into an oversized shaft its bars lap the shaft's (CDOT BDM Figure 11-13); on an undersized one
+  // the shaft's bars come up instead and its own start at the base; on a footing, the dowels' lap (shown as 40 db).
+  const lap = conn ? (conn.projecting === "column" ? conn.lap : 0) : 40 * db;
   const top = H + Math.max(0, capDepth - 0.5);
   const leg = ft(hookLeg(i.bar).leg);
   const xy = (p: [number, number]) => (swap ? [ft(p[1]), ft(p[0])] : [ft(p[0]), ft(p[1])]) as [number, number];
@@ -256,7 +259,9 @@ export function columnBars(host: number, e: IfcElement, i: ColumnInputs, capDept
 // --- drilled shafts -----------------------------------------------------------------------------------------------
 
 /** A shaft's cage in its element's frame (x along the pier line, z down from its top). */
-export function shaftBars(host: number, e: IfcElement, i: ShaftInputs): BarSet3D[] {
+export function shaftBars(host: number, e: IfcElement, i: ShaftInputs, conn?: Connection | null): BarSet3D[] {
+  // Smaller than its column: its bars run up into the column by the noncontact lap (CDOT BDM Figure 11-13).
+  const up = conn?.projecting === "shaft" ? -ft(conn.lap) : ft(3);
   const L = e.depth;
   const db = barDiameter(i.bar);
   const dt = barDiameter(i.tieBar);
@@ -264,7 +269,7 @@ export function shaftBars(host: number, e: IfcElement, i: ShaftInputs): BarSet3D
   const n = Math.max(1, Math.round(i.bars));
   const at = Array.from({ length: n }, (_, k) => p3(R * Math.cos((2 * Math.PI * k) / n), R * Math.sin((2 * Math.PI * k) / n), 0));
   return [
-    { host, frame: "host", mark: "", size: i.bar, dia: db, role: "main", label: `${n} #${i.bar} shaft bars`, path: [p3(0, 0, ft(3)), p3(0, 0, L - ft(3))], at, placed: "design" },
+    { host, frame: "host", mark: "", size: i.bar, dia: db, role: "main", label: `${n} #${i.bar} shaft bars`, path: [p3(0, 0, up), p3(0, 0, L - ft(3))], at, placed: "design" },
     { host, frame: "host", mark: "", size: i.tieBar, dia: dt, role: "spiral", label: `#${i.tieBar} spiral @ ${i.pitch} in`, path: helix(ft(i.D / 2 - i.cover - dt / 2), ft(3), L - ft(3), ft(i.pitch)), at: [p3(0, 0, 0)], placed: "design" },
   ];
 }

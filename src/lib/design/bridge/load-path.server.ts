@@ -14,7 +14,7 @@ import { nodeLpSolver } from "../stm/lp-node";
 import { designStm, stmInputs } from "../stm/strut-tie";
 import { designWingwall } from "../walls/wingwall";
 import { girderInputsFor, runBridge, spanGroups, type BridgeInputs } from "./bridge";
-import { abutmentFromBridge, approachSlabFromBridge, bearingFromBridge, capFromBridge, changedKeys, columnFromBridge, deckFromBridge, footingFromColumn, pilesFromColumn, shaftFromColumn, wingwallFromBridge } from "./loadpath";
+import { abutmentFromBridge, approachSlabFromBridge, bearingFromBridge, capFromBridge, changedKeys, columnFromBridge, deckFromBridge, footingFromColumn, pilesFromColumn, shaftCageOf, shaftFromColumn, wingwallFromBridge } from "./loadpath";
 
 // A bridge's load path through its linked designs (docs/bridge-model.md): each linked design's inputs
 // brought up to date from the bridge, top to bottom (girders, deck, bearings; abutments, approach slabs
@@ -163,12 +163,15 @@ export async function runLoadPath(o: {
     const capName = cap?.name ?? `${prefix}, ${s.name} cap (${kindInfo("stm-d-region")!.name})`;
     const col = await load(c.columnId, "pier-column");
     const colBefore = columnInputs(col?.inputs ?? {});
+    // The linked drilled shaft's cage, for the column-to-shaft connection (CDOT BDM Figure 11-13).
+    const shaftNow = s.pier.foundation === "drilled-shaft" && c.foundationKind === "drilled-shaft" ? await load(c.foundationId, "drilled-shaft") : null;
     let colNext = colBefore;
     let colResult: ReturnType<typeof designColumn> | null = null;
     let colVerdict = "";
     try {
       // The column takes its loads from the cap's strut-and-tie model (linked when the cap has a design).
       colNext = columnFromBridge(b, run, k, colBefore, columnLinkFrom(c.capId ?? "", capName, capNext, girders));
+      if (colNext.base === "shaft") colNext = { ...colNext, shaftCage: shaftNow ? shaftCageOf(shaftInputs(shaftNow.inputs)) : null };
       // The link's refresh time stays when its loads are the same (it isn't a change of the column).
       const [was, now] = [colBefore.link, colNext.link] as ({ refreshed?: string } | null | undefined)[];
       if (was && now && was.refreshed && changedKeys({ l: { ...was, refreshed: "" } }, { l: { ...now, refreshed: "" } }).length === 0) colNext = { ...colNext, link: { ...now, refreshed: was.refreshed } as typeof colNext.link };
@@ -185,7 +188,7 @@ export async function runLoadPath(o: {
     const fBefore = kind === "spread-footing" ? footingInputs(fd?.inputs ?? {}) : kind === "pile-foundation" ? pileFoundationInputs(fd?.inputs ?? {}) : shaftInputs(fd?.inputs ?? {});
     let fNext: object = fBefore;
     if (colResult) {
-      fNext = kind === "spread-footing" ? footingFromColumn(colResult, fBefore as ReturnType<typeof footingInputs>) : kind === "pile-foundation" ? pilesFromColumn(colResult, fBefore as ReturnType<typeof pileFoundationInputs>) : shaftFromColumn(colResult, fBefore as ReturnType<typeof shaftInputs>);
+      fNext = kind === "spread-footing" ? footingFromColumn(colResult, fBefore as ReturnType<typeof footingInputs>) : kind === "pile-foundation" ? pilesFromColumn(colResult, fBefore as ReturnType<typeof pileFoundationInputs>) : shaftFromColumn(colResult, fBefore as ReturnType<typeof shaftInputs>, colNext);
       if (kind === "drilled-shaft") fNext = { ...fNext, D: Math.max((fNext as ReturnType<typeof shaftInputs>).D, s.pier.columnShape === "round" ? s.pier.columnSize : 0) };
     }
     c.foundationId = await upsert(`foundation-${k}`, `${s.name}, foundation`, kind, fd, fBefore, fNext, colResult ? verdictTry(() => runFoundation(kind, fNext).checks) : "the column's base forces are needed first", `${prefix}, ${s.name} foundation`);

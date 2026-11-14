@@ -1,3 +1,4 @@
+import type { ColumnCage } from "../piers/column-shaft";
 import { columnSection } from "../piers/column-section";
 import { BARS, DesignError, type Check } from "../walls/cip";
 import { analyzeLateral } from "./lateral";
@@ -48,6 +49,8 @@ export type ShaftInputs = {
   tolerable: number; // in
   layers: ShaftLayer[]; // from the ground surface down
   cases: ShaftCase[];
+  /** The column on it (the Bridge sets it): an undersized shaft's bars run up into the column (CDOT BDM Figure 11-13). */
+  column?: ColumnCage | null;
 };
 
 const layer = (o: Partial<ShaftLayer> & Pick<ShaftLayer, "name" | "thickness" | "kind" | "axial">): ShaftLayer => ({ gamma: 120, phi: 32, k: 90, su: 1000, e50: 0.007, qu: 300, Em: 30000, rqd: 50, N60: 20, quKsf: 40, qs: 0, qp: 0, phiQs: 0.6, phiQp: 0.6, ...o });

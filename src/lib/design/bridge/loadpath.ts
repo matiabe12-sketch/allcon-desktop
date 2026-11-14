@@ -1,3 +1,4 @@
+import type { ColumnCage, ShaftCage } from "../piers/column-shaft";
 import { type AbutmentInputs } from "../foundations/abutment";
 import { type FootingInputs } from "../foundations/footing";
 import { type PileInputs } from "../foundations/piles";
@@ -179,9 +180,14 @@ export function pilesFromColumn(col: ColumnResult, current: PileInputs): PileInp
   return { ...current, cases: baseCases(col).map((c) => ({ name: c.name, limit: c.limit, P: round(c.P), MB: round(Math.abs(c.MT)), ML: round(Math.abs(c.ML)), HB: round(Math.abs(c.VT)), HL: round(Math.abs(c.VL)) })) };
 }
 
-export function shaftFromColumn(col: ColumnResult, current: ShaftInputs): ShaftInputs {
-  return { ...current, cases: baseCases(col).map((c) => ({ name: c.name, limit: c.limit, P: round(c.P), M: round(Math.hypot(c.MT, c.ML)), H: round(Math.hypot(c.VT, c.VL)), uplift: 0 })) };
+export function shaftFromColumn(col: ColumnResult, current: ShaftInputs, column?: ColumnCage | null): ShaftInputs {
+  // The column on it, for the column-to-shaft connection (CDOT BDM Figure 11-13).
+  const cage = column ? { shape: column.shape, T: column.T, W: column.W, cover: column.cover, bar: column.bar, bars: column.bars, barsT: column.barsT, barsL: column.barsL, barsEnd: column.barsEnd, tieBar: column.tieBar, tieSpacing: column.tieSpacing, transverse: column.transverse, fc: column.fc, fy: column.fy } : (current.column ?? null);
+  return { ...current, column: cage, cases: baseCases(col).map((c) => ({ name: c.name, limit: c.limit, P: round(c.P), M: round(Math.hypot(c.MT, c.ML)), H: round(Math.hypot(c.VT, c.VL)), uplift: 0 })) };
 }
+
+/** A shaft design's cage, for its column's connection (column-shaft.ts). */
+export const shaftCageOf = (s: ShaftInputs): ShaftCage => ({ D: s.D, cover: s.cover, bar: s.bar, bars: s.bars, tieBar: s.tieBar, pitch: s.pitch, fc: s.fc, fy: s.fy });
 
 /** What changed between a component's inputs and the Bridge's: the top-level keys whose values differ. */
 export function changedKeys(before: object, after: object) {

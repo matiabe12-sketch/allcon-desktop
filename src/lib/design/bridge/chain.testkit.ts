@@ -115,7 +115,7 @@ export async function buildChain(spec: ChainSpec) {
       const cr = designColumn(col);
       parts.push({ label: "Columns", name: `${s.name} columns`, lines: columnCalcLines(col, `${s.name} columns`), checks: [{ checks: cr.checks }] });
       sPay.push(...pays("pier-column", col, { length: nCols }));
-      const sh = { ...shaftFromColumn(cr, shaftInputs({})), ...(spec.shaft ?? {}) } as ShaftInputs;
+      const sh = { ...shaftFromColumn(cr, shaftInputs({}), col), ...(spec.shaft ?? {}) } as ShaftInputs;
       const sr = runFoundation("drilled-shaft", sh);
       parts.push({ label: `Drilled shafts, each of ${nCols}`, name: `${s.name} shafts`, lines: foundationCalcLines("drilled-shaft", sh, `${s.name} shafts`), checks: sr.groups.map((x) => ({ title: x.title, checks: sr.checks.filter((cc) => x.of(cc.id)) })) });
       sPay.push(...scaled(pays("drilled-shaft", sh), nCols));

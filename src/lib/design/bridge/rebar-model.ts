@@ -7,6 +7,8 @@ import type { RebarDesigns } from "./ifc-rebar";
 import { capBars, columnBars, girderBars, schematicBars, shaftBars, type BarSet3D } from "./rebar3d";
 import { abutmentBars, approachBars, deckBars, footingBars, railBars, wingwallBars, type RailBarDef } from "./rebar3d-more";
 import { railDef } from "../decks/rails";
+import { columnShaftConnection } from "../piers/column-shaft";
+import { shaftCageOf } from "./loadpath";
 import type { FootingInputs } from "../foundations/footing";
 import type { PileInputs } from "../foundations/piles";
 
@@ -63,6 +65,17 @@ export function rebarModel(b: BridgeInputs, els: IfcElement[], d: { girders: (Gi
   const deck = d.rebar.deck?.inputs ?? null;
   const rail = b.rail ? railDef(b.rail.type) : null;
   const nSpans = b.supports.length - 1;
+  // Each pier's column-to-shaft connection, from its two designs (CDOT BDM Figure 11-13).
+  const connectionAt = (k: number) => {
+    const col = d.rebar.columns?.[k]?.inputs;
+    const f = d.comps.foundations?.[k];
+    if (!col || col.base !== "shaft" || f?.kind !== "drilled-shaft" || !f.inputs) return null;
+    try {
+      return columnShaftConnection(col, shaftCageOf(f.inputs as ShaftInputs));
+    } catch {
+      return null;
+    }
+  };
   const elements: RebarElement[] = els.map((e, host) => {
     let category = categoryOf(e);
     const k = supportOf(e);
@@ -95,7 +108,7 @@ export function rebarModel(b: BridgeInputs, els: IfcElement[], d: { girders: (Gi
         else missing.add(`${b.supports[k].name} cap`);
       } else if (category === "column" && k !== null) {
         const c = d.rebar.columns?.[k];
-        if (c) placed = columnBars(host, e, c.inputs, b.supports[k].pier?.capDepth ?? 4);
+        if (c) placed = columnBars(host, e, c.inputs, b.supports[k].pier?.capDepth ?? 4, connectionAt(k));
         else missing.add(`${b.supports[k].name} columns`);
       } else if (category === "deck" && e.grid) {
         const span = Number(/span (\d+)/.exec(e.name)?.[1] ?? 1) - 1;
@@ -125,7 +138,7 @@ export function rebarModel(b: BridgeInputs, els: IfcElement[], d: { girders: (Gi
         else missing.add(`${b.supports[k].name} footings`);
       } else if (category === "shaft" && k !== null && !b.supports[k].type.endsWith("abutment")) {
         const f = d.comps.foundations?.[k];
-        if (f?.kind === "drilled-shaft" && f.inputs) placed = shaftBars(host, e, f.inputs as ShaftInputs);
+        if (f?.kind === "drilled-shaft" && f.inputs) placed = shaftBars(host, e, f.inputs as ShaftInputs, connectionAt(k));
         else missing.add(`${b.supports[k].name} shafts`);
       }
     } catch (err) {

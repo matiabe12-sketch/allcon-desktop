@@ -181,6 +181,7 @@ function parsePier(v: unknown): PierShape | undefined {
     columnShape: p.columnShape === "rectangular" ? "rectangular" : "round",
     columnSize: num(p.columnSize, d.columnSize, 12, 240),
     columnDepth: num(p.columnDepth, d.columnDepth, 12, 240),
+    ...(typeof p.columnSizeBase === "number" && p.columnSizeBase >= 12 && p.columnSizeBase <= 240 ? { columnSizeBase: p.columnSizeBase } : {}),
     foundationTop: num(p.foundationTop, 0, -1e5, 1e5),
     foundation: p.foundation === "pile-foundation" || p.foundation === "drilled-shaft" ? p.foundation : "spread-footing",
   };

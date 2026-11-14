@@ -220,6 +220,33 @@ export function columnBars(host: number, e: IfcElement, i: ColumnInputs, capDept
   const top = H + Math.max(0, capDepth - 0.5);
   const leg = ft(hookLeg(i.bar).leg);
   const xy = (p: [number, number]) => (swap ? [ft(p[1]), ft(p[0])] : [ft(p[0]), ft(p[1])]) as [number, number];
+  // A flared column: each bar runs up its face's flare (its offset across the bridge scaled from the base's to the
+  // top's), straight into the cap; the ties widen with the column, each at its height.
+  if (i.shape === "rectangular" && (i.Ttop ?? 0) > 0 && Math.abs((i.Ttop ?? 0) - i.T) > 0.5) {
+    const co = i.cover + dt + db / 2;
+    const k = (i.Ttop! / 2 - co) / Math.max(1e-9, i.T / 2 - co);
+    for (const [x, y] of pos.map((p) => [ft(p[0]), ft(p[1])] as [number, number])) {
+      const side = x < 0 ? -1 : 1;
+      out.push({ host, frame: "host", mark: "", size: i.bar, dia: db, role: "main", label: `#${i.bar} column bars (along the flare)`, path: [p3(x, y, -ft(lap)), p3(x, y, 0), p3(x * k, y, H), p3(x * k, y, top), p3(x * k - side * leg, y, top)], at: [p3(0, 0, 0)], placed: "design" });
+    }
+    const ay = ft((W - 2 * i.cover - dt) / 2);
+    const nT = Math.max(0, Math.round(i.legsT) - 2);
+    const nL = Math.max(0, Math.round(i.legsL) - 2);
+    for (const z of zs0()) {
+      const T = i.T + ((i.Ttop! - i.T) * z) / H;
+      const ax = ft((T - 2 * i.cover - dt) / 2);
+      out.push({ host, frame: "host", mark: "", size: i.tieBar, dia: dt, role: "stirrup", label: `#${i.tieBar} ties (widening)`, path: [p3(-ax, -ay, z), p3(ax, -ay, z), p3(ax, ay, z), p3(-ax, ay, z), p3(-ax, -ay + ft(4), z)], at: [p3(0, 0, 0)], placed: "design" });
+      for (let j = 1; j <= nT; j++) out.push({ host, frame: "host", mark: "", size: i.tieBar, dia: dt, role: "stirrup", label: `#${i.tieBar} cross-ties`, path: [p3(-ax, (-1 + (2 * j) / (nT + 1)) * ay, z), p3(ax, (-1 + (2 * j) / (nT + 1)) * ay, z)], at: [p3(0, 0, 0)], placed: "design" });
+      for (let j = 1; j <= nL; j++) out.push({ host, frame: "host", mark: "", size: i.tieBar, dia: dt, role: "stirrup", label: `#${i.tieBar} cross-ties`, path: [p3((-1 + (2 * j) / (nL + 1)) * ax, -ay, z), p3((-1 + (2 * j) / (nL + 1)) * ax, ay, z)], at: [p3(0, 0, 0)], placed: "design" });
+    }
+    return out;
+  }
+  function zs0() {
+    const s = ft(i.tieSpacing);
+    const list: number[] = [];
+    for (let z = s / 2; z <= H; z += s) list.push(z);
+    return list;
+  }
   // Hooks turned in toward the column's middle, along the pier line.
   for (const side of [-1, 1]) {
     const these = pos.map(xy).filter(([x]) => (side < 0 ? x < 0 : x >= 0));

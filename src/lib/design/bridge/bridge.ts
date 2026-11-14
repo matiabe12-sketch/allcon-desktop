@@ -36,6 +36,8 @@ export type PierShape = {
   columnShape: "round" | "rectangular";
   columnSize: number; // in (round: diameter; rectangular: across the bridge)
   columnDepth: number; // in, a rectangular column along the bridge
+  /** in, a flared rectangular column's width across the bridge at its base (columnSize is under the cap); none: prismatic. */
+  columnSizeBase?: number;
   foundationTop: number; // ft, the elevation of the footing's or shaft's top (0: 20 ft below the cap's soffit)
   foundation: "spread-footing" | "pile-foundation" | "drilled-shaft";
 };

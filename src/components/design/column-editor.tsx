@@ -145,7 +145,8 @@ export function ColumnEditor({ design, projects }: { design: { id: string; name:
             </Section>
             <Section title="Column" open>
               <Choice label="Shape" value={inputs.shape} options={[{ value: "round", label: "Round" }, { value: "rectangular", label: "Rectangular" }, { value: "oblong", label: "Oblong (half-round ends)" }]} onChange={(v) => setInputs((s) => ({ ...s, shape: v, ...(v === "oblong" && s.T <= s.W ? { T: s.W * 2 } : {}), ...(v !== "round" && s.transverse === "spiral" && v === "rectangular" ? { transverse: "ties" as const } : {}) }))} />
-              <Field label={inputs.shape === "round" ? "Diameter" : "Across the bridge (in the cap's plane)"} unit="in" value={inputs.T} onChange={set("T")} />
+              <Field label={inputs.shape === "round" ? "Diameter" : inputs.shape === "rectangular" && (inputs.Ttop ?? 0) > 0 ? "Across the bridge, at the base" : "Across the bridge (in the cap's plane)"} unit="in" value={inputs.T} onChange={set("T")} />
+              {inputs.shape === "rectangular" && <Field label="Across the bridge, under the cap (flared)" unit="in" value={inputs.Ttop ?? 0} onChange={(v) => setInputs((s) => ({ ...s, Ttop: v }))} hint="0: the same width top to bottom; wider: the column flares linearly to it" />}
               {inputs.shape !== "round" && <Field label="Along the bridge" unit="in" value={inputs.W} onChange={set("W")} />}
               <Choice label="Bar size" value={inputs.bar} options={sizes.slice(2)} onChange={(v) => set("bar")(Number(v))} />
               {inputs.shape === "round" && <Field label="Bars" value={inputs.bars} onChange={(v) => set("bars")(Math.max(4, Math.round(v)))} />}

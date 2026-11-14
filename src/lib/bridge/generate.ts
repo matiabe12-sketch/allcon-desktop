@@ -248,7 +248,8 @@ export function generate(d: BridgeDefinition): Generated {
     const height = (geo && p.foundationTop !== 0 ? geo.columnHeights[sl] : null) ?? d.piers.columnHeight;
     const [cb, cd] = [p.capWidth / 12, p.capDepth];
     const round = p.columnShape === "round";
-    const [cs, cdp] = [p.columnSize / 12, (round ? p.columnSize : p.columnDepth) / 12];
+    // A flared column at its mid-height width (its stiffness and weight on average).
+    const [cs, cdp] = [(!round && p.columnSizeBase ? (p.columnSize + p.columnSizeBase) / 2 : p.columnSize) / 12, (round ? p.columnSize : p.columnDepth) / 12];
     const m: PierModel = { cap: [cb, cd], columns: p.columns, spacing: p.columnSpacing, round, size: cs, depth: cdp, height: Math.max(3, height), capSec: 30 + 2 * i, colSec: 31 + 2 * i, capArea: cb * cd, colArea: round ? (Math.PI * cs ** 2) / 4 : cs * cdp };
     pierModels.set(sl, m);
     sections.push({ id: m.capSec, name: d.supports.length > 3 ? `Pier ${sl} cap` : "Pier cap", A: cb * cd, Asy: (5 / 6) * cb * cd, Asz: (5 / 6) * cb * cd, J: rectJ(cb, cd), Iy: (cb * cd ** 3) / 12, Iz: (cd * cb ** 3) / 12 });

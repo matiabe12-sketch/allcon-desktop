@@ -127,7 +127,9 @@ export function columnFromBridge(b: BridgeInputs, run: BridgeRun, support: numbe
   return {
     ...current,
     shape: p.columnShape,
-    T: p.columnSize,
+    // A flared column: T at its base, Ttop under the cap (the pier's columnSize).
+    T: p.columnShape === "rectangular" && p.columnSizeBase ? p.columnSizeBase : p.columnSize,
+    Ttop: p.columnShape === "rectangular" && p.columnSizeBase && Math.abs(p.columnSizeBase - p.columnSize) > 0.5 ? p.columnSize : 0,
     W: p.columnShape === "round" ? p.columnSize : p.columnDepth,
     height: Math.round(lp.columnHeight * 100) / 100,
     ground: Math.min(current.ground, Math.max(0, lp.columnHeight - 1)),

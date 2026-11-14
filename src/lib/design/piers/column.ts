@@ -60,6 +60,8 @@ export type ColumnInputs = {
   barsT: number;
   barsL: number;
   barsEnd: number;
+  /** in, a flared rectangular column's width across the bridge under the cap (T is at its base); 0 or none: prismatic. */
+  Ttop?: number;
   transverse: "spiral" | "ties";
   tieBar: number;
   tieSpacing: number; // in (a spiral's pitch)
@@ -178,10 +180,16 @@ export function designColumn(i: ColumnInputs) {
   const spiral = !!sp?.ok;
   const sec = columnSection({ shape: i.shape, T: i.T, W: i.W, cover: i.cover, bar: i.bar, bars: i.bars, barsT: i.barsT, barsL: i.barsL, barsEnd: i.barsEnd, tieBar: i.tieBar, transverse: spiral ? "spiral" : "ties", fc: i.fc, fy: i.fy });
   const W = W0;
+  // A flared column (rectangular, wider under the cap than at its base, the width varying linearly): its own section
+  // under the cap, the frame's stiffness and weight at mid-height, the bars fanning out with the faces.
+  const flared = i.shape === "rectangular" && (i.Ttop ?? 0) > 0 && Math.abs((i.Ttop ?? 0) - i.T) > 0.5;
+  const sectionAt = (T: number) => columnSection({ shape: i.shape, T, W: i.W, cover: i.cover, bar: i.bar, bars: i.bars, barsT: i.barsT, barsL: i.barsL, barsEnd: i.barsEnd, tieBar: i.tieBar, transverse: spiral ? "spiral" : "ties", fc: i.fc, fy: i.fy });
+  const secTop = flared ? sectionAt(i.Ttop!) : sec;
+  const secMid = flared ? sectionAt((i.T + i.Ttop!) / 2) : sec;
   if (!(i.height > 0)) throw new DesignError("Give the column's height, the top of its footing or shaft to the cap's soffit.");
   if (i.ground < 0 || i.ground >= i.height) throw new DesignError("The ground must be above the column's base and below the cap.");
   const Ec = concreteE(i.fc);
-  const AgFt = sec.Ag / 144;
+  const AgFt = secMid.Ag / 144;
   const checks: Check[] = [];
   const notes: string[] = [];
   const add = (c: Omit<Check, "ok"> & { ok?: boolean }) => checks.push({ ...c, ok: c.ok ?? c.demand <= c.capacity + 1e-9 });
@@ -200,7 +208,7 @@ export function designColumn(i: ColumnInputs) {
   const share = Math.max(0, Math.min(1, lg.share));
   const simplified = !!br && br.maxSpan <= 150 && br.Z <= 33; // the usual girder bridge: longitudinal 25% of transverse
   const coefLong = simplified ? 0.25 : 0.38; // else the girders' largest longitudinal skew coefficient (Table 3.8.1.2.3a-1), with the full transverse
-  const EIcolL = 0.4 * Ec * sec.IgL; // kip·in², Eq. 5.6.4.3-2 with βd = 0: the cracked column's stiffness
+  const EIcolL = 0.4 * Ec * secMid.IgL; // kip·in², Eq. 5.6.4.3-2 with βd = 0: the cracked column's stiffness
   const hb = (yb + (i.base === "shaft" ? i.fixity : 0)) * 12; // in, cantilever to the bearings
   const kCol = (3 * EIcolL) / hb ** 3; // kip/in, each column
   const tuMove = 6e-6 * lg.dT * lg.distance * 12; // in, α = 6×10⁻⁶ /°F (5.4.2.2)
@@ -219,7 +227,7 @@ export function designColumn(i: ColumnInputs) {
   // Wind on the column itself (3.8.1.2.3b): PZ = 2.56×10⁻⁶ V² Kz G CD, CD = 1.6 (Table 3.8.1.2.1-2), G = 1.0.
   const pz = { III: br && br.V > 0 ? 2.56e-6 * br.V ** 2 * br.Kz * 1.6 : 0, V: 2.56e-6 * 80 ** 2 * 1.6 };
   const faceT = (W / 12) * exposed; // ft², the face the wind across the bridge sees (the column's width along it)
-  const faceL = (i.T / 12) * exposed;
+  const faceL = ((flared ? (i.T + i.Ttop!) / 2 : i.T) / 12) * exposed;
 
   // --- the bent as a plane frame (the cap's plane) ---------------------------------------------------------------------
   type At = { P: number; V: number; M: number };
@@ -245,7 +253,7 @@ export function designColumn(i: ColumnInputs) {
     const Icap = ((link.capWidth / 12) * capDepth ** 3) / 12;
     for (let k = 0; k + 1 < xs.length; k++) members.push({ a: capNode.get(xs[k])!, b: capNode.get(xs[k + 1])!, EA: Ecap * (link.capWidth / 12) * capDepth, EI: Ecap * Icap });
     const colNodes: Map<number, number>[] = [];
-    const EIcol = Ecol * (sec.IgT / 20736);
+    const EIcol = Ecol * (secMid.IgT / 20736);
     const EAcol = Ecol * AgFt;
     link.columns.forEach((xc, c) => {
       const zs = [0, h];
@@ -377,7 +385,8 @@ export function designColumn(i: ColumnInputs) {
     const MuT = Math.abs(x.MT) * d.T;
     const MuL = Math.abs(x.ML) * d.L;
     const Mu = Math.hypot(MuT, MuL);
-    const res = Number.isFinite(d.T) && Number.isFinite(d.L) ? sec.resistance(x.P, MuT * 12, MuL * 12) : null;
+    const at = x.where === "top" ? secTop : sec;
+    const res = Number.isFinite(d.T) && Number.isFinite(d.L) ? at.resistance(x.P, MuT * 12, MuL * 12) : null;
     const phiMn = res ? res.phiMn / 12 : 0;
     const ratio = !res ? Infinity : phiMn > 1e-9 ? Mu / phiMn : x.P / PrMax;
     return { ...x, dT: d.T, dL: d.L, MuT, MuL, Mu, phiMn, phi: res?.phi ?? 0.75, ratio };
@@ -428,12 +437,14 @@ export function designColumn(i: ColumnInputs) {
   }
 
   // --- reinforcement limits (5.6.4.2) and transverse reinforcement (5.10.4.2, 5.10.4.3, 5.6.4.6) ------------------------
+  // A flared column: the minimum against its largest section (under the cap), the maximum its smallest (the base).
   const rho = sec.Ast / sec.Ag;
+  const rhoTop = secTop.Ast / secTop.Ag;
   const permP = link && deadOnly ? Math.max(...deadOnly.map((c) => c.base.P)) / 1.5 + selfWeight(0, 1) : i.collision.PDC;
   const rhoMinBase = (0.135 * i.fc) / i.fy;
-  const rhoMin = permP <= 0.4 * sec.Ag * i.fc ? Math.min(rhoMinBase, 0.015) : rhoMinBase;
+  const rhoMin = permP <= 0.4 * secTop.Ag * i.fc ? Math.min(rhoMinBase, 0.015) : rhoMinBase;
   add({ id: "rho-max", name: "Longitudinal reinforcement, As/Ag", demand: rho, capacity: 0.08, unit: "", ref: "AASHTO Eq. 5.6.4.2-1" });
-  add({ id: "rho-min", name: "Minimum longitudinal reinforcement, As/Ag", demand: rhoMin, capacity: rho, unit: "", ref: `AASHTO Eq. 5.6.4.2-${rhoMin < rhoMinBase ? 4 : 3}` });
+  add({ id: "rho-min", name: `Minimum longitudinal reinforcement, As/Ag${flared ? " (under the cap, the largest section)" : ""}`, demand: rhoMin, capacity: rhoTop, unit: "", ref: `AASHTO Eq. 5.6.4.2-${rhoMin < rhoMinBase ? 4 : 3}` });
   const minBars = i.shape === "round" ? 6 : 4;
   add({ id: "bars-min", name: `At least ${minBars} longitudinal bars`, demand: minBars, capacity: sec.bars.length, unit: "", ref: "AASHTO 5.6.4.2" });
   add({ id: "bar-size", name: "Longitudinal bars at least #5", demand: 5, capacity: i.bar, unit: "", ref: "AASHTO 5.6.4.2" });

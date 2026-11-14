@@ -24,6 +24,10 @@ export function columnTakeoff(i: ColumnInputs, count?: number): Takeoff {
   const W = i.shape === "round" ? i.T : i.W;
   const capDepth = (i.loads === "stm" && i.link ? i.link.capDepth : i.capDepth) * 12;
   const H = i.height * 12;
+  // A flared column: its width across the bridge from T at the base to Ttop under the cap; the outer bars run along the flare.
+  const flared = i.shape === "rectangular" && (i.Ttop ?? 0) > 0 && Math.abs((i.Ttop ?? 0) - i.T) > 0.5;
+  const Tavg = flared ? (i.T + i.Ttop!) / 2 : i.T;
+  const Hbar = flared ? Math.hypot(H, (i.Ttop! - i.T) / 2) : H;
   const sec = { shape: i.shape, T: i.T, W, cover: i.cover, bar: i.bar, bars: i.bars, barsT: i.barsT, barsL: i.barsL, barsEnd: i.barsEnd, tieBar: i.tieBar, transverse: i.transverse, fc: i.fc, fy: i.fy };
   const pos = barPositions(sec);
   const nb = pos.length;
@@ -44,7 +48,7 @@ export function columnTakeoff(i: ColumnInputs, count?: number): Takeoff {
   // noncontact lap; on an undersized one the shaft's bars run up into the column and the column's start at its top.
   const conn = i.base === "shaft" ? columnShaftConnection(i, i.shaftCage ?? assumedShaft(i, i.shaftD)) : null;
   const lapAtBase = conn ? (conn.projecting === "column" ? conn.lap : 0) : (lap ?? 0);
-  pre.push(...runGroups({ size: i.bar, count: nb * n, straight: lapAtBase + H + intoCap, hooks: [false, true], use: "Column bars", callout: `#${i.bar} (Tot ${nb}) each column`, lap: lapOpts }).groups);
+  pre.push(...runGroups({ size: i.bar, count: nb * n, straight: lapAtBase + Hbar + intoCap, hooks: [false, true], use: "Column bars", callout: `#${i.bar} (Tot ${nb}) each column`, lap: lapOpts }).groups);
   if (i.base === "footing") {
     // Dowels: a hooked development into the footing (5.10.8.2.4), the lap above it.
     let ldh = 12 * db;
@@ -83,7 +87,7 @@ export function columnTakeoff(i: ColumnInputs, count?: number): Takeoff {
   } else {
     const sets = zones.reduce((p, z) => p + countAt(z.length, z.spacing), 0);
     const hook135 = hookLeg(i.tieBar, "transverse", 135).leg;
-    const inT = i.T - 2 * i.cover - dt;
+    const inT = Tavg - 2 * i.cover - dt; // a flared column's ties at their average width
     const inW = W - 2 * i.cover - dt;
     if (i.shape === "round") {
       const lapHoop = Math.max(12, 1.3 * 48 * dt);
@@ -103,10 +107,10 @@ export function columnTakeoff(i: ColumnInputs, count?: number): Takeoff {
   }
 
   // Concrete, each column from its base to the cap's soffit.
-  const A = (i.shape === "round" ? (Math.PI * i.T ** 2) / 4 : i.shape === "rectangular" ? i.T * W : (i.T - W) * W + (Math.PI * W ** 2) / 4) / 144; // ft²
-  const dims = i.shape === "round" ? `${ftIn(i.T)} diameter` : `${ftIn(i.T)} by ${ftIn(W)}${i.shape === "oblong" ? " oblong" : ""}`;
+  const A = (i.shape === "round" ? (Math.PI * i.T ** 2) / 4 : i.shape === "rectangular" ? Tavg * W : (i.T - W) * W + (Math.PI * W ** 2) / 4) / 144; // ft²
+  const dims = i.shape === "round" ? `${ftIn(i.T)} diameter` : flared ? `${ftIn(i.T)} flaring to ${ftIn(i.Ttop!)} by ${ftIn(W)} (its average section)` : `${ftIn(i.T)} by ${ftIn(W)}${i.shape === "oblong" ? " oblong" : ""}`;
   // As math: the section's area and perimeter in inches.
-  const AT = i.shape === "round" ? `\\frac{\\pi}{4}\\cdot\\left(${inTex(i.T)}\\right)^{2}` : i.shape === "rectangular" ? `${inTex(i.T)}\\cdot ${inTex(W)}` : `\\left(${inTex(i.T)}-${inTex(W)}\\right)\\cdot ${inTex(W)}+\\frac{\\pi}{4}\\cdot\\left(${inTex(W)}\\right)^{2}`;
+  const AT = i.shape === "round" ? `\\frac{\\pi}{4}\\cdot\\left(${inTex(i.T)}\\right)^{2}` : i.shape === "rectangular" ? (flared ? `\\frac{${inTex(i.T)}+${inTex(i.Ttop!)}}{2}\\cdot ${inTex(W)}` : `${inTex(i.T)}\\cdot ${inTex(W)}`) : `\\left(${inTex(i.T)}-${inTex(W)}\\right)\\cdot ${inTex(W)}+\\frac{\\pi}{4}\\cdot\\left(${inTex(W)}\\right)^{2}`;
   const PT = i.shape === "round" ? `\\pi\\cdot ${inTex(i.T)}` : i.shape === "rectangular" ? `2\\cdot\\left(${inTex(i.T)}+${inTex(W)}\\right)` : `2\\cdot\\left(${inTex(i.T)}-${inTex(W)}\\right)+\\pi\\cdot ${inTex(W)}`;
   const nT = n > 1 ? `${n}\\cdot ` : "";
   const concrete: ConcreteItem[] = [{ label: `Column${n > 1 ? "s" : ""}`, cy: (A * i.height * n) / 27, basis: `${n} × ${dims} (${A.toFixed(2)} ft²) by ${i.height} ft`, math: `${nT}\\left(${AT}\\right)\\cdot ${ftT(i.height)}`, ref: `Column${n > 1 ? "s" : ""}: ${n > 1 ? "number × " : ""}${dims} section × height from the base to the cap's soffit` }];

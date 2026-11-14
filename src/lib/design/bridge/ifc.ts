@@ -503,7 +503,7 @@ export function bridgeIfc(b: BridgeInputs, run: BridgeRun, c: BridgeComponents =
     xs.forEach((x, k) => {
       const t = x - p.capLength / 2;
       const q = { x: capC.x + t * lineX, y: capC.y + t * lineY };
-      els.push({ cls: "IfcColumn", type: "PIERSTEM", name: `${s.name} column ${k + 1}`, part, origin: v3(P(q.x, q.y, lp.foundationTop)), ...flat(lineX, lineY), profile: p.columnShape === "round" ? { kind: "circle", r: r6(p.columnSize / 24) } : { kind: "rect", x: p.columnSize / 12, y: p.columnDepth / 12 }, depth: r6(lp.columnHeight), material: "Concrete Class D (Bridge)", psets: designPset("pier-column", colId, { PayItem: "601-03040 Concrete Class D (Bridge)" }) });
+      els.push({ cls: "IfcColumn", type: "PIERSTEM", name: `${s.name} column ${k + 1}`, part, origin: v3(P(q.x, q.y, lp.foundationTop)), ...flat(lineX, lineY), profile: p.columnShape === "round" ? { kind: "circle", r: r6(p.columnSize / 24) } : p.columnSizeBase && Math.abs(p.columnSizeBase - p.columnSize) > 0.5 ? flaredColumn(p.columnSizeBase / 12, p.columnSize / 12, p.columnDepth / 12, lp.columnHeight) : { kind: "rect", x: p.columnSize / 12, y: p.columnDepth / 12 }, depth: r6(lp.columnHeight), material: "Concrete Class D (Bridge)", psets: designPset("pier-column", colId, { PayItem: "601-03040 Concrete Class D (Bridge)" }) });
       if (p.foundation === "drilled-shaft") {
         const sh = (f?.kind === "drilled-shaft" ? (f.inputs as ShaftInputs) : null) ?? SHAFT_DEFAULTS;
         els.push({ cls: "IfcPile", type: "BORED", name: `${s.name} shaft ${k + 1}`, part, origin: v3(P(q.x, q.y, lp.foundationTop)), xdir: v3([lineX, lineY, 0]), zdir: [0, 0, -1], profile: { kind: "circle", r: r6(sh.D / 24) }, depth: sh.length, material: "Concrete (drilled shaft)", psets: designPset("drilled-shaft", f?.id, { Diameter_in: sh.D, PayItem: `503-000${sh.D}` }) });
@@ -555,4 +555,14 @@ export function bridgeIfc(b: BridgeInputs, run: BridgeRun, c: BridgeComponents =
     parts,
     elements: els,
   };
+}
+
+/** A flared column as a closed solid in its placement's frame (x across the bridge, y along it, z up): wB wide at its base, wT under the cap, d deep, h tall (ft). */
+export function flaredColumn(wB: number, wT: number, d: number, h: number): Profile {
+  const pts: V3[] = [
+    [-wB / 2, -d / 2, 0], [wB / 2, -d / 2, 0], [wB / 2, d / 2, 0], [-wB / 2, d / 2, 0],
+    [-wT / 2, -d / 2, h], [wT / 2, -d / 2, h], [wT / 2, d / 2, h], [-wT / 2, d / 2, h],
+  ].map((p) => v3(p as V3));
+  const tris: [number, number, number][] = [[0, 2, 1], [0, 3, 2], [4, 5, 6], [4, 6, 7], [0, 1, 5], [0, 5, 4], [1, 2, 6], [1, 6, 5], [2, 3, 7], [2, 7, 6], [3, 0, 4], [3, 4, 7]];
+  return { kind: "mesh", ...outward({ pts, tris }) };
 }

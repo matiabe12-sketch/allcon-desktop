@@ -16,7 +16,7 @@ describe("E-16-FZA through the Bridge, end to end", async () => {
     abutment: () => ({ type: "integral-piles", section: "HP14x89", nPiles: 13, pileLength: 47.55, embed: 12, capWidth: 3, capDepth: 3.5, soil: E16FZA_ABUT_SOIL, prebore: 0, Rn: 24 * 26.1, phiDyn: 0.65 }),
     cap: { topBars: { size: 11, count: 18 }, bottomBars: { size: 11, count: 14 }, stirrups: { size: 6, legs: 6, spacing: 6 }, diaphragmTop: E16FZA_DIAPHRAGM_TOP },
     // 28 #11: 10 along each 5.5 ft face, 4 more along each 3.5 ft face (IDC layers).
-    column: { bar: 11, bars: 28, barsT: 10, barsL: 4, tieBar: 6, tieSpacing: 6 },
+    column: { bar: 11, bars: 28, barsT: 10, barsL: 6, tieBar: 6, tieSpacing: 6 },
     shaft: { D: 54, length: 45, topDepth: 3, layers: E16FZA_SHAFT_LAYERS, bar: 11, bars: 18 },
   });
 

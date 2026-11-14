@@ -80,6 +80,8 @@ export async function buildChain(spec: ChainSpec) {
   const pay: PayColumn[] = [{ label: "Superstructure", lines: [...pays("lrfd-girder-check", g, { length: deckFt }), ...pays("deck-slab", { ...deck, fromGirder: { id: "g", name: "Girders" } }, { length: deckFt })] }];
   const approachPay: PayLine[] = [];
   const supports: SupportCalc[] = [];
+  /** Each pier's cap, column and shaft inputs, for the tests that build on them. */
+  const piers: Record<number, { cap: ReturnType<typeof stmInputs>; column: ReturnType<typeof columnInputs>; shaft: ShaftInputs }> = {};
   for (let k = 0; k < b.supports.length; k++) {
     const s = b.supports[k];
     const parts: CalcPart[] = [];
@@ -114,6 +116,7 @@ export async function buildChain(spec: ChainSpec) {
       const sr = runFoundation("drilled-shaft", sh);
       parts.push({ label: `Drilled shafts, each of ${nCols}`, name: `${s.name} shafts`, lines: foundationCalcLines("drilled-shaft", sh, `${s.name} shafts`), checks: sr.groups.map((x) => ({ title: x.title, checks: sr.checks.filter((cc) => x.of(cc.id)) })) });
       sPay.push(...scaled(pays("drilled-shaft", sh), nCols));
+      piers[k] = { cap, column: col, shaft: sh };
     }
     supports.push({ name: s.name, type: s.type, parts });
     pay.push({ label: s.name, lines: sPay });
@@ -123,7 +126,7 @@ export async function buildChain(spec: ChainSpec) {
   const svg = renderBridgeSvg(m, { width: 720, height: 400 });
   const lines: Line[] = bridgeCalcLines({ title: spec.title, b, run, figures: { render: { kind: "image", width: 720, height: 400, svg } }, superstructure: superParts, supports, pay, tabulations: [], missing: [] });
   const verdicts = Object.fromEntries([...superParts, ...supports.flatMap((s) => s.parts.map((x) => ({ ...x, label: `${s.name}, ${x.label}` })))].map((p) => [p.label, verdict(p.checks)]));
-  return { run, lines, pay, rows: soqRows(pay), verdicts, deckFt, m };
+  return { run, lines, pay, rows: soqRows(pay), verdicts, deckFt, m, piers };
 }
 
 /** The package worked out as one worksheet: its errors and size. */

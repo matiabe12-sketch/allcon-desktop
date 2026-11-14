@@ -1,0 +1,296 @@
+import { barDiameter, type IfcBarSet } from "./ifc-rebar";
+import type { IfcElement, V3 } from "./ifc";
+import type { GirderInputs } from "../girders/prestressed";
+import { girderShape } from "../girders/prestressed";
+import { strandLayout, strandY } from "../girders/strand-layout";
+import type { ColumnInputs } from "../piers/column";
+import { barPositions } from "../piers/column-section";
+import { hookLeg } from "../rebar/bars";
+import type { ShaftInputs } from "../foundations/shaft";
+import { detailCap } from "../stm/detail";
+import type { StmInputs } from "../stm/strut-tie";
+
+// The Bridge's reinforcement in 3D, for the workspace's Rebar view: each bar where its design puts it,
+// in its host element's frame (the IFC element's placement: x across its profile's width, y up its
+// profile, z along its sweep; feet). A set is one bar's centreline and the places it's repeated at.
+//
+// Placed from the designs (phase 1):
+// - girders: the strands on the strand grid (strand-layout.ts) along the girder, harped strands
+//   draped to their harp points, the debonded lengths sheathed; the stirrups zone by zone from the
+//   bearing (the first 2 in from the end), open at the top and projecting into the deck where the
+//   design says so (CDOT B-618-CBT1, B-618-BX);
+// - pier caps: the strut-and-tie design's detailing (stm/detail.ts): top and bottom bars in their
+//   layers, side-face bars, closed stirrups in sets;
+// - pier columns: the column design's bars (its section's bar places) lapped into the shaft or
+//   footing and run up into the cap with 90° hooks turned in; ties or a spiral at its spacing;
+// - drilled shafts: the cage's bars around the shaft and its spiral.
+// The other elements' bars (deck, abutments, approach slabs, wingwalls, footings, piles) keep the
+// IFC model's schematic layout (ifc-rebar.ts), marked "schematic".
+
+export type BarRole = "main" | "stirrup" | "spiral" | "strand" | "sheathed";
+export type BarSet3D = {
+  host: number; // the element's index
+  frame: "host" | "world"; // world: the schematic sets, already placed
+  mark: string;
+  size: number; // bar number; strands carry their diameter in `dia`
+  dia: number; // in
+  role: BarRole;
+  label: string;
+  path: V3[]; // ft
+  at: V3[]; // ft, each copy's offset
+  placed: "design" | "schematic";
+};
+
+const ft = (inch: number) => inch / 12;
+const r4 = (v: number) => Math.round(v * 1e4) / 1e4;
+const p3 = (x: number, y: number, z: number): V3 => [r4(x), r4(y), r4(z)];
+
+/** A helix about z: radius r (ft), from z0 to z1 at a pitch (ft), 16 points a turn. */
+function helix(r: number, z0: number, z1: number, pitch: number, cx = 0): V3[] {
+  const turns = Math.max(1, (z1 - z0) / pitch);
+  const n = Math.ceil(turns * 16);
+  return Array.from({ length: n + 1 }, (_, k) => {
+    const t = (k / n) * turns * 2 * Math.PI;
+    return p3(cx + r * Math.cos(t), r * Math.sin(t), z0 + ((z1 - z0) * k) / n);
+  });
+}
+const circle = (r: number, n = 24): V3[] => Array.from({ length: n + 1 }, (_, k) => p3(r * Math.cos((2 * Math.PI * k) / n), r * Math.sin((2 * Math.PI * k) / n), 0));
+
+// --- girders ------------------------------------------------------------------------------------------------------
+
+/** Each stirrup's place along the girder (ft from its end), zone by zone from the bearing at each end, symmetrical. */
+export function stirrupStations(i: Pick<GirderInputs, "stirrups" | "endDist">, Lg: number): { z: number; bar: number; legs: number }[] {
+  const half = Lg / 2;
+  const out: { z: number; bar: number; legs: number }[] = [];
+  let edge = i.endDist;
+  i.stirrups.forEach((zn, k) => {
+    const last = k === i.stirrups.length - 1 || zn.length <= 0;
+    const from = k === 0 ? 2 / 12 : edge;
+    const to = last ? half : Math.min(half, edge + zn.length);
+    if (to <= from || zn.spacing <= 0) return;
+    const s = zn.spacing / 12;
+    // Starting a spacing past the previous zone's last stirrup (the first zone at the end).
+    for (let z = k === 0 ? from : from + s; z <= to + 1e-6; z += s) out.push({ z, bar: zn.bar, legs: zn.legs });
+    edge = to;
+  });
+  const mirrored = out.filter((s) => Math.abs(s.z - half) > 1e-3).map((s) => ({ ...s, z: Lg - s.z }));
+  return [...out, ...mirrored].sort((a, b) => a.z - b.z);
+}
+
+/** A girder's strands and stirrups in its element's frame (x across, y up from its bottom, z along from its end). */
+export function girderBars(host: number, e: IfcElement, i: GirderInputs, span: { strands: GirderInputs["strands"]; harped: GirderInputs["harped"] | null }, deckT: number): BarSet3D[] {
+  const shape = girderShape(i);
+  const Lg = e.depth;
+  const out: BarSet3D[] = [];
+  const layout = strandLayout(shape, { strands: span.strands, harped: span.harped }, Lg);
+  const dia = i.strandDia;
+  const xh = layout.harpPoint * Lg;
+  // Straight strands, a set per row and debonded length: bonded between the debonded ends; sheathed at the ends.
+  const rows = new Map<string, { y: number; deb: number; xs: number[] }>();
+  for (const s of layout.strands.filter((s) => s.kind === "straight")) {
+    const key = `${s.y}:${s.debondLength}`;
+    const r = rows.get(key) ?? { y: s.y, deb: s.debondLength, xs: [] };
+    r.xs.push(s.x);
+    rows.set(key, r);
+  }
+  for (const r of rows.values()) {
+    const at = r.xs.map((x) => p3(ft(x), 0, 0));
+    const y = ft(r.y);
+    if (r.deb > 0) {
+      out.push({ host, frame: "host", mark: "", size: 0, dia, role: "strand", label: `Strands debonded ${r.deb} ft at ${r.y} in`, path: [p3(0, y, r.deb), p3(0, y, Lg - r.deb)], at, placed: "design" });
+      for (const [a, b] of [[0, r.deb], [Lg - r.deb, Lg]]) out.push({ host, frame: "host", mark: "", size: 0, dia, role: "sheathed", label: `Sheathed (debonded ${r.deb} ft)`, path: [p3(0, y, a), p3(0, y, b)], at, placed: "design" });
+    } else out.push({ host, frame: "host", mark: "", size: 0, dia, role: "strand", label: `Straight strands at ${r.y} in`, path: [p3(0, y, 0), p3(0, y, Lg)], at, placed: "design" });
+  }
+  // Harped strands: each pair's path from the end up to the harp points.
+  const paths = new Map<string, { s: (typeof layout.strands)[number]; xs: number[] }>();
+  for (const s of layout.strands.filter((s) => s.kind === "harped")) {
+    const key = `${s.yEnd}:${s.y}`;
+    const p = paths.get(key) ?? { s, xs: [] };
+    p.xs.push(s.x);
+    paths.set(key, p);
+  }
+  for (const { s, xs } of paths.values())
+    out.push({ host, frame: "host", mark: "", size: 0, dia, role: "strand", label: `Harped strands, ${s.yEnd} in at the ends to ${s.y} in`, path: [0, xh, Lg - xh, Lg].map((z) => p3(0, ft(strandY(s, layout, z)), z)), at: xs.map((x) => p3(ft(x), 0, 0)), placed: "design" });
+
+  // Stirrups: a U, its legs up the web (or each wall of a box) from the bottom cover, into the deck where they project.
+  const H = shape.depth;
+  const box = shape.family === "Prestressed box";
+  const stations = stirrupStations(i, Lg);
+  const bySize = new Map<string, { bar: number; legs: number; zs: number[] }>();
+  for (const s of stations) {
+    const k = `${s.bar}:${s.legs}`;
+    const g = bySize.get(k) ?? { bar: s.bar, legs: s.legs, zs: [] };
+    g.zs.push(s.z);
+    bySize.set(k, g);
+  }
+  for (const g of bySize.values()) {
+    const db = barDiameter(g.bar);
+    const cover = 1.5;
+    const xLeg = box ? shape.topWidth / 2 - cover - db / 2 : shape.web / 2 - cover - db / 2;
+    const yBot = cover + db / 2;
+    const yTop = i.stirrupsIntoDeck ? H + (i.haunch ?? 0) + deckT - 2.5 : H - cover;
+    const hook = i.stirrupsIntoDeck ? Math.min(6, hookLeg(g.bar).leg) : 0;
+    const leg = (side: 1 | -1): V3[] => (hook > 0 ? [p3(ft(side * (xLeg + hook)), ft(yTop), 0), p3(ft(side * xLeg), ft(yTop), 0)] : [p3(ft(side * xLeg), ft(yTop), 0)]);
+    const path: V3[] = [...leg(-1), p3(ft(-xLeg), ft(yBot), 0), p3(ft(xLeg), ft(yBot), 0), ...leg(1).reverse()];
+    out.push({ host, frame: "host", mark: "", size: g.bar, dia: db, role: "stirrup", label: `#${g.bar} stirrups (${g.legs} legs)`, path, at: g.zs.map((z) => p3(0, 0, z)), placed: "design" });
+  }
+  return out;
+}
+
+// --- pier caps ----------------------------------------------------------------------------------------------------
+
+/** A cap's bars from its strut-and-tie detailing, in its element's frame (x along the cap from its middle, y across, z up from the soffit). */
+export function capBars(host: number, e: IfcElement, i: StmInputs): BarSet3D[] {
+  if (!i.template) return [];
+  const d = detailCap(i);
+  const L = d.length;
+  const b = i.template.capWidth;
+  const X = (x: number) => ft(x - L / 2);
+  const Y = (y: number) => ft(y - b / 2);
+  const out: BarSet3D[] = [];
+  const g = (mark: string) => d.schedule.groups.find((q) => q.mark === mark);
+  const soffitAt = (x: number) => {
+    const s = d.soffit;
+    for (let k = 0; k < s.length - 1; k++) if (x >= s[k][0] && x <= s[k + 1][0]) return s[k][1] + ((s[k + 1][1] - s[k][1]) * (x - s[k][0])) / Math.max(1e-9, s[k + 1][0] - s[k][0]);
+    return 0;
+  };
+  const sec = d.sections[0];
+  const yAt = (pts: [number, number][], x: number) => {
+    for (let k = 0; k < pts.length - 1; k++) {
+      const [a, c] = [pts[k], pts[k + 1]];
+      if (x >= Math.min(a[0], c[0]) && x <= Math.max(a[0], c[0]) && Math.abs(c[0] - a[0]) > 1e-9) return a[1] + ((c[1] - a[1]) * (x - a[0])) / (c[0] - a[0]);
+    }
+    return pts[Math.min(1, pts.length - 1)][1];
+  };
+  // Longitudinal bars: each layer's or row's path in the elevation, at the places the section puts its bars across.
+  for (const bar of d.bars.filter((q) => q.kind !== "column")) {
+    const grp = g(bar.mark);
+    if (!grp) continue;
+    const yHere = yAt(bar.pts as [number, number][], sec.x) - soffitAt(sec.x);
+    const across = sec.dots.filter((q) => q.mark === bar.mark && Math.abs(q.y - yHere) < 0.75).map((q) => q.x);
+    if (!across.length) continue;
+    out.push({
+      host,
+      frame: "host",
+      mark: bar.mark,
+      size: grp.size,
+      dia: barDiameter(grp.size),
+      role: "main",
+      label: `${bar.mark} ${grp.use.toLowerCase()} (#${grp.size})`,
+      path: bar.pts.map(([x, y]) => p3(X(x), 0, ft(y))),
+      at: across.map((x) => p3(0, Y(x), 0)),
+      placed: "design",
+    });
+  }
+  // Stirrups: each set's closed hoops at its place, a set per hoop and height.
+  const sets = new Map<string, { x0: number; x1: number; y0: number; y1: number; mark: string; xs: number[] }>();
+  for (const st of d.stirrups)
+    for (const h of sec.hoops) {
+      const key = `${h.x0}:${h.x1}:${st.y0}:${st.y1}`;
+      const s = sets.get(key) ?? { x0: h.x0, x1: h.x1, y0: st.y0, y1: st.y1, mark: h.mark, xs: [] };
+      s.xs.push(st.x);
+      sets.set(key, s);
+    }
+  for (const s of sets.values()) {
+    const grp = g(s.mark);
+    const size = grp?.size ?? i.template.stirrups.size;
+    const path: V3[] = [p3(0, Y(s.x0), ft(s.y0)), p3(0, Y(s.x1), ft(s.y0)), p3(0, Y(s.x1), ft(s.y1)), p3(0, Y(s.x0), ft(s.y1)), p3(0, Y(s.x0), ft(s.y0 + 2))];
+    out.push({ host, frame: "host", mark: s.mark, size, dia: barDiameter(size), role: "stirrup", label: `${s.mark} stirrups (#${size})`, path, at: s.xs.map((x) => p3(X(x), 0, 0)), placed: "design" });
+  }
+  return out;
+}
+
+// --- pier columns -------------------------------------------------------------------------------------------------
+
+/** A column's bars in its element's frame (x along the pier line, y across it, z up from its base); `capDepth` ft, `lapIn` in below its base. */
+export function columnBars(host: number, e: IfcElement, i: ColumnInputs, capDepth: number): BarSet3D[] {
+  const W = i.shape === "round" ? i.T : i.W;
+  const out: BarSet3D[] = [];
+  const H = e.depth;
+  const prof = e.profile;
+  // The design's T runs across the bridge, along the pier line: the element's x, unless its sizes say otherwise.
+  const swap = prof.kind === "rect" && Math.abs(prof.x - ft(W)) < Math.abs(prof.x - ft(i.T)) - 1e-6;
+  const pos = barPositions({ shape: i.shape, T: i.T, W, cover: i.cover, bar: i.bar, bars: i.bars, barsT: i.barsT, barsL: i.barsL, barsEnd: i.barsEnd, tieBar: i.tieBar, transverse: i.transverse, fc: i.fc, fy: i.fy });
+  const db = barDiameter(i.bar);
+  const dt = barDiameter(i.tieBar);
+  const lap = 40 * db; // in, shown below the base (the design's Class B lap is in its calc)
+  const top = H + Math.max(0, capDepth - 0.5);
+  const leg = ft(hookLeg(i.bar).leg);
+  const xy = (p: [number, number]) => (swap ? [ft(p[1]), ft(p[0])] : [ft(p[0]), ft(p[1])]) as [number, number];
+  // Hooks turned in toward the column's middle, along the pier line.
+  for (const side of [-1, 1]) {
+    const these = pos.map(xy).filter(([x]) => (side < 0 ? x < 0 : x >= 0));
+    if (!these.length) continue;
+    out.push({ host, frame: "host", mark: "", size: i.bar, dia: db, role: "main", label: `#${i.bar} column bars`, path: [p3(0, 0, -ft(lap)), p3(0, 0, top), p3(-side * leg, 0, top)], at: these.map(([x, y]) => p3(x, y, 0)), placed: "design" });
+  }
+  // Transverse: a spiral (two interlocking in an oblong column), hoops, or closed ties with cross-ties.
+  const spacing = ft(i.tieSpacing);
+  const zs: number[] = [];
+  for (let z = spacing / 2; z <= H; z += spacing) zs.push(z);
+  if (i.transverse === "spiral") {
+    const r = ft((W - 2 * i.cover - dt) / 2);
+    const centers = i.shape === "round" ? [0] : [-ft((i.T - W) / 2), ft((i.T - W) / 2)];
+    for (const c of centers) out.push({ host, frame: "host", mark: "", size: i.tieBar, dia: dt, role: "spiral", label: `#${i.tieBar} spiral`, path: helix(r, 0, H, spacing, swap ? 0 : c).map((p) => (swap ? p3(p[1], p[0] + c, p[2]) : p)), at: [p3(0, 0, 0)], placed: "design" });
+  } else if (i.shape === "round") {
+    out.push({ host, frame: "host", mark: "", size: i.tieBar, dia: dt, role: "stirrup", label: `#${i.tieBar} hoops`, path: circle(ft((i.T - 2 * i.cover - dt) / 2)), at: zs.map((z) => p3(0, 0, z)), placed: "design" });
+  } else {
+    const [a, c] = [ft((i.T - 2 * i.cover - dt) / 2), ft((W - 2 * i.cover - dt) / 2)];
+    const [ax, ay] = swap ? [c, a] : [a, c];
+    out.push({ host, frame: "host", mark: "", size: i.tieBar, dia: dt, role: "stirrup", label: `#${i.tieBar} ties`, path: [p3(-ax, -ay, 0), p3(ax, -ay, 0), p3(ax, ay, 0), p3(-ax, ay, 0), p3(-ax, -ay + ft(4), 0)], at: zs.map((z) => p3(0, 0, z)), placed: "design" });
+    // Cross-ties: the legs beyond the tie's two, evenly between, each way.
+    const cross = (n: number, alongX: boolean) => {
+      for (let k = 1; k <= n; k++) {
+        const t = -1 + (2 * k) / (n + 1);
+        const path = alongX ? [p3(-ax, t * ay, 0), p3(ax, t * ay, 0)] : [p3(t * ax, -ay, 0), p3(t * ax, ay, 0)];
+        out.push({ host, frame: "host", mark: "", size: i.tieBar, dia: dt, role: "stirrup", label: `#${i.tieBar} cross-ties`, path, at: zs.map((z) => p3(0, 0, z)), placed: "design" });
+      }
+    };
+    const [nT, nL] = [Math.max(0, Math.round(i.legsT) - 2), Math.max(0, Math.round(i.legsL) - 2)];
+    // Legs across the bridge run along T (the pier line).
+    cross(swap ? nL : nT, !swap);
+    cross(swap ? nT : nL, swap);
+  }
+  return out;
+}
+
+// --- drilled shafts -----------------------------------------------------------------------------------------------
+
+/** A shaft's cage in its element's frame (x along the pier line, z down from its top). */
+export function shaftBars(host: number, e: IfcElement, i: ShaftInputs): BarSet3D[] {
+  const L = e.depth;
+  const db = barDiameter(i.bar);
+  const dt = barDiameter(i.tieBar);
+  const R = ft(i.D / 2 - i.cover - dt - db / 2);
+  const n = Math.max(1, Math.round(i.bars));
+  const at = Array.from({ length: n }, (_, k) => p3(R * Math.cos((2 * Math.PI * k) / n), R * Math.sin((2 * Math.PI * k) / n), 0));
+  return [
+    { host, frame: "host", mark: "", size: i.bar, dia: db, role: "main", label: `${n} #${i.bar} shaft bars`, path: [p3(0, 0, ft(3)), p3(0, 0, L - ft(3))], at, placed: "design" },
+    { host, frame: "host", mark: "", size: i.tieBar, dia: dt, role: "spiral", label: `#${i.tieBar} spiral @ ${i.pitch} in`, path: helix(ft(i.D / 2 - i.cover - dt / 2), ft(3), L - ft(3), ft(i.pitch)), at: [p3(0, 0, 0)], placed: "design" },
+  ];
+}
+
+// --- the schematic sets -------------------------------------------------------------------------------------------
+
+/** The IFC model's schematic sets (world coordinates) as 3D sets. */
+export function schematicBars(host: number, sets: IfcBarSet[]): BarSet3D[] {
+  return sets.map((s) => {
+    const { origin, u, v, step, drawn } = s.at;
+    const path = s.path.map(([a, b]) => p3(origin[0] + u[0] * a + v[0] * b, origin[1] + u[1] * a + v[1] * b, origin[2] + u[2] * a + v[2] * b));
+    const at = Array.from({ length: drawn }, (_, k) => p3(step[0] * k, step[1] * k, step[2] * k));
+    const role: BarRole = s.role === "RING" ? "spiral" : s.role === "SHEAR" || s.role === "LIGATURE" ? "stirrup" : "main";
+    return { host, frame: "world", mark: s.mark, size: s.size, dia: s.diameter, role, label: `${s.mark} ${s.use.toLowerCase()} (#${s.size})`, path, at, placed: "schematic" };
+  });
+}
+
+/** An element's placement frame: origin, x (across its profile), y (up its profile), z (its sweep). */
+export function elementFrame(e: Pick<IfcElement, "origin" | "xdir" | "zdir">): { o: V3; x: V3; y: V3; z: V3 } {
+  const n = (a: V3): V3 => {
+    const l = Math.hypot(...a) || 1;
+    return [a[0] / l, a[1] / l, a[2] / l];
+  };
+  const z = n(e.zdir);
+  const d = e.xdir[0] * z[0] + e.xdir[1] * z[1] + e.xdir[2] * z[2];
+  const x = n([e.xdir[0] - z[0] * d, e.xdir[1] - z[1] * d, e.xdir[2] - z[2] * d]);
+  const y: V3 = [z[1] * x[2] - z[2] * x[1], z[2] * x[0] - z[0] * x[2], z[0] * x[1] - z[1] * x[0]];
+  return { o: e.origin, x, y, z };
+}

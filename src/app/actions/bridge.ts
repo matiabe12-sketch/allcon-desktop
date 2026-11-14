@@ -9,7 +9,7 @@ import { designDeck } from "@/lib/design/decks/deck";
 import { designApproachSlab } from "@/lib/design/approach/approach-slab";
 import { abutmentInputs, foundationInputs, footingInputs, pileFoundationInputs, shaftInputs } from "@/lib/design/foundations/kinds";
 import { runFoundation } from "@/lib/design/foundations/run";
-import { designGirder, girderShape, type HarpedStrands, type StrandRow } from "@/lib/design/girders/prestressed";
+import { designGirder, girderShape, type GirderInputs, type HarpedStrands, type StrandRow } from "@/lib/design/girders/prestressed";
 import type { GirderShape } from "@/lib/design/girders/sections";
 import { approachSlabInputs, bearingInputs, deckInputs, designInputs, girderInputs, stripSealInputs, wingwallInputs } from "@/lib/design/kinds";
 import { designWingwall } from "@/lib/design/walls/wingwall";
@@ -32,6 +32,7 @@ import { importedOf } from "@/lib/bridge/imported";
 import { movingLoad } from "@/lib/bridge/moving";
 import { bridgeCalcLines as bridgeAnalysisLines } from "@/lib/bridge/report";
 import { bridgePackageLines, bridgeQuantities } from "@/lib/design/bridge/package";
+import { rebarModel, type RebarModel } from "@/lib/design/bridge/rebar-model";
 import { layout } from "@/lib/calcs/library/templates";
 import { CALC_FILE, newCalcKey } from "@/lib/calcs/server";
 import { emptyCalc } from "@/lib/calcs/types";
@@ -49,7 +50,7 @@ export type { SyncRow };
  * the girder check run with its girder designs, each linked design's inputs and verdict for its elements, and
  * their bars (ifc-rebar.ts).
  */
-async function describeBridgeModel(orgId: string, b: BridgeInputs, name: string): Promise<{ description: ReturnType<typeof bridgeIfc>; run: ReturnType<typeof runBridge> } | { error: string }> {
+async function describeBridgeModel(orgId: string, b: BridgeInputs, name: string): Promise<{ description: ReturnType<typeof bridgeIfc>; run: ReturnType<typeof runBridge>; girders: (GirderInputs | null)[]; comps: BridgeComponents; rebar: RebarDesigns } | { error: string }> {
   const ids = b.girderDesignIds.filter((x): x is string => !!x && isUuid(x));
   const linked = await db.design.findMany({ where: { id: { in: ids }, orgId: orgId, kind: "lrfd-girder-check" }, select: { id: true, inputs: true } });
   let run: ReturnType<typeof runBridge>;
@@ -109,7 +110,11 @@ async function describeBridgeModel(orgId: string, b: BridgeInputs, name: string)
     }
   }
   const description = attachRebar(bridgeIfc(b, run, comps, name), rebarSources(comps, rebar));
-  return { description, run };
+  const girders = b.girderDesignIds.map((id) => {
+    const d = linked.find((x) => x.id === id);
+    return d ? girderInputs(d.inputs) : null;
+  });
+  return { description, run, girders, comps, rebar };
 }
 
 // --- The Bridge section (web): a bridge modeled once, analyzed and designed ------------------------------
@@ -387,4 +392,19 @@ export async function girderStrandsFor(
     strands: extra?.strands ?? i.strands,
     harped: extra ? (extra.harped ?? i.harped) : i.harped,
   };
+}
+
+/**
+ * The bridge's reinforcement in 3D for the workspace's Rebar view: every concrete and steel element of the
+ * IFC model (its placement and profile; a box girder with its void) and every bar set, placed from its
+ * design where phase 1 does so (girders, pier caps, columns, drilled shafts) and schematic elsewhere.
+ */
+export async function bridgeRebarModel(bridgeId: string): Promise<RebarModel> {
+  const { user, bridge } = await ownBridge(bridgeId);
+  if (importedOf(bridge.definition)) throw new Error("The rebar view is for bridges made with the wizard");
+  const definition = bridgeDefinition(bridge.definition);
+  const b = withLinks(toBridgeInputs(definition), definition.designs);
+  const described = await describeBridgeModel(user.orgId, b, bridge.name);
+  if ("error" in described) throw new Error(described.error);
+  return rebarModel(b, described.description.elements, described);
 }

@@ -16,7 +16,7 @@ describe("F-18-Y through the Bridge, end to end", async () => {
     abutment: () => ({ type: "integral-piles", section: "HP12x74", nPiles: 13, pileLength: 30, embed: 12, capWidth: 2.5, capDepth: 4, soil: F18Y_ABUT_SOIL, prebore: 0, Rn: 18 * 21.8, phiDyn: 1 }),
     cap: { topBars: { size: 10, count: 12 }, bottomBars: { size: 10, count: 14 }, stirrups: { size: 5, legs: 4, spacing: 6 }, diaphragmTop: F18Y_DIAPHRAGM_TOP },
     // 24 #10: 8 along each 5 ft face, 4 more along each 3 ft face (as the pill section's ring of 24).
-    column: { bar: 10, bars: 24, barsT: 8, barsL: 4, tieBar: 4, tieSpacing: 12 },
+    column: { bar: 10, bars: 24, barsT: 8, barsL: 6, tieBar: 4, tieSpacing: 12 },
     shaft: { D: 48, length: 47, topDepth: 0, layers: F18Y_SHAFT_LAYERS, bar: 10, bars: 30 },
   });
 

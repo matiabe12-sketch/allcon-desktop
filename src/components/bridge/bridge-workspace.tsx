@@ -14,6 +14,7 @@ import { bridgeSolids, type SolidKind, type Vec3 } from "@/lib/bridge/solids";
 import { cn } from "@/lib/utils";
 import { DesignPanel } from "./bridge-design";
 import { QuantitiesPanel } from "./bridge-quantities";
+import { RebarPanel } from "./rebar-view";
 import { BridgeForm, FORM_TITLES, type FormKey } from "./bridge-forms";
 import { ChecksPanel, MemberPanel, ModelDataPanel, ReactionsPanel, SectionSketch } from "./bridge-results";
 import { BridgeView, contourCss, type Arrow, type BridgeViewHandle, type Contour, type Label, type Overlay, type Strip, type ViewName } from "./bridge-view";
@@ -24,7 +25,7 @@ import { BridgeView, contourCss, type Arrow, type BridgeViewHandle, type Contour
 // the right, the result tables below, and a status bar. The model is re-analyzed as its inputs
 // change; the moving load analysis follows a moment later.
 
-type Tab = "structure" | "boundary" | "load" | "analysis" | "results" | "design" | "quantities" | "view";
+type Tab = "structure" | "boundary" | "load" | "analysis" | "results" | "design" | "quantities" | "rebar" | "view";
 type Show = "none" | "deformed" | "My" | "Vz" | "N";
 type Table = "member" | "reactions" | "checks" | "design" | "quantities" | "data";
 type Display = { solid: boolean; deck: boolean; contour: boolean; values: boolean; names: boolean; reactions: boolean; lanes: boolean; grid: boolean; dark: boolean };
@@ -379,6 +380,7 @@ export function BridgeWorkspace({ bridge, projects }: { bridge: { id: string; na
               ["results", "Results"],
               ["design", "Design"],
               ["quantities", "Quantities"],
+              ["rebar", "Rebar"],
               ["view", "View"],
             ] as const
           ).map(([t, label]) => (
@@ -528,6 +530,13 @@ export function BridgeWorkspace({ bridge, projects }: { bridge: { id: string; na
               </Panel>
             </>
           )}
+          {tab === "rebar" && (
+            <Panel title="How it works">
+              <div className="w-[34rem] pt-1 text-[11px] leading-snug text-muted-foreground">
+                The bridge in 3D with its reinforcement: the girders&apos; strands and stirrups, the pier caps&apos;, columns&apos; and drilled shafts&apos; bars placed from their linked designs; the deck&apos;s, abutments&apos;, approach slabs&apos;, wingwalls&apos;, footings&apos; and piles&apos; bars schematic for now. From the saved bridge and its designs: Refresh after a change.
+              </div>
+            </Panel>
+          )}
           {tab === "view" && (
             <Panel title="View">
               {(
@@ -608,7 +617,9 @@ export function BridgeWorkspace({ bridge, projects }: { bridge: { id: string; na
         </aside>
 
         <main className={cn("relative min-w-0 flex-1 overflow-hidden", display.dark ? "dark bg-gradient-to-b from-slate-800 to-slate-950 text-slate-100" : "bg-gradient-to-b from-slate-100 to-white")}>
-          {a ? (
+          {tab === "rebar" ? (
+            <RebarPanel bridgeId={bridge.id} dark={display.dark} />
+          ) : a ? (
             <BridgeView
               ref={view}
               model={a.generated.stage2}
@@ -635,7 +646,7 @@ export function BridgeWorkspace({ bridge, projects }: { bridge: { id: string; na
               <DesignErrorCard message={outcome.error ?? "The bridge could not be analyzed."} />
             </div>
           )}
-          {a && isolation && (
+          {a && isolation && tab !== "rebar" && (
             <div className="absolute top-2 left-1/2 z-10 flex -translate-x-1/2 items-center gap-2 rounded-full border bg-background/95 px-3 py-1 text-[11px] shadow-sm">
               <span>
                 <span className="font-medium">{isolation.label}</span> alone
@@ -645,7 +656,7 @@ export function BridgeWorkspace({ bridge, projects }: { bridge: { id: string; na
               </button>
             </div>
           )}
-          {a && (
+          {a && tab !== "rebar" && (
             <div className="pointer-events-none absolute top-2 left-3 space-y-0.5 text-[11px]">
               <p className="font-semibold">
                 {show === "none" ? "Model" : show === "deformed" ? "Deformed shape (exaggerated)" : `${SHOW[show].label} (${SHOW[show].unit})`}
@@ -664,7 +675,7 @@ export function BridgeWorkspace({ bridge, projects }: { bridge: { id: string; na
               )}
             </div>
           )}
-          <p className="pointer-events-none absolute right-32 bottom-2 text-[10px] text-muted-foreground">Drag to turn · scroll to zoom · right-drag to move · click a member</p>
+          <p className="pointer-events-none absolute right-32 bottom-2 text-[10px] text-muted-foreground">{tab === "rebar" ? "Drag to turn · scroll to zoom · right-drag to move · double-click an element to see it alone" : "Drag to turn · scroll to zoom · right-drag to move · click a member"}</p>
           {/* Side panels: fold them away for a wider view */}
           <button type="button" onClick={() => setPanels((p) => ({ ...p, tree: !p.tree }))} title={panels.tree ? "Hide the model tree" : "Show the model tree"} aria-label={panels.tree ? "Hide the model tree" : "Show the model tree"} className="absolute top-1/2 left-0 flex h-10 w-4 -translate-y-1/2 items-center justify-center rounded-r border border-l-0 bg-background/90 text-muted-foreground shadow-sm hover:text-foreground">
             {panels.tree ? <PanelLeftClose className="size-3" /> : <PanelLeftOpen className="size-3" />}
@@ -673,7 +684,7 @@ export function BridgeWorkspace({ bridge, projects }: { bridge: { id: string; na
             {panels.properties ? <PanelRightClose className="size-3" /> : <PanelRightOpen className="size-3" />}
           </button>
           {/* Color scale */}
-          {a && field && useContour && (
+          {a && field && useContour && tab !== "rebar" && (
             <div className="pointer-events-none absolute bottom-3 left-3 flex items-stretch gap-1.5 text-[10px] tabular-nums">
               <div className="w-3 rounded-sm" style={{ background: `linear-gradient(to top, ${[0, 0.25, 0.5, 0.75, 1].map(contourCss).join(", ")})`, height: "9rem" }} />
               <div className="flex flex-col justify-between">
@@ -685,7 +696,7 @@ export function BridgeWorkspace({ bridge, projects }: { bridge: { id: string; na
             </div>
           )}
           {/* Display toolbar */}
-          <div className="absolute top-2 right-2 flex flex-col gap-0.5 rounded-md border bg-background/90 p-0.5 text-foreground shadow-sm">
+          <div className={cn("absolute top-2 right-2 flex flex-col gap-0.5 rounded-md border bg-background/90 p-0.5 text-foreground shadow-sm", tab === "rebar" && "hidden")}>
             {(
               [
                 ["solid", Cuboid, "Solid members (off: wireframe)"],

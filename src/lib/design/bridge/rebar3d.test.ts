@@ -1,7 +1,13 @@
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { placeIfcRebar } from "./ifc-placed";
 import { buildChain } from "./chain.testkit";
 import { F18Y, F18Y_ABUT_SOIL, F18Y_DIAPHRAGM_TOP, F18Y_GIRDER, F18Y_PAD, F18Y_SHAFT_LAYERS } from "./f18y.fixture";
 import { bridgeIfc, type BridgeComponents } from "./ifc";
+import { attachRebar, rebarSources, type RebarDesigns } from "./ifc-rebar";
 import { rebarModel } from "./rebar-model";
 import { elementFrame, stirrupStations, type BarSet3D } from "./rebar3d";
 
@@ -156,6 +162,18 @@ describe("F-18-Y's bars in 3D", async () => {
               }
             }
         }
+        if (cat === "wingwall") {
+          // Its top level with the roadway, its bottom rising toward the tip (the design's H and h are depths below the top).
+          const w = ab[0].wingwall;
+          const prof = e.profile as { kind: "poly"; pts: [number, number][] };
+          expect(prof.pts).toEqual([[0, 0], [w.L, w.H - w.h], [w.L, w.H], [0, w.H]]);
+          for (const s of setsOn(k))
+            for (const [x, y] of local(s)) {
+              if (x < 0) continue; // into the abutment
+              expect(y, s.label).toBeGreaterThanOrEqual(((w.H - w.h) * x) / w.L - 1e-3);
+              expect(y, s.label).toBeLessThanOrEqual(w.H + 1e-3);
+            }
+        }
         if (cat === "wingwall")
           for (const s of setsOn(k))
             for (const [, , z] of local(s)) {
@@ -164,10 +182,68 @@ describe("F-18-Y's bars in 3D", async () => {
             }
       }
     expect(of("wingwall")).toHaveLength(4);
+    // Each runs from the abutment out beside its approach slab (high at the abutment, low at the tip by the sleeper slab).
+    for (const { e } of of("wingwall")) {
+      const slab = of("approach").find((x) => x.e.part === e.part)!.e;
+      const cap = of("abutment").find((x) => x.e.part === e.part && /pile cap/.test(x.e.name))!.e;
+      const L = ab[0].wingwall.L;
+      const tip = [0, 1].map((k) => e.origin[k] + e.xdir[k] * L);
+      const toTip = [tip[0] - cap.origin[0], tip[1] - cap.origin[1]];
+      const toSlab = [slab.origin[0] - cap.origin[0], slab.origin[1] - cap.origin[1]];
+      expect(toTip[0] * toSlab[0] + toTip[1] * toSlab[1], e.name).toBeGreaterThan(0);
+    }
   });
   it("the bridge rail's bars sit in the barrier along both edges", () => {
     const rails = of("barrier").filter(({ e }) => e.bars === "design");
     expect(rails.length).toBe(4); // two edges, two spans
     expect(setsOn(rails[0].k).length).toBeGreaterThan(100);
   });
+
+  // --- phase 3: the IFC model's bars where the view puts them ---
+  const python = resolve("python/python.exe");
+  it.skipIf(!existsSync(python))("writes them into the IFC model (IFC 4.3 and IFC4): bars and strands placed, valid, in their hosts", () => {
+    // As the export does: each design's schedule on its elements (the quantities), then the bars where the view puts them.
+    const designs: RebarDesigns = { deck: { id: "d", inputs: r.deck }, caps: { 1: { id: "c", inputs: p.cap } }, columns: { 1: { id: "k", inputs: p.column } } };
+    const desc = attachRebar(bridgeIfc(F18Y, r.run, comps, "F-18-Y"), rebarSources(comps, designs));
+    const scheduled = desc.elements.map((e) => e.rebar?.bars.reduce((t, x) => t + x.weight, 0) ?? 0);
+    const placed = rebarModel(F18Y, desc.elements, { girders: [F18Y_GIRDER], comps, rebar: designs });
+    placeIfcRebar(desc.elements, placed);
+    const hosts = desc.elements.filter((e) => e.rebar);
+    const sets = hosts.reduce((t, e) => t + e.rebar!.bars.length, 0);
+    const tendons = hosts.reduce((t, e) => t + (e.rebar!.tendons?.length ?? 0), 0);
+    const lb = hosts.reduce((t, e) => t + e.rebar!.bars.reduce((u, x) => u + x.weight, 0), 0);
+    // The quantities are the schedules': element by element, the same weight as before the bars were placed.
+    desc.elements.forEach((e, i) => expect(e.rebar?.bars.reduce((t, x) => t + x.weight, 0) ?? 0, e.name).toBeCloseTo(scheduled[i], 0));
+    // Every scheduled mark is drawn where its design puts it (none left schematic) on F-18-Y.
+    expect(hosts.flatMap((e) => e.rebar!.bars.filter((x) => !x.placed?.length).map((x) => `${e.name} ${x.use}`))).toEqual([]);
+    // 18 girders, each: the straight rows at 2.25 (bonded and debonded), 4.25 and 6.25 in, and the six draped pairs.
+    expect(tendons).toBe(18 * 10);
+    const dir = mkdtempSync(join(tmpdir(), "allcon-ifc-placed-"));
+    try {
+      const file = join(dir, "bridge.json");
+      const elements = desc.elements.map((e) => {
+        const o = { ...e };
+        delete o.grid;
+        delete o.sweep;
+        delete o.wing;
+        return o;
+      });
+      writeFileSync(file, JSON.stringify({ ...desc, elements, project: "F-18-Y" }));
+      const out = execFileSync(python, ["-I", resolve("scripts/ifc-rebar-check.py"), resolve("api"), file, join(dir, "bridge.ifc")], { encoding: "utf8", timeout: 600_000, maxBuffer: 1 << 26 });
+      const x = JSON.parse(out.trim().split(/\r?\n/).pop()!);
+      for (const schema of ["IFC4X3", "IFC4"] as const) {
+        expect(x[schema].errors, `${schema}: ${JSON.stringify(x[schema].errors)}`).toEqual([]);
+        expect(x[schema].unaggregated, schema).toBe(0);
+        expect(x[schema].untyped, schema).toBe(0);
+        expect(x[schema].withoutShape, schema).toBe(0);
+      }
+      expect(x.IFC4X3.bars).toBe(sets);
+      expect(x.IFC4X3.tendons).toBe(tendons);
+      expect(x.IFC4X3.tendonsUnaggregated).toBe(0);
+      expect(x.IFC4X3.tendonsWithoutShape).toBe(0);
+      expect(x.IFC4X3.weightKg / 0.45359237).toBeCloseTo(lb, -1);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 600_000);
 });

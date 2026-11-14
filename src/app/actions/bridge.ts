@@ -33,6 +33,7 @@ import { movingLoad } from "@/lib/bridge/moving";
 import { bridgeCalcLines as bridgeAnalysisLines } from "@/lib/bridge/report";
 import { bridgePackageLines, bridgeQuantities } from "@/lib/design/bridge/package";
 import { rebarModel, type RebarModel } from "@/lib/design/bridge/rebar-model";
+import { placeIfcRebar } from "@/lib/design/bridge/ifc-placed";
 import { layout } from "@/lib/calcs/library/templates";
 import { CALC_FILE, newCalcKey } from "@/lib/calcs/server";
 import { emptyCalc } from "@/lib/calcs/types";
@@ -50,7 +51,7 @@ export type { SyncRow };
  * the girder check run with its girder designs, each linked design's inputs and verdict for its elements, and
  * their bars (ifc-rebar.ts).
  */
-async function describeBridgeModel(orgId: string, b: BridgeInputs, name: string): Promise<{ description: ReturnType<typeof bridgeIfc>; run: ReturnType<typeof runBridge>; girders: (GirderInputs | null)[]; comps: BridgeComponents; rebar: RebarDesigns } | { error: string }> {
+async function describeBridgeModel(orgId: string, b: BridgeInputs, name: string): Promise<{ description: ReturnType<typeof bridgeIfc>; run: ReturnType<typeof runBridge>; girders: (GirderInputs | null)[]; comps: BridgeComponents; rebar: RebarDesigns; placed: RebarModel } | { error: string }> {
   const ids = b.girderDesignIds.filter((x): x is string => !!x && isUuid(x));
   const linked = await db.design.findMany({ where: { id: { in: ids }, orgId: orgId, kind: "lrfd-girder-check" }, select: { id: true, inputs: true } });
   let run: ReturnType<typeof runBridge>;
@@ -120,7 +121,10 @@ async function describeBridgeModel(orgId: string, b: BridgeInputs, name: string)
     const d = linked.find((x) => x.id === id);
     return d ? girderInputs(d.inputs) : null;
   });
-  return { description, run, girders, comps, rebar };
+  // Each element's bars where its design puts them (the Rebar view's placement), replacing the schematic layout.
+  const placed = rebarModel(b, description.elements, { girders, comps, rebar });
+  placeIfcRebar(description.elements, placed);
+  return { description, run, girders, comps, rebar, placed };
 }
 
 // --- The Bridge section (web): a bridge modeled once, analyzed and designed ------------------------------
@@ -420,5 +424,5 @@ export async function bridgeRebarModel(bridgeId: string): Promise<RebarModel> {
   const b = withLinks(toBridgeInputs(definition), definition.designs);
   const described = await describeBridgeModel(user.orgId, b, bridge.name);
   if ("error" in described) throw new Error(described.error);
-  return rebarModel(b, described.description.elements, described);
+  return described.placed;
 }

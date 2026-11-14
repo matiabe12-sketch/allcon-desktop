@@ -237,6 +237,8 @@ def build(params):
         if e.get("rebar"):
             totals = rebar.write(element, e["rebar"])
             counts["IfcReinforcingBar"] = counts.get("IfcReinforcingBar", 0) + len(e["rebar"].get("bars") or [])
+            if e["rebar"].get("tendons"):
+                counts["IfcTendon"] = counts.get("IfcTendon", 0) + len(e["rebar"]["tendons"])
             rebar_weight += totals[2]
         counts[cls] = counts.get(cls, 0) + 1
     rebar.finish()
@@ -399,6 +401,7 @@ class RebarWriter:
         self.types = {}  # signature -> (type, representation map)
         self.typed = {}  # type id -> (type, [bars])
         self.material = None
+        self.strand_material = None
 
     def _dir(self, v):
         v = numpy.array(v, dtype=float)
@@ -423,12 +426,15 @@ class RebarWriter:
         t.BendingShapeCode = sig[1] or None
         if dims:
             t.BendingParameters = [m.create_entity("IfcLengthMeasure", x / 12) for x in dims]
-        # Its shape: a disk the bar's diameter swept along its centreline, in the type's own x–y plane.
-        line = m.createIfcPolyline([m.createIfcCartesianPoint((x, y, 0.0)) for x, y in path])
-        solid = m.createIfcSweptDiskSolid(line, d_ft / 2, None, None, None)
-        rep = m.createIfcShapeRepresentation(self.body, "Body", "AdvancedSweptSolid", [solid])
-        rmap = m.createIfcRepresentationMap(m.createIfcAxis2Placement3D(m.createIfcCartesianPoint((0.0, 0.0, 0.0))), rep)
-        t.RepresentationMaps = [rmap]
+        # Its shape: a disk the bar's diameter swept along its centreline, in the type's own x–y plane (none for a
+        # bar placed from its design, whose occurrences carry their own shapes).
+        rmap = None
+        if path is not None:
+            line = m.createIfcPolyline([m.createIfcCartesianPoint((x, y, 0.0)) for x, y in path])
+            solid = m.createIfcSweptDiskSolid(line, d_ft / 2, None, None, None)
+            rep = m.createIfcShapeRepresentation(self.body, "Body", "AdvancedSweptSolid", [solid])
+            rmap = m.createIfcRepresentationMap(m.createIfcAxis2Placement3D(m.createIfcCartesianPoint((0.0, 0.0, 0.0))), rep)
+            t.RepresentationMaps = [rmap]
         if self.project is not None and not t.HasContext:
             ifcopenshell.api.project.assign_declaration(m, definitions=[t], relating_context=self.project)
         self.types[sig] = (t, rmap)
@@ -445,8 +451,9 @@ class RebarWriter:
             self.material = api.material.add_material(m, name="Reinforcing steel (ASTM A615)", category="steel")
         for b in rebar.get("bars") or []:
             role = b.get("role") if b.get("role") in BAR_ROLES else "MAIN"
-            path = [(_num(x, "a bar point"), _num(y, "a bar point")) for x, y in (b.get("path") or [])][:50]
-            if len(path) < 2:
+            placed = b.get("placed")
+            path = None if placed else [(_num(x, "a bar point"), _num(y, "a bar point")) for x, y in (b.get("path") or [])][:50]
+            if not placed and len(path) < 2:
                 raise ValueError("a bar needs two points")
             count = int(_num(b["count"], "a bar count"))
             length = _num(b["length"], "a bar length")  # in, each bar
@@ -462,14 +469,19 @@ class RebarWriter:
             bar.BarLength = length / 12
             bar.BarSurface = "TEXTURED"
             self.typed.setdefault(t.id(), (t, []))[1].append(bar)
-            at = b.get("at") or {}
-            o, u, v, step = (numpy.array(_vec(at.get(k), "a bar frame")) for k in ("origin", "u", "v", "step"))
-            drawn = max(1, min(int(_num(at.get("drawn", 1), "a bar count")), MAX_DRAWN, count))
-            items = [
-                m.createIfcMappedItem(rmap, m.createIfcCartesianTransformationOperator3D(self._dir(u), self._dir(v), m.createIfcCartesianPoint([float(x) for x in o + i * step]), 1.0, self._dir(numpy.cross(u, v))))
-                for i in range(drawn)
-            ]
-            made.append((bar, m.createIfcShapeRepresentation(self.body, "Body", "MappedRepresentation", items)))
+            if placed:
+                # Placed from its design: its centreline (model coordinates) swept once, repeated at each place.
+                drawn = sum(len(g["at"]) for g in placed)
+                made.append((bar, self._placed(placed, t.NominalDiameter / 2)))
+            else:
+                at = b.get("at") or {}
+                o, u, v, step = (numpy.array(_vec(at.get(k), "a bar frame")) for k in ("origin", "u", "v", "step"))
+                drawn = max(1, min(int(_num(at.get("drawn", 1), "a bar count")), MAX_DRAWN, count))
+                items = [
+                    m.createIfcMappedItem(rmap, m.createIfcCartesianTransformationOperator3D(self._dir(u), self._dir(v), m.createIfcCartesianPoint([float(x) for x in o + i * step]), 1.0, self._dir(numpy.cross(u, v))))
+                    for i in range(drawn)
+                ]
+                made.append((bar, m.createIfcShapeRepresentation(self.body, "Body", "MappedRepresentation", items)))
             _add_qto(m, bar, "Qto_ReinforcingElementBaseQuantities", [("count", "Count", count), ("length", "Length", count * length / 12), ("weight", "Weight", weight * LB)])
             dims = [_num(x, "a dimension") for x in (b.get("dims") or [])]
             shape = str(b.get("shape") or "")
@@ -486,7 +498,7 @@ class RebarWriter:
                 "BendingDimensions": " + ".join(_ft_in(x) for x in dims),
                 "Use": str(b.get("use") or "")[:255],
                 "Callout": str(b.get("callout") or "")[:255],
-                "Placement": ("Schematic: laid out inside its host; size, shape, count and length are the design's" + (f" ({drawn} of {count} drawn)" if drawn < count else ""))[:255],
+                "Placement": (str(b["note"]) if b.get("note") else "Placed from its design: each bar where the design's detailing puts it" if placed else "Schematic: laid out inside its host; size, shape, count and length are the design's" + (f" ({drawn} of {count} drawn)" if drawn < count else ""))[:255],
             }
             ps = api.pset.add_pset(m, product=bar, name="ALLCON_BarSchedule")
             api.pset.edit_pset(m, pset=ps, properties=props)
@@ -494,6 +506,7 @@ class RebarWriter:
             totals[0] += count
             totals[1] += count * length / 12
             totals[2] += weight
+        self._tendons(host, rebar.get("tendons") or [])
         if not made:
             return totals
         api.aggregate.assign_object(m, products=[bar for bar, _ in made], relating_object=host)
@@ -506,6 +519,55 @@ class RebarWriter:
         ps = api.pset.add_pset(m, product=host, name="ALLCON_BarSchedule")
         api.pset.edit_pset(m, pset=ps, properties={"DesignKind": str(rebar.get("designKind") or ""), "DesignId": str(rebar.get("designId") or ""), "Marks": len(made), "BarCount": totals[0], "TotalLength_ft": round(totals[1], 1), "TotalWeight_lb": round(totals[2], 1), **rows})
         return totals
+
+    def _placed(self, placed, r):
+        """Bars placed from their design: each group's centreline (ft, model coordinates) swept by a disk and repeated at
+        its places (translations). Bars drawn once each are swept solids; repeated ones are mapped from one."""
+        m = self.model
+        groups = placed if isinstance(placed, list) else [placed]
+        lines = []
+        for g in groups:
+            pts = [_vec(p, "a bar point") for p in g["path"]][:2000]
+            if len(pts) < 2:
+                raise ValueError("a placed bar needs two points")
+            at = [_vec(a, "a bar place") for a in g["at"]]
+            lines.append((m.createIfcSweptDiskSolid(m.createIfcPolyline([m.createIfcCartesianPoint([float(x) for x in p]) for p in pts]), r, None, None, None), at))
+        if all(len(at) == 1 and not any(at[0]) for _, at in lines):
+            return m.createIfcShapeRepresentation(self.body, "Body", "AdvancedSweptSolid", [solid for solid, _ in lines])
+        x, y, z = m.createIfcDirection((1.0, 0.0, 0.0)), m.createIfcDirection((0.0, 1.0, 0.0)), m.createIfcDirection((0.0, 0.0, 1.0))
+        origin = m.createIfcAxis2Placement3D(m.createIfcCartesianPoint((0.0, 0.0, 0.0)))
+        items = []
+        for solid, at in lines:
+            rmap = m.createIfcRepresentationMap(origin, m.createIfcShapeRepresentation(self.body, "Body", "AdvancedSweptSolid", [solid]))
+            items += [m.createIfcMappedItem(rmap, m.createIfcCartesianTransformationOperator3D(x, y, m.createIfcCartesianPoint([float(v) for v in a]), 1.0, z)) for a in at]
+        return m.createIfcShapeRepresentation(self.body, "Body", "MappedRepresentation", items)
+
+    def _tendons(self, host, tendons):
+        """A girder's strands as IfcTendon (STRAND), aggregated into it: one per row or draped group, with their count, diameter and area."""
+        m = self.model
+        api = ifcopenshell.api
+        made = []
+        for s in tendons:
+            d_in = _num(s["diameter"], "a strand diameter")
+            n = int(_num(s["count"], "a strand count"))
+            t = api.root.create_entity(m, ifc_class="IfcTendon", name=str(s.get("label") or "Strands")[:255], predefined_type="STRAND")
+            t.NominalDiameter = d_in / 12
+            t.CrossSectionArea = _num(s["area"], "a strand area") * IN2
+            t.ObjectType = "Prestressing strand"
+            made.append((t, self._placed(s["placed"], d_in / 24)))
+            props = {"Count": n, "Diameter_in": round(d_in, 3), "Area_in2": round(_num(s["area"], "a strand area"), 4), "Kind": str(s.get("kind") or "")[:255], "Debonded_ft": round(_num(s.get("debonded", 0), "a debonded length"), 2), "Description": str(s.get("label") or "")[:255]}
+            ps = api.pset.add_pset(m, product=t, name="ALLCON_Strands")
+            api.pset.edit_pset(m, pset=ps, properties=props)
+        if not made:
+            return made
+        if self.strand_material is None:
+            self.strand_material = api.material.add_material(m, name="Prestressing strand (ASTM A416, Grade 270)", category="steel")
+        api.aggregate.assign_object(m, products=[t for t, _ in made], relating_object=host)
+        for t, rep in made:
+            api.geometry.edit_object_placement(m, product=t, matrix=numpy.eye(4), is_si=False)
+            api.geometry.assign_representation(m, product=t, representation=rep)
+        api.material.assign_material(m, products=[t for t, _ in made], material=self.strand_material)
+        return made
 
     def finish(self):
         for t, bars in self.typed.values():

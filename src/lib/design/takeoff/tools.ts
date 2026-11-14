@@ -494,7 +494,9 @@ export function wingwallTakeoff(i: WingwallInputs): Takeoff {
   const b = i.bars;
   const rows = countAt(H - 2 * c, b.spacing);
   const embed = Math.max(0, i.A * 12 - c);
-  // A bar series (CDOT 4.3): the bars' straight part varies with the wall's sloping top; counted at the average.
+  // A bar series (CDOT 4.3): the bars' straight part varies with the wall's sloping bottom; counted at the average.
+  // The wall's top is level (the roadway); its bottom rises from H below the top at the abutment to h at the tip,
+  // the design's pressure depths (walls/wingwall.ts). y is up from the wall's bottom at the abutment.
   const series = (size: number, count: number, straights: number[], leg: number, use: string, callout: string) => {
     const [lo, hi] = [Math.min(...straights), Math.max(...straights)];
     const avg = straights.reduce((s, x) => s + x, 0) / straights.length;
@@ -505,7 +507,7 @@ export function wingwallTakeoff(i: WingwallInputs): Takeoff {
   const horiz: number[] = [];
   for (let k = 0; k < rows; k++) {
     const y = c + ((H - 2 * c) * k) / Math.max(1, rows - 1);
-    const len = y <= h ? L : (L * (H - y)) / Math.max(1e-9, H - h);
+    const len = y >= H - h ? L : (L * y) / Math.max(1e-9, H - h);
     horiz.push(Math.max(12, len - c) + embed);
     lines.push({ pts: [[-embed, y], [Math.max(12, len - c), y]], mark: "Horizontal, retained face", kind: "main" });
   }
@@ -519,7 +521,7 @@ export function wingwallTakeoff(i: WingwallInputs): Takeoff {
   const area = ((H + h) / 2) * L; // in² of elevation
   const concrete: ConcreteItem[] = [{ label: "Wingwall", cy: (area * t) / 46656, basis: `${fit(area / 144)} ft² of elevation by ${ftIn(t)} thick`, math: `${avgT(inT(H), inT(h))}\\cdot ${inT(L)}\\cdot ${inT(t)}`, ref: `Wingwall: ${H === h ? "height" : "average height (at the abutment and the tip)"} × length × thickness` }];
   const { sch, markOf } = finish(pre, concrete);
-  const view: DetailView = { title: "Elevation (retained face)", polys: [{ pts: [[0, 0], [L, 0], [L, h], [0, H]], style: "concrete" }, { pts: rect(-i.A * 12, 0, 0, H), style: "dashed" }], lines: lines.map((l) => ({ ...l, mark: markOf(l.mark) })), dots: [], labels: [{ x: -i.A * 6, y: H + 8, text: "Abutment", anchor: "middle" }] };
+  const view: DetailView = { title: "Elevation (retained face)", polys: [{ pts: [[0, 0], [L, H - h], [L, H], [0, H]], style: "concrete" }, { pts: rect(-i.A * 12, 0, 0, H), style: "dashed" }], lines: lines.map((l) => ({ ...l, mark: markOf(l.mark) })), dots: [], labels: [{ x: -i.A * 6, y: H + 8, text: "Abutment", anchor: "middle" }] };
   return { what: "wingwall", schedule: sch, quantities: {}, views: [view], notes };
 }
 

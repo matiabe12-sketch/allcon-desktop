@@ -434,7 +434,8 @@ export function bridgeIfc(b: BridgeInputs, run: BridgeRun, c: BridgeComponents =
       }
       // Its wingwalls (when a wingwall design is linked): one at each end of the abutment, from its back face
       // along the approach, square to the support line, their outer faces flush with the abutment's ends; the
-      // wingwall design's elevation (H at the abutment, h at the tip, its bottom level) and thickness.
+      // wingwall design's elevation (its top level with the roadway, its bottom H below it at the abutment and h
+      // below it at the tip: the design's pressure depths) and thickness.
       const wing = c.wingwalls?.[i];
       if (wing?.inputs) {
         const w = wing.inputs;
@@ -456,7 +457,7 @@ export function bridgeIfc(b: BridgeInputs, run: BridgeRun, c: BridgeComponents =
             origin: v3(P(o.x, o.y, top - w.H)),
             xdir: v3(x),
             zdir: v3(z),
-            profile: { kind: "poly", pts: [[0, 0], [w.L, 0], [w.L, w.h], [0, w.H]] },
+            profile: { kind: "poly", pts: [[0, 0], [w.L, w.H - w.h], [w.L, w.H], [0, w.H]] },
             depth: r6(w.t / 12),
             material: "Concrete Class D (Bridge)",
             psets: designPset("cantilever-wingwall", wing.id ?? null, { PayItem: "601-03040 Concrete Class D (Bridge)" }),

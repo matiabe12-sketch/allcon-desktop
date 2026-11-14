@@ -259,7 +259,7 @@ export type WingwallBarInputs = { H: number; h: number; L: number; t: number; A:
 
 /**
  * A wingwall's bars (takeoff/tools.ts wingwallTakeoff) in its element's frame (x from the abutment along the wall,
- * y up from its bottom, z through it): the design's horizontal bars on the retained face, run into the abutment
+ * y up from its bottom at the abutment, z through it; its top level at H, its bottom rising to H − h at the tip): the design's horizontal bars on the retained face, run into the abutment
  * and hooked; #4 at 12 in horizontal on the front face and vertical on each face (shrinkage and temperature,
  * 5.10.6, as the takeoff assumes). `inward` says which way z runs: toward the fill (+1) or away (−1).
  */
@@ -272,16 +272,16 @@ export function wingwallBars(host: number, i: WingwallBarInputs, inward: 1 | -1)
   const zIn = inward === 1 ? T - c - dm / 2 : c + dm / 2; // the retained face
   const zOut = inward === 1 ? c + d4 / 2 : T - c - d4 / 2;
   const embed = Math.max(0, i.A - c);
-  const lenAt = (y: number) => (y <= h ? L : (L * (H - y)) / Math.max(1e-9, H - h));
+  const bottom = (x: number) => ((H - h) * x) / L;
+  // How far along the wall a bar at height y runs before the rising bottom (less the cover) meets it.
+  const reach = (y: number) => Math.min(L - c, H - h > 1e-9 ? ((y - c) * L) / (H - h) : L - c);
   const leg = Math.min(ft(hookLeg(i.bars.bar).leg), Math.abs(zOut - zIn));
   const toward = zOut > zIn ? 1 : -1;
   for (const y of stations(c, H - c, ft(i.bars.spacing)))
-    out.push(local(host, i.bars.bar, "main", `#${i.bars.bar} @ ${i.bars.spacing} in, retained face`, [p3(-embed, y, zIn + toward * leg), p3(-embed, y, zIn), p3(Math.max(1, lenAt(y) - c), y, zIn)], [p3(0, 0, 0)]));
-  for (const y of stations(c, H - c, 1)) out.push(local(host, 4, "main", "#4 @ 12 in, front face", [p3(-embed, y, zOut), p3(Math.max(1, lenAt(y) - c), y, zOut)], [p3(0, 0, 0)]));
-  for (const x of stations(c, L - c, 1)) {
-    const topY = H - ((H - h) * x) / L - c;
-    for (const z of [zIn, zOut]) out.push(local(host, 4, "stirrup", "#4 @ 12 in vertical, each face", [p3(x, c, z), p3(x, topY, z)], [p3(0, 0, 0)]));
-  }
+    out.push(local(host, i.bars.bar, "main", `#${i.bars.bar} @ ${i.bars.spacing} in, retained face`, [p3(-embed, y, zIn + toward * leg), p3(-embed, y, zIn), p3(Math.max(0, reach(y)), y, zIn)], [p3(0, 0, 0)]));
+  for (const y of stations(c, H - c, 1)) out.push(local(host, 4, "main", "#4 @ 12 in, front face", [p3(-embed, y, zOut), p3(Math.max(0, reach(y)), y, zOut)], [p3(0, 0, 0)]));
+  for (const x of stations(c, L - c, 1))
+    for (const z of [zIn, zOut]) out.push(local(host, 4, "stirrup", "#4 @ 12 in vertical, each face", [p3(x, bottom(x) + c, z), p3(x, H - c, z)], [p3(0, 0, 0)]));
   return out;
 }
 

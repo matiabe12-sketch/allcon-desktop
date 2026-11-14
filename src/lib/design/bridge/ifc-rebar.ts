@@ -1,6 +1,7 @@
 import type { ApproachSlabInputs } from "../approach/approach-slab";
 import { approachSlabTakeoff } from "../approach/approach-slab-detail";
-import { deckTakeoff } from "../takeoff/tools";
+import { deckTakeoff, wingwallTakeoff } from "../takeoff/tools";
+import type { WingwallInputs } from "../walls/wingwall";
 import type { DeckInputs } from "../decks/deck";
 import type { AbutmentInputs } from "../foundations/abutment";
 import { abutmentTakeoff, footingTakeoff, pileTakeoff, shaftTakeoff } from "../foundations/detail";
@@ -43,8 +44,14 @@ export type IfcBarSet = {
   path: [number, number][];
   /** Where the bars sit (schematic): the first bar's frame, the step to the next, how many are drawn. */
   at: { origin: V3; u: V3; v: V3; step: V3; drawn: number };
+  /** Placed from its design (ifc-placed.ts): centrelines in model coordinates (ft), each repeated at its places; the writer draws these instead of `path` and `at`. */
+  placed?: { path: V3[]; at: V3[] }[];
+  /** Where its drawing and its quantities come from (the writer's Placement property). */
+  note?: string;
 };
-export type IfcRebar = { designId: string; designKind: string; bars: IfcBarSet[] };
+/** A girder's strands of one row or draped group (IfcTendon, STRAND), placed from its design. */
+export type IfcTendonSet = { label: string; kind: "straight" | "harped" | "debonded"; count: number; diameter: number; area: number; debonded: number; placed: { path: V3[]; at: V3[] }[] };
+export type IfcRebar = { designId: string; designKind: string; bars: IfcBarSet[]; tendons?: IfcTendonSet[] };
 
 /** A box an element's bars are laid out in: its center, axes (unit) and half sizes (ft). */
 export type RebarBox = { c: V3; ax: [V3, V3, V3]; half: [number, number, number] };
@@ -179,7 +186,7 @@ export type RebarSource = {
 };
 
 const CONCRETE = /oncrete/;
-const HOST_WORDS = ["footing", "stem", "backwall", "diaphragm", "cap", "shaft", "column", "slab", "deck"];
+const HOST_WORDS = ["footing", "stem", "backwall", "diaphragm", "cap", "shaft", "column", "slab", "deck", "wingwall"];
 
 /** Which of a support's hosts a bar group goes in: one its use names, else the biggest. */
 function hostFor(g: BarGroup, hosts: (IfcElement & { box?: RebarBox })[]) {
@@ -261,6 +268,8 @@ export function rebarSources(c: BridgeComponents, d: RebarDesigns): RebarSource[
     out.push(s);
   };
   for (const a of Object.values(c.abutments ?? {})) if (a?.id && a.inputs) { const s = once(() => abutmentTakeoff(a.inputs as AbutmentInputs).schedule); push({ designId: a.id, designKind: "abutment", per: "support", schedule: s }); }
+  // Each wingwall element its design's whole schedule (one wall each).
+  for (const w of Object.values(c.wingwalls ?? {})) if (w?.id && w.inputs) { const s = once(() => wingwallTakeoff(w.inputs as WingwallInputs).schedule); push({ designId: w.id, designKind: "cantilever-wingwall", per: "element", schedule: s }); }
   for (const a of Object.values(c.approachSlabs ?? {})) if (a?.id && a.inputs) { const s = once(() => approachSlabTakeoff(a.inputs as ApproachSlabInputs, 1).schedule); push({ designId: a.id, designKind: "approach-slab", per: "element", schedule: s }); }
   for (const f of Object.values(c.foundations ?? {})) {
     if (!f?.id || !f.inputs) continue;

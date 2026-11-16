@@ -291,6 +291,8 @@ export const FOUNDATION_SPECS: Record<FoundationKind, SectionSpec[]> = {
         { type: "number", key: "RDC", label: "Reaction per girder, DC", unit: "kip" },
         { type: "number", key: "RDW", label: "Reaction per girder, DW", unit: "kip" },
         { type: "number", key: "RLL", label: "Reaction per girder, LL (no IM)", unit: "kip" },
+        { type: "number", key: "RLane", label: "Reaction per lane, LL (no IM; 0: girders × the above)", unit: "kip" },
+        { type: "number", key: "lanes", label: "Design lanes on the deck" },
         { type: "number", key: "braking", label: "Braking at this abutment", unit: "kip", show: (i) => i.type === "seat" || i.type === "semi-integral" },
         { type: "number", key: "bearingShear", label: "Bearings' shear", unit: "kip/ft", show: (i) => i.type === "seat" || i.type === "semi-integral" },
         { type: "number", key: "approachDC", label: "Approach slab's end reaction (DC)", unit: "kip/ft" },

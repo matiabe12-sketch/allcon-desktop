@@ -253,7 +253,7 @@ function endReaction(line: ReturnType<typeof designGirder>["interior"], L: numbe
   const DW = (ld.wDW * L) / 2;
   const lane = liveLoad(L, 0, 0).V;
   const laneIM = liveLoad(L, 0, 0.33).V;
-  return { DC, DC1, DW, LL: lane * line.df.shear, LLIM: laneIM * line.df.shear };
+  return { DC, DC1, DW, LL: lane * line.df.shear, LLIM: laneIM * line.df.shear, Lane: lane };
 }
 
 /** The Bridge run: its layout, the girder check on each group of spans, and each support's reactions per girder. */
@@ -274,8 +274,8 @@ export function runBridge(b: BridgeInputs, bases: (GirderInputs | null | undefin
       const sd = g.result.spans[g.spans.indexOf(j)] ?? g.result.spans[0];
       sides.push({ span: j, interior: endReaction(sd.interior, lay.spans[j].L), exterior: endReaction(sd.exterior, lay.spans[j].L) });
     }
-    const sum = (side: "interior" | "exterior", key: "DC" | "DC1" | "DW" | "LL" | "LLIM") => sides.reduce((t, x) => t + x[side][key], 0);
-    const per = (key: "DC" | "DC1" | "DW" | "LL" | "LLIM") => Math.max(sum("interior", key), sum("exterior", key));
+    const sum = (side: "interior" | "exterior", key: "DC" | "DC1" | "DW" | "LL" | "LLIM" | "Lane") => sides.reduce((t, x) => t + x[side][key], 0);
+    const per = (key: "DC" | "DC1" | "DW" | "LL" | "LLIM" | "Lane") => Math.max(sum("interior", key), sum("exterior", key));
     const continuous = s.type === "continuous-pier";
     if (continuous) {
       // Over a continuous pier (5.12.3.3): the girders and deck are simple (their ends add); the barrier,
@@ -298,14 +298,14 @@ export function runBridge(b: BridgeInputs, bases: (GirderInputs | null | undefin
           return r.truck.back + r.truck.ahead + r.lane.back + r.lane.ahead;
         };
         const df = Math.max(lines[0][k].df.shear, lines[1][k].df.shear);
-        return { DC: DC1 + DC2, DC1, DW, LL: lane(0) * df, LLIM: lane(0.33) * df };
+        return { DC: DC1 + DC2, DC1, DW, LL: lane(0) * df, LLIM: lane(0.33) * df, Lane: lane(0) };
       };
       const int = side("interior");
       const ext = side("exterior");
-      const pick = (key: "DC" | "DC1" | "DW" | "LL" | "LLIM") => Math.max(int[key], ext[key]);
-      return { support: i, name: s.name, sides, DC: pick("DC"), DC1: pick("DC1"), DW: pick("DW"), LL: pick("LL"), LLIM: pick("LLIM"), continuous };
+      const pick = (key: "DC" | "DC1" | "DW" | "LL" | "LLIM" | "Lane") => Math.max(int[key], ext[key]);
+      return { support: i, name: s.name, sides, DC: pick("DC"), DC1: pick("DC1"), DW: pick("DW"), LL: pick("LL"), LLIM: pick("LLIM"), Lane: pick("Lane"), continuous };
     }
-    return { support: i, name: s.name, sides, DC: per("DC"), DC1: per("DC1"), DW: per("DW"), LL: per("LL"), LLIM: per("LLIM"), continuous };
+    return { support: i, name: s.name, sides, DC: per("DC"), DC1: per("DC1"), DW: per("DW"), LL: per("LL"), LLIM: per("LLIM"), Lane: per("Lane"), continuous };
   });
   const ok = groups.every((g) => g.result.ok);
   return { layout: lay, groups, reactions, ok };

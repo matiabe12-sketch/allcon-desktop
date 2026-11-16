@@ -193,7 +193,7 @@ export async function runLoadPath(o: {
     const fBefore = kind === "spread-footing" ? footingInputs(fd?.inputs ?? {}) : kind === "pile-foundation" ? pileFoundationInputs(fd?.inputs ?? {}) : shaftInputs(fd?.inputs ?? {});
     let fNext: object = fBefore;
     if (colResult) {
-      fNext = kind === "spread-footing" ? footingFromColumn(colResult, fBefore as ReturnType<typeof footingInputs>) : kind === "pile-foundation" ? pilesFromColumn(colResult, fBefore as ReturnType<typeof pileFoundationInputs>) : shaftFromColumn(colResult, fBefore as ReturnType<typeof shaftInputs>, colNext);
+      fNext = kind === "spread-footing" ? footingFromColumn(colResult, fBefore as ReturnType<typeof footingInputs>, colNext) : kind === "pile-foundation" ? pilesFromColumn(colResult, fBefore as ReturnType<typeof pileFoundationInputs>, colNext) : shaftFromColumn(colResult, fBefore as ReturnType<typeof shaftInputs>, colNext);
       if (kind === "drilled-shaft") fNext = { ...fNext, D: Math.max((fNext as ReturnType<typeof shaftInputs>).D, s.pier.columnShape === "round" ? s.pier.columnSize : 0) };
     }
     c.foundationId = await upsert(`foundation-${k}`, `${s.name}, foundation`, kind, fd, fBefore, fNext, colResult ? verdictTry(() => runFoundation(kind, fNext).checks) : "the column's base forces are needed first", `${prefix}, ${s.name} foundation`);

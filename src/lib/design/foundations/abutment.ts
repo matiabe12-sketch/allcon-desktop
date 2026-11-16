@@ -50,6 +50,9 @@ export type AbutmentInputs = {
   RDC: number; // kip per girder
   RDW: number;
   RLL: number; // without IM
+  /** One lane's reaction at the abutment, no IM (kip): with `lanes`, the foundation's live load is the lanes × their multiple presence factors (AASHTO 3.6.1.1.2), not the girders × RLL. 0: girders × RLL. */
+  RLane?: number;
+  lanes?: number; // design lanes on the deck
   IM: number;
   braking: number; // kip, the whole bridge's at this abutment
   bearingShear: number; // kip/ft, the bearings' shear (seat, semi-integral)
@@ -148,6 +151,8 @@ export const ABUTMENT_DEFAULTS: AbutmentInputs = {
   RDC: 140,
   RDW: 18,
   RLL: 75,
+  RLane: 0,
+  lanes: 0,
   IM: 0.33,
   braking: 40,
   bearingShear: 0,
@@ -285,6 +290,21 @@ export function continuousBeam(L: number, supports: number[], loads: { x: number
   return { xs, M, Mpos: Math.max(0, ...M), Mneg: Math.max(0, ...M.map((v) => -v)), Vmax };
 }
 
+/** AASHTO Table 3.6.1.1.2-1. */
+const presence = (lanes: number) => (lanes <= 1 ? 1.2 : lanes === 2 ? 1.0 : lanes === 3 ? 0.85 : 0.65);
+
+/**
+ * The live load on the whole abutment, no IM (kip): with one lane's reaction and the design lanes, the most of
+ * k lanes × their multiple presence factor (AASHTO 3.6.1.1.2, as for any substructure); otherwise the girders × RLL.
+ */
+export function abutmentLiveLoad(i: Pick<AbutmentInputs, "nGirders" | "RLL" | "RLane" | "lanes">) {
+  const lanes = Math.floor(i.lanes ?? 0);
+  if (!((i.RLane ?? 0) > 0 && lanes >= 1)) return i.nGirders * i.RLL;
+  let best = 0;
+  for (let k = 1; k <= lanes; k++) best = Math.max(best, k * presence(k) * (i.RLane ?? 0));
+  return best;
+}
+
 export function designAbutment(i: AbutmentInputs) {
   if (!(i.length > 0 && i.unitLength > 0)) throw new DesignError("Give the abutment's length and the bridge unit's length.");
   if (!(i.nGirders >= 1)) throw new DesignError("Give the girders.");
@@ -300,7 +320,7 @@ export function designAbutment(i: AbutmentInputs) {
   const expansion = i.alpha * half * Math.max(0, i.tMax - 60);
   const contraction = i.alpha * half * Math.max(0, 60 - i.tMin) + i.csMove;
   const move = Math.max(expansion, contraction);
-  const totalGirderR = { DC: i.nGirders * i.RDC, DW: i.nGirders * i.RDW, LL: i.nGirders * i.RLL };
+  const totalGirderR = { DC: i.nGirders * i.RDC, DW: i.nGirders * i.RDW, LL: abutmentLiveLoad(i) };
 
   let integralOut: ReturnType<typeof integralDesign> | null = null;
   let seatOut: ReturnType<typeof seatDesign> | null = null;

@@ -66,6 +66,9 @@ export function abutmentFromBridge(b: BridgeInputs, run: BridgeRun, support: num
     RDC: Math.round(r.DC * 10) / 10,
     RDW: Math.round(r.DW * 10) / 10,
     RLL: Math.round(r.LL * 10) / 10,
+    // The foundation's live load: the lanes on the deck with their multiple presence factors (3.6.1.1.2), one lane's reaction each.
+    RLane: Math.round(r.Lane * 10) / 10,
+    lanes,
     IM: 0.33,
     braking: Math.round((braking / 2) * 10) / 10,
     length: Math.round((width / Math.cos((s.skew * Math.PI) / 180)) * 100) / 100,
@@ -188,13 +191,20 @@ export function baseCases(col: ColumnResult) {
 
 const round = (v: number) => Math.round(v * 10) / 10;
 
-export function footingFromColumn(col: ColumnResult, current: FootingInputs): FootingInputs {
-  // B across the bridge (the column's T), L along it.
-  return { ...current, cases: baseCases(col).map((c) => ({ name: c.name, limit: c.limit, P: round(c.P), MB: round(Math.abs(c.MT)), ML: round(Math.abs(c.ML)), HB: round(Math.abs(c.VT)), HL: round(Math.abs(c.VL)) })) };
+/** The column's footprint at its base for the footing or pile cap under it: B across the bridge (the column's T), L along it (W); an oblong column taken as its rectangle. */
+export function columnFootprint(column?: { shape: string; T: number; W: number } | null) {
+  if (!column) return {};
+  const round = column.shape === "round";
+  return { colShape: (round ? "round" : "rectangular") as "round" | "rectangular", colB: column.T, colL: round ? column.T : column.W };
 }
 
-export function pilesFromColumn(col: ColumnResult, current: PileInputs): PileInputs {
-  return { ...current, cases: baseCases(col).map((c) => ({ name: c.name, limit: c.limit, P: round(c.P), MB: round(Math.abs(c.MT)), ML: round(Math.abs(c.ML)), HB: round(Math.abs(c.VT)), HL: round(Math.abs(c.VL)) })) };
+export function footingFromColumn(col: ColumnResult, current: FootingInputs, column?: { shape: string; T: number; W: number } | null): FootingInputs {
+  // B across the bridge (the column's T), L along it.
+  return { ...current, ...columnFootprint(column), cases: baseCases(col).map((c) => ({ name: c.name, limit: c.limit, P: round(c.P), MB: round(Math.abs(c.MT)), ML: round(Math.abs(c.ML)), HB: round(Math.abs(c.VT)), HL: round(Math.abs(c.VL)) })) };
+}
+
+export function pilesFromColumn(col: ColumnResult, current: PileInputs, column?: { shape: string; T: number; W: number } | null): PileInputs {
+  return { ...current, ...columnFootprint(column), cases: baseCases(col).map((c) => ({ name: c.name, limit: c.limit, P: round(c.P), MB: round(Math.abs(c.MT)), ML: round(Math.abs(c.ML)), HB: round(Math.abs(c.VT)), HL: round(Math.abs(c.VL)) })) };
 }
 
 export function shaftFromColumn(col: ColumnResult, current: ShaftInputs, column?: ColumnCage | null): ShaftInputs {

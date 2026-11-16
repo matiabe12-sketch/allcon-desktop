@@ -101,7 +101,7 @@ export function runFoundation(kind: FoundationKind, inputs: unknown): Foundation
     }
     case "abutment": {
       const r = designAbutment(inputs as AbutmentInputs);
-      const rows: { title: string; rows: [string, string][] }[] = [{ title: "Movement at the abutment", rows: [["Expansion / contraction (in)", `${f(r.expansion)} / ${f(r.contraction)}`], ["Girders' reactions, DC / DW / LL (kip)", `${f(r.totalGirderR.DC, 0)} / ${f(r.totalGirderR.DW, 0)} / ${f(r.totalGirderR.LL, 0)}`]] }];
+      const rows: { title: string; rows: [string, string][] }[] = [{ title: "Movement at the abutment", rows: [["Expansion / contraction (in)", `${f(r.expansion)} / ${f(r.contraction)}`], ["Reactions on the abutment, DC / DW / LL (kip)", `${f(r.totalGirderR.DC, 0)} / ${f(r.totalGirderR.DW, 0)} / ${f(r.totalGirderR.LL, 0)}`]] }];
       if (r.integral) rows.push({ title: "Integral", rows: [["Per pile or shaft, Strength I / Service I (kip)", `${f(r.integral.Pu, 1)} / ${f(r.integral.Ps, 1)}`], ["Displacement imposed (in)", f(r.integral.delta)], ["Cap moments + / − (kip·ft)", `${f(r.integral.beam.Mpos, 1)} / ${f(r.integral.beam.Mneg, 1)}`], ["Passive pressure at the cap's bottom (ksf)", f(r.integral.pBottom)]] });
       if (r.seat) rows.push({ title: "Seat or semi-integral, per foot", rows: [["Height / footing width (ft)", `${f(r.seat.H, 2)} / ${f(r.seat.B, 2)}`], ["Earth pressure coefficient", f(r.seat.K)], ["Stem moment / shear", `${f(r.seat.Mstem, 1)} kip·ft / ${f(r.seat.Vstem, 1)} kip`]] });
       const lat = r.integral?.foundation?.lat ?? r.seat?.piles?.lat ?? null;

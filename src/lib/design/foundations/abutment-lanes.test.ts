@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { columnFootprint } from "../bridge/loadpath";
+import { columnFootprint, hammerheadTip } from "../bridge/loadpath";
 import { abutmentLiveLoad, designAbutment } from "./abutment";
 import { abutmentInputs } from "./kinds";
 
@@ -20,6 +20,21 @@ describe("the abutment's live load", () => {
   it("the design reports and uses it", () => {
     const r = designAbutment(abutmentInputs({ nGirders: 6, RLL: 62.1, RLane: 78.8, lanes: 3 }));
     expect(r.totalGirderR.LL).toBeCloseTo(200.94, 2);
+  });
+});
+
+// CDOT BDM 11.4: pier caps at least 3 ft deep, in 3 in increments. D-11-Z's 5 ft hammerhead scaled from the
+// 7 ft / 4 ft default gave 2.857 ft at the tips.
+describe("a hammerhead's tip depth", () => {
+  it("the default's taper on a 5 ft cap: 3'-0\", not 2.857 ft", () => {
+    expect(hammerheadTip({ depth: 7, tipDepth: 4 }, 5)).toBe(3);
+  });
+  it("an existing cap's tip kept while its depth is unchanged, snapped to 3 in", () => {
+    expect(hammerheadTip({ depth: 5, tipDepth: 2.857142857 }, 5)).toBe(3);
+    expect(hammerheadTip({ depth: 6, tipDepth: 3.5 }, 6)).toBe(3.5);
+  });
+  it("never deeper than the cap", () => {
+    expect(hammerheadTip({ depth: 7, tipDepth: 4 }, 2.5)).toBe(2.5);
   });
 });
 

@@ -75,6 +75,16 @@ export function abutmentFromBridge(b: BridgeInputs, run: BridgeRun, support: num
   };
 }
 
+/**
+ * A hammerhead's depth at its ends (ft) for a cap `depth` deep: the cap's own tip kept while its depth is unchanged,
+ * otherwise scaled with it; then in 3 in steps and at least 3 ft (CDOT BDM 11.4: caps at least 3 ft deep,
+ * increasing in 3 in increments), never deeper than the cap.
+ */
+export function hammerheadTip(base: Pick<StmTemplate, "depth" | "tipDepth">, depth: number): number {
+  const scaled = Math.abs(base.depth - depth) < 1e-9 ? base.tipDepth : base.tipDepth * (depth / base.depth);
+  return Math.min(depth, Math.max(3, Math.round(scaled * 4) / 4));
+}
+
 /** A standard pier cap's template from the Bridge's pier: its length, depth, width and columns (the cap's own bars and details kept). */
 export function capTemplate(p: PierShape, xs: number[], current: StmTemplate | null): StmTemplate {
   const base = current && current.kind === p.kind ? current : p.kind === "hammerhead" ? HAMMERHEAD_DEFAULTS : MULTICOLUMN_DEFAULTS;
@@ -83,7 +93,7 @@ export function capTemplate(p: PierShape, xs: number[], current: StmTemplate | n
     kind: p.kind,
     length: p.capLength,
     depth: p.capDepth,
-    tipDepth: p.kind === "hammerhead" ? Math.min(p.capDepth, base.tipDepth * (p.capDepth / base.depth)) : p.capDepth,
+    tipDepth: p.kind === "hammerhead" ? hammerheadTip(base, p.capDepth) : p.capDepth,
     capWidth: p.capWidth,
     columns: p.kind === "hammerhead" ? [p.capLength / 2] : xs,
     columnWidth: (p.columnShape === "round" ? p.columnSize : p.columnSize) / 12,

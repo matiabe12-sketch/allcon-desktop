@@ -1012,6 +1012,7 @@ async function designStmModel(i: StmInputs, solve: LpSolver) {
     capLoads,
     appliedLoads,
     reversedCases: reversed, // left out: a hammerhead model laid out for the other direction takes them
+    layoutSign: tpl?.layoutSign ?? null, // the heavier arm's side this model is laid out for (+1 right); a two-stage cap's is its completed member's
     perCase,
     coverage,
     supportReport: supports.map(([node, axis], r) => ({

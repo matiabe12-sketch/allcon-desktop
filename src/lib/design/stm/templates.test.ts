@@ -165,6 +165,7 @@ describe("strut-and-tie templates", () => {
     expect(failing(r).length).toBe(3);
     expect(r.status.finiteGeometry).toBe("pass");
     expect(r.warnings.some((w) => w.includes('"Lay out for: left"'))).toBe(true);
+    expect(r.layoutSign).toBe(1); // the side the "Create the design laid out for the left" button reads
     // The left-turning cases, in a second model laid out for the left.
     const other = buildTemplate({ ...t, direction: "left" }, { ...STM_DEFAULTS, fc: 4.5, girders: link });
     expect(other.template!.layoutSign).toBe(-1);

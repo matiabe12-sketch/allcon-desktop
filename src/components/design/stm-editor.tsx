@@ -87,10 +87,11 @@ const Head = ({ cols }: { cols: string[] }) => (
 const replace = <T,>(list: T[], k: number, v: T) => list.map((x, j) => (j === k ? v : x));
 
 /** A second design for the cases this hammerhead model leaves out: the same cap and loads, laid out for the other direction. */
-function OtherDirection({ design, inputs }: { design: { id: string; name: string }; inputs: StmInputs }) {
+// `layoutSign` is the solved model's (for a two-stage cap, its completed member's), the model whose left-out cases are named.
+function OtherDirection({ design, inputs, layoutSign }: { design: { id: string; name: string }; inputs: StmInputs; layoutSign: 1 | -1 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
-  const side = inputs.template!.layoutSign! > 0 ? "left" : "right";
+  const side = layoutSign > 0 ? "left" : "right";
   const create = async () => {
     setBusy(true);
     try {
@@ -554,7 +555,7 @@ export function StmEditor({ design, projects }: { design: { id: string; name: st
                     {r.warnings.map((w) => (
                       <p key={w}>{w}</p>
                     ))}
-                    {r.reversedCases.length > 0 && inputs.template?.layoutSign && <OtherDirection design={design} inputs={inputs} />}
+                    {r.reversedCases.length > 0 && inputs.template && r.layoutSign && <OtherDirection design={design} inputs={inputs} layoutSign={r.layoutSign} />}
                   </CardContent>
                 </Card>
               )}

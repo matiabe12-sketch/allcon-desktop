@@ -195,3 +195,28 @@ describe("strut-and-tie templates", () => {
     expect(() => buildTemplate({ ...HAMMERHEAD_DEFAULTS, tipDepth: 8 }, STM_DEFAULTS)).toThrow();
   });
 });
+
+// D-11-Z (CDOT 26956): a 40 ft hammerhead, 5 ft deep at its 10 ft column and 3 ft at the tips, 4 ft wide, six
+// bearing lines at 7.2 ft. The bearing at 30.8 ft reaches the lighter face's column node at 23.6 ft by a 26.99°
+// strut: steeper than 5.8.2.2's 25°, so it goes straight there, not through a panel whose vertical tie would
+// hang both outer girder lines' loads.
+describe("a direct strut between 26° and the panels' 27°", () => {
+  const t: StmTemplate = {
+    ...HAMMERHEAD_DEFAULTS, length: 40, depth: 5, tipDepth: 3, capWidth: 48, columns: [20], columnWidth: 10,
+    topCover: 6, bottomCover: 8, sideCover: 2, columnBarInset: 8, bottomChord: "auto", chordHeight: 10,
+    topBars: { size: 11, count: 26 }, bottomBars: { size: 9, count: 8 }, stirrups: { legs: 4, size: 5, spacing: 6 },
+    bearingLength: 24, bearingWidth: 30,
+    bearings: [2, 9.2, 16.4, 23.6, 30.8, 38].map((x, k) => ({ x, P: k < 4 ? 1200 : 0 })),
+  };
+  it("the bearing at 30.8 ft goes straight to the column, with no panel point between", () => {
+    const m = buildTemplate(t, STM_DEFAULTS);
+    const at = (x: number, top: boolean) => m.nodes.find((n) => Math.abs(n.x - x) < 0.01 && (top ? n.y > 4 : n.y < 3))?.label;
+    const bearing = at(30.8, true)!;
+    const column = at(23.6, false)!;
+    const strut = Math.atan2(m.nodes.find((n) => n.label === bearing)!.y - m.nodes.find((n) => n.label === column)!.y, 30.8 - 23.6);
+    expect((strut * 180) / Math.PI).toBeGreaterThan(26);
+    expect((strut * 180) / Math.PI).toBeLessThan(27);
+    expect(m.members.some((e) => [`${bearing}-${column}`, `${column}-${bearing}`].includes(e.split(":")[0]))).toBe(true);
+    expect(m.nodes.some((n) => n.x > 23.7 && n.x < 30.7)).toBe(false);
+  });
+});

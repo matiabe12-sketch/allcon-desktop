@@ -140,6 +140,9 @@ export const ABUTMENT_DEFAULTS: StmTemplate = {
 
 const MIN_ANGLE = (27 * Math.PI) / 180; // struts kept steeper than 27°, a margin over the 25° limit
 const MAX_TAN = Math.tan(MIN_ANGLE);
+// A bearing's direct strut to its column taken down to 26° (1° over 5.8.2.2's 25°): panels still step at 27°, but a
+// direct strut just under that margin would otherwise trade for a panel whose vertical tie hangs the whole arm's load.
+const MIN_DIRECT = (26 * Math.PI) / 180;
 
 /** Where the girders' bearings fall on the cap, from the girder link (ft from the cap's left end, as the link places them). */
 export function bearingsFromLink(link: GirderLink): number[] {
@@ -371,7 +374,7 @@ export function buildTemplate(t: StmTemplate, base: StmInputs): StmInputs {
     members.set(key, `${a}-${b}${role ? `:${role}` : ""}`);
   };
   const ties: StmTie[] = [];
-  const steep = (x1: number, y1: number, x2: number, y2: number) => Math.abs(x2 - x1) < 1e-6 || Math.atan2(Math.abs(y1 - y2), Math.abs(x2 - x1)) >= MIN_ANGLE - 1e-9;
+  const steep = (x1: number, y1: number, x2: number, y2: number, min = MIN_ANGLE) => Math.abs(x2 - x1) < 1e-6 || Math.atan2(Math.abs(y1 - y2), Math.abs(x2 - x1)) >= min - 1e-9;
   const verticals: { m: string; t: string; width: number }[] = [];
 
   /** A bearing's load to a column node: a direct strut, or panels stepping inward (inner bearings first). */
@@ -380,7 +383,7 @@ export function buildTemplate(t: StmTemplate, base: StmInputs): StmInputs {
     let prevTop = top;
     const dir = Math.sign(target.x - bx);
     for (let guard = 0; guard < 40; guard++) {
-      if (steep(cur, yT, target.x, yB(target.x))) {
+      if (steep(cur, yT, target.x, yB(target.x), MIN_DIRECT)) {
         add(prevTop, target.label, "strut");
         return;
       }

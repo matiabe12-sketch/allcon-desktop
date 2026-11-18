@@ -11,7 +11,7 @@ import { designShaft, type ShaftInputs } from "./shaft";
 // group, the values worth showing beside them, and the governing lateral analysis to plot.
 
 export type Group = { title: string; of: (id: string) => boolean };
-export type FoundationRun = { checks: Check[]; groups: Group[]; summary: { title: string; rows: [string, string][] }[]; lateral: { title: string; r: LateralResult } | null };
+export type FoundationRun = { checks: Check[]; groups: Group[]; summary: { title: string; rows: [string, string][] }[]; lateral: { title: string; r: LateralResult } | null; notes?: string[] };
 
 const f = (v: number, d = 3) => (Number.isFinite(v) ? String(Math.round(v * 10 ** d) / 10 ** d) : "—");
 const pick = <T,>(arr: T[], by: (t: T) => number) => (arr.length ? arr.reduce((a, b) => (by(b) > by(a) ? b : a)) : null);
@@ -22,17 +22,17 @@ export const FOUNDATION_GROUPS: Record<FoundationKind, Group[]> = {
     { title: "The footing", of: (id) => !["embedment", "ecc-B", "ecc-L", "bearing", "sliding", "settlement"].includes(id) },
   ],
   "pile-foundation": [
-    { title: "Layout", of: (id) => id.startsWith("spacing") || id.startsWith("edge") || id.startsWith("embed") },
-    { title: "The piles", of: (id) => ["geo-axial", "uplift", "struct-axial", "interaction", "deflection"].includes(id) },
+    { title: "Layout", of: (id) => id.startsWith("spacing") || id.startsWith("edge") || id.startsWith("embed") || id === "depth" || id === "cover" },
+    { title: "The piles", of: (id) => id.startsWith("mp-") || ["geo-axial", "uplift", "group-uplift", "struct-axial", "interaction", "deflection"].includes(id) },
     { title: "The cap", of: (id) => id.startsWith("cap-") },
   ],
   "drilled-shaft": [
-    { title: "Geotechnical", of: (id) => ["diameter", "ld", "axial", "uplift", "deflection"].includes(id) },
-    { title: "Structural", of: (id) => !["diameter", "ld", "axial", "uplift", "deflection"].includes(id) },
+    { title: "Geotechnical", of: (id) => ["diameter", "top", "ld", "axial", "uplift", "deflection"].includes(id) },
+    { title: "Structural", of: (id) => !["diameter", "top", "ld", "axial", "uplift", "deflection"].includes(id) },
   ],
   micropile: [
-    { title: "Layout and bond", of: (id) => ["spacing", "embed", "bond-comp", "bond-ten", "elastic"].includes(id) },
-    { title: "Structural", of: (id) => ["cased-comp", "uncased-comp", "cased-ten", "uncased-ten", "interaction"].includes(id) },
+    { title: "Layout and bond", of: (id) => ["spacing", "embed", "fill", "bond-comp", "bond-ten", "elastic"].includes(id) },
+    { title: "Structural", of: (id) => ["cased-comp", "uncased-comp", "cased-ten", "uncased-ten", "bar-dev", "interaction"].includes(id) },
     { title: "Lateral", of: (id) => id === "deflection" },
   ],
   abutment: [
@@ -71,6 +71,7 @@ export function runFoundation(kind: FoundationKind, inputs: unknown): Foundation
           ...(g ? [{ title: `Lateral (${g.c.lc.name})`, rows: [["Weak / strong axis moment (kip·ft)", `${f(g.Mweak, 1)} / ${f(g.Mstrong, 1)}`], ["Depth to fixity (ft)", f(g.zFix, 2)], ["Pr / Mrx / Mry", `${f(g.Pr, 0)} kip / ${f(g.Mrx / 12, 0)} / ${f(g.Mry / 12, 0)} kip·ft`]] as [string, string][] }] : []),
         ],
         lateral: lat ? { title: "The lead row's pile", r: lat } : null,
+        notes: r.notes,
       };
     }
     case "drilled-shaft": {
@@ -93,10 +94,11 @@ export function runFoundation(kind: FoundationKind, inputs: unknown): Foundation
         checks: r.checks,
         groups,
         summary: [
-          { title: "Section", rows: [["Bar / casing / casing at threads (in²)", `${f(r.Ab, 2)} / ${f(r.Ac, 2)} / ${f(r.Act, 2)}`], ["Rn cased / uncased, compression (kip)", `${f(r.RnCC, 1)} / ${f(r.RnCU, 1)}`], ["Rn cased / uncased, tension (kip)", `${f(r.RnTC, 1)} / ${f(r.RnTU, 1)}`]] },
+          { title: "Section", rows: [["Bar / casing / casing at threads (in²)", `${f(r.Ab, 2)} / ${f(r.Ac, 2)} / ${f(r.Act, 2)}`], ...(r.loss > 0 ? ([["Casing wall after corrosion (in)", `${f(r.tc)} (${f(r.loss)} lost)`]] as [string, string][]) : []), ...(r.dev ? ([["Bar development needed (ft)", f(r.dev.need / 12, 2)]] as [string, string][]) : []), ["Rn cased / uncased, compression (kip)", `${f(r.RnCC, 1)} / ${f(r.RnCU, 1)}`], ["Rn cased / uncased, tension (kip)", `${f(r.RnTC, 1)} / ${f(r.RnTU, 1)}`]] },
           { title: "Bond (AASHTO 10.9.3.5.2)", rows: [["Ground", r.bond.row.name], ["Table range (ksf)", r.bond.range ? `${r.bond.range[0]}–${r.bond.range[1]}` : "none for this grouting"], ["αb used (ksf)", f(r.bond.alpha, 2)], ["Rs (kip)", f(r.Rs, 1)], ["Plunge length transfer Pt (kip)", f(r.Pt, 1)]] },
         ],
         lateral: g ? { title: g.c.name, r: g.r } : null,
+        notes: r.notes,
       };
     }
     case "abutment": {

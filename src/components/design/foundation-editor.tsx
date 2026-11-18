@@ -150,6 +150,17 @@ export function FoundationEditor({ kind, design, projects }: { kind: FoundationK
                     <KeyValues key={s.title} title={s.title} rows={s.rows} />
                   ))}
                 </div>
+                {!!r.notes?.length && (
+                  <Card>
+                    <CardContent className="py-3">
+                      <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+                        {r.notes.map((n) => (
+                          <li key={n}>{n}</li>
+                        ))}
+                      </ul>
+                    </CardContent>
+                  </Card>
+                )}
               </>
             )
           )}

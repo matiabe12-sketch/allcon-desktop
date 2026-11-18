@@ -133,6 +133,8 @@ function girderSideOf(v: unknown): GirderSide | null {
     ...(s.end === "start" || s.end === "end" ? { end: s.end } : {}),
     // Copied from the girder design by girderSide: kept as saved (numbers checked where used).
     ...(s.liveContinuous && typeof s.liveContinuous === "object" ? { liveContinuous: s.liveContinuous as GirderSide["liveContinuous"] } : {}),
+    ...(s.liveUnbalance && typeof s.liveUnbalance === "object" ? { liveUnbalance: s.liveUnbalance as GirderSide["liveUnbalance"] } : {}),
+    ...(s.liveUnbalanceStatic && typeof s.liveUnbalanceStatic === "object" ? { liveUnbalanceStatic: s.liveUnbalanceStatic as GirderSide["liveUnbalanceStatic"] } : {}),
     ...(s.wind && typeof s.wind === "object" ? { wind: s.wind as GirderSide["wind"] } : {}),
     ...(typeof s.brakingPerLane === "number" && Number.isFinite(s.brakingPerLane) ? { brakingPerLane: s.brakingPerLane } : {}),
   };
@@ -157,6 +159,8 @@ function girderLinkOf(v: unknown): GirderLink | null {
     selfWeight: g.selfWeight !== false,
     soffit: numOr(g.soffit, 0),
     wc: numOr(g.wc, 0.15),
+    bearingOffset: Math.max(0, numOr(g.bearingOffset, 0)),
+    ...(g.noIM === true ? { noIM: true } : {}),
   };
 }
 

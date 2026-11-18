@@ -181,6 +181,27 @@ describe("pier column design", () => {
     close(s1.ML, (1.75 * r.long.BR + 0.5 * r.long.TU) * (i.height + link.capDepth), 1e-9);
   });
 
+  it("along the bridge: the bearing lines' couple from unequal spans, the same at every height, carried to the base", () => {
+    // Back span 64 ft, ahead 128 ft (D-11-Z), girders continuous, bearing lines 1 ft either side of the pier.
+    const g = { ...girderInputs({}), nGirders: 4, S: 6, overhang: 3, barrierWidth: 1.5, L: 64, extraSpans: [{ L: 128, strands: null, harped: null }, { L: 64, strands: null, harped: null }], pierBearingOffset: 1 };
+    const glink = { enabled: true, back: girderSide(g, 0, "g", "Spans", "end"), ahead: girderSide(g, 1, "g", "Spans", "start"), x0: 20, reverse: false, loadNodes: [], selfWeight: true, soffit: 0, wc: 0.15, bearingOffset: 1 };
+    const stm = buildTemplate(HAMMERHEAD_DEFAULTS, { ...STM_DEFAULTS, girders: glink });
+    const link = columnLinkFrom("x", "Cap", stm, new Map([["g", g]]));
+    expect(link.bearingOffset!.e).toBe(1);
+    expect(link.bearingOffset!.deadCouple).toBeGreaterThan(0);
+    const without = { ...link, cases: link.cases.map((c) => ({ ...c, mLong: 0 })) };
+    const i: ColumnInputs = { ...COLUMN_DEFAULTS, T: 60, W: 60, bars: 24, loads: "stm", link };
+    const r = designColumn(i);
+    const r0 = designColumn({ ...i, link: without });
+    for (const where of ["base", "top"] as const) {
+      const lc = link.cases.find((c) => c.name.startsWith("Strength IV"))!;
+      const a = r.rows.find((x) => x.case === lc.name && x.where === where)!;
+      const b = r0.rows.find((x) => x.case === lc.name && x.where === where)!;
+      close(a.ML - b.ML, Math.abs(lc.mLong!), 1e-9);
+    }
+    expect(r.notes.some((n) => n.includes("Bearing lines 1.00 ft either side"))).toBe(true);
+  });
+
   it("a bent's columns share the cap's load, and the collision toggle adds Extreme Event II", () => {
     const stm = buildTemplate(MULTICOLUMN_DEFAULTS, { ...STM_DEFAULTS, girders: null });
     const link = columnLinkFrom("x", "Bent", stm, new Map());

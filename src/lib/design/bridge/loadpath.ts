@@ -122,7 +122,8 @@ export function capFromBridge(b: BridgeInputs, run: BridgeRun, support: number, 
   };
   const t = current.template;
   const link = current.girders ?? { enabled: true, back: null, ahead: null, x0: t ? t.length / 2 : 0, reverse: false, loadNodes: [], selfWeight: true, soffit: 0, wc: 0.15 };
-  const next = { ...link, enabled: true, back: sideOf(support - 1, "end"), ahead: sideOf(support, "start") };
+  // The girders' bearing lines either side of the pier's centerline (their couple along the bridge goes to the column).
+  const next = { ...link, enabled: true, back: sideOf(support - 1, "end"), ahead: sideOf(support, "start"), bearingOffset: Math.max(0, b.supports[support].bearingOffset ?? 0) };
   // A cap built from a standard pier cap: its bearings rebuilt where the Bridge's girders sit, and the
   // model with them (the strut-and-tie tool's own "build from the girders").
   if (t && t.kind !== "abutment") {

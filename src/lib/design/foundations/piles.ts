@@ -128,7 +128,7 @@ export const PILE_DEFAULTS: PileInputs = {
   pileType: "hpile",
   micropile: { casingOD: 7, casingT: 0.5, casingFy: 80, bar: 20, barFy: 75, fcGrout: 5, holeD: 8, cased: 0, bond: 25, alphaB: 2.4, phiBond: 0.55, embed: 12 },
   perimeter: false,
-  Df: 6,
+  Df: 7, // 2 ft over the 5 ft cap (CDOT BDM 11.4)
   gammaSoil: 125,
   colShape: "round",
   colB: 42,
@@ -139,7 +139,7 @@ export const PILE_DEFAULTS: PileInputs = {
   cover: 3,
   barsB: { bar: 8, spacing: 9 },
   barsL: { bar: 8, spacing: 9 },
-  exposure: 1,
+  exposure: 2, // foundation elements: Class 2 (CDOT BDM 11.4)
   cases: [
     { name: "Strength I", limit: "strength", P: 1600, MB: 600, ML: 250, HB: 40, HL: 15 },
     { name: "Strength III", limit: "strength", P: 1250, MB: 900, ML: 150, HB: 75, HL: 15 },
@@ -191,6 +191,8 @@ export function designPiles(i: PileInputs) {
   add({ id: "edge", name: "Pile side to the cap's edge", demand: 9, capacity: i.edge * 12 - pileD / 2, unit: "in", ref: "AASHTO 10.7.1.2" });
   const fix = fixityEmbedment(s, i.Fy, i.fc);
   if (!micro) add({ id: "embed", name: "Embedment for a fixed head", demand: Math.max(12, Math.round(fix)), capacity: i.embed, unit: "in", ref: "CDOT BDM 10.5.3, AASHTO 10.7.1.2" });
+  add({ id: "depth", name: "Cap at least 2'-6\" deep", demand: 30, capacity: i.capT, unit: "in", ref: "CDOT BDM 11.4" });
+  add({ id: "cover", name: "Cover over the cap's top", demand: 2, capacity: i.Df - i.capT / 12, unit: "ft", ref: "CDOT BDM 11.4" });
   add({ id: "embed-cap", name: "Concrete over the pile heads (at least 12 in)", demand: 12, capacity: i.capT - i.embed, unit: "in", ref: "AASHTO 10.7.1.2, 5.12.8.6.3" });
 
   // --- pile loads, each case ------------------------------------------------------------------------------------
@@ -234,11 +236,29 @@ export function designPiles(i: PileInputs) {
   const service = cases.filter((c) => c.lc.limit === "service");
   const pick = <T,>(arr: T[], f: (t: T) => number) => arr.reduce((a, b) => (f(b) > f(a) ? b : a), arr[0]);
 
+  let micropileNotes: string[] = [];
+  let micropileGroup: { d: "B" | "L"; avg: number; lead: number } | null = null;
   if (micro) {
     // Each micropile under the group's worst share, case by case (compression, tension, and the shear spread evenly),
     // by the Micropile design: bond, structural, lateral and buckling (AASHTO 10.9).
-    const r = designMicropile({ ...mp, spacing: Math.min(i.nB > 1 ? i.sB : Infinity, i.nL > 1 ? i.sL : Infinity, 99), cases: cases.map((c) => ({ name: c.lc.name, limit: c.lc.limit, compression: Math.max(0, c.Pmax), tension: Math.max(0, -c.Pmin), H: Math.hypot(c.lc.HB, c.lc.HL) / n })) });
+    // The group's p-multipliers (AASHTO Table 10.7.2.4-1, s over the casing's diameter) in the direction the shear mostly
+    // acts along: its average for the deflection, its lead row's for the moment (the casing pushed to that deflection).
+    const HB = Math.max(0, ...i.cases.map((c) => Math.abs(c.HB)));
+    const HL = Math.max(0, ...i.cases.map((c) => Math.abs(c.HL)));
+    const dirs = (["B", "L"] as const).filter((d) => (d === "B" ? HB : HL) > 0 || (HB === 0 && HL === 0));
+    const pmd = dirs.map((d) => {
+      const pms = pmOf(d);
+      return { d, avg: pms.reduce((t, v) => t + v, 0) / pms.length, lead: Math.max(...pms) };
+    });
+    const pmG = pmd.reduce((a, b) => (b.avg < a.avg ? b : a));
+    micropileGroup = pmG;
+    const r = designMicropile({ ...mp, groupPm: n > 1 ? { avg: pmG.avg, lead: pmG.lead } : null, spacing: Math.min(i.nB > 1 ? i.sB : Infinity, i.nL > 1 ? i.sL : Infinity, 99), cases: cases.map((c) => ({ name: c.lc.name, limit: c.lc.limit, compression: Math.max(0, c.Pmax), tension: Math.max(0, -c.Pmin), H: Math.hypot(c.lc.HB, c.lc.HL) / n })) });
     for (const ch of r.checks) if (ch.id !== "spacing") checks.push({ ...ch, id: `mp-${ch.id}`, name: `Micropile: ${ch.name}` });
+    micropileNotes = r.notes;
+    // The whole group lifting (AASHTO 10.9.3.6 → 10.7.3.11): the lesser of the piles' sum and the block, φ 0.50; the
+    // block's resistance not counted, so the piles' bond at φ 0.50.
+    const up = factored.reduce((a, b) => (b.Vmin < a.Vmin ? b : a), factored[0]);
+    if (up && up.Vmin < 0) add({ id: "group-uplift", name: `The group in uplift (${up.lc.name})`, demand: -up.Vmin, capacity: 0.5 * n * r.Rs, unit: "kip", ref: "AASHTO 10.7.3.11, Table 10.5.5.2.5-1" });
   }
   if (factored.length && !micro) {
     const g = pick(factored, (c) => c.Pmax);
@@ -354,7 +374,7 @@ export function designPiles(i: PileInputs) {
     const rp = pick(capCases, (x) => x.Rmax);
     add({ id: "cap-punch-pile", name: `Cap: two-way shear at a corner pile (${rp.c.lc.name})`, demand: rp.Rmax, capacity: 0.9 * Vnc, unit: "kip", ref: "AASHTO 5.12.8.6.3" });
   }
-  return { checks, section: s, piles, capB, capL, n, Wcap, Wsoil, cases, combined, capCases, flexB, flexL, dB, dL, phiGeo, smallGroup, fix, width, flexX, flexY };
+  return { checks, notes: micropileNotes, micropileGroup, section: s, piles, capB, capL, n, Wcap, Wsoil, cases, combined, capCases, flexB, flexL, dB, dL, phiGeo, smallGroup, fix, width, flexX, flexY };
 }
 
 export type PileResult = ReturnType<typeof designPiles>;

@@ -1,6 +1,6 @@
 import { girderShape, spanInputs, type GirderInputs } from "../girders/prestressed";
 import { profileProps } from "../girders/sections";
-import { brakingPerLane, continuousEndShear, continuousLaneReaction, SITE_WIND_DEFAULTS, superstructureWind } from "../girders/substructure-loads";
+import { brakingPerLane, continuousEndShear, continuousLaneReaction, continuousLaneUnbalance, SITE_WIND_DEFAULTS, superstructureWind } from "../girders/substructure-loads";
 import { DesignError } from "../walls/cip";
 import type { StmCase } from "./strut-tie";
 
@@ -33,6 +33,10 @@ export type GirderSide = {
   end?: "start" | "end";
   /** Continuous girders at an interior pier: one lane's reaction from the continuous beam (per lane, with IM on the trucks), split by span end. */
   liveContinuous?: { pier: number; truck: { back: number; ahead: number }; lane: { back: number; ahead: number }; kind: string } | null;
+  /** Continuous girders at an interior pier: one lane's most unbalanced live load (ahead − back, and back − ahead), kip with IM. */
+  liveUnbalance?: { towardAhead: number; towardBack: number } | null;
+  /** The same without IM (for the foundation below ground, AASHTO 3.6.2.1). */
+  liveUnbalanceStatic?: { towardAhead: number; towardBack: number } | null;
   /** The superstructure's wind, from the girder design's site inputs (klf; heights in ft above the bearings). */
   wind?: { depth: number; arm: number; armWL: number; deckWidth: number; lineIII: number | null; lineV: number; lineService: number; V: number; exposure: string; Z: number } | null;
   /** The braking force per loaded lane (3.6.4), kip, on the girder design's whole length. */
@@ -52,6 +56,16 @@ export type GirderLink = {
   soffit: number; // ft, only concrete above this counts as the cap (below is the column, carried by itself)
   wc: number; // kcf
   /**
+   * ft, the girders' bearing lines either side of the pier's centerline along the bridge (the back span's on
+   * its side, the ahead span's on the other): unequal reactions on them make a longitudinal couple on the pier.
+   */
+  bearingOffset?: number;
+  /**
+   * The live load without the dynamic load allowance: the loads a foundation entirely below ground takes from this
+   * cap (AASHTO 3.6.2.1). The cap and column themselves are designed with IM.
+   */
+  noIM?: boolean;
+  /**
    * A cap built in two stages (the girders set on a first-stage cap, then a diaphragm cast around their ends,
    * making cap and diaphragm one deeper member): "construction" is the first-stage cap under the girders, deck,
    * haunch and the wet diaphragm (DC1, no live load); "completed" (or none) is the whole member under everything.
@@ -62,6 +76,7 @@ export type GirderLink = {
 };
 
 export const IM = 0.33;
+const IM_DEFAULT = IM;
 const LANE = 0.64; // klf
 const TRUCK = [8, 32, 32]; // kip, 14 ft apart (the shortest rear spacing gives the largest reaction)
 const TANDEM = [25, 25]; // kip, 4 ft apart
@@ -117,6 +132,8 @@ export function girderSide(design: GirderInputs, span: number, designId: string,
     dc1: { interior: int.dc1, exterior: ext.dc1 },
     dw: { interior: int.dw, exterior: ext.dw },
     liveContinuous: interiorPier ? { pier, ...continuousLaneReaction(design, pier) } : null,
+    liveUnbalance: interiorPier ? continuousLaneUnbalance(design, pier) : null,
+    liveUnbalanceStatic: interiorPier ? continuousLaneUnbalance(design, pier, 0) : null,
     wind: site.barrierHeight > 0 || site.V > 0 ? { depth: w.depth, arm: w.arm, armWL: w.armWL, deckWidth: w.deckWidth, lineIII: w.strengthIII?.line ?? null, lineV: w.strengthV.line, lineService: w.serviceI.line, V: site.V, exposure: site.exposure, Z: site.Z } : null,
     brakingPerLane: brakingPerLane(bridgeLength).perLane,
   };
@@ -127,7 +144,7 @@ export function girderSide(design: GirderInputs, span: number, designId: string,
  * tandem part (with IM) and the lane load part, each split into what reaches the pier from the
  * back span and from the ahead span. Spans as simple spans: the influence line is 1 at the pier.
  */
-export function laneReaction(L1: number, L2: number) {
+export function laneReaction(L1: number, L2: number, IM = IM_DEFAULT) {
   if (!(L1 > 0) && !(L2 > 0)) throw new DesignError("A girder span is needed for the live load.");
   const il = (x: number) => (x === 0 ? 1 : x < 0 ? (L1 > 0 && x >= -L1 ? 1 + x / L1 : 0) : L2 > 0 && x <= L2 ? 1 - x / L2 : 0);
   /** The largest reaction of an axle group moved along the bridge: the influence line is piecewise
@@ -227,9 +244,12 @@ export function capLoadCases(
   // (each side's end, from its own design), else the two spans as simple spans.
   const cont = [link.back, link.ahead].find((s) => s?.liveContinuous)?.liveContinuous ?? null;
   const sameLine = !!cont && !!link.back && !!link.ahead && link.back.designId === link.ahead.designId && link.back.liveContinuous?.pier === link.ahead.liveContinuous?.pier;
+  // Below ground (link.noIM) the trucks' part loses its IM: the continuous reaction's truck part carries (1 + IM) throughout.
+  const im = link.noIM ? 0 : IM;
+  const tf = (1 + im) / (1 + IM);
   const lane = cont
-    ? { truck: { back: link.back ? cont.truck.back : 0, ahead: link.ahead ? cont.truck.ahead : 0 }, lane: { back: link.back ? cont.lane.back : 0, ahead: link.ahead ? cont.lane.ahead : 0 }, kind: `${cont.kind}, continuous girders` }
-    : laneReaction(link.back?.L ?? 0, link.ahead?.L ?? 0);
+    ? { truck: { back: link.back ? cont.truck.back * tf : 0, ahead: link.ahead ? cont.truck.ahead * tf : 0 }, lane: { back: link.back ? cont.lane.back : 0, ahead: link.ahead ? cont.lane.ahead : 0 }, kind: `${cont.kind}, continuous girders${link.noIM ? ", no IM" : ""}` }
+    : laneReaction(link.back?.L ?? 0, link.ahead?.L ?? 0, im);
   if (cont && !sameLine) warnings.push("The girders are continuous over this pier: link both spans either side of it from the same girder design, or the other span's share of the reaction is left out.");
   const sign = link.reverse ? -1 : 1;
   const capX = (s: GirderSide, z: number) => link.x0 + (sign * z) / Math.cos((s.skew * Math.PI) / 180);
@@ -249,13 +269,13 @@ export function capLoadCases(
   }
 
   // Unfactored loads at the cap: dead (DC, DW per bearing), live per arrangement (per bearing), self-weight per strip.
-  type Bearing = { x: number; dc: number; dw: number; label: string };
+  type Bearing = { x: number; dc: number; dw: number; label: string; side: "back" | "ahead" };
   const bearings: Bearing[] = [];
   for (const s of sides) girderZ(s).forEach((z, g) => {
     const ext = g === 0 || g === s.n - 1;
     const prefix = sides.length > 1 ? (s === link.back ? "Back " : "Ahead ") : "";
     const dc = construction ? (s.dc1 ?? s.dc) : s.dc;
-    bearings.push({ x: capX(s, z), dc: ext ? dc.exterior : dc.interior, dw: construction ? 0 : ext ? s.dw.exterior : s.dw.interior, label: `${prefix}G${g + 1}` });
+    bearings.push({ x: capX(s, z), dc: ext ? dc.exterior : dc.interior, dw: construction ? 0 : ext ? s.dw.exterior : s.dw.interior, label: `${prefix}G${g + 1}`, side: s === link.back ? "back" : "ahead" });
   });
   // Every girder must bear on the cap's concrete: one off its end means the bridge isn't placed on this cap yet.
   const [lo, hi] = [Math.min(...outline.map((p) => p[0])), Math.max(...outline.map((p) => p[0]))];
@@ -320,6 +340,27 @@ export function capLoadCases(
   };
   const moment = (m: Map<string, number>) => [...m].reduce((s, [k, P]) => s + P * (loadNodes.find((n) => n.label === k)!.x - supportX), 0);
   const total = (m: Map<string, number>) => [...m.values()].reduce((s, P) => s + P, 0);
+
+  // Along the bridge: the girders bear on two lines e either side of the pier's centerline, so unequal
+  // reactions (a long span beside a short one) make a couple on the pier, kip·ft, + toward the ahead span:
+  // the dead loads' (ahead − back) × e, and the live load's most unbalanced lane reaction × e on each loaded
+  // lane, taken the same way as the dead loads' (the conservative choice; a lane placed for the most
+  // unbalance with the case's lanes across the bridge). The pier column and its foundation carry it.
+  const e = Math.max(0, link.bearingOffset ?? 0);
+  const unbalance = (() => {
+    if (!(e > 0)) return { towardAhead: 0, towardBack: 0 };
+    const cu = link.noIM ? (link.back?.liveUnbalanceStatic ?? link.ahead?.liveUnbalanceStatic ?? null) : (link.back?.liveUnbalance ?? link.ahead?.liveUnbalance ?? null);
+    if (cu && sameLine) return cu;
+    return laneUnbalance(link.back?.L ?? 0, link.ahead?.L ?? 0, im);
+  })();
+  const couple = (dcF: number, dwF: number, lanes: number, m: number, llF: number) => {
+    if (!(e > 0)) return 0;
+    const by = (side: "back" | "ahead") => bearings.filter((br) => br.side === side).reduce((s, br) => s + dcF * br.dc + dwF * br.dw, 0);
+    const dead = e * (by("ahead") - by("back"));
+    const dir = Math.abs(dead) > 1e-9 ? Math.sign(dead) : unbalance.towardAhead >= unbalance.towardBack ? 1 : -1;
+    const live = llF * e * lanes * m * (dir > 0 ? unbalance.towardAhead : unbalance.towardBack);
+    return dead + dir * live;
+  };
   // The construction stage: the first-stage cap under DC1 at 1.25 (Strength I) and 1.50 (Strength IV).
   if (construction) {
     const cases: StmCase[] = [];
@@ -333,9 +374,10 @@ export function capLoadCases(
       cases.push(toCase(name, nodeLoads(null, f, 0, 0)));
       caseInfo.push({ name, arrangement: none, reason: why, dead: "max" });
     }
+    const couples = [couple(1.25, 0, 0, 1, 0), couple(1.5, 0, 0, 1, 0)];
     const serviceShear = [...faces, ...spans.flatMap((sp) => [{ label: `${sp.label}, left face`, x: sp.faceA, side: 1 as const }, { label: `${sp.label}, right face`, x: sp.faceB, side: -1 as const }])].map((fc) => ({ ...fc, V: 0, a: 0, lanes: 0 }));
     const bearingLoads = bearings.map((br) => ({ x: br.x, label: br.label, dc: br.dc, dw: 0, ll: 0, strength: 1.25 * br.dc }));
-    return { cases, caseInfo, lane, lanesMax: 0, roadway: width, bearings, bearingLoads, selfWeight, arrangements: 0, serviceShear, wind: null, braking: null, warnings: [...new Set(warnings)] };
+    return { cases, caseInfo, couples, serviceCouple: couple(1, 0, 0, 1, 0), deadCouple: couple(1, 0, 0, 1, 0), bearingOffset: e, unbalance, lane, lanesMax: 0, roadway: width, bearings, bearingLoads, selfWeight, arrangements: 0, serviceShear, wind: null, braking: null, warnings: [...new Set(warnings)] };
   }
   const evaluated = arrangements.map((a) => ({ a, m: nodeLoads(a, 1.25, 1.5, 1.75) }));
   const pick = new Map<number, string>();
@@ -352,22 +394,26 @@ export function capLoadCases(
   const toCase = (name: string, m: Map<string, number>, mx?: Map<string, number>): StmCase => ({ name, loads: loadNodes.filter((n) => m.has(n.label) || mx?.has(n.label)).map((n) => ({ node: n.label, fx: mx?.get(n.label) ?? 0, fy: -(m.get(n.label) ?? 0) })) });
   const cases: StmCase[] = [];
   const caseInfo: { name: string; arrangement: Arrangement; reason: string; dead: "max" | "min" }[] = [];
+  const couples: number[] = []; // each case's longitudinal couple (kip·ft, factored), in step with cases
   // At most 20 cases in all: Strength I's picks, two with dead loads at minimum, Strength IV, and four with wind.
   for (const [k, why] of [...pick].slice(0, link.wind?.enabled ? 12 : 16)) {
     const name = `Strength I (${describe(evaluated[k].a)})`;
     cases.push(toCase(name, evaluated[k].m));
     caseInfo.push({ name, arrangement: evaluated[k].a, reason: why, dead: "max" });
+    couples.push(couple(1.25, 1.5, evaluated[k].a.lanes, evaluated[k].a.m, 1.75));
   }
   for (const k of [...new Set([turnRight, turnLeft])]) {
     const name = `Strength I, dead loads at minimum (${describe(evaluated[k].a)})`;
     cases.push(toCase(name, nodeLoads(evaluated[k].a, 0.9, 0.65, 1.75)));
     caseInfo.push({ name, arrangement: evaluated[k].a, reason: "turning case with the dead loads relieving", dead: "min" });
+    couples.push(couple(0.9, 0.65, evaluated[k].a.lanes, evaluated[k].a.m, 1.75));
   }
   // Strength IV (Table 3.4.1-1): the dead loads alone at 1.50, which can govern where they are heavy.
   {
     const name = "Strength IV (dead loads only)";
     cases.push(toCase(name, nodeLoads(null, 1.5, 1.5, 0)));
     caseInfo.push({ name, arrangement: { lanes: 0, from: left, shift: 0, m: 1 }, reason: "dead loads at 1.50", dead: "max" });
+    couples.push(couple(1.5, 1.5, 0, 1, 0));
   }
   // Wind across the bridge, in the cap's plane, from each girder design's site inputs (3.8.1.2, 3.8.2):
   // on the superstructure over half of each span, a line load at its mid-depth, horizontal at the
@@ -416,6 +462,7 @@ export function capLoadCases(
         w.fy.forEach((v, k) => m.set(k, (m.get(k) ?? 0) + v));
         cases.push(toCase(name, m, w.fx));
         caseInfo.push({ name, arrangement: { lanes: 0, from: left, shift: 0, m: 1 }, reason: "dead loads with the site's wind", dead: "max" });
+        couples.push(couple(1.25, 1.5, 0, 1, 0));
       }
       {
         const k = d > 0 ? turnRight : turnLeft;
@@ -425,6 +472,7 @@ export function capLoadCases(
         w.fy.forEach((v, j) => m.set(j, (m.get(j) ?? 0) + v));
         cases.push(toCase(name, m, w.fx));
         caseInfo.push({ name, arrangement: evaluated[k].a, reason: "live load turning the cap the wind's way, with 80 mph wind", dead: "max" });
+        couples.push(couple(1.25, 1.5, evaluated[k].a.lanes, evaluated[k].a.m, 1.35));
       }
     }
   }
@@ -480,7 +528,39 @@ export function capLoadCases(
   // Braking (3.6.4), along the bridge: every lane loaded one way with the multiple presence factor, the most over the lane counts.
   const brPerLane = Math.max(0, ...sides.map((s) => s.brakingPerLane ?? 0));
   const braking = brPerLane > 0 ? Math.max(...Array.from({ length: lanesMax }, (_, k) => (k + 1) * multiplePresence(k + 1) * brPerLane)) : null;
-  return { cases, caseInfo, lane, lanesMax, roadway: width, bearings, bearingLoads, selfWeight, arrangements: arrangements.length, serviceShear, wind: windInfo, braking, warnings: [...new Set(warnings)] };
+  // Service I's couple: the dead loads and the most unbalanced live load over the lane counts (k × m most).
+  const km = Math.max(0, ...Array.from({ length: lanesMax }, (_, k) => (k + 1) * multiplePresence(k + 1)));
+  const serviceCouple = couple(1, 1, km, 1, 1);
+  return { cases, caseInfo, couples, serviceCouple, deadCouple: couple(1, 1, 0, 1, 0), bearingOffset: e, unbalance, lane, lanesMax, roadway: width, bearings, bearingLoads, selfWeight, arrangements: arrangements.length, serviceShear, wind: windInfo, braking, warnings: [...new Set(warnings)] };
+}
+
+/**
+ * Simple spans: one lane's most unbalanced live load at the pier, each way (per lane, IM on the trucks):
+ * the design truck, tandem or lane load on one span alone, the other empty.
+ */
+export function laneUnbalance(L1: number, L2: number, IM = IM_DEFAULT) {
+  const onSpan = (L: number) => {
+    if (!(L > 0)) return 0;
+    // The influence line of the span's reaction at the pier is 1 − x/L: the heaviest axle at the pier, the rest on the span.
+    const best = (axles: number[], spacing: number[]) => {
+      let top = 0;
+      for (const order of [axles, [...axles].reverse()]) {
+        const sp = order === axles ? spacing : [...spacing].reverse();
+        let x = 0;
+        let r = 0;
+        order.forEach((P, k) => {
+          if (k > 0) x += sp[k - 1];
+          if (x <= L) r += P * (1 - x / L);
+        });
+        top = Math.max(top, r);
+      }
+      return top;
+    };
+    const truck = best(TRUCK, [14, 14]);
+    const tandem = best(TANDEM, [4]);
+    return Math.max(truck, tandem) * (1 + IM) + (LANE * L) / 2;
+  };
+  return { towardAhead: onSpan(L2), towardBack: onSpan(L1) };
 }
 
 export type CapLoads = ReturnType<typeof capLoadCases>;

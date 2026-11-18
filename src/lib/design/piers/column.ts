@@ -26,8 +26,11 @@ export type ColumnLink = {
   capDepth: number; // ft, at the columns
   capWidth: number; // in
   fcCap: number; // ksi
-  cases: { name: string; loads: { x: number; fx: number; fy: number }[] }[]; // factored, at the cap (fy down negative)
+  /** Factored, at the cap (fy down negative); mLong: the bearing lines' longitudinal couple (kip·ft, + toward the ahead span). */
+  cases: { name: string; loads: { x: number; fx: number; fy: number }[]; mLong?: number }[];
   wind: boolean; // the cases include wind across the bridge (Strength III, V)
+  /** The girders' bearing lines e ft either side of the pier's centerline: the unfactored DC + DW couple and one lane's most unbalanced live load each way. */
+  bearingOffset?: { e: number; deadCouple: number; unbalance: { towardAhead: number; towardBack: number } };
   bridge: BridgeData | null;
   refreshed: string;
 };
@@ -332,7 +335,9 @@ export function designColumn(i: ColumnInputs) {
           const perm = deadOnly ? Math.abs(deadOnly[c][where].M) * (f.dc / 1.5) : 0;
           // Round-off from the frame (a balanced cap's moment) shown as the zero it is.
           const snap = (v: number) => (Math.abs(v) < 1e-6 * (1 + Math.abs(t.P)) ? 0 : v);
-          rows.push({ case: lc.name, limit: f.limit, column: c, where, P: t.P + selfWeight(z, f.dc), MT: snap(t.M), ML: FL * (yb - z) + (z < zw ? windL * (zw - z) : 0), VT: snap(t.V), VL: FL + (z < zw ? windL : 0), perm: snap(perm) });
+          // The bearing lines' couple (the same at every height, shared by the columns), taken the way the forces along the bridge act.
+          const couple = Math.abs(lc.mLong ?? 0) / n;
+          rows.push({ case: lc.name, limit: f.limit, column: c, where, P: t.P + selfWeight(z, f.dc), MT: snap(t.M), ML: FL * (yb - z) + (z < zw ? windL * (zw - z) : 0) + couple, VT: snap(t.V), VL: FL + (z < zw ? windL : 0), perm: snap(perm) });
         }
       });
     }
@@ -543,7 +548,8 @@ export function designColumn(i: ColumnInputs) {
               // At the impact: the forces just below it, where the shear is the largest (the column's base to the impact).
               const t = where === "impact" ? (ct[hit].at?.(a) ?? { P: 0, V: 0, M: 0 }) : ct[hit][where];
               const MT = (d0 ? Math.abs(d0.M / 1.5) * g : 0) + Math.abs(t.M); // the vehicle from either side
-              const ML = FL * Math.max(0, a - z);
+              // Along the bridge: the collision, and the permanent loads' couple on the bearing lines at the case's factor.
+              const ML = FL * Math.max(0, a - z) + (Math.abs(link?.bearingOffset?.deadCouple ?? 0) * g) / n;
               const res = sec.resistance(P, MT * 12, ML * 12, 1.0);
               const phiMn = res ? res.phiMn / 12 : 0;
               const Mu = Math.hypot(MT, ML);
@@ -570,6 +576,11 @@ export function designColumn(i: ColumnInputs) {
   if (link && !br) notes.push("No girder design is linked to the cap: braking and wind along the bridge are left out.");
   if (fixed && br) notes.push(`Along the bridge: the pier's fixed bearings take ${(share * 100).toFixed(0)}% of the bridge's braking force (${br.brakingBasis}) and wind (${long.simplified ? "25% of the transverse, 3.8.1.2.3a, for the usual girder bridge" : `the girders' largest longitudinal skew coefficient, ${long.coefLong}, with the full transverse wind (Table 3.8.1.2.3a-1)`}), at the bearings; the overturning above them goes into the superstructure.`);
   if (!fixed) notes.push(`Expansion bearings: the pier takes only the ${lg.bearingForce} kip the bearings pass along the bridge (factored by γTU = ${lg.gammaTU}).`);
+  const bo = link?.bearingOffset;
+  if (bo && bo.e > 0) {
+    const most = Math.max(0, ...link!.cases.map((c) => Math.abs(c.mLong ?? 0)));
+    notes.push(`Bearing lines ${bo.e.toFixed(2)} ft either side of the pier's centerline: the girders' unequal reactions put a couple on the pier along the bridge, ${Math.abs(bo.deadCouple).toFixed(0)} kip·ft from DC + DW (unfactored, toward the ${bo.deadCouple >= 0 ? "ahead" : "back"} span), plus the live load's most unbalanced lane, ${(bo.deadCouple >= 0 ? bo.unbalance.towardAhead : bo.unbalance.towardBack).toFixed(1)} kip a lane × ${bo.e.toFixed(2)} ft on each loaded lane with its multiple presence factor, the same way. Up to ${most.toFixed(0)} kip·ft factored, added to the moment along the bridge at every height with the braking and wind taken the same way (the conservative choice), and carried to the foundation.`);
+  }
 
   return {
     ok: checks.every((c) => c.ok),

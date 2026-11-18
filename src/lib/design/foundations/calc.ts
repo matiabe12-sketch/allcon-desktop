@@ -173,13 +173,13 @@ export function foundationCalcLines(kind: FoundationKind, inputs: unknown, title
     const r = designMicropile(i);
     const db = BARS[i.bar]?.dia ?? 2.5;
     m(`f'_{cg}\\coloneq ${num(i.fcGrout)}\\mathrm{ksi}`, "Grout");
-    m(`f_{yb}\\coloneq ${num(Math.min(i.barFy, 87))}\\mathrm{ksi}`, "Bar, at most 87 ksi for strain compatibility (C10.9.3.10.2a)");
-    m(`f_{yc}\\coloneq ${num(Math.min(i.casingFy, 87))}\\mathrm{ksi}`, "Casing, the same limit");
+    m(`f_{yb}\\coloneq ${num(r.fyB)}\\mathrm{ksi}`, "Bar, at most 87 ksi (the stress at a strain of 0.003, AASHTO 10.9.3.10.2a)");
+    m(`f_{yc}\\coloneq ${num(r.fyCased)}\\mathrm{ksi}`, "Cased length: the lesser of the bar's, the casing's and 87 ksi, for both (10.9.3.10.2a)");
     m(`A_b\\coloneq ${num(r.Ab)}\\mathrm{in}^{2}`, `#${i.bar} bar (${num(db)} in)`);
     m(`A_c\\coloneq ${num(r.Ac)}\\mathrm{in}^{2}`, `Casing ${num(i.casingOD)} × ${num(i.casingT)} in`);
     m(`A_{gc}\\coloneq ${num(r.AgCased)}\\mathrm{in}^{2}`, "Grout inside the casing");
     m(`A_{gu}\\coloneq ${num(r.AgUncased)}\\mathrm{in}^{2}`, "Grout in the bond zone's hole");
-    m("R_{nc}\\coloneq0.85\\cdot\\left(0.85\\cdot f'_{cg}\\cdot A_{gc}+f_{yb}\\cdot A_b+f_{yc}\\cdot A_c\\right)=", "Cased length, AASHTO Eq. 10.9.3.10.2a-2", "kip");
+    m("R_{nc}\\coloneq0.85\\cdot\\left(0.85\\cdot f'_{cg}\\cdot A_{gc}+f_{yc}\\cdot\\left(A_b+A_c\\right)\\right)=", "Cased length, AASHTO Eq. 10.9.3.10.2a-2", "kip");
     m("R_{nu}\\coloneq0.85\\cdot\\left(0.85\\cdot f'_{cg}\\cdot A_{gu}+f_{yb}\\cdot A_b\\right)=", "Uncased length, AASHTO Eq. 10.9.3.10.2b-2", "kip");
     m(`d_b\\coloneq ${num(i.holeD)}\\mathrm{in}`, "Drill hole");
     m(`\\alpha_b\\coloneq ${num(r.bond.alpha)}\\mathrm{ksf}`, r.bond.range ? `Nominal bond, AASHTO Table C10.9.3.5.2-1 (FHWA NHI-05-039) Type ${i.grouting}: ${r.bond.range[0]}–${r.bond.range[1]} ksf` : "Nominal bond, load test");

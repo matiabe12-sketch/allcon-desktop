@@ -76,7 +76,20 @@ export type MicropileInputs = {
   tolerableAxial: number; // in, elastic shortening at the Service load
   spacing: number; // ft, center to center
   cases: MicropileCase[];
+  /** Ground aggressive to steel (CDOT BDM 10.5.1.4: resistivity under 2,000 Ω·cm, pH under 5.5, sulfate over 1,000 ppm or
+   *  chloride over 500 ppm): the casing loses sacrificial steel from its outside (AASHTO 10.9.5 → 10.7.5). */
+  aggressive?: boolean;
+  designLife?: number; // yr, 75
+  coatingLife?: number; // yr a factory-applied coating is counted on (BDM: 30), 0 for none
+  corrosionRate?: number; // in/yr on each surface in contact with the ground, at least 0.001 (BDM 10.5.1.4)
+  /** Embankment fill the micropile passes through below the cap (ft): at least 10 ft into original ground (AASHTO 10.9.1.3). */
+  fill?: number;
+  /** In a group: the p-multipliers (AASHTO Table 10.7.2.4-1), the group's average for its deflection and the lead row's for
+   *  the moment, that row's pile pushed to the group's deflection. */
+  groupPm?: { avg: number; lead: number } | null;
 };
+
+const ROCK: BondGround[] = ["soft-shale", "hard-shale", "limestone", "sandstone", "granite"];
 
 /** A 7 in × 0.5 in casing over a #20 bar, 20 ft cased, 35 ft bonded in claystone (a soft shale) by gravity grouting (Type A), αb 7 ksf mid-range. */
 export const MICROPILE_DEFAULTS: MicropileInputs = {
@@ -107,6 +120,11 @@ export const MICROPILE_DEFAULTS: MicropileInputs = {
   tolerable: 0.5,
   tolerableAxial: 0.5,
   spacing: 3,
+  aggressive: false,
+  designLife: 75,
+  coatingLife: 0,
+  corrosionRate: 0.001,
+  fill: 0,
   cases: [
     { name: "Strength I", limit: "strength", compression: 230, tension: 0, H: 4 },
     { name: "Strength III", limit: "strength", compression: 150, tension: 60, H: 6 },
@@ -130,13 +148,22 @@ export function designMicropile(i: MicropileInputs) {
   if (!b) throw new DesignError("Choose a bar size.");
   const Ab = b.area;
   const IDc = i.casingOD - 2 * i.casingT;
-  const Ac = (Math.PI / 4) * (i.casingOD ** 2 - IDc ** 2);
+  // Corrosion: sacrificial steel off the casing's outside, the rate over the life beyond the coating's (BDM 10.5.1.4).
+  const life = i.designLife ?? 75;
+  const rate = Math.max(0.001, i.corrosionRate ?? 0.001);
+  const years = Math.max(0, life - Math.max(0, i.coatingLife ?? 0));
+  const loss = i.aggressive ? Math.min(0.9 * i.casingT, rate * years) : 0;
+  const ODc = i.casingOD - 2 * loss; // the casing's outside after corrosion
+  const tc = i.casingT - loss;
+  const Ac = (Math.PI / 4) * (ODc ** 2 - IDc ** 2);
   const Act = Math.max(0, Ac - i.threadReduction);
   const AgCased = (Math.PI / 4) * IDc ** 2 - Ab; // grout inside the casing
   const AgUncased = (Math.PI / 4) * i.holeD ** 2 - Ab;
-  const fyC = Math.min(i.casingFy, 87); // strain compatibility at 0.003 (C10.9.3.10.2a)
+  // One fy for the cased length: the lesser of the bar's, the casing's and the stress at a strain of 0.003 (87 ksi),
+  // AASHTO 10.9.3.10.2a (FHWA NHI-05-039 Sample Problem 1 likewise); the uncased length, the bar's.
+  const fyCased = Math.min(i.casingFy, i.barFy, 87);
   const fyB = Math.min(i.barFy, 87);
-  const RnCC = 0.85 * (0.85 * i.fcGrout * AgCased + fyB * Ab + fyC * Ac);
+  const RnCC = 0.85 * (0.85 * i.fcGrout * AgCased + fyCased * (Ab + Ac));
   const RnCU = 0.85 * (0.85 * i.fcGrout * AgUncased + fyB * Ab);
   const RnTC = Math.min(i.casingFy, i.barFy) * (Ab + Act);
   const RnTU = i.barFy * Ab;
@@ -168,17 +195,44 @@ export function designMicropile(i: MicropileInputs) {
     }
   }
 
+  // Bar development in the bond zone (AASHTO 10.9.3.10.5 → 5.10.8.2): ℓdb from the bar's fy and the grout, λrc from the
+  // grout's cover around the bar (cb the hole's radius, Ktr 0, within 0.4–1.0), and the excess-steel ratio λer from the demand.
+  const lamRc = Math.min(1, Math.max(0.4, b.dia / (i.holeD / 2)));
+  const devT = ((2.4 * b.dia * i.barFy) / Math.sqrt(i.fcGrout)) * lamRc; // in, tension
+  const devC = Math.max((0.63 * b.dia * i.barFy) / Math.sqrt(i.fcGrout), 0.3 * b.dia * i.barFy); // in, compression
+  let dev: { c: MicropileCase; need: number; kind: string } | null = null;
+  if (factored.length) {
+    const c = pick(factored, (x) => x.compression);
+    const t = pick(factored, (x) => x.tension);
+    const needC = Math.max(8, devC * Math.min(1, Math.max(0, c.compression - Pt) / (0.75 * RnCU)));
+    const needT = t.tension > 0 ? Math.max(12, devT * Math.min(1, Math.max(0, t.tension - Pt) / (0.8 * RnTU))) : 0;
+    dev = needT >= needC ? { c: t, need: needT, kind: "tension" } : { c, need: needC, kind: "compression" };
+    add({ id: "bar-dev", name: `The bar developed within the bond length, in ${dev.kind} (${dev.c.name})`, demand: dev.need / 12, capacity: i.bond, unit: "ft", ref: "AASHTO 10.9.3.10.5, 5.10.8.2" });
+  }
+  const fill = Math.max(0, i.fill ?? 0);
+  if (fill > 0) {
+    const inRock = ROCK.includes(i.bondGround);
+    add({ id: "fill", name: inRock ? "Through embankment: into original ground (bonded in rock)" : "Through embankment: at least 10 ft into original ground", demand: inRock ? Math.min(10, i.bond) : 10, capacity: i.cased + i.bond - i.unsupported - fill, unit: "ft", ref: "AASHTO 10.9.1.3" });
+  }
+
   // --- lateral ---------------------------------------------------------------------------------------------------
   const Es = 29000;
   const Igrout = (Math.PI * IDc ** 4) / 64;
-  const Icasing = (Math.PI * (i.casingOD ** 4 - IDc ** 4)) / 64;
+  const Icasing = (Math.PI * (ODc ** 4 - IDc ** 4)) / 64;
   const Ibar = (Math.PI * b.dia ** 4) / 64;
   const Eg = 57 * Math.sqrt(i.fcGrout * 1000); // ksi, grout as concrete (ACI 318 form)
   const EI = Es * (Icasing + Ibar) + 0.4 * Eg * Igrout; // the grout cracked
   const layers = [...(i.unsupported > 0 ? [{ thickness: i.unsupported, model: { kind: "none" as const } }] : []), ...toLayers(i.soil)];
   const length = i.cased + i.bond;
-  const lat = (c: MicropileCase) => (c.H > 0 ? analyzeLateral({ length, D: i.casingOD, EI, Q: c.compression, head: { kind: "fixed", H: c.H }, layers }) : null);
-  const Zc = (i.casingOD ** 3 - IDc ** 3) / 6;
+  // A group: its average p-multiplier for the deflection, the lead row's pile pushed to it for the moment (as the H-pile groups).
+  const lat = (c: MicropileCase) => {
+    if (!(c.H > 0)) return null;
+    const base = { length, D: i.casingOD, EI, Q: c.compression, layers };
+    const group = analyzeLateral({ ...base, pm: i.groupPm?.avg ?? 1, head: { kind: "fixed", H: c.H } });
+    const lead = i.groupPm ? analyzeLateral({ ...base, pm: i.groupPm.lead, head: { kind: "displaced", y: group.y0 } }) : group;
+    return { ...lead, y0: group.y0, zZero: group.zZero, Mmax: Math.max(group.Mmax, lead.Mmax), group };
+  };
+  const Zc = (ODc ** 3 - IDc ** 3) / 6;
   const Mp = i.casingFy * Zc; // kip·in, the casing (D/t well within compact limits for micropiles)
   const comb = factored.map((c) => {
     const r = lat(c);
@@ -212,7 +266,12 @@ export function designMicropile(i: MicropileInputs) {
     const g = pick(sv, (x) => Math.abs(x.r!.y0));
     add({ id: "deflection", name: `Lateral deflection at the cap (${g.c.name})`, demand: Math.abs(g.r!.y0), capacity: i.tolerable, unit: "in", ref: "AASHTO 10.9.3.9, 10.7.2.4" });
   }
-  return { checks, elastic, Ab, Ac, Act, AgCased, AgUncased, RnCC, RnCU, RnTC, RnTU, bond, Rs, Pt, Rp, EI, Mp, comb, length };
+  const notes: string[] = [];
+  if (i.phiBond <= 0.55) notes.push("φ 0.55 on the bond is presumptive, for preliminary design (AASHTO Table 10.5.5.2.5-1): final design needs verification load tests, and proof tests on at least one micropile per substructure or 5% of them (AASHTO 10.9.3.5.1, 10.9.3.5.4).");
+  if (i.cases.some((c) => c.tension > 0)) notes.push("Uplift without a tension load test takes the compression bond (AASHTO C10.9.3.7); a tension test is recommended where uplift governs.");
+  if (ROCK.includes(i.bondGround)) notes.push("Bonded in rock: no group reduction of the bond (the block check of AASHTO 10.7.3.9 is for piles in cohesive soil).");
+  if (i.aggressive) notes.push(`Aggressive ground (CDOT BDM 10.5.1.4): ${loss.toFixed(3)} in of the casing's wall taken off its outside (${rate} in/yr over ${years} of ${life} years) in every structural and lateral property. The bar's grout cover protects it in the bond zone; encapsulate the bar (FHWA NHI-05-039 5.11) where that ground is aggressive too.`);
+  return { fyCased, fyB, checks, notes, loss, tc, dev, elastic, Ab, Ac, Act, AgCased, AgUncased, RnCC, RnCU, RnTC, RnTU, bond, Rs, Pt, Rp, EI, Mp, comb, length };
 }
 
 export type MicropileResult = ReturnType<typeof designMicropile>;

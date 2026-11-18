@@ -180,6 +180,7 @@ export function designShaft(i: ShaftInputs) {
   const checks: Check[] = [];
   const add = (c: Omit<Check, "ok"> & { ok?: boolean }) => checks.push({ ...c, ok: c.ok ?? c.demand <= c.capacity });
   add({ id: "diameter", name: "Diameter at least 24 in (bridges)", demand: 24, capacity: i.D, unit: "in", ref: "CDOT BDM 10.6.1.1", ok: i.D >= 24 });
+  add({ id: "top", name: "Top of the shaft under a single column at least 2 ft below the ground", demand: 2, capacity: i.topDepth, unit: "ft", ref: "CDOT BDM 10.6.1.1", advisory: true });
   add({ id: "ld", name: "Length to diameter, typically under 25", demand: (i.length * 12) / i.D, capacity: 25, unit: "", ref: "CDOT BDM 10.6.1.1", advisory: true });
 
   const ax = shaftAxial(i);

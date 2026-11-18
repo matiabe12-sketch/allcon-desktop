@@ -8,7 +8,9 @@ import { bridgeBraking, type BridgeData, type ColumnLink } from "./column";
 // one, both ways a hammerhead turns), its geometry, and, from the girder designs the cap is loaded
 // from, what the loads along the bridge need.
 
-export function columnLinkFrom(stmId: string, stmName: string, i: StmInputs, girders: Map<string, GirderInputs>): ColumnLink {
+/** With noIM, the live load without the dynamic load allowance: the loads for a foundation entirely below ground (AASHTO 3.6.2.1). */
+export function columnLinkFrom(stmId: string, stmName: string, i0: StmInputs, girders: Map<string, GirderInputs>, o: { noIM?: boolean } = {}): ColumnLink {
+  const i: StmInputs = o.noIM && i0.girders ? { ...i0, girders: { ...i0.girders, noIM: true } } : i0;
   const t = i.template;
   if (!t) throw new DesignError("That strut-and-tie design isn't built from a standard pier cap.");
   if (t.kind === "abutment") throw new DesignError("That strut-and-tie design is an abutment cap: pick a pier cap.");
@@ -19,10 +21,11 @@ export function columnLinkFrom(stmId: string, stmName: string, i: StmInputs, gir
     if (!nd) throw new DesignError(`The cap's load node ${label} isn't in its model.`);
     return nd.x;
   };
-  const cases = source.map((c) => ({ name: c.name, loads: c.loads.map((l) => ({ x: xOf(l.node), fx: l.fx, fy: l.fy })) }));
+  // Each case's longitudinal couple from the bearing lines either side of the pier (cap-loads.ts), kip·ft.
+  const cases: ColumnLink["cases"] = source.map((c, k) => ({ name: c.name, loads: c.loads.map((l) => ({ x: xOf(l.node), fx: l.fx, fy: l.fy })), ...(capLoads?.couples[k] ? { mLong: capLoads.couples[k] } : {}) }));
   // Service I for the foundation's settlement and crack control (Table 3.4.1-1): each bearing's DC, DW
   // and the most live load reaching it (with IM and the multiple presence factor), unfactored.
-  if (capLoads) cases.push({ name: "Service I (DC + DW + LL+IM, the most live load at each bearing)", loads: capLoads.bearingLoads.map((b) => ({ x: b.x, fx: 0, fy: -(b.dc + b.dw + b.ll) })) });
+  if (capLoads) cases.push({ name: `Service I (DC + DW + ${o.noIM ? "LL, no IM" : "LL+IM"}, the most live load at each bearing)`, loads: capLoads.bearingLoads.map((b) => ({ x: b.x, fx: 0, fy: -(b.dc + b.dw + b.ll) })), ...(capLoads.serviceCouple ? { mLong: capLoads.serviceCouple } : {}) });
   return {
     stmId,
     stmName,
@@ -35,6 +38,7 @@ export function columnLinkFrom(stmId: string, stmName: string, i: StmInputs, gir
     fcCap: i.fc,
     cases,
     wind: !!i.girders?.enabled && !!i.girders.wind?.enabled,
+    ...(capLoads && capLoads.bearingOffset > 0 ? { bearingOffset: { e: capLoads.bearingOffset, deadCouple: capLoads.deadCouple, unbalance: capLoads.unbalance } } : {}),
     bridge: i.girders?.enabled ? bridgeData(i, girders) : null,
     refreshed: new Date().toISOString(),
   };

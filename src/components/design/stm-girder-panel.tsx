@@ -131,6 +131,16 @@ export function StmGirderPanel({ inputs, onChange, result }: { inputs: StmInputs
       )}
       <Field label="Cap x at the bridge's centerline" unit="ft" value={link.x0} onChange={(x0) => onChange({ ...link, x0 })} step={0.1} />
       <Toggle label="Bridge's left side at larger cap x" value={link.reverse} onChange={(reverse) => onChange({ ...link, reverse })} />
+      {link.back && link.ahead && (
+        <Field
+          label="Bearing lines off the pier's centerline (each side)"
+          unit="ft"
+          value={link.bearingOffset ?? 0}
+          onChange={(bearingOffset) => onChange({ ...link, bearingOffset: Math.max(0, bearingOffset) })}
+          step={0.25}
+          hint="The two spans' unequal reactions on bearing lines this far either side make a couple along the bridge, carried to the pier column and its foundation"
+        />
+      )}
       <div className="py-1">
         <p className="text-muted-foreground">Nodes that take the bearing loads</p>
         <div className="flex flex-wrap gap-x-3 gap-y-0.5 pt-0.5">

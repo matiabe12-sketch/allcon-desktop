@@ -66,7 +66,7 @@ describe("hand checks", () => {
     const ID = 7 - 1;
     const Ac = (Math.PI / 4) * (49 - 36);
     expect(r.Ac).toBeCloseTo(Ac, 9);
-    expect(r.RnCC).toBeCloseTo(0.85 * (0.85 * 5 * ((Math.PI / 4) * ID ** 2 - Ab) + 75 * Ab + 80 * Ac), 6);
+    expect(r.RnCC).toBeCloseTo(0.85 * (0.85 * 5 * ((Math.PI / 4) * ID ** 2 - Ab) + 75 * (Ab + Ac)), 6); // one fy, the lesser (10.9.3.10.2a)
     expect(r.RnCU).toBeCloseTo(0.85 * (0.85 * 5 * ((Math.PI / 4) * 64 - Ab) + 75 * Ab), 6);
     expect(r.Rs).toBeCloseTo(Math.PI * (8 / 12) * 7 * 35, 6);
   });

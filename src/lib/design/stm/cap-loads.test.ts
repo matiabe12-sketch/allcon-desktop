@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { girderInputs } from "../kinds";
 import { brakingPerLane, superstructureWind, windKz, windPressure } from "../girders/substructure-loads";
-import { capLoadCases, girderSide, IM, laneReaction, leverShares, multiplePresence, type GirderLink } from "./cap-loads";
+import { capLoadCases, girderSide, IM, laneReaction, laneUnbalance, leverShares, multiplePresence, type GirderLink } from "./cap-loads";
 import { nodeLpSolver } from "./lp-node";
 import { designStm, STM_DEFAULTS } from "./strut-tie";
 import { buildTemplate, HAMMERHEAD_DEFAULTS } from "./templates";
@@ -92,6 +92,47 @@ describe("girders made continuous over the pier (5.12.3.3)", () => {
     const c = capLoadCases({ enabled: true, back, ahead, x0: 20, reverse: false, loadNodes: tops, selfWeight: false, soffit: 0, wc: 0.15 }, cap.nodes, cap.outline, cap.b, 20);
     expect(c.lane.kind).toContain("continuous");
     expect(c.warnings.some((w) => w.includes("continuous over this pier"))).toBe(false);
+  });
+});
+
+describe("bearing lines either side of the pier: the couple along the bridge", () => {
+  it("simple spans: one lane's most unbalanced live load is the truck and lane on one span alone", () => {
+    const u = laneUnbalance(60, 120);
+    // Rear axle on the pier, the others 14 and 28 ft into the span; the lane load over the span.
+    expect(u.towardAhead).toBeCloseTo((32 + 32 * (1 - 14 / 120) + 8 * (1 - 28 / 120)) * (1 + IM) + 0.64 * 60, 9);
+    expect(u.towardBack).toBeCloseTo((32 + 32 * (1 - 14 / 60) + 8 * (1 - 28 / 60)) * (1 + IM) + 0.64 * 30, 9);
+  });
+
+  // D-11-Z's layout: 6 girders at 7.2 ft, 64-128-64 ft bearing to bearing, bearing lines 1 ft off the piers.
+  const g = { ...girderInputs({}), nGirders: 6, S: 7.2, L: 64, extraSpans: [{ L: 128, strands: null, harped: null }, { L: 64, strands: null, harped: null }], pierBearingOffset: 1 };
+  const cap = buildTemplate({ ...HAMMERHEAD_DEFAULTS, bearings: [-18, -10.8, -3.6, 3.6, 10.8, 18].map((z) => ({ x: 20 + z, P: 0 })) }, STM_DEFAULTS);
+  const tops = cap.nodes.filter((n) => n.label.startsWith("T")).map((n) => n.label);
+  const back = girderSide(g, 0, "d", "D-11-Z", "end");
+  const ahead = girderSide(g, 1, "d", "D-11-Z", "start");
+  const link = (e: number): GirderLink => ({ enabled: true, back, ahead, x0: 20, reverse: false, loadNodes: tops, selfWeight: false, soffit: 0, wc: 0.15, bearingOffset: e });
+
+  it("continuous girders: the long span's side takes more of an unbalanced lane than the short span's", () => {
+    const u = back.liveUnbalance!;
+    expect(u.towardAhead).toBeGreaterThan(u.towardBack);
+    // No more than a lane's whole reaction at the pier.
+    const l = back.liveContinuous!;
+    expect(u.towardAhead).toBeLessThan(l.truck.back + l.truck.ahead + l.lane.back + l.lane.ahead + 1e-9);
+  });
+
+  it("the dead loads' couple is (ahead − back) × e, and each case adds its lanes' unbalanced live load the same way", () => {
+    const c = capLoadCases(link(1), cap.nodes, cap.outline, cap.b, 20);
+    const dead = (f1: number, f2: number) => 2 * (f1 * (ahead.dc.exterior - back.dc.exterior) + f2 * (ahead.dw.exterior - back.dw.exterior)) + 4 * (f1 * (ahead.dc.interior - back.dc.interior) + f2 * (ahead.dw.interior - back.dw.interior));
+    expect(c.deadCouple).toBeCloseTo(dead(1, 1), 9);
+    expect(c.deadCouple).toBeGreaterThan(0); // toward the 128 ft span
+    const iv = c.cases.findIndex((k) => k.name.startsWith("Strength IV"));
+    expect(c.couples[iv]).toBeCloseTo(dead(1.5, 1.5), 9);
+    const k1 = c.caseInfo.findIndex((k) => k.name.startsWith("Strength I (") && k.dead === "max");
+    const a = c.caseInfo[k1].arrangement;
+    expect(c.couples[k1]).toBeCloseTo(dead(1.25, 1.5) + 1.75 * a.lanes * a.m * back.liveUnbalance!.towardAhead, 9);
+    expect(c.couples.length).toBe(c.cases.length);
+    // No offset, no couple.
+    const none = capLoadCases(link(0), cap.nodes, cap.outline, cap.b, 20);
+    expect(none.couples.every((m) => m === 0)).toBe(true);
   });
 });
 
@@ -235,5 +276,19 @@ describe("a cap loaded from its girders", () => {
       expect(l.strength).toBeCloseTo(1.25 * l.dc + 1.5 * l.dw + 1.75 * l.ll);
     }
     expect(r.appliedLoads.map((l) => l.label)).toEqual(["G1", "G2", "G3", "G4"]);
+  });
+});
+
+describe("a foundation entirely below ground: the live load without IM (AASHTO 3.6.2.1)", () => {
+  it("the lane's reaction and its unbalance lose IM on the trucks only", () => {
+    const a = laneReaction(60, 120);
+    const b = laneReaction(60, 120, 0);
+    expect(b.truck.back + b.truck.ahead).toBeCloseTo((a.truck.back + a.truck.ahead) / (1 + IM), 9);
+    expect(b.lane).toEqual(a.lane);
+    const u = laneUnbalance(60, 120);
+    const v = laneUnbalance(60, 120, 0);
+    const lane = 0.64 * 60;
+    expect(v.towardAhead - 0.64 * 60).toBeCloseTo((u.towardAhead - 0.64 * 60) / (1 + IM), 9);
+    expect(v.towardBack - lane / 2).toBeCloseTo((u.towardBack - lane / 2) / (1 + IM), 9);
   });
 });

@@ -193,7 +193,25 @@ export async function runLoadPath(o: {
     const fBefore = kind === "spread-footing" ? footingInputs(fd?.inputs ?? {}) : kind === "pile-foundation" ? pileFoundationInputs(fd?.inputs ?? {}) : shaftInputs(fd?.inputs ?? {});
     let fNext: object = fBefore;
     if (colResult) {
-      fNext = kind === "spread-footing" ? footingFromColumn(colResult, fBefore as ReturnType<typeof footingInputs>, colNext) : kind === "pile-foundation" ? pilesFromColumn(colResult, fBefore as ReturnType<typeof pileFoundationInputs>, colNext) : shaftFromColumn(colResult, fBefore as ReturnType<typeof shaftInputs>, colNext);
+      // A foundation entirely below ground takes the live load without the dynamic load allowance (AASHTO 3.6.2.1):
+      // the column worked out again from the cap's loads without IM, for its base forces only. If that can't be
+      // worked out, the loads with IM are kept (conservative).
+      const buried =
+        kind === "spread-footing"
+          ? (fBefore as ReturnType<typeof footingInputs>).Df >= (fBefore as ReturnType<typeof footingInputs>).t / 12
+          : kind === "pile-foundation"
+            ? (fBefore as ReturnType<typeof pileFoundationInputs>).Df >= (fBefore as ReturnType<typeof pileFoundationInputs>).capT / 12
+            : (fBefore as ReturnType<typeof shaftInputs>).topDepth >= 0;
+      let baseCol = colResult;
+      if (buried)
+        try {
+          let cn = columnFromBridge(b, run, k, colBefore, columnLinkFrom(c.capId ?? "", capName, capNext, girders, { noIM: true }));
+          if (cn.base === "shaft") cn = { ...cn, shaftCage: colNext.shaftCage };
+          baseCol = designColumn(cn);
+        } catch {
+          baseCol = colResult;
+        }
+      fNext = kind === "spread-footing" ? footingFromColumn(baseCol, fBefore as ReturnType<typeof footingInputs>, colNext) : kind === "pile-foundation" ? pilesFromColumn(baseCol, fBefore as ReturnType<typeof pileFoundationInputs>, colNext) : shaftFromColumn(baseCol, fBefore as ReturnType<typeof shaftInputs>, colNext);
       if (kind === "drilled-shaft") fNext = { ...fNext, D: Math.max((fNext as ReturnType<typeof shaftInputs>).D, s.pier.columnShape === "round" ? s.pier.columnSize : 0) };
     }
     c.foundationId = await upsert(`foundation-${k}`, `${s.name}, foundation`, kind, fd, fBefore, fNext, colResult ? verdictTry(() => runFoundation(kind, fNext).checks) : "the column's base forces are needed first", `${prefix}, ${s.name} foundation`);

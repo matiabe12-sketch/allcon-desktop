@@ -80,7 +80,7 @@ export const FOOTING_DEFAULTS: FootingInputs = {
   cover: 3,
   barsB: { bar: 8, spacing: 9 },
   barsL: { bar: 8, spacing: 9 },
-  exposure: 1,
+  exposure: 2, // foundation elements: Class 2 (CDOT BDM 11.4)
   gammaAbove: 125,
   onRock: false,
   bearing: "computed",
@@ -308,7 +308,9 @@ export function designFooting(i: FootingInputs) {
   const Wf = A * tF * i.gammaC; // kip
   const Ws = Math.max(0, A - colArea) * Math.max(0, i.Df - tF) * (i.gammaAbove / 1000);
 
-  add({ id: "embedment", name: "Footing base at least 3 ft below the ground", demand: 3, capacity: i.Df, unit: "ft", ref: "CDOT BDM 10.4.2", ok: i.onRock || i.Df >= 3, advisory: i.onRock });
+  add({ id: "embedment", name: "Footing base at least 3 ft below the ground", demand: 3, capacity: i.Df, unit: "ft", ref: "CDOT BDM 10.4.2, 11.4", ok: i.onRock || i.Df >= 3, advisory: i.onRock });
+  add({ id: "depth", name: "Footing at least 2'-6\" deep", demand: 30, capacity: i.t, unit: "in", ref: "CDOT BDM 11.4" });
+  add({ id: "cover", name: "Cover over the footing's top", demand: 2, capacity: i.Df - i.t / 12, unit: "ft", ref: "CDOT BDM 11.4", advisory: i.onRock });
 
   // --- the geotechnical checks, each case ----------------------------------------------------------------------
   const cases = i.cases.map((lc) => {

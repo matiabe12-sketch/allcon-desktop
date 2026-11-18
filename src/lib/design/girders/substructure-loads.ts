@@ -95,6 +95,50 @@ const LANE = 0.64;
  * pier through the back span's end and the ahead span's end. 90% of two trucks with 90% of the lane
  * load is also tried (3.6.1.3.1).
  */
+/**
+ * One lane's most unbalanced live load at an interior pier, each way (per lane, before the multiple
+ * presence factor; IM on the trucks): the largest of (what reaches the pier's ahead bearing − what reaches
+ * its back bearing), and the reverse. With the bearings a distance e either side of the pier's centerline,
+ * e times this is the lane's longitudinal couple on the pier. The design truck (rear axle 14 to 30 ft),
+ * tandem, or 90% of two trucks 50 ft apart with 90% of the lane (3.6.1.3.1), whichever is most; the lane
+ * load where it adds.
+ */
+export function continuousLaneUnbalance(design: GirderInputs, pier: number, IM = 0.33) {
+  const { La, off, n } = continuousSpans(design);
+  if (!(pier > 0 && pier < n)) throw new DesignError("That isn't an interior pier of the girder design.");
+  const beam = continuousBeam(La);
+  const back = beam.influence(pier - 1, La[pier - 1] - off, "V");
+  const ahead = beam.influence(pier, off, "V");
+  const diff = (X: number) => ahead(X, -1) + back(X, 1); // ahead reaction − back reaction for a unit load at X
+  const total = La.reduce((s, L) => s + L, 0);
+  const grid: number[] = [];
+  for (let p = -80; p <= total + 80; p += 0.5) grid.push(p);
+  const most = (axles: { P: number; d: number }[], sign: 1 | -1) => {
+    let top = 0;
+    for (const p of grid)
+      for (const dir of [1, -1]) {
+        let r = 0;
+        for (const ax of axles) {
+          const X = p + dir * ax.d;
+          if (X >= 0 && X <= total) r += ax.P * diff(X);
+        }
+        top = Math.max(top, sign * r);
+      }
+    return top;
+  };
+  const way = (sign: 1 | -1) => {
+    const truck = Math.max(...[14, 16, 18, 20, 22, 24, 26, 28, 30].map((rear) => most(TRUCK.map((P, k) => ({ P, d: k === 0 ? 0 : k === 1 ? 14 : 14 + rear })), sign)));
+    const tandem = most(TANDEM.map((P, k) => ({ P, d: 4 * k })), sign);
+    let lane = 0;
+    const dX = total / 2000;
+    for (let q = 0; q < 2000; q++) lane += LANE * Math.max(0, sign * diff((q + 0.5) * dX)) * dX;
+    let pair = 0;
+    for (let gap = 50; gap <= Math.min(total, 250); gap += 5) pair = Math.max(pair, most([...TRUCK.map((P, k) => ({ P, d: 14 * k })), ...TRUCK.map((P, k) => ({ P, d: 28 + gap + 14 * k }))], sign));
+    return Math.max(Math.max(truck, tandem) * (1 + IM) + lane, 0.9 * (pair * (1 + IM) + lane));
+  };
+  return { towardAhead: way(1), towardBack: way(-1) };
+}
+
 export function continuousLaneReaction(design: GirderInputs, pier: number, IM = 0.33) {
   const { La, off, n } = continuousSpans(design);
   if (!(pier > 0 && pier < n)) throw new DesignError("That isn't an interior pier of the girder design.");

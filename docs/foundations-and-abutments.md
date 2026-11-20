@@ -182,8 +182,8 @@ its own height, width, skew and backfill and applies that design's Section B (St
 
 - **Integral:** each wingwall's weight × 1.25 is a point load on the cap beam's end. The end pile (or shaft) takes it
   over the overhang, P (1 + a/s), with the average load, structural and geotechnical. The end section (cap and
-  diaphragm) takes the thrust as tension along the abutment (all of it, whatever the skew), with My and Mx (Mx plus
-  the end support's own moment), by a linear interaction (5.6.2). My's tension face is the back face, where the
+  diaphragm) takes the thrust's part along the abutment, P cos θ, as tension, with My and Mx cos θ (plus the end
+  support's own moment), by a linear interaction (5.6.2). My's tension face is the back face, where the
   wingwall's corner bars run with the diaphragm's face bars over the height. The wingwall's weight's moment about the
   abutment's axis is torsion along the cap (one row of piles), checked against 0.25 φ Tcr (5.7.2.1). Over it, the
   closed stirrups take it with the shear (5.7.3.6.2, θ 45°), and the face bars give the longitudinal steel round
@@ -192,8 +192,32 @@ its own height, width, skew and backfill and applies that design's Section B (St
   statics (DC). The stem's end takes the tension and My the same way, with its horizontal bars and the corner bars.
   Mx is in the wall's own plane, and the weight's moment about the abutment's axis goes down into the footing at the
   end (the stem stands on it all along), not as torsion: neither is checked.
-- **Not applied:** the thrust's component square to the abutment, and the end region's footing pressure from the
-  weight's moment (it's averaged along the abutment).
+- **The thrust square to the abutment (2026-11-20):** the thrust P is square to the wingwall, which runs along the
+  road, so on a skew θ it splits into P cos θ along the abutment (above) and P sin θ square to it, toward the span at
+  one corner and toward the fill at the other. Our model; AASHTO has no rule for it. Nothing changes at θ = 0.
+  - **Integral** (`wing-push`, `wing-push-shear`): the cap and diaphragm's end is a horizontal cantilever from the
+    exterior girder, which takes P sin θ into the superstructure (the two ends' pushes are a couple the deck takes in
+    its plane). At the girder: My + P sin θ · a + the passive pressure on the end (1.35, 3.11.5.4) by a linear
+    interaction with P cos θ and Mx (5.6.2). The bars are the diaphragm's face bars plus the corner bars in proportion
+    to how far they run past the girder against ℓd. Its shear across the cap's width, the concrete alone (5.7.3.3).
+  - **Seat, the stem's end** (`wing-push-stem`, `-shear`): P sin θ at the thrust's height y, spread at 45° down to the
+    footing one way (the end is free), so over a width y at the base: + P sin θ per foot on the stem's moment and
+    + P sin θ / y on its shear. Where the stem's own bars fall short, bars are added on the back face at the ends
+    (`stemEndBars`): between the main bars, at their spacing, over the spread width y (rounded up to the foot) from
+    each wingwall's end, the stem's full height, hooked into the footing like them. The smallest size that's enough
+    is designed unless one is given (a size, or 0 / null for none; a given `width` less than y is flagged and the
+    bars aren't counted). On the 30° defaults with 20 ft wingwalls: 197 kip·ft/ft against the #8 @ 9 in's 155, so
+    #5 between them over 9 ft at each end (215). They're in the bar schedule ("Stem, back face, added at the ends"),
+    called out on the typical section, and drawn in the Bridge's 3D stem (`stemEndBarsOf`). Crack control at the
+    ends isn't rechecked (the added bars halve the spacing there).
+  - **Seat, the foundation:** two wingwalls push opposite ways, a couple T = P sin θ · L; one is a net force
+    F = P sin θ off the middle, T = F L/2 + My. On a spread footing, F is added to the horizontal force per foot
+    (sliding, eccentricity, bearing) and the couple is taken by friction (`wing-twist`): a rigid-plastic base, the
+    friction reversed over a length x at one end, leaves R √(1 − 4T/(R L²)) per foot for the sliding force. On piles
+    or micropiles, the group shares the couple elastically (6T/L² per foot at the ends), so the piles are designed
+    for the end strip, F/L + 6T/L² per foot at the thrust's height.
+- **Not applied:** the end region's footing pressure from the weight's moment (it's averaged along the abutment), and
+  on one wingwall, its net force P cos θ along the abutment (sliding along it).
 
 Seat abutment's backwall (BDM 11.3.3): a cantilever from the seat, per foot.
 

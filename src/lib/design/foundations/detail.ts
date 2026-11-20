@@ -5,7 +5,7 @@ import { markGroups, schedule, type ConcreteItem } from "../rebar/schedule";
 import { ftT, inT, plus18T } from "../takeoff/tex";
 import type { DetailView, Takeoff } from "../takeoff/types";
 import { num } from "../calc-style";
-import { SEMI_DEFAULTS, STEEL_ENDS_DEFAULTS, type AbutmentInputs } from "./abutment";
+import { SEMI_DEFAULTS, STEEL_ENDS_DEFAULTS, stemEndBarsOf, type AbutmentInputs } from "./abutment";
 import { development } from "../stm/anchorage";
 import type { FootingInputs } from "./footing";
 import type { MicropileInputs } from "./micropile";
@@ -263,6 +263,8 @@ function abutmentSection(i: AbutmentInputs, markOf: (use: string) => string): De
     const sb = x2 - 2 - db(i.stemBars.bar) / 2;
     lines.push({ pts: [[sb - 12, 3 + db(i.toeBars.bar)], [sb, 3 + db(i.toeBars.bar)], [sb, top - 2]], mark: markOf("Stem, back face"), kind: "main" });
     labels.push({ x: B + 4, y: ft + shown / 2, text: `stem, back face: #${i.stemBars.bar} @ ${ftIn(i.stemBars.spacing)}`, anchor: "start" });
+    const eb = stemEndBarsOf(i);
+    if (eb) labels.push({ x: B + 4, y: ft + shown / 2 - 12, text: `at the wingwall${eb.ends === 2 ? "s'" : "'s"} end${eb.ends === 2 ? "s" : ""}: #${eb.bar} added between, over ${ftIn(eb.width * 12)}`, anchor: "start" });
     if (shown < i.stemH * 12) {
       const yb = ft + shown / 2;
       lines.push({ pts: [[x1 - 6, yb - 3], [x1 + 6, yb + 3], [x2 - 6, yb - 3], [x2 + 6, yb + 3]], mark: "", kind: "secondary" });
@@ -357,6 +359,10 @@ export function abutmentTakeoff(i: AbutmentInputs): Takeoff {
     const hq = i.stemHQty && i.stemHQty > 0 ? i.stemHQty : i.stemH;
     const Hst = i.stemH + i.backwallH;
     run({ size: i.stemBars.bar, count: countAt(Li - 4, i.stemBars.spacing), straight: hq * 12 + i.footT * 12 - 6, hooks: [true, false], use: "Stem, back face", callout: `#${i.stemBars.bar} @ ${ftIn(i.stemBars.spacing)} (stem, back face)`, cover: 2, spacing: i.stemBars.spacing });
+    // The added back-face bars at the wingwalls' ends (the wingwall's push square to a skewed abutment): between the
+    // main bars over the width from each end, the stem's full height, hooked into the footing like them.
+    const eb = stemEndBarsOf(i);
+    if (eb) run({ size: eb.bar, count: eb.ends * Math.max(1, Math.floor((eb.width * 12 - 2) / eb.spacing)), straight: i.stemH * 12 + i.footT * 12 - 6, hooks: [true, false], use: "Stem, back face, added at the ends", callout: `#${eb.bar} between the back face bars, ${ftIn(eb.width * 12)} from ${eb.ends === 2 ? "each end" : "the wingwall's end"} (stem)`, cover: 2, spacing: eb.spacing });
     if (i.type === "semi-integral") {
       // The end diaphragm (CDOT BDM Figure 11-3): bars each face both ways, its bottom bars and its ties, as designed.
       const sd = { ...SEMI_DEFAULTS, ...(i.semi ?? {}) };

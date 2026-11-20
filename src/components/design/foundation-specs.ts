@@ -383,6 +383,8 @@ export const FOUNDATION_SPECS: Record<FoundationKind, SectionSpec[]> = {
         { type: "number", key: "wing.h", label: "Wingwall height at its tip", unit: "ft", step: 0.5, hint: "Default 3 ft", show: (i) => wingOn(i) },
         { type: "number", key: "wing.t", label: "Wingwall thickness", unit: "in", hint: "Default 12 in", show: (i) => wingOn(i) },
         { type: "choice", key: "wing.count", label: "Wingwalls", options: [{ value: 2, label: "One at each end" }, { value: 1, label: "One end only" }], show: (i) => wingOn(i) },
+        { type: "choice", key: "stemEndBars.bar", label: "Stem's end: bars added between the back face bars (the wingwall's push on the skew)", options: [{ value: -1, label: "Designed (where needed)" }, { value: 0, label: "None" }, ...[4, 5, 6, 7, 8, 9, 10, 11].map((b) => ({ value: b, label: `#${b}` }))], show: (i) => wingOn(i) && !String(i.type).startsWith("integral") && Number(i.skew) !== 0 },
+        { type: "number", key: "stemEndBars.width", label: "Stem's end bars: over this from each wingwall's end", unit: "ft", step: 0.5, hint: "Default the push's spread width at the base", show: (i) => wingOn(i) && !String(i.type).startsWith("integral") && Number(i.skew) !== 0 },
       ],
     },
     {

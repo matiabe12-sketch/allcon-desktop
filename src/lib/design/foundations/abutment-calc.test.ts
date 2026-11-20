@@ -8,7 +8,10 @@ import { fitsAcross } from "@/lib/calcs/library/fit";
 import { runBridge } from "../bridge/bridge";
 import { F15E, F15E_ABUTMENT, F15E_GIRDER } from "../bridge/f15e.fixture";
 import { abutmentFromBridge } from "../bridge/loadpath";
-import { designAbutment, type AbutmentInputs } from "./abutment";
+import { designAbutment, stemEndBarsOf, type AbutmentInputs } from "./abutment";
+import { abutmentTakeoff } from "./detail";
+import { abutmentBars } from "../bridge/rebar3d-more";
+import { BARS } from "../walls/cip";
 import { foundationCalcLines } from "./calc";
 import { abutmentInputs, micropileInputs } from "./kinds";
 import { designMicropile } from "./micropile";
@@ -377,4 +380,120 @@ describe("the wingwalls' Section B forces on the abutment's ends", () => {
     const b = designAbutment(abutmentInputs({ type: "seat", wing: { L: 0, h: 3, t: 12 } }));
     expect(b.checks.map((c) => [c.id, c.demand])).toEqual(a.checks.map((c) => [c.id, c.demand]));
   });
+});
+
+describe("the wingwalls' thrust square to a skewed abutment", () => {
+  const wing = { L: 20, h: 3, t: 12 };
+  const th = (30 * Math.PI) / 180;
+  const integral = abutmentInputs({ type: "integral-piles", skew: 30, wing });
+  const seat = abutmentInputs({ type: "seat", foundation: "footing", skew: 30, wing });
+  const check = (res: ReturnType<typeof designAbutment>, id: string) => res.checks.find((c) => c.id === id);
+
+  it("integral: P cos θ along the abutment as tension; P sin θ on the end, a cantilever from the exterior girder", () => {
+    const r = designAbutment(integral);
+    const gw = r.integral!.wing!;
+    const e = gw.end!;
+    const P = e.Nu / Math.cos(th);
+    close(e.cos, Math.cos(th), 1e-12);
+    const p = gw.push!;
+    close(p.Hu, P * Math.sin(th), 1e-9);
+    close(p.a, r.integral!.girders[0], 1e-12);
+    close(p.Mu, e.Myu + p.Hu * p.a + (p.pOh * p.a ** 2) / 2, 1e-9);
+    close(p.kC, Math.min(1, p.past / p.ld), 1e-12);
+    close(check(r, "wing-push")!.demand, e.Nu / p.PrF + p.Mu / p.MrF + p.Mx / e.MrX!, 1e-9);
+    close(check(r, "wing-push-shear")!.demand, p.Hu + p.pOh * p.a, 1e-9);
+  });
+
+  it("square to the abutment (no skew): no push, the whole thrust along it", () => {
+    const r = designAbutment(abutmentInputs({ type: "integral-piles", skew: 0, wing }));
+    expect(r.integral!.wing!.push).toBeNull();
+    expect(r.checks.some((c) => /^wing-(push|twist)/.test(c.id))).toBe(false);
+    close(r.integral!.wing!.end!.cos, 1, 1e-12);
+  });
+
+  it("seat on a footing: two wingwalls a couple taken by friction; one a net force with the earth pressure", () => {
+    const r = designAbutment(seat);
+    const s = r.seat!;
+    const wp = s.wingPush!;
+    close(wp.Tu, wp.Hu * seat.length, 1e-9);
+    expect(wp.qWu).toBe(0); // two push opposite ways: no net force
+    const RR = s.footing!.RR;
+    const tw = check(r, "wing-twist")!;
+    close(tw.capacity, RR * Math.sqrt(1 - (4 * wp.Tu) / (RR * seat.length ** 2)), 1e-9);
+    close(tw.demand, check(r, "sliding")!.demand, 1e-12);
+    const one = designAbutment({ ...seat, wing: { ...wing, count: 1 } });
+    const wp1 = one.seat!.wingPush!;
+    close(wp1.qWu, wp1.Hu / seat.length, 1e-9);
+    close(wp1.Tu, (wp1.Hu * seat.length) / 2 + wp1.Myu, 1e-9);
+    close(check(one, "sliding")!.demand - check(r, "sliding")!.demand, wp1.qWu, 1e-9);
+  });
+
+  it("seat on piles: the couple shared elastically, the end strip's q = 6T/L² per foot", () => {
+    const piles = abutmentInputs({ type: "seat", foundation: "piles", skew: 30, wing });
+    const bare = designAbutment({ ...piles, skew: 0 });
+    const r = designAbutment(piles);
+    const wp = r.seat!.wingPush!;
+    close(wp.qWu, (6 * wp.Tu) / piles.length ** 2, 1e-9);
+    // the strength rows carry it with the earth pressure, at its height
+    const hh = (x: typeof r) => x.seat!.rows[0].Hh;
+    close(hh(r) - hh(bare), wp.qWu, 1e-9);
+  });
+
+  it("seat: the stem's end takes P sin θ spread at 45° one way, P sin θ per foot on its moment", () => {
+    const r = designAbutment(seat);
+    const s = r.seat!;
+    const st = s.wingPush!.stem!;
+    close(check(r, "wing-push-stem")!.demand, s.Mstem + st.Hu, 1e-9);
+    close(check(r, "wing-push-stem-shear")!.demand, s.Vstem + st.Hu / st.y, 1e-9);
+  });
+
+  it("seat: the stem's end bars, the smallest added between the main bars that's enough, over the spread width", () => {
+    const r = designAbutment(seat);
+    const st = r.seat!.wingPush!.stem!;
+    const none = designAbutment({ ...seat, stemEndBars: null });
+    // the main bars alone fall short here; the designed bars make it, one size smaller doesn't
+    expect(check(none, "wing-push-stem")!.ok).toBe(false);
+    expect(none.seat!.wingPush!.stem!.end).toBeNull();
+    const e = st.end!;
+    expect(e.auto).toBe(true);
+    expect(e.spacing).toBe(seat.stemBars.spacing);
+    expect(e.width).toBe(Math.ceil(st.y));
+    expect(e.ends).toBe(2);
+    const c = check(r, "wing-push-stem")!;
+    expect(c.ok).toBe(true);
+    const As = (BARS[seat.stemBars.bar].area * 12) / seat.stemBars.spacing + (BARS[e.bar].area * 12) / e.spacing;
+    close(st.As, As, 1e-9);
+    if (e.bar > 4) expect(check(designAbutment({ ...seat, stemEndBars: { bar: e.bar - 1 } }), "wing-push-stem")!.ok).toBe(false);
+    // given, over less than the spread width: flagged, and not counted
+    const narrow = designAbutment({ ...seat, stemEndBars: { bar: e.bar, width: 1 } });
+    expect(check(narrow, "wing-push-stem-width")!.ok).toBe(false);
+    expect(check(narrow, "wing-push-stem")!.ok).toBe(false);
+    // not needed: none
+    expect(designAbutment({ ...seat, skew: 5 }).seat!.wingPush!.stem!.end).toBeNull();
+  });
+
+  it("seat: the end bars in the bar schedule and the Bridge's 3D stem", () => {
+    const e = stemEndBarsOf(seat)!;
+    const g = abutmentTakeoff(seat).schedule.groups.find((x) => x.use === "Stem, back face, added at the ends")!;
+    expect(g.size).toBe(e.bar);
+    expect(g.count).toBe(2 * Math.floor((e.width * 12 - 2) / e.spacing));
+    expect(abutmentTakeoff({ ...seat, stemEndBars: null }).schedule.groups.some((x) => x.use.includes("added at the ends"))).toBe(false);
+    const el = { profile: { kind: "rect", x: seat.length, y: seat.stemT }, depth: seat.stemH } as unknown as Parameters<typeof abutmentBars>[1];
+    const sets = abutmentBars(0, el, "stem", { ...seat, stemEnd: e }, 1);
+    const added = sets.find((s) => s.label.includes("added at the wingwalls' ends"))!;
+    expect(added.size).toBe(e.bar);
+    // halfway between the main bars, within the width of either end
+    for (const [x] of added.at) expect(Math.min(x + seat.length / 2, seat.length / 2 - x)).toBeLessThanOrEqual(e.width);
+    expect(added.at.length).toBeGreaterThan(0);
+  });
+
+  for (const [name, inputs] of [["integral", integral], ["seat", seat], ["seat on piles", abutmentInputs({ type: "seat", foundation: "piles", skew: 30, wing })], ["seat, one wingwall", { ...seat, wing: { ...wing, count: 1 } }]] as const)
+    it(`works the skewed ${name} abutment with its wingwalls' push out: no errors, every line on the page, its checks as the engine's`, () => {
+      const c = workOut("abutment", inputs);
+      expect(c.errors).toEqual([]);
+      expect(c.wide).toEqual([]);
+      const res = designAbutment(inputs);
+      const fails = res.checks.filter((x) => !x.ok && !x.advisory).length;
+      expect(c.ng.length > 0).toBe(fails > 0);
+    });
 });

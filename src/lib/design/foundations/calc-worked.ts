@@ -215,10 +215,10 @@ type WingEnd = NonNullable<NonNullable<NonNullable<AbutmentResult["integral"]>["
 /** The abutment's end section under a wingwall's Section B (the engine's wingEnd), k naming its variables. */
 function wingEndWorked(w: Writer, e: WingEnd, k: string) {
   const { text, m } = w;
-  text(`${e.name}:- the wingwall's Section B, Strength I, from the Cantilever Wingwall's design with this abutment's height, width, skew and backfill. Its thrust is taken as tension along the abutment (all of it, whatever the skew). My is the corner's moment; its tension face is the abutment's back face, where the wingwall's corner bars run with the abutment's own bars.${e.MrX ? " Mx adds the abutment's own moment at its end support." : " Mx is in the wall's own plane, as deep as the wall: not checked."}`, undefined, { keepWithNext: true });
-  m(`N_{w${k}}\\coloneq ${num(e.Nu, 3)}\\mathrm{kip}`, "The wingwall's thrust, tension");
+  text(`${e.name}:- the wingwall's Section B, Strength I, from the Cantilever Wingwall's design with this abutment's height, width, skew and backfill. Its thrust P is square to the wingwall: on the skew θ, P cos θ runs along the abutment as tension (P sin θ, square to it, is below). My is the corner's moment; its tension face is the abutment's back face, where the wingwall's corner bars run with the abutment's own bars.${e.MrX ? " Mx adds the abutment's own moment at its end support." : " Mx is in the wall's own plane, as deep as the wall: not checked."}`, undefined, { keepWithNext: true });
+  m(`N_{w${k}}\\coloneq ${num(e.Nu / e.cos, 3)}\\mathrm{kip}\\cdot${num(e.cos, 4)}=`, "The wingwall's thrust × cos θ, tension", "kip");
   m(`M_{yw${k}}\\coloneq ${num(e.Myu, 3)}\\mathrm{kip}\\cdot\\mathrm{ft}`, "About the vertical axis");
-  if (e.MrX) m(`M_{xw${k}}\\coloneq ${num(e.Mxu, 3)}\\mathrm{kip}\\cdot\\mathrm{ft}`, "About the horizontal axis, with the end support's own");
+  if (e.MrX) m(`M_{xw${k}}\\coloneq ${num(e.Mxu, 3)}\\mathrm{kip}\\cdot\\mathrm{ft}`, "About the horizontal axis: the wingwall's Mx × cos θ, with the end support's own");
   m(`A_{bw${k}}\\coloneq ${num(e.AsFace, 3)}\\mathrm{in}^{2}+${num(e.AsCorner, 3)}\\mathrm{in}^{2}=`, "The back face's bars over the height: its own and the corner bars", "in^2");
   m(`d_{yw${k}}\\coloneq ${num(e.dFace, 3)}\\mathrm{in}`, "To them from the front face");
   m(`a_{yw${k}}\\coloneq\\frac{A_{bw${k}}\\cdot f_{y}}{0.85\\cdot f'_{c}\\cdot${num(e.h, 3)}\\mathrm{in}}=`, "Over the section's height", "in");
@@ -407,6 +407,24 @@ function integralWorked(w: Writer, i: AbutmentInputs, r: AbutmentResult, g: NonN
     if (ax) m(ok("P_{ue}", `${num(ax.capacity, 3)}\\mathrm{kip}`), ax.name);
     if (geo) m(ok("P_{ue}", `${num(geo.capacity, 3)}\\mathrm{kip}`), geo.name);
     if (gw.end) wingEndWorked(w, gw.end, "c");
+    const pu = gw.push;
+    if (pu && gw.end) {
+      text("The wingwall's push square to the abutment:- P sin θ pushes the cap and diaphragm's end past the exterior girder, which carries it into the superstructure. The end is a horizontal cantilever from that girder, with the wingwall's My, the passive pressure on it (1.35, AASHTO 3.11.5.4) and the tension along it. The corner bars count by how far they run past the girder against their ℓd.", undefined, { keepWithNext: true });
+      m(`H_{wc}\\coloneq ${num(gw.end.Nu / gw.end.cos, 3)}\\mathrm{kip}\\cdot\\sin\\left(${num(Math.abs(i.skew))}\\mathrm{deg}\\right)=`, "The wingwall's thrust × sin θ", "kip");
+      m(`a_{g}\\coloneq ${num(pu.a, 3)}\\mathrm{ft}`, "The cap's end to the exterior girder");
+      m(`p_{oh}\\coloneq ${num(pu.pOh, 3)}\\frac{\\mathrm{kip}}{\\mathrm{ft}}`, "Passive pressure on the end, 1.35 × 0.5 Kp γs H², per foot along it");
+      m("M_{pc}\\coloneq M_{ywc}+H_{wc}\\cdot a_{g}+\\frac{p_{oh}\\cdot a_{g}^{2}}{2}=", "About the vertical axis, at the girder", "kip*ft");
+      m(`k_{C}\\coloneq\\min\\left(1,\\frac{${num(pu.past, 3)}\\mathrm{in}}{${num(pu.ld, 3)}\\mathrm{in}}\\right)=`, "The corner bars past the girder over their ℓd (AASHTO 5.10.8.2.1)");
+      m(`A_{pc}\\coloneq ${num(pu.AsF - pu.kC * gw.end.AsCorner, 3)}\\mathrm{in}^{2}+k_{C}\\cdot${num(gw.end.AsCorner, 3)}\\mathrm{in}^{2}=`, "The back face's bars there", "in^2");
+      m(`a_{pc}\\coloneq\\frac{A_{pc}\\cdot f_{y}}{0.85\\cdot f'_{c}\\cdot${num(gw.end.h, 3)}\\mathrm{in}}=`, undefined, "in");
+      m("M_{rpc}\\coloneq0.9\\cdot A_{pc}\\cdot f_{y}\\cdot\\left(d_{ywc}-\\frac{a_{pc}}{2}\\right)=", "AASHTO 5.6.3.2", "kip*ft");
+      m(`P_{rpc}\\coloneq ${num(pu.PrF, 3)}\\mathrm{kip}`, "All the bars along the abutment there, in tension");
+      m(`M_{xpc}\\coloneq ${num(pu.Mx, 3)}\\mathrm{kip}\\cdot\\mathrm{ft}`, "About the horizontal axis: the wingwall's, with the cap's own at the girder");
+      m(ok("\\frac{N_{wc}}{P_{rpc}}+\\frac{M_{pc}}{M_{rpc}}+\\frac{M_{xpc}}{M_{rxwc}}", "1"), "Linear interaction, AASHTO 5.6.2");
+      m("V_{pc}\\coloneq H_{wc}+p_{oh}\\cdot a_{g}=", "Its shear there", "kip");
+      m(`d_{vpc}\\coloneq ${num(pu.dvH, 3)}\\mathrm{in}`, "Across the cap's width, AASHTO 5.7.2.8");
+      m(ok("V_{pc}", `0.9\\cdot0.0316\\cdot2\\cdot\\sqrt{\\frac{f'_{c}}{\\mathrm{ksi}}}\\cdot\\mathrm{ksi}\\cdot${num(gw.end.h, 3)}\\mathrm{in}\\cdot d_{vpc}`), "Shear, the concrete alone, AASHTO 5.7.3.3");
+    }
   }
 
   text("The end diaphragm under passive pressure (AASHTO 3.11.5.4)", "subheading", { keepWithNext: true });
@@ -502,6 +520,31 @@ function seatWorked(w: Writer, i: AbutmentInputs, r: AbutmentResult, s: NonNulla
     m("M_{DC0}\\coloneq DC_{st}\\cdot x_{st}+DC_{bw}\\cdot x_{bw}+DC_{ft}\\cdot x_{ft}+DC_{g}\\cdot x_{dg}=", "The abutment's own, about the toe", "kip*ft/ft");
     m("M_{DC}\\coloneq M_{DC0}+DC_{wg}\\cdot x_{wg}=", "With the wingwalls'", "kip*ft/ft");
   } else m("M_{DC}\\coloneq DC_{st}\\cdot x_{st}+DC_{bw}\\cdot x_{bw}+DC_{ft}\\cdot x_{ft}+DC_{g}\\cdot x_{dg}=", "Its moment about the toe", "kip*ft/ft");
+  const wp = s.wingPush;
+  const qW = !!wp && wp.qWu > 0;
+  if (wp) {
+    const two = wp.nWing === 2;
+    text(`The wingwall${two ? "s'" : "'s"} thrust square to the abutment:- on the skew θ, P sin θ at ${two ? "each end, pushing opposite ways: a couple about the vertical axis" : "its end: a net force F, off the middle by L/2, with the wingwall's My"}. ${wp.onPiles ? "The piles share the couple elastically, linear along the abutment (6T/L² per foot at the ends): the piles are checked for the end strip." : `The footing takes ${two ? "the couple" : "F with the earth pressure, and the couple"} by friction (below).`}`, undefined, { keepWithNext: true });
+    m(`\\theta_{w}\\coloneq ${num(Math.abs(i.skew))}\\mathrm{deg}`, "The skew");
+    m(`L_{ab}\\coloneq ${num(i.length)}\\mathrm{ft}`, "The abutment's length");
+    m(`H_{wu}\\coloneq ${num(wp.Pu, 3)}\\mathrm{kip}\\cdot\\sin\\left(\\theta_{w}\\right)=`, "The wingwall's thrust × sin θ, Strength I", "kip");
+    m(`H_{ws}\\coloneq ${num(wp.Ps, 3)}\\mathrm{kip}\\cdot\\sin\\left(\\theta_{w}\\right)=`, "The same, Service I", "kip");
+    if (two) {
+      m("T_{wu}\\coloneq H_{wu}\\cdot L_{ab}=", "The couple, Strength I", "kip*ft");
+      m("T_{ws}\\coloneq H_{ws}\\cdot L_{ab}=", "Service I", "kip*ft");
+    } else {
+      m(`T_{wu}\\coloneq H_{wu}\\cdot\\frac{L_{ab}}{2}+${num(wp.Myu, 3)}\\mathrm{kip}\\cdot\\mathrm{ft}=`, "About the middle, with the wingwall's My, Strength I", "kip*ft");
+      m(`T_{ws}\\coloneq H_{ws}\\cdot\\frac{L_{ab}}{2}+${num(wp.Mys, 3)}\\mathrm{kip}\\cdot\\mathrm{ft}=`, "Service I", "kip*ft");
+    }
+    if (qW) {
+      const F = (k: string) => (two ? "" : `\\frac{H_{w${k}}}{L_{ab}}`);
+      const C = (k: string) => (wp.onPiles ? `${two ? "" : "+"}\\frac{6\\cdot T_{w${k}}}{L_{ab}^{2}}` : "");
+      m(`q_{Wu}\\coloneq ${F("u")}${C("u")}=`, wp.onPiles ? "Per foot at the end, Strength I" : "The net force per foot, Strength I", "kip/ft");
+      m(`q_{Ws}\\coloneq ${F("s")}${C("s")}=`, "Service I", "kip/ft");
+      m(`y_{Wu}\\coloneq ${num(wp.yWu, 3)}\\mathrm{ft}`, "Its height above the footing's bottom, Strength I");
+      m(`y_{Ws}\\coloneq ${num(wp.yWs, 3)}\\mathrm{ft}`, "Service I");
+    }
+  }
   for (const c of combos) {
     const f = (v: number) => (v === 1 ? "" : `${v}\\cdot `);
     const llV = c.ll > 0 ? `+${f(c.ll)}LL_{g}` : "";
@@ -514,8 +557,12 @@ function seatWorked(w: Writer, i: AbutmentInputs, r: AbutmentResult, s: NonNulla
     m(`M_{R${c.k}}\\coloneq ${f(c.dc)}M_{DC}+P_{s${c.k}}\\cdot x_{br}+\\left(${f(c.ev)}EV_{h}${lsvV}\\right)\\cdot x_{h}=`, "Resisting", "kip*ft/ft");
     const br = c.ll > 0 ? "+1.75\\cdot BR" : "";
     const lsH = ls ? `+H_{l${c.k}}` : "";
-    m(`F_{h${c.k}}\\coloneq ${f(c.eh)}EH${br}+${f(c.tu)}TU${lsH}=`, "Horizontal", "kip/ft");
-    m(`M_{O${c.k}}\\coloneq ${f(c.eh)}EH\\cdot\\frac{H}{3}${c.ll > 0 ? "+1.75\\cdot BR\\cdot y_{BR}" : ""}+${f(c.tu)}TU\\cdot y_{BR}${lsH ? `${lsH}\\cdot\\frac{H}{2}` : ""}=`, "Overturning", "kip*ft/ft");
+    const wk = c.k === "c" ? "s" : "u";
+    const qH = qW ? `+q_{W${wk}}` : "";
+    if (qW) m(`M_{W${c.k}}\\coloneq q_{W${wk}}\\cdot y_{W${wk}}=`, "The wingwall's push, overturning", "kip*ft/ft");
+    const qM = qW ? `+M_{W${c.k}}` : "";
+    m(`F_{h${c.k}}\\coloneq ${f(c.eh)}EH${br}+${f(c.tu)}TU${lsH}${qH}=`, "Horizontal", "kip/ft");
+    m(`M_{O${c.k}}\\coloneq ${f(c.eh)}EH\\cdot\\frac{H}{3}${c.ll > 0 ? "+1.75\\cdot BR\\cdot y_{BR}" : ""}+${f(c.tu)}TU\\cdot y_{BR}${lsH ? `${lsH}\\cdot\\frac{H}{2}` : ""}${qM}=`, "Overturning", "kip*ft/ft");
     m(`x_{R${c.k}}\\coloneq\\frac{M_{R${c.k}}-M_{O${c.k}}}{V_{${c.k}}}=`, "The resultant from the toe", "ft");
     m(`e_{${c.k}}\\coloneq\\frac{B}{2}-x_{R${c.k}}=`, "Eccentricity", "ft");
   }
@@ -550,6 +597,12 @@ function seatWorked(w: Writer, i: AbutmentInputs, r: AbutmentResult, s: NonNulla
     m(`\\phi_{s}\\coloneq ${num(i.phi)}\\mathrm{deg}`, "Foundation soil");
     m(`\\phi_{\\tau}\\coloneq ${num(i.phiTau)}`, "AASHTO Table 10.5.5.2.2-1");
     m(ok("F_{hb}", "\\phi_{\\tau}\\cdot V_{b}\\cdot\\tan\\left(\\phi_{s}\\right)"), "Sliding, AASHTO 10.6.3.4");
+    if (s.footing.twist) {
+      text("Sliding with the wingwalls' twist:- the footing slides and turns as a rigid body, the friction at its limit everywhere, reversed over a length x at one end. That length's couple R x (L − x) takes T; what is left, R √(1 − 4T/(R L²)) per foot, takes the sliding force.", undefined, { keepWithNext: true });
+      m("R_{f}\\coloneq\\phi_{\\tau}\\cdot V_{b}\\cdot\\tan\\left(\\phi_{s}\\right)=", "Friction per foot", "kip/ft");
+      m("k_{T}\\coloneq1-\\frac{4\\cdot T_{wu}}{R_{f}\\cdot L_{ab}^{2}}=", "What the twist leaves (0 or less: it slides)");
+      m(ok("F_{hb}", "R_{f}\\cdot\\sqrt{\\max\\left(k_{T},0\\right)}"), "Sliding with the twist, AASHTO 10.6.3.4");
+    }
   } else if (s.piles) {
     text(`H-piles, ${i.section}, two rows`, "subheading", { keepWithNext: true });
     m(`x_{f}\\coloneq ${num(i.rowFront)}\\mathrm{ft}`, "Front row from the toe");
@@ -589,6 +642,23 @@ function seatWorked(w: Writer, i: AbutmentInputs, r: AbutmentResult, s: NonNulla
   if (ls) m("V_{lst}\\coloneq1.75\\cdot\\Delta_{p}\\cdot H_{st}=", "The surcharge's shear on the stem", "kip/ft");
   shear(w, "st", `\\gamma_{EH}\\cdot0.5\\cdot K\\cdot\\gamma_{s}\\cdot H_{st}^{2}+1.75\\cdot BR+0.5\\cdot TU${ls ? "+V_{lst}" : ""}=`, "st", "Stem shear, AASHTO 5.7.3.3");
   if (s.wingStem) wingEndWorked(w, s.wingStem, "s");
+  if (s.wingPush?.stem) {
+    const sp = s.wingPush.stem;
+    text("The stem's end, pushed square by the wingwall:- P sin θ at height y on the end, toward the span at one corner (with the earth pressure). It spreads at 45° down to the footing one way, the end being free: over a width y at the base.", undefined, { keepWithNext: true });
+    m(`y_{wp}\\coloneq ${num(sp.y, 3)}\\mathrm{ft}`, "The thrust's height above the footing");
+    m("M_{pst}\\coloneq M_{ust}+\\frac{H_{wu}\\cdot y_{wp}}{y_{wp}}=", "The stem's moment at the end", "kip*ft/ft");
+    const eb = sp.end;
+    if (eb) {
+      text(`Added bars at the end:- #${eb.bar} back-face bars between the main bars, over ${num(eb.width)} ft from ${eb.ends === 2 ? "each wingwall's end" : "the wingwall's end"}, hooked into the footing like them.`, undefined, { keepWithNext: true });
+      m(`A_{sep}\\coloneq A_{sst}+\\frac{${num(BARS[eb.bar].area)}\\mathrm{in}^{2}}{${num(eb.spacing)}\\mathrm{in}}=`, "The main bars and the added ones", "in^2/ft");
+      m("a_{ep}\\coloneq\\frac{A_{sep}\\cdot f_{y}}{0.85\\cdot f'_{c}}=", undefined, "in");
+      m("M_{rep}\\coloneq\\phi_{f}\\cdot A_{sep}\\cdot f_{y}\\cdot\\left(d_{est}-\\frac{a_{ep}}{2}\\right)=", "AASHTO 5.6.3.2", "kip*ft/ft");
+      m(ok("M_{pst}", "M_{rep}"), "Flexure at the end, AASHTO 5.6.3.2");
+      if (eb.width < sp.y) m(ok(`${num(sp.y, 3)}\\mathrm{ft}`, `${num(eb.width)}\\mathrm{ft}`), "Over the spread width at the base");
+    } else m(ok("M_{pst}", "M_{rst}"), "Flexure at the end, AASHTO 5.6.3.2");
+    m("V_{pst}\\coloneq V_{ust}+\\frac{H_{wu}}{y_{wp}}=", "Its shear at the end", "kip/ft");
+    m(ok("V_{pst}", "V_{rst}"), "Shear at the end, AASHTO 5.7.3.3");
+  }
 
   if (!semi) {
     text("Backwall at the seat", "subheading", { keepWithNext: true });

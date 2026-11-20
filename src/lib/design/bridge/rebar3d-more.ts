@@ -205,6 +205,8 @@ export type AbutmentBarInputs = {
   seatU?: Bars;
   footLongTop?: Bars;
   footLongBot?: Bars;
+  /** The stem's added back-face bars at the wingwalls' ends, as designed (foundations/abutment.ts stemEndBarsOf). */
+  stemEnd?: { bar: number; spacing: number; width: number; ends: number } | null;
 };
 
 /**
@@ -250,6 +252,18 @@ export function abutmentBars(host: number, e: IfcElement, which: "cap" | "diaphr
       return local(host, v.bar, "main", `#${v.bar} @ ${v.spacing} in stem, ${what}`, [p3(0, -back * leg, zBot), p3(0, 0, zBot), p3(0, 0, Z - c)], alongX(c, ft(v.spacing)).map((x) => p3(x, face * (Y / 2 - c - db(v.bar) / 2), 0)));
     };
     const out = [vertical(b, back, "back face"), vertical(f, -back, "front face")];
+    // The added back-face bars at the wingwalls' ends, halfway between the main bars, over the width from each end.
+    const eb = i.stemEnd;
+    if (eb) {
+      const s = ft(eb.spacing);
+      const main = alongX(c, s);
+      const w = ft(eb.width * 12);
+      const xs = main.slice(0, -1).map((x, k) => (x + main[k + 1]) / 2).filter((x) => x - -X / 2 <= w || (eb.ends === 2 && X / 2 - x <= w));
+      if (xs.length) {
+        const leg = ft(hookLeg(eb.bar).leg);
+        out.push(local(host, eb.bar, "main", `#${eb.bar} stem, back face, added at the wingwalls' ends`, [p3(0, -back * leg, zBot), p3(0, 0, zBot), p3(0, 0, Z - c)], xs.map((x) => p3(x, back * (Y / 2 - c - db(eb.bar) / 2), 0))));
+      }
+    }
     // The horizontal bars inside the verticals, each face.
     const zs = stations(c, Z - c, ft(h.spacing));
     for (const [v, face] of [[b, back], [f, -back]] as const)

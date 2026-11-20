@@ -11,6 +11,7 @@ import { columnShaftConnection } from "../piers/column-shaft";
 import { shaftCageOf } from "./loadpath";
 import { designWingwall } from "../walls/wingwall";
 import { wingwallInputs } from "../kinds";
+import { stemEndBarsOf } from "../foundations/abutment";
 
 /** A wingwall's corner bars and their legs (in), as its design gives them; none where it can't be designed. */
 function wingCorner(w: Parameters<typeof wingwallInputs>[0]) {
@@ -141,7 +142,7 @@ export function rebarModel(b: BridgeInputs, els: IfcElement[], d: { girders: (Gi
         } else {
           const a = d.comps.abutments?.[k]?.inputs;
           const which = /pile cap/.test(n) ? "cap" : /diaphragm/.test(n) ? "diaphragm" : /stem/.test(n) ? "stem" : /backwall/.test(n) ? "backwall" : /footing/.test(n) ? "footing" : null;
-          if (a && which) placed = abutmentBars(host, e, which, a, back);
+          if (a && which) placed = abutmentBars(host, e, which, which === "stem" ? { ...a, stemEnd: stemEndBarsOf(a) } : a, back);
           else if (!a) missing.add(`${b.supports[k].name}`);
         }
       } else if (category === "footing" && k !== null) {

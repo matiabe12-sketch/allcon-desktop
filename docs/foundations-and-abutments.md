@@ -129,6 +129,22 @@ shear under earth pressure (3.11.5), live load surcharge (3.11.6.4) and the brid
 bearing seat width (4.7.4.4). Quantities: abutment concrete 601-03040, 602-00020, piles or shafts,
 206 excavation and backfill.
 
+Integral with steel girders (`girderMaterial: "steel"`, `steelEnds`): the girders' ends are cast into the
+diaphragm (BDM 11.3.1, Figure 11-1 note 3).
+
+- **The pull:** as the bridge contracts, the girders pull the abutment with the foundation elements' head
+  shears at the movement (from the p–y run), plus 1.75 × braking. Each girder carries its share.
+- **Studs on each girder's end:** for that pull, Qr = φsc 0.70 Asc Fu (6.10.10.4.3).
+- **The web at the through bars' holes:** the end shear on the net web, Vp (6.10.9.2). The holes are at least
+  the bar plus 1/2 in.
+- **Dowels across the cap-to-diaphragm joint, per foot:** by shear friction (5.7.4.3, 5.7.4.4: roughened
+  1/4 in, c 0.24 ksi, μ 1.0, K1 0.25, K2 1.5 ksi), with the diaphragm's weight as Pc.
+  - The force is the larger of the pull and the expansion's push of the cap: 1.35 × the passive pressure on
+    the cap's own face below the joint, with the piles' shears and braking.
+  - The minimum interface steel (5.7.4.2) applies, and the dowels are developed into the diaphragm (5.10.8.2.1).
+- **Take-off:** the through bars and the dowels are in the abutment's schedule. The studs are paid with the
+  structural steel (509).
+
 ## Validation
 
 - Bearing: NHI-06-089 Example 8-1 (qult = 13,425 psf; 12,414 psf with water at the base).

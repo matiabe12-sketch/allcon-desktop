@@ -233,3 +233,24 @@ describe("the pile cap's and the drilled shaft's worked calcs", () => {
     });
   }
 });
+
+describe("steel girders' ends in an integral abutment's diaphragm", () => {
+  const i = abutmentInputs({ girderMaterial: "steel" });
+  const r = designAbutment(i);
+  const se = r.integral!.steelEnds!;
+  it("studs for each girder's pull (the piles' head shears and braking), the web's net section at the holes, the dowels by shear friction", () => {
+    expect(se.pull).toBeCloseTo(se.piles + 1.75 * i.braking, 9);
+    expect(se.perGirder).toBeCloseTo(se.pull / i.nGirders, 9);
+    expect(se.Qr).toBeCloseTo(0.7 * ((Math.PI * 0.875 ** 2) / 4) * 60, 9);
+    expect(se.Dnet).toBeCloseTo(42 - 3 * 1.375, 9);
+    expect(r.checks.filter((c) => c.id.startsWith("steel-") && !c.ok).map((c) => c.name)).toEqual([]);
+  });
+  it("its worked calc: no errors, no NG, every line on the page", () => {
+    const c = workOut("abutment", i);
+    expect(c.errors).toEqual([]);
+    expect(c.ng).toEqual([]);
+    expect(c.wide).toEqual([]);
+    close(c.value(String.raw`T_{g}\coloneq`, "kip"), se.perGirder);
+  });
+  it("precast girders have none of it", () => expect(designAbutment(abutmentInputs({})).integral!.steelEnds).toBeNull());
+});

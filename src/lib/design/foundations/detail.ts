@@ -5,7 +5,8 @@ import { markGroups, schedule, type ConcreteItem } from "../rebar/schedule";
 import { ftT, inT, plus18T } from "../takeoff/tex";
 import type { DetailView, Takeoff } from "../takeoff/types";
 import { num } from "../calc-style";
-import type { AbutmentInputs } from "./abutment";
+import { STEEL_ENDS_DEFAULTS, type AbutmentInputs } from "./abutment";
+import { development } from "../stm/anchorage";
 import type { FootingInputs } from "./footing";
 import type { MicropileInputs } from "./micropile";
 import type { PileInputs } from "./piles";
@@ -328,6 +329,15 @@ export function abutmentTakeoff(i: AbutmentInputs): Takeoff {
     pre.push({ size: i.stirrup.bar, count: countAt(Li - 4, i.stirrup.spacing), shape: { kind: "closed", dims: [roundDown(w), roundDown(h)], hook: 6 }, length: roundDown(2 * (w + h) + 12), use: "Cap stirrups", callout: `#${i.stirrup.bar} stirrups @ ${ftIn(i.stirrup.spacing)}`, where: "cap" });
     const above = (i.totalDepth - i.capDepth) * 12;
     run({ size: i.diaphragmBars.bar, count: 2 * countAt(above - 4, i.diaphragmBars.spacing), straight: Li - 4, use: "Diaphragm, horizontal", callout: `#${i.diaphragmBars.bar} @ ${ftIn(i.diaphragmBars.spacing)} each face (diaphragm)`, cover: 2, spacing: i.diaphragmBars.spacing });
+    // Steel girders: the bars through the webs (continuous along the abutment) and the dowels from the cap into the
+    // diaphragm, each end developed (AASHTO 5.10.8.2.1).
+    if (i.girderMaterial === "steel") {
+      const se = { ...STEEL_ENDS_DEFAULTS, ...(i.steelEnds ?? {}) };
+      run({ size: se.throughBar, count: se.holes, straight: Li - 4, use: "Through the girders' webs", callout: `${se.holes} #${se.throughBar} through the webs (${se.holeD} in holes)`, cover: 2, spacing: 6 });
+      const ldDowel = development({ barSize: se.dowels.bar, fy: i.fy, fc: i.fc, clearCover: i.cover, clearSpacing: Math.max(3, se.dowels.spacing - BARS[se.dowels.bar].dia), horizontal: false, concreteBelow: 0, coating: "epoxy" }).required;
+      const dl = roundDown(2 * Math.ceil(ldDowel));
+      pre.push({ size: se.dowels.bar, count: countAt(Li - 4, se.dowels.spacing), shape: { kind: "straight", dims: [dl] }, length: dl, use: "Dowels, cap to diaphragm", callout: `#${se.dowels.bar} dowels @ ${ftIn(se.dowels.spacing)}, ${ftIn(dl / 12)} long (half each side of the joint)`, where: "cap" });
+    }
     cy = (i.length * i.capWidth * i.totalDepth) / 27;
     concrete.push({ label: "Cap and end diaphragm", cy, basis: `${i.length} ft × ${i.capWidth} ft × ${i.totalDepth} ft (the girders' ends not deducted)`, math: `${ftT(i.length)}\\cdot ${ftT(i.capWidth)}\\cdot ${ftT(i.totalDepth)}`, ref: "Integral abutment: length × width × depth" });
     if (i.type === "integral-piles") {
@@ -398,6 +408,6 @@ export function abutmentTakeoff(i: AbutmentInputs): Takeoff {
     schedule: schedule(groups, concrete),
     quantities: q,
     views: [abutmentSection(i, (use) => groups.find((g) => g.use === use)?.mark ?? "")],
-    notes: ["Concrete Class D (Bridge) or DF and epoxy-coated bars (BDM 11.3.1 Notes 1 and 6).", "Wingwalls are detailed in the Cantilever Wingwall tool; the approach slab's notch and the girders' anchorage (strands, #7 bars in PVC sleeves) are not included."],
+    notes: ["Concrete Class D (Bridge) or DF and epoxy-coated bars (BDM 11.3.1 Notes 1 and 6).", i.girderMaterial === "steel" ? "Wingwalls are detailed in the Cantilever Wingwall tool; the approach slab's notch is not included. Steel girders: the bars through the webs and the dowels from the cap are in the schedule; the studs on the girders' ends are paid with the structural steel (509)." : "Wingwalls are detailed in the Cantilever Wingwall tool; the approach slab's notch and the girders' anchorage (strands, #7 bars in PVC sleeves) are not included."],
   };
 }

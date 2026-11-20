@@ -364,6 +364,30 @@ function integralWorked(w: Writer, i: AbutmentInputs, r: AbutmentResult, g: NonN
   m("p_{b}\\coloneq K_{p}\\cdot\\gamma_{s}\\cdot D_{t}=", "At its bottom", "ksf");
   m(`S_{g}\\coloneq ${num(i.girderSpacing)}\\mathrm{ft}`, "Girder spacing: the diaphragm spans between girders");
   member(w, "d", "Diaphragm, horizontal bars", { Mu: "\\frac{1.35\\cdot p_{b}\\cdot S_{g}^{2}}{10}=", h: i.capWidth * 12, cover: 2, bars: i.diaphragmBars, exposure: i.exposure });
+
+  // Steel girders' ends cast into the diaphragm: studs, the web at the through bars' holes, and the cap-to-diaphragm dowels.
+  const se = g.steelEnds;
+  if (se) {
+    text("Steel girders' ends in the diaphragm (CDOT BDM 11.3.1, Figure 11-1 note 3)", "subheading", { keepWithNext: true });
+    text("Method:- as the bridge contracts the girders pull the abutment through the piles' head shears, with braking; each girder's end carries its share into the diaphragm by studs. The web keeps its net section at the holes for the bars through it. The cap and diaphragm, cast apart, are tied by dowels across the joint for the larger of the contraction's pull and the expansion's push of the cap (the passive pressure on its own face with the piles' shears and braking).", undefined, { keepWithNext: true });
+    m(`H_{p}\\coloneq ${num(se.piles)}\\mathrm{kip}`, "The foundation elements' head shears at the movement, all of them");
+    m(`H_{br}\\coloneq1.75\\cdot ${num(i.braking)}\\mathrm{kip}=`, "Braking, Strength I", "kip");
+    m(`T_{g}\\coloneq\\frac{H_{p}+H_{br}}{${i.nGirders}}=`, "Each girder's pull", "kip");
+    m(`A_{sc}\\coloneq\\frac{\\pi\\cdot\\left(${num(se.studD, 3)}\\mathrm{in}\\right)^{2}}{4}=`, "One stud", "in^2");
+    m(`Q_{r}\\coloneq1.0\\cdot0.70\\cdot A_{sc}\\cdot ${num(se.studFu)}\\mathrm{ksi}=`, "AASHTO Eq. 6.10.10.4.3-1, φsc 1.0", "kip");
+    m(ok("T_{g}", `${se.studs}\\cdot Q_{r}`), `${se.studs} studs on each girder's end`);
+    m(`V_{end}\\coloneq ${num(se.Vend)}\\mathrm{kip}`, "The girder's end shear, Strength I with IM");
+    m(`D_{net}\\coloneq ${num(se.D)}\\mathrm{in}-${se.holes}\\cdot ${num(se.holeD, 4)}\\mathrm{in}=`, "The web less the through bars' holes", "in");
+    m(ok("V_{end}", `1.0\\cdot0.58\\cdot ${num(se.Fyw)}\\mathrm{ksi}\\cdot D_{net}\\cdot ${num(se.tw, 4)}\\mathrm{in}`), "AASHTO 6.10.9.2, Vp on the net web");
+    m(`p_{cap}\\coloneq ${num(se.pushCap, 3)}\\frac{\\mathrm{kip}}{\\mathrm{ft}}`, "1.35 × the passive pressure's resultant on the cap's face below the joint");
+    m(`V_{ui}\\coloneq p_{cap}+\\frac{H_{p}+H_{br}}{${num(i.length)}\\mathrm{ft}}=`, "Across the joint, per foot", "kip/ft");
+    m(`A_{cv}\\coloneq ${num(i.capWidth * 12)}\\mathrm{in}\\cdot12\\frac{\\mathrm{in}}{\\mathrm{ft}}=`, "The joint's area, per foot of abutment", "in^2/ft");
+    m(`A_{vf}\\coloneq\\frac{${num(BARS[se.dowels.bar].area)}\\mathrm{in}^{2}}{${num(se.dowels.spacing)}\\mathrm{in}}=`, `#${se.dowels.bar} dowels @ ${num(se.dowels.spacing)} in`, "in^2/ft");
+    m(`P_{c}\\coloneq ${num(se.Pc, 3)}\\frac{\\mathrm{kip}}{\\mathrm{ft}}`, "The diaphragm's weight on the joint");
+    m("V_{ni}\\coloneq0.24\\mathrm{ksi}\\cdot A_{cv}+1.0\\cdot\\left(A_{vf}\\cdot f_{y}+P_{c}\\right)=", "AASHTO Eq. 5.7.4.3-3, roughened 1/4 in (c 0.24 ksi, μ 1.0)", "kip/ft");
+    m("V_{nm}\\coloneq\\min\\left(V_{ni},0.25\\cdot f'_{c}\\cdot A_{cv},1.5\\mathrm{ksi}\\cdot A_{cv}\\right)=", "AASHTO 5.7.4.4 (K1 0.25, K2 1.5 ksi)", "kip/ft");
+    m(ok("V_{ui}", "0.9\\cdot V_{nm}"), "AASHTO Eq. 5.7.4.3-1");
+  }
 }
 
 function seatWorked(w: Writer, i: AbutmentInputs, r: AbutmentResult, s: NonNullable<AbutmentResult["seat"]>) {

@@ -6,6 +6,7 @@ import { analyzeLateral, type Layer } from "./lateral";
 import { pMultiplier, toLayers, type SoilLayer } from "./piles";
 import { designMicropile, MICROPILE_DEFAULTS, type MicropileInputs } from "./micropile";
 import { gridPiles, groupForces, type GroupPile } from "./micropile-group";
+import { development } from "../stm/anchorage";
 
 // A bridge abutment, CDOT BDM 11.3 with AASHTO LRFD (10th Edition) 3.11, 3.12, 4.7.4.4, 5, 6.15, 10
 // and 11.6.
@@ -84,6 +85,8 @@ export type AbutmentInputs = {
   capBot: { bar: number; count: number };
   stirrup: { bar: number; spacing: number; legs: number };
   diaphragmBars: Bars; // horizontal, each face
+  /** Integral with steel girders: the girders' ends cast into the diaphragm (web, through-bar holes, studs, cap-to-diaphragm dowels). */
+  steelEnds?: Partial<SteelEnds>;
   stemBars: Bars; // back face, vertical
   backwallBars: Bars;
   toeBars: Bars; // footing bottom, across it
@@ -146,6 +149,22 @@ export type AbutmentInputs = {
   phiTau: number;
 };
 
+/** Steel girders' ends in an integral abutment's diaphragm: the web, the holes for the bars through it, the studs on the end, and the dowels from the cap. */
+export type SteelEnds = {
+  D: number; // in, web depth
+  tw: number; // in
+  Fyw: number; // ksi
+  holes: number; // through-bar holes in each web
+  holeD: number; // in
+  throughBar: number; // the bars through the webs (#), continuous along the abutment
+  studs: number; // per girder end, in the diaphragm
+  studD: number; // in
+  studFu: number; // ksi
+  dowels: Bars; // vertical, the cap into the diaphragm
+};
+export const STEEL_ENDS_DEFAULTS: SteelEnds = { D: 42, tw: 0.5, Fyw: 50, holes: 3, holeD: 1.375, throughBar: 6, studs: 12, studD: 0.875, studFu: 60, dowels: { bar: 6, spacing: 12 } };
+type SteelEndsResult = SteelEnds & { piles: number; brake: number; pull: number; perGirder: number; Qr: number; Vend: number; Dnet: number; Vui: number; pushCap: number; Acv: number; Avf: number; Pc: number; Vri: number; ld: number; Hjoint: number };
+
 /** An integral abutment on twelve HP 12x53 piles in 10 ft prebores with pea gravel, for a 240 ft precast girder unit. */
 export const ABUTMENT_DEFAULTS: AbutmentInputs = {
   type: "integral-piles",
@@ -195,6 +214,7 @@ export const ABUTMENT_DEFAULTS: AbutmentInputs = {
   capBot: { bar: 8, count: 6 },
   stirrup: { bar: 5, spacing: 12, legs: 2 },
   diaphragmBars: { bar: 6, spacing: 12 },
+  steelEnds: STEEL_ENDS_DEFAULTS,
   stemBars: { bar: 8, spacing: 9 },
   backwallBars: { bar: 6, spacing: 12 },
   toeBars: { bar: 8, spacing: 9 },
@@ -471,8 +491,46 @@ export function designAbutment(i: AbutmentInputs) {
     const pBottom = Kp * (i.backfillGamma / 1000) * i.totalDepth; // ksf
     const Mdia = (1.35 * pBottom * i.girderSpacing ** 2) / 10;
     const dia = flexure({ ...common, Mu: Mdia, Ms: Mdia / 1.35, h: i.capWidth * 12, cover: 2, bars: i.diaphragmBars });
+    // Steel girders cast into the end diaphragm (CDOT BDM 11.3.1 Figure 11-1 note 3): their anchorage. The girders pull the
+    // abutment through the piles' shears as the bridge contracts (and braking), so each girder's end carries that share
+    // by studs inside the diaphragm (AASHTO 6.10.10.4.3, Qn = 0.70 Asc Fu, φsc 1.0); the web's holes for the through
+    // bars leave its net section for the end shear (6.10.9.2 on the net web); the cap and diaphragm, cast apart, are
+    // tied by dowels across the joint by shear friction (5.7.4): the contraction's pull or the expansion's push of the
+    // cap (its own face's passive pressure, 1.35, with the piles' shears and braking), per foot.
+    let steelEnds: SteelEndsResult | null = null;
+    if (i.girderMaterial === "steel") {
+      const se = { ...STEEL_ENDS_DEFAULTS, ...(i.steelEnds ?? {}) };
+      const lat = foundation?.lat;
+      const nFound = foundation?.kind === "micropiles" ? foundation.nPiles : n;
+      const piles = lat ? Math.abs(lat.H0) * nFound : 0; // kip, all the foundation elements' head shears at the movement
+      const brake = 1.75 * i.braking;
+      const pull = piles + brake; // kip, the whole abutment
+      const perGirder = pull / i.nGirders;
+      const Asc = (Math.PI * se.studD ** 2) / 4;
+      const Qr = 1.0 * 0.7 * Asc * se.studFu;
+      add({ id: "steel-studs", name: `Steel girder ends: studs in the diaphragm, ${se.studs} – ${se.studD} in each girder (the piles' shears ${piles.toFixed(0)} kip and braking ${brake.toFixed(0)} kip over ${i.nGirders} girders)`, demand: perGirder, capacity: se.studs * Qr, unit: "kip", ref: "AASHTO 6.10.10.4.3; CDOT BDM 11.3.1 (Fig. 11-1 note 3)" });
+      // The end shear on the web's net section at the through bars' holes.
+      const Vend = 1.25 * i.RDC + 1.5 * i.RDW + 1.75 * i.RLL * (1 + i.IM);
+      const Dnet = se.D - se.holes * se.holeD;
+      add({ id: "steel-web-holes", name: `Steel girder ends: the web at the through bars' holes, ${se.holes} holes of ${se.holeD} in in a ${se.D} × ${se.tw} in web`, demand: Vend, capacity: 1.0 * 0.58 * se.Fyw * Dnet * se.tw, unit: "kip", ref: "AASHTO 6.10.9.2 (Vp on the net web)" });
+      add({ id: "steel-hole-size", name: "Through-bar holes at least the bar plus 1/2 in", demand: BARS[se.throughBar].dia + 0.5, capacity: se.holeD, unit: "in", ref: "CDOT BDM 11.3.1 (bars through the webs)" });
+      // Dowels across the cap-to-diaphragm joint, per foot.
+      const Hjoint = i.totalDepth - i.capDepth; // ft, the diaphragm above the joint
+      const pushCap = 1.35 * 0.5 * Kp * (i.backfillGamma / 1000) * (i.totalDepth ** 2 - Hjoint ** 2); // kip/ft, the cap's face
+      const Vui = Math.max(pull / i.length, pushCap + pull / i.length); // kip/ft
+      const Acv = i.capWidth * 12 * 12; // in² per foot
+      const Avf = (BARS[se.dowels.bar].area * 12) / se.dowels.spacing; // in²/ft
+      const Pc = i.gammaC * i.capWidth * Hjoint; // kip/ft, the diaphragm's weight
+      const Vni = 0.24 * Acv + 1.0 * (Avf * i.fy + Pc);
+      const Vri = 0.9 * Math.min(Vni, 0.25 * i.fc * Acv, 1.5 * Acv);
+      add({ id: "steel-dowels", name: `Dowels, cap to diaphragm: #${se.dowels.bar} @ ${se.dowels.spacing} in across the joint (roughened 1/4 in)`, demand: Vui, capacity: Vri, unit: "kip/ft", ref: "AASHTO 5.7.4.3, 5.7.4.4 (c 0.24 ksi, μ 1.0)" });
+      if (Vui / Acv >= 0.21) add({ id: "steel-dowels-min", name: "Dowels: minimum interface steel, 0.05 Acv / fy", demand: (0.05 * Acv) / i.fy, capacity: Avf, unit: "in²/ft", ref: "AASHTO 5.7.4.2" });
+      const ld = development({ barSize: se.dowels.bar, fy: i.fy, fc: i.fc, clearCover: i.cover, clearSpacing: Math.max(3, se.dowels.spacing - BARS[se.dowels.bar].dia), horizontal: false, concreteBelow: 0, coating: "epoxy" }).required;
+      add({ id: "steel-dowel-embed", name: "Dowels developed into the diaphragm above the joint", demand: ld, capacity: Hjoint * 12 - i.cover, unit: "in", ref: "AASHTO 5.10.8.2.1" });
+      steelEnds = { ...se, piles, brake, pull, perGirder, Qr, Vend, Dnet, Vui, pushCap, Acv, Avf, Pc, Vri, ld, Hjoint };
+    }
     add({ id: "diaphragm", name: "End diaphragm: horizontal bars under passive pressure between girders", demand: Mdia, capacity: dia.MR, unit: "kip·ft/ft", ref: "AASHTO 3.11.5.4, 11.6.1.3, 5.6.3.2" });
-    return { capW, apr, n, Pu, Ps, supports, girders, beam, foundation, delta, Kp, pBottom, Mdia, Pg, factoredStrength, service, wCap, dCap, asTop, asBot, dv, rowsMP };
+    return { capW, apr, n, Pu, Ps, supports, girders, beam, foundation, delta, Kp, pBottom, Mdia, Pg, factoredStrength, service, wCap, dCap, asTop, asBot, dv, rowsMP, steelEnds };
   }
 
   function seatDesign() {

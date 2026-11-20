@@ -40,8 +40,11 @@ describe("cantilever sign calc package", () => {
       close(c.value("M_W\\coloneq", "kip*ft"), r.wind.Mx);
       close(c.value("T_W\\coloneq", "kip*ft"), r.wind.T);
       close(c.value("d_v\\coloneq", "in"), r.shaft.dv);
-      expect(c.checks.filter((x) => x.includes("NG")).length).toBe(r.checks.filter((x) => !x.ok).length);
-      expect(c.checks.length).toBe(r.checks.length);
+      // The shaft's checks one for one; the steel's chapter works five of its checks live (the rest in the summary).
+      const shaft = designSign({ ...inputs, steel: undefined });
+      const steelLive = r.steel ? 5 : 0;
+      expect(c.checks.length).toBe(shaft.checks.length + steelLive);
+      expect(c.checks.slice(0, shaft.checks.length).filter((x) => x.includes("NG")).length).toBe(shaft.checks.filter((x) => !x.ok).length);
     });
   }
 });

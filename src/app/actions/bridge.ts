@@ -41,7 +41,10 @@ import { CALC_FILE, newCalcKey } from "@/lib/calcs/server";
 import { emptyCalc } from "@/lib/calcs/types";
 import { designStripSeal } from "@/lib/design/joints/strip-seal";
 import { designModular } from "@/lib/design/joints/modular";
-import { LRFR_DEFAULTS, rateGirder } from "@/lib/design/girders/lrfr";
+import { LRFR_DEFAULTS, rateGirder, type LrfrResult } from "@/lib/design/girders/lrfr";
+import { rateSteelGirder } from "@/lib/design/girders/lrfr-steel";
+import { steelGirderInputs } from "@/lib/design/girders/steel";
+import { rateSlabBridge } from "@/lib/design/slabs/lrfr-slab";
 import { designFinger } from "@/lib/design/joints/finger";
 import { deleteFiles, putFile } from "@/lib/storage";
 
@@ -285,9 +288,40 @@ export async function updateBridgeDesigns(bridgeId: string, create: boolean): Pr
   return sectionLoadPath(user, bridge, bridgeDefinition(bridge.definition), { create });
 }
 
-/** A girder group's load rating (LRFR, girders/lrfr.ts): HL-93's rating factors, the permit's tons, the color code, posting. */
-export type GirderRatingSummary = { inventory: number; operating: number; permitTons: number; color: string; posting: boolean; lowest: { name: string; tons: number | null; rf: number } };
-export type BridgeDesignStatus = { id: string; target: string; name: string; ok: boolean | null; rating?: GirderRatingSummary };
+export type BridgeDesignStatus = { id: string; target: string; name: string; ok: boolean | null };
+
+/** A rated design of the bridge (its girders: prestressed, steel or a slab bridge): its load rating (LRFR) in full. */
+export type BridgeRating = { id: string; target: string; name: string; tool: string; rating: Pick<LrfrResult, "settings" | "factors" | "hl93" | "ratings" | "posting" | "needsPosting" | "color"> | null; error?: string };
+
+/** The load ratings of the bridge's girder designs (MBE 6A with the CDOT BRM), with each design's own settings or CDOT's defaults. */
+export async function bridgeRatings(bridgeId: string): Promise<BridgeRating[]> {
+  const { user, bridge } = await ownBridge(bridgeId);
+  const links = importedOf(bridge.definition) ? [] : bridgeDefinition(bridge.definition).designs;
+  const rated = links.filter((l) => l.kind === "lrfd-girder-check" || l.kind === "steel-girder-check" || l.kind === "slab-bridge");
+  if (!rated.length) return [];
+  const designs = await db.design.findMany({ where: { orgId: user.orgId, id: { in: rated.map((l) => l.id) } }, select: { id: true, kind: true, name: true, inputs: true } });
+  return rated.flatMap((l): BridgeRating[] => {
+    const d = designs.find((x) => x.id === l.id);
+    if (!d) return [];
+    const tool = d.kind === "steel-girder-check" ? "Steel Girder Design Check" : d.kind === "slab-bridge" ? "Slab Bridge" : "LRFD Bridge Design Check";
+    try {
+      let q: LrfrResult;
+      if (d.kind === "steel-girder-check") {
+        const si = steelGirderInputs(d.inputs);
+        q = rateSteelGirder(si, { ...LRFR_DEFAULTS, ...(si.rating ?? {}), on: true }) as LrfrResult;
+      } else if (d.kind === "slab-bridge") {
+        const si = slabBridgeInputs(d.inputs);
+        q = rateSlabBridge(si, { ...LRFR_DEFAULTS, ...(si.rating ?? {}), on: true }) as LrfrResult;
+      } else {
+        const gi = girderInputs(d.inputs);
+        q = rateGirder(gi, designGirder(gi), { ...LRFR_DEFAULTS, ...(gi.rating ?? {}), on: true });
+      }
+      return [{ id: d.id, target: l.target, name: d.name, tool, rating: { settings: q.settings, factors: q.factors, hl93: q.hl93, ratings: q.ratings, posting: q.posting, needsPosting: q.needsPosting, color: q.color } }];
+    } catch (e) {
+      return [{ id: d.id, target: l.target, name: d.name, tool, rating: null, error: e instanceof Error ? e.message : "It can't be worked out as entered" }];
+    }
+  });
+}
 
 /** The designs started from the bridge, each with whether its checks pass (null: it can't be worked out as entered; missing: deleted). */
 export async function bridgeDesignStatus(bridgeId: string): Promise<BridgeDesignStatus[]> {
@@ -299,22 +333,7 @@ export async function bridgeDesignStatus(bridgeId: string): Promise<BridgeDesign
     const d = designs.find((x) => x.id === l.id);
     if (!d) return null;
     let ok: boolean | null = null;
-    let rating: GirderRatingSummary | undefined;
     try {
-      if (d.kind === "lrfd-girder-check") {
-        // The girders' load rating, with the design's own settings where it has them (CDOT BRM defaults otherwise).
-        const gi = girderInputs(d.inputs);
-        const g = designGirder(gi);
-        ok = g.ok;
-        try {
-          const q = rateGirder(gi, g, { ...LRFR_DEFAULTS, ...(gi.rating ?? {}), on: true });
-          const low = q.ratings.filter((v) => v.level !== "permit").reduce((a, b) => (b.rf.rf < a.rf.rf ? b : a));
-          rating = { inventory: q.hl93.inventory.rf, operating: q.hl93.operating.rf, permitTons: q.color.permitTons, color: q.color.code, posting: q.needsPosting, lowest: { name: low.name, tons: low.ratingTons, rf: low.rf.rf } };
-        } catch {
-          rating = undefined;
-        }
-        return { id: d.id, target: l.target, name: d.name, ok, rating };
-      }
       ok =
         d.kind === "stm-d-region"
           ? (await designStm(stmInputs(d.inputs), nodeLpSolver)).checks.every((c) => c.ok || c.advisory)
@@ -342,7 +361,7 @@ export async function bridgeDesignStatus(bridgeId: string): Promise<BridgeDesign
     } catch {
       ok = null;
     }
-    return { id: d.id, target: l.target, name: d.name, ok, rating };
+    return { id: d.id, target: l.target, name: d.name, ok };
   }));
   return rows.filter((r): r is BridgeDesignStatus => r !== null);
 }

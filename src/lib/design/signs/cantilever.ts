@@ -1,4 +1,5 @@
 import { roundSection } from "../piers/round-section";
+import { designSignSteel, SIGN_STEEL_DEFAULTS, type SignSteel } from "./structure";
 import { BARS, DesignError, type Check } from "../walls/cip";
 
 // A cantilever sign structure's drilled shaft foundation: the dead and wind loads on the pole, arm
@@ -52,6 +53,8 @@ export type SignInputs = {
   pyMoment: number; // kip·ft, the largest in the shaft
   pyShear: number; // kip
   pyDeflection: number; // in, at the top
+  /** The pole, arm, connections and fatigue (structure.ts); absent: the shaft alone, as designs saved before. */
+  steel?: SignSteel;
 };
 
 /** The defaults: a 22 ft pole with a 16 ft arm and an 8 × 6 ft panel, on a 3 ft shaft 13 ft deep. */
@@ -93,6 +96,7 @@ export const SIGN_DEFAULTS: SignInputs = {
   pyMoment: 47.264,
   pyShear: 7.261,
   pyDeflection: 0.0043,
+  steel: SIGN_STEEL_DEFAULTS,
 };
 
 const STEEL = 0.49; // kcf
@@ -123,7 +127,8 @@ export function designSign(i: SignInputs) {
   const pole = tube(i.poleLength, i.poleBase, i.poleTop, i.poleWall);
   const arm = tube(i.armLength, i.armBase, i.armEnd, i.armWall);
   const signArea = i.signLength * i.signHeight;
-  const sign = (signArea * (i.signThickness / 12) * ALUMINUM);
+  // A flat aluminum panel, or the weight given (a dynamic message sign).
+  const sign = i.steel && i.steel.signWeight > 0 ? i.steel.signWeight : signArea * (i.signThickness / 12) * ALUMINUM;
   const misc = (i.miscPct / 100) * sign;
   const DC = pole.weight + arm.weight + sign + misc;
   const MDC = arm.weight * arm.centroid + (sign + misc) * i.signOffset; // about the pole, kip·ft
@@ -192,9 +197,15 @@ export function designSign(i: SignInputs) {
   const Tu = Math.max(...groups.map((g) => g.T));
   add({ id: "torsion", name: "Torsion may be neglected: Tu ≤ 0.25 φ Tcr", demand: Tu * 12, capacity: 0.25 * 0.9 * Tcr, unit: "kip·in", ref: "AASHTO 5.7.2.1" });
 
+  // The steel above the shaft, when it's designed.
+  const steel = i.steel
+    ? designSignSteel(i.steel, { DC, pole: { weight: pole.weight }, arm: { weight: arm.weight, centroid: arm.centroid, projCentroid: arm.projCentroid, projected: arm.projected }, sign: sign + misc, signOffset: i.signOffset, signArea, zArm, poleLength: i.poleLength, armLength: i.armLength, Wsign, Warm, Wpole, polePC: pole.projCentroid, CdMember, CdSign: i.CdSign, signLength: i.signLength, signHeight: i.signHeight }, i)
+    : null;
+  if (steel) checks.push(...steel.checks);
   return {
-    ok: checks.every((c) => c.ok),
+    ok: checks.every((c) => c.ok || c.advisory),
     checks,
+    steel,
     dead: { pole: pole.weight, arm: arm.weight, armCentroid: arm.centroid, sign, misc, DC, MDC },
     wind: { kz, CvVd, CdMember, qMember, qSign, poleArea: pole.projected, armArea: arm.projected, signArea, Wpole, Warm, Wsign, zArm, poleCentroid: pole.projCentroid, armCentroid: arm.projCentroid, Mx, T, H },
     groups,

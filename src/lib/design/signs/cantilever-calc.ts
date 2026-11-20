@@ -4,6 +4,7 @@ import { COLOR_NOTE, INPUT_COLOR, isInput, num } from "../calc-style";
 import type { Figure } from "../figures";
 import { BARS } from "../walls/cip";
 import { designSign, type SignInputs } from "./cantilever";
+import { signSteelCalcLines } from "./structure-calc";
 
 // A cantilever sign's shaft foundation as a Calcs worksheet: the wind and the shaft's checks as live
 // math, the members' weights and areas, and the shaft's moment resistance (strain compatibility),
@@ -96,6 +97,8 @@ export function signCalcLines(i: SignInputs, title: string, figures?: { section?
   m("T_{cr}\\coloneq0.126\\cdot\\sqrt{\\frac{f'_{c}}{\\mathrm{ksi}}}\\cdot\\mathrm{ksi}\\cdot\\frac{\\left(\\frac{\\pi\\cdot D^{2}}{4}\\right)^{2}}{\\pi\\cdot D}=", "Torsional cracking, AASHTO Eq. 5.7.2.1-4", "kip*in");
   m(ok("T_W", "0.25\\cdot0.9\\cdot T_{cr}"), "Torsion may be neglected, AASHTO 5.7.2.1");
   text(`The p–y analysis gave a top deflection of ${num(i.pyDeflection, 4)} in. The soil's resistance to torsion is checked by the geotechnical engineer.`, "note");
+  // The pole, arm and connections (LRFD-LTS), when they're designed.
+  lines.push(...signSteelCalcLines(i, r));
   lines.push(...checksSummary([{ checks: r.checks }]));
   return lines;
 }

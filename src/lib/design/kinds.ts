@@ -27,6 +27,7 @@ import { HLMR_DEFAULTS, type HlmrInputs } from "./bearings/pot-disc";
 import { FOUNDATION_INFO, FOUNDATION_KINDS, foundationInputs } from "./foundations/kinds";
 import { DECK_DEFAULTS, RAIL_DEFAULT, type DeckInputs } from "./decks/deck";
 import { STRIP_SEAL_DEFAULTS, type StripSealInputs } from "./joints/strip-seal";
+import { SIGN_STEEL_DEFAULTS } from "./signs/structure";
 import { LRFR_DEFAULTS } from "./girders/lrfr";
 import { MODULAR_DEFAULTS, type ModularJointInputs } from "./joints/modular";
 import { FINGER_DEFAULTS, type FingerJointInputs } from "./joints/finger";
@@ -156,7 +157,13 @@ export function haunchInputs(saved: unknown): HaunchInputs {
 /** A cantilever sign's inputs as saved, filled in from the defaults. */
 export function signInputs(saved: unknown): SignInputs {
   const s = (saved && typeof saved === "object" ? saved : {}) as Partial<SignInputs>;
-  return { ...SIGN_DEFAULTS, ...s };
+  // Designs saved before the steel was designed keep the shaft alone; a new design starts with the steel.
+  const empty = Object.keys(s).length === 0;
+  const st = s.steel ?? (empty ? SIGN_DEFAULTS.steel : undefined);
+  const d = SIGN_STEEL_DEFAULTS;
+  const { steel: _drop, ...rest } = { ...SIGN_DEFAULTS, ...s };
+  void _drop;
+  return { ...rest, ...(st ? { steel: { ...d, ...st, base: { ...d.base, ...(st.base ?? {}) }, flange: { ...d.flange, ...(st.flange ?? {}) }, fatigue: { ...d.fatigue, ...(st.fatigue ?? {}) } } } : {}) };
 }
 
 /** Seismic Zone 1 inputs as saved, filled in from the defaults. */

@@ -1,7 +1,7 @@
 "use client";
 
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
-import { Focus, Activity, AlertCircle, Anchor, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, ArrowDownUp, ArrowLeft, ArrowUpFromLine, Box, Calculator, Check, Cuboid, RefreshCw, Database, Frame, Maximize, Moon, Palette, Route, Tag, ChevronDown, ChevronRight, ClipboardCheck, Columns3, EyeOff, FileText, Grid3x3, Layers, Loader2, MoveVertical, PanelBottom, PencilRuler, Play, Ruler, Spline, Table2, TriangleAlert, Truck, Weight } from "lucide-react";
+import { Focus, Gauge, Activity, AlertCircle, Anchor, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, ArrowDownUp, ArrowLeft, ArrowUpFromLine, Box, Calculator, Check, Cuboid, RefreshCw, Database, Frame, Maximize, Moon, Palette, Route, Tag, ChevronDown, ChevronRight, ClipboardCheck, Columns3, EyeOff, FileText, Grid3x3, Layers, Loader2, MoveVertical, PanelBottom, PencilRuler, Play, Ruler, Spline, Table2, TriangleAlert, Truck, Weight } from "lucide-react";
 import { toast } from "sonner";
 import { createBridgeCalc, exportBridgeIfc, renameBridge, saveBridgeDefinition, setBridgeProject } from "@/app/actions/bridge";
 import { DesignErrorCard, fmt } from "@/components/design/design-kit";
@@ -13,6 +13,7 @@ import { LANE_WIDTH, movingLoadSteps, type LiveLoad } from "@/lib/bridge/moving"
 import { bridgeSolids, type SolidKind, type Vec3 } from "@/lib/bridge/solids";
 import { cn } from "@/lib/utils";
 import { DesignPanel } from "./bridge-design";
+import { RatingPanel } from "./rating-panel";
 import { QuantitiesPanel } from "./bridge-quantities";
 import { RebarPanel } from "./rebar-view";
 import { BridgeForm, FORM_TITLES, type FormKey } from "./bridge-forms";
@@ -27,7 +28,7 @@ import { BridgeView, contourCss, type Arrow, type BridgeViewHandle, type Contour
 
 type Tab = "structure" | "boundary" | "load" | "analysis" | "results" | "design" | "quantities" | "rebar" | "view";
 type Show = "none" | "deformed" | "My" | "Vz" | "N";
-type Table = "member" | "reactions" | "checks" | "design" | "quantities" | "data";
+type Table = "member" | "reactions" | "checks" | "design" | "quantities" | "data" | "rating";
 type Display = { solid: boolean; deck: boolean; contour: boolean; values: boolean; names: boolean; reactions: boolean; lanes: boolean; grid: boolean; dark: boolean };
 type Save = "saved" | "saving" | "unsaved" | "error";
 
@@ -498,6 +499,7 @@ export function BridgeWorkspace({ bridge, projects }: { bridge: { id: string; na
             <>
               <Panel title="Members">
                 <Big icon={PencilRuler} label="Designs" title="Each part of the bridge and its design" onClick={() => setTable("design")} active={table === "design"} />
+                <Big icon={Gauge} label="Load rating" title="The girders' load rating (LRFR): HL-93, the legal and permit vehicles, posting and color code" onClick={() => setTable("rating")} active={table === "rating"} />
               </Panel>
               <Panel title="Report">
                 <Big icon={making ? Loader2 : FileText} label="Calc package" title="The analysis written out as a Calcs worksheet: the model, the loads, and the result tables" onClick={() => void makeCalc()} disabled={making || !a?.ok} />
@@ -748,13 +750,14 @@ export function BridgeWorkspace({ bridge, projects }: { bridge: { id: string; na
                 ["design", "Design"],
                 ["quantities", "Quantities"],
                 ["data", "Model data"],
+                ["rating", "Load rating"],
               ] as const
             ).map(([k, label]) => (
               <button key={k} type="button" onClick={() => setTable(k)} className={cn("rounded px-2 py-0.5", table === k ? "bg-background font-medium shadow-sm" : "text-muted-foreground hover:text-foreground")}>
                 {label}
               </button>
             ))}
-            <span className="ml-2 text-muted-foreground">{table !== "checks" && table !== "design" && table !== "quantities" && table !== "data" && selectionLabel}</span>
+            <span className="ml-2 text-muted-foreground">{table !== "checks" && table !== "design" && table !== "quantities" && table !== "data" && table !== "rating" && selectionLabel}</span>
             <button type="button" onClick={() => setTable(null)} className="ml-auto rounded px-2 py-0.5 text-muted-foreground hover:bg-accent hover:text-foreground" aria-label="Close the tables">
               Close
             </button>
@@ -765,6 +768,7 @@ export function BridgeWorkspace({ bridge, projects }: { bridge: { id: string; na
             {table === "checks" && <ChecksPanel a={a} live={live} />}
             {table === "quantities" && <QuantitiesPanel bridgeId={bridge.id} version={qtyVersion} saved={save === "saved"} />}
             {table === "data" && <ModelDataPanel model={a.generated.stage2} />}
+            {table === "rating" && <RatingPanel bridgeId={bridge.id} saved={save === "saved"} />}
             {table === "design" && <DesignPanel bridgeId={bridge.id} def={def} saved={save === "saved"} onLinks={(designs) => setDefState((d) => ({ ...d, designs }))} />}
           </div>
         </div>

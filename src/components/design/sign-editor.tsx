@@ -4,7 +4,8 @@ import { useMemo, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { designSign, type SignInputs } from "@/lib/design/signs/cantilever";
 import { DesignError } from "@/lib/design/walls/cip";
-import { ChecksBanner, ChecksTable, Choice, DesignErrorCard, DesignHeader, Field, fmt, KeyValues, Section } from "./design-kit";
+import { ChecksBanner, ChecksTable, Choice, DesignErrorCard, DesignHeader, Field, fmt, KeyValues, Section, Toggle } from "./design-kit";
+import { SIGN_STEEL_DEFAULTS, type SignSteel, type Weld } from "@/lib/design/signs/structure";
 import { TakeoffPanel } from "./takeoff-panel";
 import { SignSketch } from "./sign-sketch";
 
@@ -25,10 +26,15 @@ export function SignEditor({ design, projects }: { design: { id: string; name: s
     }
   }, [inputs]);
   const r = outcome.result;
+  const st = inputs.steel;
+  const setSteel = (u: (s: SignSteel) => SignSteel) => setInputs((s) => ({ ...s, steel: u(s.steel ?? SIGN_STEEL_DEFAULTS) }));
+  const sub = <K extends "base" | "flange" | "fatigue">(k: K) => <F extends keyof SignSteel[K]>(f: F) => (v: SignSteel[K][F]) => setSteel((s) => ({ ...s, [k]: { ...s[k], [f]: v } }));
+  const welds: { value: Weld; label: string }[] = [{ value: "groove", label: "Full-penetration groove weld, backing ring" }, { value: "fillet", label: "Fillet-welded socket" }];
+  const groupOf = (id: string) => (id === "axial" ? "Geotechnical" : /^(pole|arm)-/.test(id) ? "Pole and arm (LTS 5.12, 10.4)" : /^(rod|base|flange)/.test(id) ? "Connections (LTS 5.17)" : id.startsWith("fat-") ? "Fatigue (LTS 11)" : "Shaft");
 
   return (
     <div className="space-y-4">
-      <DesignHeader design={design} projects={projects} inputs={inputs} label="Cantilever Sign Foundation · AASHTO LTS" canMakeCalc={!!r} />
+      <DesignHeader design={design} projects={projects} inputs={inputs} label={st ? "Cantilever Sign Structure · AASHTO LRFD-LTS" : "Cantilever Sign Foundation · AASHTO LTS"} canMakeCalc={!!r} />
 
       <div className="grid gap-4 lg:grid-cols-[minmax(300px,360px)_1fr]">
         <Card className="self-start">
@@ -57,6 +63,39 @@ export function SignEditor({ design, projects }: { design: { id: string; name: s
               <Field label="Gust effect G (3.8.6)" value={inputs.G} onChange={set("G")} step={0.01} />
               <Field label="Velocity conversion Cv (3.8.3)" value={inputs.Cv} onChange={set("Cv")} step={0.05} />
               <Field label="Sign panel drag Cd (T. 3.8.7-1)" value={inputs.CdSign} onChange={set("CdSign")} step={0.01} />
+            </Section>
+            <Section title="Steel, connections and fatigue (LRFD-LTS)" open={!!st}>
+              <Toggle label="Design the pole, arm and connections" value={!!st} onChange={(on) => setInputs((s) => ({ ...s, steel: on ? (s.steel ?? SIGN_STEEL_DEFAULTS) : undefined }))} />
+              {st && (
+                <>
+                  <Field label="Tubes' Fy" unit="ksi" value={st.Fy} onChange={(v) => setSteel((s) => ({ ...s, Fy: v }))} hint="ASTM A595 Grade A: 55 ksi" />
+                  <Field label="Sign weight (0: the aluminum panel)" unit="kip" value={st.signWeight} onChange={(v) => setSteel((s) => ({ ...s, signWeight: v }))} step={0.25} hint="A dynamic message sign's" />
+                  <Field label="Sign depth (0: a flat panel)" unit="ft" value={st.signDepth} onChange={(v) => setSteel((s) => ({ ...s, signDepth: v }))} step={0.25} />
+                  <p className="pt-2 text-xs font-medium">Base plate and anchor rods</p>
+                  <Field label="Plate thickness" unit="in" value={st.base.plateT} onChange={sub("base")("plateT")} step={0.25} />
+                  <Field label="Plate width (square)" unit="in" value={st.base.plateW} onChange={sub("base")("plateW")} />
+                  <Field label="Plate's center opening" unit="in" value={st.base.opening} onChange={sub("base")("opening")} hint="For the groove weld&apos;s KF (Eq. 11.9.3.1-3)" />
+                  <Field label="Anchor rods" value={st.base.rods} onChange={(v) => sub("base")("rods")(Math.max(3, Math.round(v)))} />
+                  <Field label="Rod diameter" unit="in" value={st.base.rodD} onChange={sub("base")("rodD")} step={0.125} />
+                  <Field label="Rod circle" unit="in" value={st.base.rodCircle} onChange={sub("base")("rodCircle")} />
+                  <Field label="Rods' Fu" unit="ksi" value={st.base.rodFu} onChange={sub("base")("rodFu")} hint="ASTM F1554 Grade 105: 125 ksi" />
+                  <Field label="Leveling nut stand-off" unit="in" value={st.base.standoff} onChange={sub("base")("standoff")} step={0.25} />
+                  <p className="pt-2 text-xs font-medium">Arm&apos;s flange</p>
+                  <Field label="Bolts" value={st.flange.bolts} onChange={(v) => sub("flange")("bolts")(Math.max(4, Math.round(v)))} />
+                  <Field label="Bolt diameter" unit="in" value={st.flange.boltD} onChange={sub("flange")("boltD")} step={0.125} />
+                  <Field label="Bolt circle" unit="in" value={st.flange.circle} onChange={sub("flange")("circle")} />
+                  <Field label="Flange plate thickness" unit="in" value={st.flange.plateT} onChange={sub("flange")("plateT")} step={0.25} />
+                  <Field label="Flange plate's center opening" unit="in" value={st.flange.opening} onChange={sub("flange")("opening")} />
+                  <p className="pt-2 text-xs font-medium">Fatigue (LTS 11)</p>
+                  <Choice label="Importance category" value={st.fatigue.category} options={[{ value: "I", label: "I (critical, lifeline)" }, { value: "II", label: "II" }, { value: "III", label: "III" }]} onChange={sub("fatigue")("category")} />
+                  <Field label="Yearly mean wind speed" unit="mph" value={st.fatigue.vMean} onChange={sub("fatigue")("vMean")} />
+                  <Toggle label="Susceptible to galloping (flat panel, no damper)" value={st.fatigue.galloping} onChange={sub("fatigue")("galloping")} />
+                  <Toggle label="Over a traffic lane (truck-induced gust)" value={st.fatigue.truck} onChange={sub("fatigue")("truck")} />
+                  <Field label="Road to the sign's bottom" unit="ft" value={st.fatigue.clearance} onChange={sub("fatigue")("clearance")} step={0.5} />
+                  <Choice label="Pole-to-base-plate weld" value={st.fatigue.poleWeld} options={welds} onChange={sub("fatigue")("poleWeld")} />
+                  <Choice label="Arm-to-flange weld" value={st.fatigue.armWeld} options={welds} onChange={sub("fatigue")("armWeld")} />
+                </>
+              )}
             </Section>
             <Section title="Drilled shaft" open>
               <Field label="Diameter" unit="in" value={inputs.shaftD} onChange={set("shaftD")} />
@@ -97,7 +136,7 @@ export function SignEditor({ design, projects }: { design: { id: string; name: s
                     <SignSketch inputs={inputs} result={r} />
                   </CardContent>
                 </Card>
-                <ChecksTable checks={r.checks} groupOf={(id) => (id === "axial" ? "Geotechnical" : "Shaft")} />
+                <ChecksTable checks={r.checks} groupOf={groupOf} />
                 <TakeoffPanel kind="sign-cantilever" design={design} inputs={inputs} ok={r.checks.every((c) => c.advisory || c.ok)} onSettings={(t) => setInputs((s) => ({ ...s, takeoff: t }))} />
                 <div className="grid gap-4 xl:grid-cols-2">
                   <KeyValues

@@ -145,6 +145,25 @@ diaphragm (BDM 11.3.1, Figure 11-1 note 3).
 - **Take-off:** the through bars and the dowels are in the abutment's schedule. The studs are paid with the
   structural steel (509).
 
+Live load surcharge, seat and semi-integral (AASHTO 3.11.6.4.1):
+
+- **Pressure:** Δp = K γs heq. heq comes from Table 3.11.6.4.1-1 at the abutment's whole height (the backfill's
+  surface to the footing's bottom, as the 10th Edition defines it).
+- **On the stem:** at Hst/2 (Strength 1.75, Service 1.0) in moment and shear.
+- **On the footing:**
+  - horizontally at H/2 in every case;
+  - vertically on the heel for the bearing case only, not for sliding or eccentricity (C11.5.6);
+  - in the heel's moment.
+- **On the backwall:** the same Δp.
+- **When it's left out:** CDOT BDM 11.3 ignores it where an approach slab is provided (AASHTO 3.11.6.5). `lsOmit`
+  defaults to that whenever an approach slab is given (approachDC > 0), and can be set either way.
+- **NHI-04-041 (no approach slab):**
+  - the stem's Strength I moment and shear match with its LS terms, the bearings' eccentricity apart;
+  - the footing's horizontal force matches with its 1.75 × 1.76;
+  - the front pile is now 331 kip, within the example's 315–340.
+  - The backwall's heq is 2.0 at the whole 24.5 ft, against the example's 3.6 at the backwall's 7 ft (its 2nd
+    Edition).
+
 Seat abutment's backwall (BDM 11.3.3): a cantilever from the seat, per foot.
 
 - **Loads** (as FHWA NHI-04-041 Step 7.9, to the 10th Edition):

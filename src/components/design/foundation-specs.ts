@@ -397,6 +397,7 @@ export const FOUNDATION_SPECS: Record<FoundationKind, SectionSpec[]> = {
         { type: "number", key: "pileSpacing", label: "Pile spacing along the abutment", unit: "ft", step: 0.25, show: (i) => !String(i.type).startsWith("integral") && i.foundation === "piles" },
         { type: "bars", key: "stemBars", label: "Stem back face bars", show: (i) => !String(i.type).startsWith("integral") },
         { type: "bars", key: "backwallBars", label: "Backwall bars", show: (i) => i.type === "seat" },
+        { type: "toggle", key: "lsOmit", label: "Leave out the live load surcharge: an approach slab carries the traffic (AASHTO 3.11.6.5, CDOT BDM 11.3)", show: (i) => !String(i.type).startsWith("integral") },
         { type: "bars", key: "backwallHorizBars", label: "Backwall: horizontal bars, each face", show: (i) => i.type === "seat" },
         { type: "number", key: "backwallLLecc", label: "Backwall: the axles on its top, from its centerline", unit: "ft", step: 0.05, hint: "Default half its thickness (its front face)", show: (i) => i.type === "seat" },
         { type: "bars", key: "toeBars", label: "Footing bottom bars, across it", show: (i) => !String(i.type).startsWith("integral") },

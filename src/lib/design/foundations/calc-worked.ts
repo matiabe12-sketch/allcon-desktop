@@ -425,24 +425,36 @@ function seatWorked(w: Writer, i: AbutmentInputs, r: AbutmentResult, s: NonNulla
   m(`BR\\coloneq\\frac{${num(i.braking)}\\mathrm{kip}}{L_{a}}=`, "Braking (AASHTO 3.6.4)", "kip/ft");
   m(`TU\\coloneq ${num(i.bearingShear)}\\frac{\\mathrm{kip}}{\\mathrm{ft}}`, "The bearings' shear (uniform temperature)");
   m(semi ? "y_{BR}\\coloneq t_{f}+H_{s}+H_{b}=" : "y_{BR}\\coloneq t_{f}+H_{s}=", semi ? "At the deck, through the end diaphragm" : "At the seat", "ft");
+  const ls = s.heqW > 0;
+  if (ls) {
+    m(`h_{eq}\\coloneq ${num(s.heqW, 3)}\\mathrm{ft}`, `Live load surcharge, AASHTO Table 3.11.6.4.1-1 for the ${num(s.H)} ft from the backfill's surface to the footing's bottom (no approach slab, CDOT BDM 11.3)`);
+    m("\\Delta_{p}\\coloneq K\\cdot\\gamma_{s}\\cdot h_{eq}=", "AASHTO Eq. 3.11.6.4.1-1", "ksf");
+    m("LS_{h}\\coloneq\\Delta_{p}\\cdot H=", "Horizontal, at H/2", "kip/ft");
+    m("LS_{v}\\coloneq\\gamma_{s}\\cdot h_{eq}\\cdot T_{h}=", "Vertical on the heel: for bearing only (AASHTO C11.5.6)", "kip/ft");
+  } else text("Live load surcharge:- left out, an approach slab carrying the traffic (AASHTO 3.11.6.5; CDOT BDM 11.3).", undefined, { keepWithNext: true });
 
   text("Load combinations (AASHTO Table 3.4.1-1), moments about the toe", "subheading", { keepWithNext: true });
   const combos = [
-    { k: "a", name: "Strength I, maximum", dc: 1.25, dw: 1.5, ev: 1.35, ll: 1.75, tu: 0.5, eh: gEH },
-    { k: "b", name: "Strength I, minimum", dc: 0.9, dw: 0.65, ev: 1.0, ll: 0, tu: 0.5, eh: gEH },
-    { k: "c", name: "Service I", dc: 1, dw: 1, ev: 1, ll: 1, tu: 1, eh: 1 },
+    { k: "a", name: "Strength I, maximum", dc: 1.25, dw: 1.5, ev: 1.35, ll: 1.75, tu: 0.5, eh: gEH, lsh: 1.75, lsv: 1.75 },
+    { k: "b", name: "Strength I, minimum", dc: 0.9, dw: 0.65, ev: 1.0, ll: 0, tu: 0.5, eh: gEH, lsh: 1.75, lsv: 0 },
+    { k: "c", name: "Service I", dc: 1, dw: 1, ev: 1, ll: 1, tu: 1, eh: 1, lsh: 1, lsv: 1 },
   ];
   m("DC_{t}\\coloneq DC_{st}+DC_{bw}+DC_{ft}+DC_{g}=", "All DC", "kip/ft");
   m("M_{DC}\\coloneq DC_{st}\\cdot x_{st}+DC_{bw}\\cdot x_{bw}+DC_{ft}\\cdot x_{ft}+DC_{g}\\cdot x_{st}=", "Its moment about the toe", "kip*ft/ft");
   for (const c of combos) {
     const f = (v: number) => (v === 1 ? "" : `${v}\\cdot `);
     const llV = c.ll > 0 ? `+${f(c.ll)}LL_{g}` : "";
-    m(`V_{${c.k}}\\coloneq ${f(c.dc)}DC_{t}+${f(c.dw)}DW_{g}+${f(c.ev)}EV_{h}${llV}=`, c.name, "kip/ft");
+    // The surcharge's factored parts, named so each line fits the page.
+    if (ls && c.lsv > 0) m(`W_{l${c.k}}\\coloneq ${f(c.lsv)}LS_{v}=`, "The surcharge on the heel (bearing)", "kip/ft");
+    if (ls) m(`H_{l${c.k}}\\coloneq ${f(c.lsh)}LS_{h}=`, "The surcharge, horizontal", "kip/ft");
+    const lsvV = ls && c.lsv > 0 ? `+W_{l${c.k}}` : "";
+    m(`V_{${c.k}}\\coloneq ${f(c.dc)}DC_{t}+${f(c.dw)}DW_{g}+${f(c.ev)}EV_{h}${llV}${lsvV}=`, c.name, "kip/ft");
     m(`P_{s${c.k}}\\coloneq ${f(c.dw)}DW_{g}${llV}=`, "DW and LL at the bearings", "kip/ft");
-    m(`M_{R${c.k}}\\coloneq ${f(c.dc)}M_{DC}+P_{s${c.k}}\\cdot x_{st}+${f(c.ev)}EV_{h}\\cdot x_{h}=`, "Resisting", "kip*ft/ft");
+    m(`M_{R${c.k}}\\coloneq ${f(c.dc)}M_{DC}+P_{s${c.k}}\\cdot x_{st}+\\left(${f(c.ev)}EV_{h}${lsvV}\\right)\\cdot x_{h}=`, "Resisting", "kip*ft/ft");
     const br = c.ll > 0 ? "+1.75\\cdot BR" : "";
-    m(`F_{h${c.k}}\\coloneq ${f(c.eh)}EH${br}+${f(c.tu)}TU=`, "Horizontal", "kip/ft");
-    m(`M_{O${c.k}}\\coloneq ${f(c.eh)}EH\\cdot\\frac{H}{3}${c.ll > 0 ? "+1.75\\cdot BR\\cdot y_{BR}" : ""}+${f(c.tu)}TU\\cdot y_{BR}=`, "Overturning", "kip*ft/ft");
+    const lsH = ls ? `+H_{l${c.k}}` : "";
+    m(`F_{h${c.k}}\\coloneq ${f(c.eh)}EH${br}+${f(c.tu)}TU${lsH}=`, "Horizontal", "kip/ft");
+    m(`M_{O${c.k}}\\coloneq ${f(c.eh)}EH\\cdot\\frac{H}{3}${c.ll > 0 ? "+1.75\\cdot BR\\cdot y_{BR}" : ""}+${f(c.tu)}TU\\cdot y_{BR}${lsH ? `${lsH}\\cdot\\frac{H}{2}` : ""}=`, "Overturning", "kip*ft/ft");
     m(`x_{R${c.k}}\\coloneq\\frac{M_{R${c.k}}-M_{O${c.k}}}{V_{${c.k}}}=`, "The resultant from the toe", "ft");
     m(`e_{${c.k}}\\coloneq\\frac{B}{2}-x_{R${c.k}}=`, "Eccentricity", "ft");
   }
@@ -498,8 +510,8 @@ function seatWorked(w: Writer, i: AbutmentInputs, r: AbutmentResult, s: NonNulla
   m("H_{st}\\coloneq H_{s}+H_{b}=", undefined, "ft");
   m("y_{s}\\coloneq y_{BR}-t_{f}=", "The seat's (or deck's) height above the footing", "ft");
   member(w, "st", "Stem", {
-    Mu: "\\gamma_{EH}\\cdot K\\cdot\\gamma_{s}\\cdot\\frac{H_{st}^{3}}{6}+1.75\\cdot BR\\cdot y_{s}+0.5\\cdot TU\\cdot y_{s}=",
-    Ms: "K\\cdot\\gamma_{s}\\cdot\\frac{H_{st}^{3}}{6}+BR\\cdot y_{s}+TU\\cdot y_{s}=",
+    Mu: `\\gamma_{EH}\\cdot K\\cdot\\gamma_{s}\\cdot\\frac{H_{st}^{3}}{6}+1.75\\cdot BR\\cdot y_{s}+0.5\\cdot TU\\cdot y_{s}${ls ? "+1.75\\cdot\\Delta_{p}\\cdot\\frac{H_{st}^{2}}{2}" : ""}=`,
+    Ms: `K\\cdot\\gamma_{s}\\cdot\\frac{H_{st}^{3}}{6}+BR\\cdot y_{s}+TU\\cdot y_{s}${ls ? "+\\Delta_{p}\\cdot\\frac{H_{st}^{2}}{2}" : ""}=`,
     h: i.stemT * 12,
     cover: 2,
     bars: i.stemBars,
@@ -507,13 +519,14 @@ function seatWorked(w: Writer, i: AbutmentInputs, r: AbutmentResult, s: NonNulla
     crack: true,
     exposure: i.exposure,
   });
-  shear(w, "st", "\\gamma_{EH}\\cdot0.5\\cdot K\\cdot\\gamma_{s}\\cdot H_{st}^{2}+1.75\\cdot BR+0.5\\cdot TU=", "d_{est}", "h_{st}", "Stem shear, AASHTO 5.7.3.3");
+  if (ls) m("V_{lst}\\coloneq1.75\\cdot\\Delta_{p}\\cdot H_{st}=", "The surcharge's shear on the stem", "kip/ft");
+  shear(w, "st", `\\gamma_{EH}\\cdot0.5\\cdot K\\cdot\\gamma_{s}\\cdot H_{st}^{2}+1.75\\cdot BR+0.5\\cdot TU${ls ? "+V_{lst}" : ""}=`, "d_{est}", "h_{st}", "Stem shear, AASHTO 5.7.3.3");
 
   if (!semi) {
     text("Backwall at the seat", "subheading", { keepWithNext: true });
     text("Loads per foot: earth pressure at H/3 (AASHTO 3.11.5), the live load surcharge at H/2 (3.11.6.4), and the trucks' rear axles with 2 ft of lane in every lane on its top, with IM and the multiple presence factor (3.6.1.1.2), eccentric to its centerline (as FHWA NHI-04-041 Step 7.9). Strength I governs over V (1.35).", undefined, { keepWithNext: true });
     m("R_{EHb}\\coloneq0.5\\cdot K\\cdot\\gamma_{s}\\cdot H_{b}^{2}=", "Earth pressure", "kip/ft");
-    m(`h_{eqb}\\coloneq ${num(s.heqBw, 3)}\\mathrm{ft}`, `Table 3.11.6.4-1 for a ${num(i.backwallH)} ft height`);
+    m(`h_{eqb}\\coloneq ${num(s.heqBw, 3)}\\mathrm{ft}`, s.heqBw > 0 ? `Table 3.11.6.4.1-1 for the abutment's ${num(s.H)} ft height (AASHTO 3.11.6.4.1)` : "No surcharge: an approach slab carries the traffic (AASHTO 3.11.6.5; CDOT BDM 11.3)");
     m("R_{LSb}\\coloneq K\\cdot\\gamma_{s}\\cdot h_{eqb}\\cdot H_{b}=", "Live load surcharge", "kip/ft");
     m(`R_{LLb}\\coloneq ${num(s.RLLbw, 3)}\\frac{\\mathrm{kip}}{\\mathrm{ft}}`, `${Math.max(1, Math.floor(i.lanes ?? 1))} lanes × m × (32 kip × (1 + IM) + 0.64 klf × 2 ft) / ${num(i.length)} ft`);
     m(`e_{LLb}\\coloneq ${num(s.eLL, 3)}\\mathrm{ft}`, "The axles from the backwall's centerline");
@@ -640,7 +653,7 @@ function seatWorked(w: Writer, i: AbutmentInputs, r: AbutmentResult, s: NonNulla
     } else if (s.piles) {
       member(w, "to", "Toe", { Mu: "\\max\\left(0\\frac{\\mathrm{kip}\\cdot\\mathrm{ft}}{\\mathrm{ft}},\\frac{P_{f}}{s_{pl}}\\cdot\\max\\left(0\\mathrm{ft},T_{t}-x_{f}\\right)\\right)=", h: i.footT * 12, cover: 3, bars: i.toeBars, exposure: i.exposure });
     }
-    member(w, "he", "Heel", { Mu: "1.35\\cdot\\gamma_{s}\\cdot\\left(H_{s}+H_{b}\\right)\\cdot\\frac{T_{h}^{2}}{2}+1.25\\cdot\\gamma_{c}\\cdot t_{f}\\cdot\\frac{T_{h}^{2}}{2}=", h: i.footT * 12, cover: 2, bars: i.heelBars, exposure: i.exposure });
+    member(w, "he", "Heel", { Mu: `1.35\\cdot\\gamma_{s}\\cdot\\left(H_{s}+H_{b}\\right)\\cdot\\frac{T_{h}^{2}}{2}+1.25\\cdot\\gamma_{c}\\cdot t_{f}\\cdot\\frac{T_{h}^{2}}{2}${ls ? "+1.75\\cdot\\gamma_{s}\\cdot h_{eq}\\cdot\\frac{T_{h}^{2}}{2}" : ""}=`, h: i.footT * 12, cover: 2, bars: i.heelBars, exposure: i.exposure });
   }
   void r;
   void rad;

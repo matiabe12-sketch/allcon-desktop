@@ -291,3 +291,19 @@ describe("a seat abutment's backwall (earth, live load surcharge, the axles on i
     close(c.value(String.raw`V_{ubw}\coloneq`, "kip/ft"), get("backwall-shear").demand);
   });
 });
+
+describe("the live load surcharge on a seat abutment without an approach slab (AASHTO 3.11.6.4.1)", () => {
+  const i = abutmentInputs({ type: "seat", foundation: "footing", approachDC: 0 });
+  const r = designAbutment(i);
+  it("applied by heq for the whole height, and the worked calc agrees, no errors, every line on the page", () => {
+    expect(r.seat!.heqW).toBeGreaterThan(0);
+    const c = workOut("abutment", i);
+    expect(c.errors).toEqual([]);
+    expect(c.wide).toEqual([]);
+    expect(c.ng.length).toBe(r.checks.filter((x) => !x.ok && !x.advisory).length);
+  });
+  it("left out with an approach slab (CDOT BDM 11.3, AASHTO 3.11.6.5)", () => {
+    expect(designAbutment(abutmentInputs({ type: "seat", foundation: "footing" })).seat!.heqW).toBe(0);
+    expect(designAbutment(abutmentInputs({ type: "seat", foundation: "footing", lsOmit: false })).seat!.heqW).toBeGreaterThan(0);
+  });
+});

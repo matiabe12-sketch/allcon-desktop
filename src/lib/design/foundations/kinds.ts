@@ -64,7 +64,11 @@ export const footingInputs = (saved: unknown): FootingInputs => merge(FOOTING_DE
 export const pileFoundationInputs = (saved: unknown): PileInputs => merge(PILE_DEFAULTS, saved);
 export const shaftInputs = (saved: unknown): ShaftInputs => merge(SHAFT_DEFAULTS, saved);
 export const micropileInputs = (saved: unknown): MicropileInputs => merge(MICROPILE_DEFAULTS, saved);
-export const abutmentInputs = (saved: unknown): AbutmentInputs => merge(ABUTMENT_DEFAULTS, saved);
+export const abutmentInputs = (saved: unknown): AbutmentInputs => {
+  const m = merge(ABUTMENT_DEFAULTS, saved);
+  // The live load surcharge: left out where an approach slab is given (CDOT BDM 11.3, AASHTO 3.11.6.5) unless chosen.
+  return { ...m, lsOmit: m.lsOmit ?? m.approachDC > 0 };
+};
 
 export function foundationInputs(kind: string, saved: unknown) {
   switch (kind as FoundationKind) {

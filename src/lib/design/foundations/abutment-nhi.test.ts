@@ -21,8 +21,7 @@ import { ABUTMENT_DEFAULTS, abutmentLiveLoad, designAbutment, type AbutmentInput
 // - the stem's and backwall's flexure section (de, a, φMn) and the service steel stress, by the shared flexure();
 // - the toe's moment from the front row of piles (the same 1.5 ft lever as the example).
 // Real discrepancies the benchmark shows (reported, not changed):
-// 1. No live load surcharge LS (AASHTO 3.11.6.4) on the stem or footing. (The backwall has had LS and the axles on
-//    its top since 2026-11-20: compared above, its live load with the multiple presence factor the example omits.) The example's stem moment is 156.6 kip·ft/ft; the tool's 98.8 (LS is 30.4 of the difference).
+// 1. (Resolved 2026-11-20: the live load surcharge on the stem, footing and backwall, per the 10th Edition's heq height.)
 //    AASHTO 3.11.6.5 permits a reduction where an approach slab carries the traffic, which may be the intent.
 // 2. The girders' reactions sit on the stem's centerline; the example's bearings are 1.13 ft toward the span,
 //    adding 27.4 kip·ft/ft at the stem's base (Strength I) and moving load toward the front piles.
@@ -111,42 +110,47 @@ describe("Abutment against FHWA NHI-04-041 Design Step 7", () => {
     near(s.EH, 10.8, 0.001);
   });
 
-  it("backwall and stem earth-pressure effects match the example's Strength III terms (p. 7-30, 7-36)", () => {
-    // Backwall: 1.5 × REHbw × 7/3 (the example's Strength III, no live load).
+  it("the stem with the live load surcharge, as the example's Strength I (p. 7-35, 7-36): heq 2.0 ft for its 24.5 ft height", () => {
+    // Backwall's earth term: 1.5 × REHbw × 7/3.
     near(s.MbwEH, 3.08, 0.003);
-    // Stem: 1.5 × REHstem × 7.33 + 0.5 × Hufall × 15 (the earth and temperature terms of the 156.61 Strength I).
-    near(s.Mstem, 1.5 * 8.71 * 7.33 + 0.5 * 0.39 * 15, 0.002);
-    // Stem shear: VustemstrIII = 1.5 REHstem + 0.5 Hufall.
-    near(s.Vstem, 13.26, 0.001);
+    near(s.heqW, 2.0, 1e-9);
+    near(s.dpLS, 0.072, 0.001);
+    // Stem: 1.5 × REHstem × 7.33 + 0.5 × Hufall × 15 + 1.75 × RLSstem (1.58) × 11 (the example's terms of its 156.61,
+    // without the bearings' eccentricity, which the tool leaves out).
+    near(s.Mstem, 1.5 * 8.71 * 7.33 + 0.5 * 0.39 * 15 + 1.75 * 1.58 * 11.0, 0.003);
+    // Stem shear: 1.5 REHstem + 0.5 Hufall + 1.75 RLSstem.
+    near(s.Vstem, 13.26 + 1.75 * 1.58, 0.002);
   });
 
-  it("the backwall at Strength I (p. 7-28, 7-29): REHbw 0.88, RLSbw 0.91 (heq 3.6 ft), the axles 1.17 ft off its centerline; MubwstrI 14.38", () => {
+  it("the backwall at Strength I (p. 7-28, 7-29): REHbw 0.88, the axles 1.17 ft off its centerline; the surcharge by the 10th Edition's height", () => {
     const i: AbutmentInputs = { ...NHI, backwallLLecc: 1.17 };
     const t = designAbutment(i).seat!;
     near(t.REHbw, 0.88, 0.003);
-    near(t.heqBw, 3.6, 1e-9);
-    near(t.RLSbw, 0.91, 0.004);
+    // The 10th Edition (3.11.6.4.1) takes heq for the height from the backfill's surface to the footing's bottom: 24.5 ft,
+    // heq 2.0, RLSbw 0.072 × 7 = 0.50 kip/ft. The example (2nd Edition) took the backwall's own 7 ft: heq 3.6, 0.91.
+    near(t.heqBw, 2.0, 1e-9);
+    near(t.RLSbw, 0.3 * 0.12 * 2.0 * 7, 0.004);
     // The example's 2.81 kip/ft = (6 × 16 × 1.33 + 3 × 0.64 × 2) / 46.875 leaves out the multiple presence factor; the
     // tool applies m = 0.85 for three lanes (AASHTO 3.6.1.1.2).
     near(t.RLLbw, 0.85 * 2.81, 0.003);
     // MubwstrI = 1.75 RLL × 1.17 + 1.5 REH × 7/3 + 1.75 RLS × 7/2: the earth and surcharge terms as the example's,
     // the axles' term × 0.85.
-    near(t.Mbw, 1.75 * 0.85 * 2.81 * 1.17 + 1.5 * 0.882 * (7 / 3) + 1.75 * 0.907 * 3.5, 0.004);
-    near(t.Vbw, 1.5 * 0.882 + 1.75 * 0.907, 0.004); // VubwstrI 2.91
+    near(t.Mbw, 1.75 * 0.85 * 2.81 * 1.17 + 1.5 * 0.882 * (7 / 3) + 1.75 * 0.504 * 3.5, 0.004);
+    near(t.Vbw, 1.5 * 0.882 + 1.75 * 0.504, 0.004); // the example's VubwstrI 2.91 with its 0.91
   });
 
-  it("Strength I at the footing's base: vertical force and the longitudinal force without LS (p. 7-42, 7-46)", () => {
+  it("Strength I at the footing's base: the longitudinal force with the surcharge, 1.5 REH + 0.5 Hufall + 1.75 × 1.76 (p. 7-42, 7-46)", () => {
     const max = s.rows.find((x) => x.c.name === "Strength I, maximum")!;
-    near(max.V, 51.76, 0.002); // FvftgstrI (the backwall prism's extra 0.05 kip/ft)
-    near(max.Hh, 16.4, 0.001); // FlonftgstrIII = 1.5 REHftg + 0.5 Hufall (the example's Strength I adds 1.75 × 1.76 of LS)
+    // FvftgstrI 51.76 (the backwall prism's extra 0.05 kip/ft), plus the surcharge on the heel for bearing (3.11.6.4.1,
+    // C11.5.6), which the example leaves out.
+    near(max.V - 1.75 * s.LSv, 51.76, 0.002);
+    near(max.Hh, 16.4 + 1.75 * 1.764, 0.002);
   });
 
-  it("the discrepancies: no LS and no bearing eccentricity on the stem (p. 7-35)", () => {
-    // The example's Strength I stem moment and the parts the tool leaves out.
-    const lsPart = 1.75 * 1.58 * 11.0;
+  it("the remaining discrepancy: no bearing eccentricity on the stem (p. 7-35)", () => {
+    // The example's Strength I stem moment and the part the tool leaves out (the bearings 1.13 ft toward the span).
     const eccPart = 1.25 * 1.71 * 0.8 + (1.25 * 7.66 + 1.5 * 1.2 + 1.75 * 6.5) * 1.13;
-    near(s.Mstem + lsPart + eccPart, 156.61, 0.003);
-    expect(s.Mstem).toBeLessThan(0.65 * 156.61);
+    near(s.Mstem + eccPart, 156.61, 0.004);
   });
 
   it("stem section: #9 @ 9 in, 42 in thick (p. 7-65, 7-67)", () => {
@@ -174,10 +178,10 @@ describe("Abutment against FHWA NHI-04-041 Design Step 7", () => {
   it("toe: the front row's piles on a 1.5 ft lever (p. 7-74)", () => {
     // The same lever as the example: the toe's face is 1.5 ft from the front row.
     near(s.Mtoe, (s.piles!.Pfront / NHI.pileSpacing) * 1.5, 1e-9);
-    // The tool's front pile (rigid cap, no LS, bearings on the stem's centerline, no batter): 294 kip against
-    // the example's 315 to 340 kip from its pile–soil analysis.
-    expect(s.piles!.Pfront).toBeGreaterThan(280);
-    expect(s.piles!.Pfront).toBeLessThan(315.3);
+    // The tool's front pile (rigid cap, with the surcharge, bearings on the stem's centerline, no batter): 331 kip,
+    // within the example's 315 to 340 kip from its pile–soil analysis (294 before the surcharge).
+    expect(s.piles!.Pfront).toBeGreaterThan(315);
+    expect(s.piles!.Pfront).toBeLessThan(340);
   });
 
   it("support length: Eq. 4.7.4.4-1 with H = 0 (the example's 14.56 in uses H = 22 ft)", () => {

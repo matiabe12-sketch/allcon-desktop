@@ -92,6 +92,8 @@ export type AbutmentInputs = {
   stemBars: Bars; // back face, vertical
   backwallBars: Bars;
   backwallHorizBars?: Bars; // horizontal, each face (5.10.6), CDOT's usual #5 @ 12 in where not given
+  /** No live load surcharge (AASHTO 3.11.6.5; CDOT BDM 11.3: ignored where an approach slab is provided). Default: omitted when an approach slab is given (approachDC > 0), applied by AASHTO Table 3.11.6.4.1-1 otherwise. */
+  lsOmit?: boolean;
   backwallLLecc?: number; // ft, the axles on the backwall's top from its centerline (default half its thickness)
   toeBars: Bars; // footing bottom, across it
   heelBars: Bars; // footing top, across it
@@ -577,20 +579,28 @@ export function designAbutment(i: AbutmentInputs) {
       LL: { V: perFt(totalGirderR.LL), x: xStem },
     };
     const EH = 0.5 * K * g * H * H; // kip/ft at H/3
+    // Live load surcharge (3.11.6.4.1): Δp = K γs heq, heq for the abutment's height from the backfill's surface to the
+    // footing's bottom (Table 3.11.6.4.1-1); horizontally over the whole height at H/2, and vertically on the heel for
+    // bearing only (it helps against sliding and overturning, C11.5.6). 3.11.6.5: none where an approach slab on the
+    // backwall carries the traffic (CDOT BDM 11.3: ignored where an approach slab is provided), by default when one is given.
+    const heqW = (i.lsOmit ?? i.approachDC > 0) ? 0 : heqAbutment(H);
+    const dpLS = K * g * heqW; // ksf
+    const LSh = dpLS * H; // kip/ft at H/2
+    const LSv = g * heqW * i.heel; // kip/ft on the heel
     const BR = perFt(i.braking);
     const yBR = i.footT + Hs + (i.type === "semi-integral" ? Hb : 0);
     const TU = i.bearingShear;
     // Strength I, two sets: the most vertical (bearing) and the least (sliding, eccentricity).
     const combos = [
-      { name: "Strength I, maximum", dc: 1.25, dw: 1.5, ev: 1.35, eh: gEH.max, ll: 1.75, tu: 0.5 },
-      { name: "Strength I, minimum", dc: 0.9, dw: 0.65, ev: 1.0, eh: gEH.max, ll: 0, tu: 0.5 },
-      { name: "Service I", dc: 1, dw: 1, ev: 1, eh: 1, ll: 1, tu: 1 },
+      { name: "Strength I, maximum", dc: 1.25, dw: 1.5, ev: 1.35, eh: gEH.max, ll: 1.75, tu: 0.5, ls: 1.75, lsv: 1.75 },
+      { name: "Strength I, minimum", dc: 0.9, dw: 0.65, ev: 1.0, eh: gEH.max, ll: 0, tu: 0.5, ls: 1.75, lsv: 0 },
+      { name: "Service I", dc: 1, dw: 1, ev: 1, eh: 1, ll: 1, tu: 1, ls: 1, lsv: 1 },
     ];
     const rows = combos.map((c) => {
-      const V = c.dc * (items.stem.V + items.backwall.V + items.footing.V + items.DC.V) + c.dw * items.DW.V + c.ev * items.soil.V + c.ll * items.LL.V;
-      const Mr = c.dc * (items.stem.V * items.stem.x + items.backwall.V * items.backwall.x + items.footing.V * items.footing.x + items.DC.V * items.DC.x) + c.dw * items.DW.V * items.DW.x + c.ev * items.soil.V * items.soil.x + c.ll * items.LL.V * items.LL.x;
-      const Hh = c.eh * EH + (c.ll > 0 ? 1.75 : 0) * BR + c.tu * TU;
-      const Mo = c.eh * EH * (H / 3) + (c.ll > 0 ? 1.75 : 0) * BR * yBR + c.tu * TU * yBR;
+      const V = c.dc * (items.stem.V + items.backwall.V + items.footing.V + items.DC.V) + c.dw * items.DW.V + c.ev * items.soil.V + c.ll * items.LL.V + c.lsv * LSv;
+      const Mr = c.dc * (items.stem.V * items.stem.x + items.backwall.V * items.backwall.x + items.footing.V * items.footing.x + items.DC.V * items.DC.x) + c.dw * items.DW.V * items.DW.x + c.ev * items.soil.V * items.soil.x + c.ll * items.LL.V * items.LL.x + c.lsv * LSv * items.soil.x;
+      const Hh = c.eh * EH + (c.ll > 0 ? 1.75 : 0) * BR + c.tu * TU + c.ls * LSh;
+      const Mo = c.eh * EH * (H / 3) + (c.ll > 0 ? 1.75 : 0) * BR * yBR + c.tu * TU * yBR + c.ls * LSh * (H / 2);
       const xR = (Mr - Mo) / V;
       const e = B / 2 - xR;
       return { c, V, Mr, Mo, Hh, xR, e };
@@ -678,9 +688,9 @@ export function designAbutment(i: AbutmentInputs) {
     }
     // The stem at the footing's top: earth over Hs + Hb, braking and the bearings' shear at the seat.
     const Hst = Hs + Hb;
-    const Mstem = gEH.max * K * g * Hst ** 3 / 6 + 1.75 * BR * (yBR - i.footT) + 0.5 * TU * (yBR - i.footT);
-    const Mstem_s = K * g * Hst ** 3 / 6 + BR * (yBR - i.footT) + TU * (yBR - i.footT);
-    const Vstem = gEH.max * 0.5 * K * g * Hst ** 2 + 1.75 * BR + 0.5 * TU;
+    const Mstem = gEH.max * K * g * Hst ** 3 / 6 + 1.75 * BR * (yBR - i.footT) + 0.5 * TU * (yBR - i.footT) + (1.75 * dpLS * Hst ** 2) / 2;
+    const Mstem_s = K * g * Hst ** 3 / 6 + BR * (yBR - i.footT) + TU * (yBR - i.footT) + (dpLS * Hst ** 2) / 2;
+    const Vstem = gEH.max * 0.5 * K * g * Hst ** 2 + 1.75 * BR + 0.5 * TU + 1.75 * dpLS * Hst;
     const fs = flexure({ ...common, Mu: Mstem, Ms: Mstem_s, h: i.stemT * 12, cover: 2, bars: i.stemBars });
     add({ id: "stem-flex", name: "Stem: flexure at the footing", demand: Mstem, capacity: fs.MR, unit: "kip·ft/ft", ref: "AASHTO 5.6.3.2" });
     add({ id: "stem-min", name: "Stem: minimum reinforcement", demand: fs.minRequired, capacity: fs.MR, unit: "kip·ft/ft", ref: "AASHTO 5.6.3.3" });
@@ -693,8 +703,8 @@ export function designAbutment(i: AbutmentInputs) {
     // NHI-04-041 Step 7.9); Strength I and V (LL and LS at 1.35), Service I for crack control.
     const MbwEH = (gEH.max * K * g * Hb ** 3) / 6; // the earth's share, Strength
     const REHbw = 0.5 * K * g * Hb ** 2;
-    const heqBw = heqAbutment(Hb);
-    const RLSbw = K * g * heqBw * Hb;
+    const heqBw = heqW; // the abutment's whole height (3.11.6.4.1)
+    const RLSbw = dpLS * Hb;
     const lanesBw = Math.max(1, Math.floor(i.lanes ?? 1));
     const RLLbw = (presence(lanesBw) * lanesBw * (32 * (1 + i.IM) + 0.64 * 2)) / i.length; // kip/ft: a rear axle and 2 ft of lane in each lane
     const eLL = i.backwallLLecc ?? i.backwallT / 2;
@@ -778,7 +788,7 @@ export function designAbutment(i: AbutmentInputs) {
     }
     if (micropiles) {
       micropiles.onRows = footingOnRows(micropiles);
-      return { H, B, K, EH, BR, rows, footing, piles, micropiles, Mstem, Vstem, Mbw, MbwEH, REHbw, RLSbw, RLLbw, heqBw, eLL, Vbw, Mtoe: 0, Mheel: 0, items, semi: semiOut };
+      return { H, B, K, EH, BR, rows, footing, piles, micropiles, Mstem, Vstem, Mbw, MbwEH, REHbw, RLSbw, RLLbw, heqBw, eLL, Vbw, heqW, dpLS, LSh, LSv, Mtoe: 0, Mheel: 0, items, semi: semiOut };
     }
     // The footing (or pile cap) as cantilevers from the stem: the toe under the bearing pressure.
     const r0 = strength[0];
@@ -790,10 +800,10 @@ export function designAbutment(i: AbutmentInputs) {
     const Mtoe = i.foundation === "footing" ? (qToe * i.toe ** 2) / 2 - 1.25 * i.gammaC * i.footT * i.toe ** 2 / 2 : piles ? (piles.Pfront / i.pileSpacing) * Math.max(0, i.toe - i.rowFront) : 0;
     const ft = flexure({ ...common, Mu: Math.max(0, Mtoe), Ms: Math.max(0, Mtoe) / 1.4, h: i.footT * 12, cover: 3, bars: i.toeBars });
     add({ id: "toe", name: "Footing toe: flexure at the stem", demand: Math.max(0, Mtoe), capacity: ft.MR, unit: "kip·ft/ft", ref: "AASHTO 5.6.3.2" });
-    const Mheel = 1.35 * g * (Hs + Hb) * i.heel ** 2 / 2 + 1.25 * i.gammaC * i.footT * i.heel ** 2 / 2;
+    const Mheel = 1.35 * g * (Hs + Hb) * i.heel ** 2 / 2 + 1.25 * i.gammaC * i.footT * i.heel ** 2 / 2 + (1.75 * g * heqW * i.heel ** 2) / 2; // with the surcharge on it (3.11.6.4.1)
     const fh = flexure({ ...common, Mu: Mheel, Ms: Mheel / 1.3, h: i.footT * 12, cover: 2, bars: i.heelBars });
-    add({ id: "heel", name: "Footing heel: flexure at the stem (soil and footing, no pressure under it)", demand: Mheel, capacity: fh.MR, unit: "kip·ft/ft", ref: "AASHTO 5.6.3.2" });
-    return { H, B, K, EH, BR, rows, footing, piles, micropiles, Mstem, Vstem, Mbw, MbwEH, REHbw, RLSbw, RLLbw, heqBw, eLL, Vbw, Mtoe, Mheel, items, semi: semiOut };
+    add({ id: "heel", name: "Footing heel: flexure at the stem (soil, footing and the live load surcharge, no pressure under it)", demand: Mheel, capacity: fh.MR, unit: "kip·ft/ft", ref: "AASHTO 5.6.3.2" });
+    return { H, B, K, EH, BR, rows, footing, piles, micropiles, Mstem, Vstem, Mbw, MbwEH, REHbw, RLSbw, RLLbw, heqBw, eLL, Vbw, heqW, dpLS, LSh, LSv, Mtoe, Mheel, items, semi: semiOut };
 
     /**
      * The footing across its width as a beam on the rows of micropiles (per foot of abutment): each row's reaction its

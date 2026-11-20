@@ -5,7 +5,7 @@ import { markGroups, schedule, type ConcreteItem } from "../rebar/schedule";
 import { ftT, inT, plus18T } from "../takeoff/tex";
 import type { DetailView, Takeoff } from "../takeoff/types";
 import { num } from "../calc-style";
-import { STEEL_ENDS_DEFAULTS, type AbutmentInputs } from "./abutment";
+import { SEMI_DEFAULTS, STEEL_ENDS_DEFAULTS, type AbutmentInputs } from "./abutment";
 import { development } from "../stm/anchorage";
 import type { FootingInputs } from "./footing";
 import type { MicropileInputs } from "./micropile";
@@ -357,7 +357,18 @@ export function abutmentTakeoff(i: AbutmentInputs): Takeoff {
     const hq = i.stemHQty && i.stemHQty > 0 ? i.stemHQty : i.stemH;
     const Hst = i.stemH + i.backwallH;
     run({ size: i.stemBars.bar, count: countAt(Li - 4, i.stemBars.spacing), straight: hq * 12 + i.footT * 12 - 6, hooks: [true, false], use: "Stem, back face", callout: `#${i.stemBars.bar} @ ${ftIn(i.stemBars.spacing)} (stem, back face)`, cover: 2, spacing: i.stemBars.spacing });
-    run({ size: i.backwallBars.bar, count: 2 * countAt(Li - 4, i.backwallBars.spacing), straight: i.backwallH * 12 + 24, use: "Backwall, vertical", callout: `#${i.backwallBars.bar} @ ${ftIn(i.backwallBars.spacing)} each face (backwall)`, cover: 2, spacing: i.backwallBars.spacing });
+    if (i.type === "semi-integral") {
+      // The end diaphragm (CDOT BDM Figure 11-3): bars each face both ways, its bottom bars and its ties, as designed.
+      const sd = { ...SEMI_DEFAULTS, ...(i.semi ?? {}) };
+      const Hd = i.backwallH * 12;
+      const Td = i.backwallT * 12;
+      run({ size: sd.vert.bar, count: 2 * countAt(Li - 4, sd.vert.spacing), straight: Hd - 4, use: "End diaphragm, vertical", callout: `#${sd.vert.bar} @ ${ftIn(sd.vert.spacing)} each face (end diaphragm)`, cover: 2, spacing: sd.vert.spacing });
+      run({ size: sd.horiz.bar, count: countAt(Hd - 4, sd.horiz.spacing), times: 2, straight: Li - 4, use: "End diaphragm, horizontal", callout: `#${sd.horiz.bar} @ ${ftIn(sd.horiz.spacing)} each face (end diaphragm)`, cover: 2, spacing: sd.horiz.spacing });
+      run({ size: sd.bottom.bar, count: sd.bottom.count, straight: Li - 4, use: "End diaphragm, bottom", callout: `${sd.bottom.count} #${sd.bottom.bar} Cont. (end diaphragm, bottom)`, cover: 2, spacing: 6 });
+      const w = Td - 4;
+      const h = Hd - 4;
+      pre.push({ size: sd.stirrup.bar, count: countAt(Li - 4, sd.stirrup.spacing), shape: { kind: "closed", dims: [roundDown(w), roundDown(h)], hook: 6 }, length: roundDown(2 * (w + h) + 12), use: "End diaphragm, ties", callout: `#${sd.stirrup.bar} ties @ ${ftIn(sd.stirrup.spacing)} (end diaphragm)`, where: "end diaphragm" });
+    } else run({ size: i.backwallBars.bar, count: 2 * countAt(Li - 4, i.backwallBars.spacing), straight: i.backwallH * 12 + 24, use: "Backwall, vertical", callout: `#${i.backwallBars.bar} @ ${ftIn(i.backwallBars.spacing)} each face (backwall)`, cover: 2, spacing: i.backwallBars.spacing });
     run({ size: i.toeBars.bar, count: countAt(Li - 6, i.toeBars.spacing), straight: B * 12 - 6, use: "Footing, bottom", callout: `#${i.toeBars.bar} @ ${ftIn(i.toeBars.spacing)} (footing, bottom)`, cover: 3, spacing: i.toeBars.spacing });
     run({ size: i.heelBars.bar, count: countAt(Li - 6, i.heelBars.spacing), straight: B * 12 - 6, use: "Footing, top", callout: `#${i.heelBars.bar} @ ${ftIn(i.heelBars.spacing)} (footing, top)`, cover: 2, spacing: i.heelBars.spacing });
     // The stem's other bars, the seat's, and the footing's along the abutment (CDOT's usual #5 @ 12 in where not given).
@@ -382,7 +393,7 @@ export function abutmentTakeoff(i: AbutmentInputs): Takeoff {
     if (i.type === "semi-integral") {
       // The end diaphragm rides on the bearings with the girders: a bridge's summary of quantities pays it, concrete and
       // bars, with the superstructure (as CDOT's plans do); the stem stays with the abutment.
-      for (const g of pre) if (g.use.startsWith("Backwall")) g.paidWith = "superstructure";
+      for (const g of pre) if (g.use.startsWith("End diaphragm")) g.paidWith = "superstructure";
       concrete.push({ label: "Stem", cy: stemV / 27, item: "601-03056", basis: `${i.length} ft × ${i.stemT} × ${hq} ft, Class DF (BDM 5.3.1.1)`, math: `${ftT(i.length)}\\cdot ${ftT(i.stemT)}\\cdot ${ftT(hq)}`, ref: "Abutment wall: length × section, Class DF" });
       concrete.push({ label: "End diaphragm", cy: bwV / 27, item: "601-03056", paidWith: "superstructure", basis: `${i.length} ft × ${i.backwallT} × ${i.backwallH} ft, Class DF (BDM 5.3.1.1); in the bridge's summary, with the superstructure`, math: `${ftT(i.length)}\\cdot ${ftT(i.backwallT)}\\cdot ${ftT(i.backwallH)}`, ref: "End diaphragm: length × width × height, Class DF" });
     } else concrete.push({ label: "Stem and backwall", cy: (stemV + bwV) / 27, item: "601-03056", basis: `${i.length} ft × (${i.stemT} × ${hq} + ${i.backwallT} × ${i.backwallH}) ft², Class DF (BDM 5.3.1.1)`, math: `${ftT(i.length)}\\cdot\\left(${ftT(i.stemT)}\\cdot ${ftT(hq)}+${ftT(i.backwallT)}\\cdot ${ftT(i.backwallH)}\\right)`, ref: "Abutment wall: length × section, Class DF" });

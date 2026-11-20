@@ -60,8 +60,9 @@ describe("the abutment's worked calcs", () => {
       close(w.value("s_{maxst}", "in"), get("stem-crack").capacity);
       close(w.value("V_{ust}", "kip/ft"), get("stem-shear").demand);
       close(w.value("V_{rst}", "kip/ft"), get("stem-shear").capacity);
-      close(w.value("M_{ubw}", "kip*ft/ft"), get("backwall").demand);
-      close(w.value("M_{rbw}", "kip*ft/ft"), get("backwall").capacity);
+      // The end diaphragm rides on the bearings: its horizontal bars under passive pressure, not a backwall on the seat.
+      close(w.value("M_{udh}", "kip*ft/ft"), get("semi-pass").demand);
+      close(w.value("M_{rdh}", "kip*ft/ft"), get("semi-pass").capacity);
       close(w.value("M_{fp}", "kip*ft/ft"), get("foot-bot").demand);
       close(w.value("M_{rfb}", "kip*ft/ft"), get("foot-bot").capacity);
       close(w.value("M_{fn}", "kip*ft/ft"), get("foot-top").demand);
@@ -253,4 +254,26 @@ describe("steel girders' ends in an integral abutment's diaphragm", () => {
     close(c.value(String.raw`T_{g}\coloneq`, "kip"), se.perGirder);
   });
   it("precast girders have none of it", () => expect(designAbutment(abutmentInputs({})).integral!.steelEnds).toBeNull());
+});
+
+describe("a semi-integral abutment's end diaphragm (CDOT BDM 11.3.2, Figure 11-3)", () => {
+  for (const girderMaterial of ["precast", "steel"] as const) {
+    const i = abutmentInputs({ type: "semi-integral", girderMaterial });
+    const r = designAbutment(i);
+    const sd = r.seat!.semi!;
+    it(`${girderMaterial}: a beam between the girders, not a backwall on the seat; jacking at 1.3 × the permanent reaction to a jack either side`, () => {
+      expect(r.checks.some((c) => c.id === "backwall")).toBe(false);
+      expect(sd.Rj).toBeCloseTo(1.3 * (i.RDC + i.RDW), 9);
+      expect(sd.Mj).toBeCloseTo((sd.Rj / 2) * sd.jackOffset, 9);
+      expect(r.checks.filter((c) => c.id.startsWith("semi") && !c.ok).map((c) => c.name)).toEqual([]);
+      if (girderMaterial === "steel") expect(r.checks.some((c) => c.id === "semi-studs")).toBe(true);
+    });
+    it(`${girderMaterial}: its worked calc, no errors, no NG, every line on the page`, () => {
+      const c = workOut("abutment", i);
+      expect(c.errors).toEqual([]);
+      expect(c.ng).toEqual([]);
+      expect(c.wide).toEqual([]);
+      close(c.value(String.raw`M_{j}\coloneq`, "kip ft"), sd.Mj);
+    });
+  }
 });

@@ -44,6 +44,7 @@ export const FOUNDATION_GROUPS: Record<FoundationKind, Group[]> = {
     { title: "CDOT's integral abutment limits", of: (id) => ["unit-length", "movement", "grade", "skew", "curvature", "depth", "cap-max", "cap-min", "cap-embed", "girder-clear", "flex-detail"].includes(id) },
     { title: "The foundation", of: (id) => id.startsWith("pile") || id.startsWith("shaft") || id.startsWith("mp-") || ["prebore", "embed", "ecc", "bearing", "sliding"].includes(id) },
     { title: "Steel girders' ends in the diaphragm", of: (id) => id.startsWith("steel-") },
+    { title: "End diaphragm (semi-integral)", of: (id) => id.startsWith("semi-") },
     { title: "The abutment", of: (id) => id.startsWith("cap-p") || id.startsWith("cap-n") || id.startsWith("foot-") || ["cap-min", "cap-shear", "diaphragm", "stem-flex", "stem-min", "stem-crack", "stem-shear", "backwall", "seat", "toe", "heel"].includes(id) },
   ],
 };

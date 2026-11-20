@@ -134,6 +134,9 @@ export const F15E_ABUTMENT = (support: number): Partial<AbutmentInputs> => ({
   stemBars: { bar: 8, spacing: 6 },
   stemFrontBars: { bar: 8, spacing: 6 },
   stemHorizBars: { bar: 5, spacing: 12 },
+  // The end diaphragm's bars (BX15 not at hand): #6 @ 12 in each face both ways, AASHTO 5.10.6's minimum for its 4 ft
+  // width (0.34 in²/ft); 2 #11 along its bottom and #5 ties @ 12 in as CDOT's Figure 11-3. An assumption, not the plans'.
+  semi: { horiz: { bar: 6, spacing: 12 }, vert: { bar: 6, spacing: 12 }, bottom: { bar: 11, count: 2 }, stirrup: { bar: 5, spacing: 12, legs: 2 }, jackTons: 100, jackOffset: 1.5, clear: 9 },
   seatTop: { bar: 8, count: 7 },
   seatU: { bar: 6, spacing: 6 },
   toeBars: { bar: 5, spacing: 6 },

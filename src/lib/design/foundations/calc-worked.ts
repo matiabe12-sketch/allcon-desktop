@@ -509,8 +509,32 @@ function seatWorked(w: Writer, i: AbutmentInputs, r: AbutmentResult, s: NonNulla
   });
   shear(w, "st", "\\gamma_{EH}\\cdot0.5\\cdot K\\cdot\\gamma_{s}\\cdot H_{st}^{2}+1.75\\cdot BR+0.5\\cdot TU=", "d_{est}", "h_{st}", "Stem shear, AASHTO 5.7.3.3");
 
-  text(semi ? "End diaphragm at the seat (earth pressure)" : "Backwall at the seat", "subheading", { keepWithNext: true });
-  member(w, "bw", semi ? "End diaphragm" : "Backwall", { Mu: "\\gamma_{EH}\\cdot K\\cdot\\gamma_{s}\\cdot\\frac{H_{b}^{3}}{6}=", h: i.backwallT * 12, cover: 2, bars: i.backwallBars, exposure: i.exposure });
+  if (!semi) {
+    text("Backwall at the seat", "subheading", { keepWithNext: true });
+    member(w, "bw", "Backwall", { Mu: "\\gamma_{EH}\\cdot K\\cdot\\gamma_{s}\\cdot\\frac{H_{b}^{3}}{6}=", h: i.backwallT * 12, cover: 2, bars: i.backwallBars, exposure: i.exposure });
+  }
+  const sd = s.semi;
+  if (semi && sd) {
+    text("The end diaphragm (CDOT BDM 11.3.2, Figure 11-3)", "subheading", { keepWithNext: true });
+    text("Method:- it rides on the bearings with the superstructure, a beam between the girders, not a wall fixed to the seat: its horizontal bars carry the passive pressure as the bridge expands; for replacing the bearings it carries each girder's permanent reaction × 1.3 (AASHTO 3.4.3.1) to a jack either side (CDOT BDM 14.5.6).", undefined, { keepWithNext: true });
+    m("K_{pd}\\coloneq\\tan\\left(45\\mathrm{deg}+\\frac{\\phi_{bf}}{2}\\right)^{2}=", "Passive, Rankine");
+    m("p_{bd}\\coloneq K_{pd}\\cdot\\gamma_{s}\\cdot H_{b}=", "At its bottom", "ksf");
+    m(`S_{gd}\\coloneq ${num(i.girderSpacing)}\\mathrm{ft}`, "Girder spacing: the diaphragm spans between girders");
+    member(w, "dh", "End diaphragm, horizontal bars", { Mu: "\\frac{1.35\\cdot p_{bd}\\cdot S_{gd}^{2}}{10}=", h: i.backwallT * 12, cover: 2, bars: sd.horiz, exposure: i.exposure });
+    m(`R_{j}\\coloneq1.3\\cdot\\left(${num(i.RDC)}\\mathrm{kip}+${num(i.RDW)}\\mathrm{kip}\\right)=`, "Each girder's permanent reaction, jacking, AASHTO 3.4.3.1", "kip");
+    m("P_{j}\\coloneq\\frac{R_{j}}{2}=", "Each of the two jacks", "kip");
+    m(`a_{j}\\coloneq ${num(sd.jackOffset)}\\mathrm{ft}`, "Each jack from its girder");
+    m("M_{j}\\coloneq P_{j}\\cdot a_{j}=", "The diaphragm over the jacks", "kip*ft");
+    m(`A_{sj}\\coloneq ${sd.bottom.count}\\cdot ${num(BARS[sd.bottom.bar].area)}\\mathrm{in}^{2}=`, `${sd.bottom.count} #${sd.bottom.bar} along the bottom`, "in^2");
+    m(`d_{j}\\coloneq ${num(sd.d, 3)}\\mathrm{in}`, "To the bottom bars");
+    m("a_{sj}\\coloneq\\frac{A_{sj}\\cdot f_{y}}{0.85\\cdot f'_{c}\\cdot T_{b}}=", undefined, "in");
+    m(ok("M_{j}", "0.9\\cdot A_{sj}\\cdot f_{y}\\cdot\\left(d_{j}-\\frac{a_{sj}}{2}\\right)"), "AASHTO 5.6.3.2");
+    m(`V_{cj}\\coloneq ${num(sd.Vc, 3)}\\mathrm{kip}`, "0.0316 β √f'c b dv, β 2, AASHTO Eq. 5.7.3.3-3");
+    m(`V_{sj}\\coloneq ${num(sd.Vs, 3)}\\mathrm{kip}`, `${sd.stirrup.legs} legs of #${sd.stirrup.bar} @ ${num(sd.stirrup.spacing)} in, AASHTO Eq. 5.7.3.3-4`);
+    m(ok("P_{j}", "0.9\\cdot\\left(V_{cj}+V_{sj}\\right)"), "Shear, AASHTO 5.7.3.3");
+    m(ok("P_{j}", `${sd.jackTons * 2}\\mathrm{kip}`), `${sd.jackTons}-ton jacks, CDOT BDM 14.5.6`);
+    m(ok("P_{j}", `0.7\\cdot0.85\\cdot f'_{c}\\cdot\\frac{\\pi\\cdot\\left(${sd.jackD}\\mathrm{in}\\right)^{2}}{4}`), "Concrete bearing under the jack, AASHTO 5.6.5");
+  }
 
   if (i.type === "seat") {
     text("Bearing seat width (AASHTO 4.7.4.4)", "subheading", { keepWithNext: true });

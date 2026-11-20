@@ -87,6 +87,8 @@ export type AbutmentInputs = {
   diaphragmBars: Bars; // horizontal, each face
   /** Integral with steel girders: the girders' ends cast into the diaphragm (web, through-bar holes, studs, cap-to-diaphragm dowels). */
   steelEnds?: Partial<SteelEnds>;
+  /** Semi-integral: the end diaphragm's bars and the jacking for the bearings' replacement. */
+  semi?: Partial<SemiDiaphragm>;
   stemBars: Bars; // back face, vertical
   backwallBars: Bars;
   toeBars: Bars; // footing bottom, across it
@@ -163,6 +165,18 @@ export type SteelEnds = {
   dowels: Bars; // vertical, the cap into the diaphragm
 };
 export const STEEL_ENDS_DEFAULTS: SteelEnds = { D: 42, tw: 0.5, Fyw: 50, holes: 3, holeD: 1.375, throughBar: 6, studs: 12, studD: 0.875, studFu: 60, dowels: { bar: 6, spacing: 12 } };
+/** A semi-integral abutment's end diaphragm: its bars, and the jacks under it for replacing the bearings (CDOT BDM 14.5.6). */
+export type SemiDiaphragm = {
+  horiz: Bars; // horizontal, each face (along the abutment)
+  vert: Bars; // vertical, each face
+  bottom: { bar: number; count: number }; // continuous along the bottom (Figure 11-3's #11)
+  stirrup: { bar: number; spacing: number; legs: number };
+  jackTons: 50 | 100;
+  jackOffset: number; // ft, each jack from its girder's centerline
+  clear: number; // in, the seat to the diaphragm's bottom
+};
+export const SEMI_DEFAULTS: SemiDiaphragm = { horiz: { bar: 5, spacing: 12 }, vert: { bar: 5, spacing: 12 }, bottom: { bar: 11, count: 2 }, stirrup: { bar: 5, spacing: 12, legs: 2 }, jackTons: 100, jackOffset: 1.5, clear: 9 };
+type SemiResult = SemiDiaphragm & { Kp: number; pBot: number; Mpass: number; Rj: number; P: number; Mj: number; MRj: number; d: number; dv: number; Vc: number; Vs: number; jackD: number; jackH: number; Ast: number };
 type SteelEndsResult = SteelEnds & { piles: number; brake: number; pull: number; perGirder: number; Qr: number; Vend: number; Dnet: number; Vui: number; pushCap: number; Acv: number; Avf: number; Pc: number; Vri: number; ld: number; Hjoint: number };
 
 /** An integral abutment on twelve HP 12x53 piles in 10 ft prebores with pea gravel, for a 240 ft precast girder unit. */
@@ -215,6 +229,7 @@ export const ABUTMENT_DEFAULTS: AbutmentInputs = {
   stirrup: { bar: 5, spacing: 12, legs: 2 },
   diaphragmBars: { bar: 6, spacing: 12 },
   steelEnds: STEEL_ENDS_DEFAULTS,
+  semi: SEMI_DEFAULTS,
   stemBars: { bar: 8, spacing: 9 },
   backwallBars: { bar: 6, spacing: 12 },
   toeBars: { bar: 8, spacing: 9 },
@@ -669,7 +684,63 @@ export function designAbutment(i: AbutmentInputs) {
     add({ id: "stem-shear", name: "Stem: shear at the footing", demand: Vstem, capacity: 0.9 * 0.0316 * 2 * Math.sqrt(i.fc) * 12 * dvS, unit: "kip/ft", ref: "AASHTO 5.7.3.3" });
     const Mbw = (gEH.max * K * g * Hb ** 3) / 6;
     const fb = flexure({ ...common, Mu: Mbw, Ms: Mbw / gEH.max, h: i.backwallT * 12, cover: 2, bars: i.backwallBars });
-    add({ id: "backwall", name: "Backwall: flexure at the seat", demand: Mbw, capacity: fb.MR, unit: "kip·ft/ft", ref: "AASHTO 5.6.3.2, 3.11.5" });
+    if (i.type !== "semi-integral") add({ id: "backwall", name: "Backwall: flexure at the seat", demand: Mbw, capacity: fb.MR, unit: "kip·ft/ft", ref: "AASHTO 5.6.3.2, 3.11.5" });
+    // The end diaphragm of a semi-integral abutment (BDM 11.3.2, Figure 11-3) rides on the bearings with the
+    // superstructure: not a backwall fixed to the seat, but a beam between the girders. Its horizontal bars carry the
+    // passive pressure as the bridge expands (3.11.5.4, spanning between girders like an integral diaphragm); for the
+    // bearings' replacement it carries each girder to a jack either side (CDOT BDM 14.5.6 with 50- or 100-ton jacks;
+    // AASHTO 3.4.3.1, 1.3 × the permanent reaction, no live load): its bottom bars and stirrups, the jack's rating,
+    // the concrete under the jack (5.6.5) and the clear height for it; its vertical bars at least the shrinkage and
+    // temperature steel (5.10.6).
+    let semiOut: SemiResult | null = null;
+    if (i.type === "semi-integral") {
+      const sd = { ...SEMI_DEFAULTS, ...(i.semi ?? {}) };
+      const Kp = Math.tan(rad(45 + i.backfillPhi / 2)) ** 2;
+      const pBot = Kp * g * Hb; // ksf at the diaphragm's bottom
+      const Mpass = (1.35 * pBot * i.girderSpacing ** 2) / 10; // kip·ft per ft of height
+      const fh = flexure({ ...common, Mu: Mpass, Ms: Mpass / 1.35, h: i.backwallT * 12, cover: 2, bars: sd.horiz });
+      add({ id: "semi-pass", name: "End diaphragm: horizontal bars under passive pressure between girders", demand: Mpass, capacity: fh.MR, unit: "kip·ft/ft", ref: "AASHTO 3.11.5.4, 5.6.3.2; CDOT BDM 11.3.2" });
+      // Jacking: each girder's permanent reaction × 1.3 to two jacks at ±a from it; the diaphragm a beam between them.
+      const Rj = 1.3 * (i.RDC + i.RDW);
+      const P = Rj / 2;
+      const a = sd.jackOffset * 12; // in
+      const Mj = (P * a) / 12; // kip·ft
+      const b = i.backwallT * 12;
+      const h = Hb * 12;
+      const As = sd.bottom.count * BARS[sd.bottom.bar].area;
+      const d = h - i.cover - BARS[sd.stirrup.bar].dia - BARS[sd.bottom.bar].dia / 2;
+      const aw = (As * i.fy) / (0.85 * i.fc * b);
+      const MRj = (0.9 * As * i.fy * (d - aw / 2)) / 12;
+      add({ id: "semi-jack-flex", name: `End diaphragm on the jacks: bottom bars ${sd.bottom.count} #${sd.bottom.bar} (each girder's ${Rj.toFixed(0)} kip to jacks ${sd.jackOffset} ft either side)`, demand: Mj, capacity: MRj, unit: "kip·ft", ref: "AASHTO 3.4.3.1, 5.6.3.2; CDOT BDM 14.5.6" });
+      const dv = Math.max(0.9 * d, 0.72 * h);
+      const Vc = 0.0316 * 2 * Math.sqrt(i.fc) * b * dv;
+      const Vs = (sd.stirrup.legs * BARS[sd.stirrup.bar].area * i.fy * dv) / sd.stirrup.spacing;
+      add({ id: "semi-jack-shear", name: `End diaphragm on the jacks: shear, #${sd.stirrup.bar} stirrups @ ${sd.stirrup.spacing} in${a < 2 * d ? " (a deep beam: the Strut-and-Tie tool for the detail)" : ""}`, demand: P, capacity: 0.9 * Math.min(Vc + Vs, 0.25 * i.fc * b * dv), unit: "kip", ref: "AASHTO 5.7.3.3" });
+      const cap = sd.jackTons * 2; // kip
+      add({ id: "semi-jack-rating", name: `Jack rating: ${sd.jackTons}-ton jacks (CDOT BDM 14.5.6)`, demand: P, capacity: cap, unit: "kip", ref: "CDOT BDM 14.5.6" });
+      const jackD = sd.jackTons >= 100 ? 10 : 8; // in, CDOT's minimum sizes
+      const jackH = sd.jackTons >= 100 ? 8 : 6;
+      const A1 = (Math.PI * jackD ** 2) / 4;
+      add({ id: "semi-jack-bearing", name: `Concrete bearing under a ${jackD} in jack`, demand: P, capacity: 0.7 * 0.85 * i.fc * A1, unit: "kip", ref: "AASHTO 5.6.5 (m = 1)" });
+      add({ id: "semi-jack-clear", name: `Clear height under the diaphragm for a ${jackH} in jack and its cribbing`, demand: jackH + 1, capacity: sd.clear, unit: "in", ref: "CDOT BDM 14.5.6, Figure 11-3 (7 in min for 50-ton jacks)" });
+      // Vertical bars, each face: the shrinkage and temperature minimum (5.10.6), As ≥ 1.30 b h / (2 (b + h) fy), 0.11 to 0.60 in²/ft.
+      const Ast = Math.min(0.6, Math.max(0.11, (1.3 * b * h) / (2 * (b + h) * i.fy)));
+      add({ id: "semi-vert-min", name: `End diaphragm: vertical bars #${sd.vert.bar} @ ${sd.vert.spacing} in each face, shrinkage and temperature`, demand: Ast, capacity: (BARS[sd.vert.bar].area * 12) / sd.vert.spacing, unit: "in²/ft", ref: "AASHTO 5.10.6" });
+      add({ id: "semi-horiz-min", name: "End diaphragm: horizontal bars each face, shrinkage and temperature", demand: Ast, capacity: (BARS[sd.horiz.bar].area * 12) / sd.horiz.spacing, unit: "in²/ft", ref: "AASHTO 5.10.6" });
+      // Steel girders (Figure 11-3 note 3): studs on each end carry its share of the bearings' shear and braking into the
+      // diaphragm; the web keeps its net section at the through bars' holes.
+      if (i.girderMaterial === "steel") {
+        const se = { ...STEEL_ENDS_DEFAULTS, ...(i.steelEnds ?? {}) };
+        const pull = i.bearingShear * i.length + 1.75 * i.braking;
+        const perGirder = pull / i.nGirders;
+        const Qr = 1.0 * 0.7 * ((Math.PI * se.studD ** 2) / 4) * se.studFu;
+        add({ id: "semi-studs", name: `Steel girder ends: studs in the diaphragm, ${se.studs} – ${se.studD} in each girder (the bearings' shear and braking over ${i.nGirders} girders)`, demand: perGirder, capacity: se.studs * Qr, unit: "kip", ref: "AASHTO 6.10.10.4.3; CDOT BDM 11.3.2 (Fig. 11-3 note 3)" });
+        const Vend = 1.25 * i.RDC + 1.5 * i.RDW + 1.75 * i.RLL * (1 + i.IM);
+        add({ id: "semi-web-holes", name: `Steel girder ends: the web at the through bars' holes, ${se.holes} holes of ${se.holeD} in`, demand: Vend, capacity: 1.0 * 0.58 * se.Fyw * (se.D - se.holes * se.holeD) * se.tw, unit: "kip", ref: "AASHTO 6.10.9.2 (Vp on the net web)" });
+      }
+      semiOut = { ...sd, Kp, pBot, Mpass, Rj, P, Mj, MRj, d, dv, Vc, Vs, jackD, jackH, Ast };
+    }
+
     // The seat width (4.7.4.4): N = (8 + 0.02 L + 0.08 H)(1 + 0.000125 S²), H = 0 at an abutment.
     if (i.type === "seat") {
       const N = (8 + 0.02 * i.unitLength) * (1 + 0.000125 * i.skew ** 2);
@@ -677,7 +748,7 @@ export function designAbutment(i: AbutmentInputs) {
     }
     if (micropiles) {
       micropiles.onRows = footingOnRows(micropiles);
-      return { H, B, K, EH, BR, rows, footing, piles, micropiles, Mstem, Vstem, Mbw, Mtoe: 0, Mheel: 0, items };
+      return { H, B, K, EH, BR, rows, footing, piles, micropiles, Mstem, Vstem, Mbw, Mtoe: 0, Mheel: 0, items, semi: semiOut };
     }
     // The footing (or pile cap) as cantilevers from the stem: the toe under the bearing pressure.
     const r0 = strength[0];
@@ -692,7 +763,7 @@ export function designAbutment(i: AbutmentInputs) {
     const Mheel = 1.35 * g * (Hs + Hb) * i.heel ** 2 / 2 + 1.25 * i.gammaC * i.footT * i.heel ** 2 / 2;
     const fh = flexure({ ...common, Mu: Mheel, Ms: Mheel / 1.3, h: i.footT * 12, cover: 2, bars: i.heelBars });
     add({ id: "heel", name: "Footing heel: flexure at the stem (soil and footing, no pressure under it)", demand: Mheel, capacity: fh.MR, unit: "kip·ft/ft", ref: "AASHTO 5.6.3.2" });
-    return { H, B, K, EH, BR, rows, footing, piles, micropiles, Mstem, Vstem, Mbw, Mtoe, Mheel, items };
+    return { H, B, K, EH, BR, rows, footing, piles, micropiles, Mstem, Vstem, Mbw, Mtoe, Mheel, items, semi: semiOut };
 
     /**
      * The footing across its width as a beam on the rows of micropiles (per foot of abutment): each row's reaction its

@@ -145,6 +145,24 @@ diaphragm (BDM 11.3.1, Figure 11-1 note 3).
 - **Take-off:** the through bars and the dowels are in the abutment's schedule. The studs are paid with the
   structural steel (509).
 
+Semi-integral end diaphragm (`semi`, BDM 11.3.2 Figure 11-3): it rides on the bearings with the superstructure, so
+it's a beam between the girders, not a backwall fixed to the seat. The old cantilever check is dropped for this
+type.
+
+- **Horizontal bars:** each face, under passive pressure between girders (1.35 Kp γ H S² / 10, 3.11.5.4).
+- **Jacking for the bearings' replacement** (AASHTO 3.4.3.1: 1.3 × the permanent reaction, no live load; CDOT BDM
+  14.5.6):
+  - each girder goes to a jack either side, and the diaphragm bridges between them;
+  - its bottom bars (Figure 11-3's #11) in flexure, its ties in shear, flagged as a deep beam when a < 2d;
+  - the jack's rating (50 or 100 tons), the concrete under the jack (5.6.5, 8 or 10 in diameter), and the clear
+    height (the jack plus 1 in).
+- **Shrinkage and temperature:** the minimum for both faces' bars (5.10.6).
+- **Steel girders (note 3):** studs for the bearings' shear and braking, and the web at the through-bar holes.
+- **Take-off:** the diaphragm's bars (both faces, bottom, ties) are paid with the superstructure.
+- **F-15-E:** the plans' BX15 bars aren't at hand, so the fixture assumes #6 @ 12 in each way (5.10.6's minimum
+  for its 4 ft width). Abutment 2's own coated bars now come to 14,370 lb against the plans' 16,037 lb. The old
+  match was the stand-in diaphragm bars counted in the abutment's column.
+
 ## Validation
 
 - Bearing: NHI-06-089 Example 8-1 (qult = 13,425 psf; 12,414 psf with water at the base).

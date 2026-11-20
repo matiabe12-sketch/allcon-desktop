@@ -26,7 +26,7 @@ import { capDetailOrNull, stmPackageLines, stmPayLines } from "../stm/package";
 import { designStm, stmInputs } from "../stm/strut-tie";
 import { MULTICOLUMN_DEFAULTS } from "../stm/templates";
 import { takeoffFor, takeoffPayLines } from "../takeoff";
-import { designWingwall } from "../walls/wingwall";
+import { designWingwall, type WingwallInputs } from "../walls/wingwall";
 import { wingwallCalcLines } from "../walls/wingwall-calc";
 import { runBridge, type BridgeInputs } from "./bridge";
 import { bridgeCalcLines, soqRows, type CalcPart, type PayColumn, type SupportCalc } from "./calc";
@@ -47,6 +47,8 @@ export type ChainSpec = {
   /** Each abutment's details (support index → its inputs over the Bridge's). */
   abutment: (support: number) => Partial<AbutmentInputs>;
   approach?: Partial<ApproachSlabInputs>;
+  /** The wingwalls' own inputs over the defaults (their bars). */
+  wingwall?: Partial<WingwallInputs>;
   cap?: { topBars: { size: number; count: number }; bottomBars: { size: number; count: number }; stirrups: { size: number; legs: number; spacing: number }; diaphragmTop: { size: number; count: number } | null };
   column?: Partial<ColumnInputs>;
   shaft?: Partial<ShaftInputs>;
@@ -99,7 +101,7 @@ export async function buildChain(spec: ChainSpec) {
       const ar = runFoundation("abutment", a);
       parts.push({ label: "Abutment", name: s.name, lines: foundationCalcLines("abutment", a, s.name), checks: ar.groups.map((x) => ({ title: x.title, checks: ar.checks.filter((c) => x.of(c.id)) })) });
       sPay.push(...pays("abutment", a));
-      const w = wingwallFromBridge(b, k, a, wingwallInputs({}));
+      const w = { ...wingwallFromBridge(b, k, a, wingwallInputs({})), ...(spec.wingwall ?? {}) };
       parts.push({ label: "Wingwalls", name: `${s.name} wingwall`, lines: wingwallCalcLines(w, `${s.name} wingwall`), checks: [{ checks: designWingwall(w).checks }] });
       sPay.push(...scaled(pays("cantilever-wingwall", w), 2));
       const ap: ApproachSlabInputs = { ...approachSlabFromBridge(b, k, approachSlabInputs({})), ...(spec.approach ?? {}) };

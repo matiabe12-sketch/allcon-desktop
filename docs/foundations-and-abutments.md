@@ -206,6 +206,51 @@ type.
   for its 4 ft width). Abutment 2's own coated bars now come to 14,370 lb against the plans' 16,037 lb. The old
   match was the stand-in diaphragm bars counted in the abutment's column.
 
+## Cantilever Wingwall (Walls → Cantilever Wingwall; src/lib/design/walls/wingwall.ts)
+
+The wingwall cantilevers off the abutment; the abutment detail leaves it to this tool. Earth pressure (at rest by
+default, 3.11.5.2) and live load surcharge (3.11.6.4) act on the retained face down to a line from H at the
+abutment to h at the tip. Every bar set is designed (2026-11-20; before, only the retained face's horizontals were,
+and the rest were a fixed "other bars", read now as both the front and the vertical bars of older saved designs):
+
+- **Section A, retained face's horizontal bars** (per foot of height, the moment averaged over H): flexure
+  5.6.3.2, minimum 5.6.3.3, crack control 5.6.7, shear 5.7.3.3 with β = 2 and dv per 5.7.2.8.
+- **Into the abutment:** both faces' horizontals run along the wall through the abutment to its far face less the
+  cover (the abutment's width along the skew, A / cos θ, as Section B takes it). The retained face's bars end in
+  a standard 90° hook (5.10.8.2.4), the front face's straight (5.10.8.2.1), by the shared development() of
+  stm/anchorage.ts: full yield (no excess reinforcement credit), the top bar factor (more than 12 in cast below),
+  epoxy coated by default (BDM 5.4.5; a toggle for plain bars), no transverse bars counted.
+- **Front face's horizontals and vertical bars each face:** inputs, checked as shrinkage and temperature steel
+  (5.10.6: area each face each way with b the wall's height at the tip, and spacing); they carry no design moment.
+- **Self weight in the wall's plane:** the wall as a cantilever beam as deep as its height, its top in tension at
+  the abutment face; tension steel the horizontals in the top quarter (centroid H/8 down), the front face's at
+  full area and the retained face's at the share the earth moment leaves them (1 − Mu/Mr); flexure 5.6.3.2 and
+  shear 5.7.3.3 (β = 2). This is our choice of model; AASHTO has no wingwall-specific rule.
+- **The connection to the abutment** (2026-11-20):
+  - **Corner bars** (`cornerBars`, default the retained face's bar and spacing): L-bars round the inside corner.
+    The root moment's tension turns from the wingwall's retained face into the abutment's back face, so they take
+    Mu per foot of height over the abutment's thickness (5.6.3.2) with crack control at Service I (5.6.7). The
+    abutment's own horizontal bars are not counted: CDOT's usual #5 @ 12 in fail crack control under the default
+    wing's moment.
+  - **Their legs:** along the abutment, ℓd plus the cover past the wingwall's inside face (5.10.8.2.1); into the
+    wingwall, through the abutment along the skew plus a Class B lap (1.3 ℓd of the larger bar, 5.10.8.4.3a) with
+    the retained face's bars. They're scheduled with the wingwall (602-00020).
+  - **Shear friction across the vertical joint** (5.7.4.3, 5.7.4.4): √(Pu² + Vwu²), the thrust and weight
+    together. Acv = t H. Only the front face's bars clamp it; the retained face's are in flexural tension, and no
+    axial load is counted. `joint` is a construction joint roughened to 0.25 in (c 0.24 ksi, μ 1.0; the default) or
+    monolithic (c 0.40, μ 1.4), with K1 0.25 and K2 1.5 ksi. The 5.7.4.2 minimum is waived below 0.210 ksi.
+  - **Not checked:** the abutment taking Section B's forces (torsion and the moments into its end piles or
+    footing), and the corner's opening-joint efficiency (AASHTO has no rule).
+- **Section B:** the tension, shear, moments and torsion handed to the abutment.
+- **Take-off and detail:** both faces' horizontals drawn and scheduled to the far face of the abutment along the
+  skew (retained face hooked; a series along the sloping bottom; lapped Class B when longer than stock), verticals
+  each face as a series, epoxy coated (602-00020). The bridge's 3D rebar view draws the front and vertical bars
+  as entered (its embedment is still square to the abutment).
+- **Tests:** wingwall.test.ts (the DOT example's loads, plus the development, 5.10.6 and in-plane checks worked by
+  hand), wingwall-calc.test.ts (the package matches the engine), wingwall-nhi.test.ts (FHWA NHI-04-041 Step 7:
+  only the shared pressures and the section; its wall stands on a footing, so the new checks aren't in it).
+- With no skew, the default's #8 @ 6 in need a 36.1 in hook against 34 in in a 3 ft abutment: #6 @ 4 in fit.
+
 ## Validation
 
 - Bearing: NHI-06-089 Example 8-1 (qult = 13,425 psf; 12,414 psf with water at the base).

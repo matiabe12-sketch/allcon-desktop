@@ -165,7 +165,9 @@ export function deckInputs(saved: unknown): DeckInputs {
 /** A wingwall's inputs as saved, filled in from the defaults. */
 export function wingwallInputs(saved: unknown): WingwallInputs {
   const s = (saved && typeof saved === "object" ? saved : {}) as Partial<WingwallInputs>;
-  return { ...WINGWALL_DEFAULTS, ...s, bars: { ...WINGWALL_DEFAULTS.bars, ...(s.bars ?? {}) } };
+  // Saved before the front face's and the vertical bars were entered apart: the single "other bars" fill in both.
+  const other = s.otherBars ?? WINGWALL_DEFAULTS.frontBars!;
+  return { ...WINGWALL_DEFAULTS, ...s, bars: { ...WINGWALL_DEFAULTS.bars, ...(s.bars ?? {}) }, frontBars: s.frontBars ?? other, vertBars: s.vertBars ?? other, otherBars: undefined, epoxy: s.epoxy !== false };
 }
 
 /** An elastomeric bearing's inputs as saved, filled in from the defaults. */

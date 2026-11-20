@@ -20,6 +20,9 @@ describe("I-05-VA through the Bridge, end to end", async () => {
     column: { bar: 11, bars: 14, tieBar: 4, tieSpacing: 6 },
     // The caissons: 42 in, 152 LF for six (B02), so about 25.3 ft each; the column's bars as their bars (assumed).
     shaft: { D: 42, length: 25.3, topDepth: 0, layers: I05VA_SHAFT_LAYERS, bar: 11, bars: 14 },
+    // Wingwalls (B12's bars not entered): #7 @ 5 in on the retained face, assumed. The default #8 @ 6 in need a
+    // 36.1 in hooked development (AASHTO 5.10.8.2.4, epoxy coated, top bars) and the square 3 ft cap gives 34 in.
+    wingwall: { bars: { bar: 7, spacing: 5 } },
   });
 
   it("works out the whole calc package with no errors", () => {

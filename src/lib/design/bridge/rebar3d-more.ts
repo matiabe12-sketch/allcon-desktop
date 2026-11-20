@@ -351,20 +351,21 @@ export function approachBars(host: number, grid: NonNullable<IfcElement["grid"]>
   return out;
 }
 
-export type WingwallBarInputs = { H: number; h: number; L: number; t: number; A: number; cover: number; bars: Bars; otherBars?: Bars };
+export type WingwallBarInputs = { H: number; h: number; L: number; t: number; A: number; cover: number; bars: Bars; frontBars?: Bars; vertBars?: Bars; otherBars?: Bars };
 
 /**
  * A wingwall's bars (takeoff/tools.ts wingwallTakeoff) in its element's frame (x from the abutment along the wall,
  * y up from its bottom at the abutment, z through it; its top level at H, its bottom rising to H − h at the tip): the design's horizontal bars on the retained face, run into the abutment
- * and hooked; #4 at 12 in horizontal on the front face and vertical on each face (shrinkage and temperature,
- * 5.10.6, as the takeoff assumes). `inward` says which way z runs: toward the fill (+1) or away (−1).
+ * and hooked; the front face's horizontal bars and the vertical bars each face (shrinkage and temperature, 5.10.6),
+ * as the design enters them (#4 at 12 in typically). `inward` says which way z runs: toward the fill (+1) or away (−1).
  */
 export function wingwallBars(host: number, i: WingwallBarInputs, inward: 1 | -1): BarSet3D[] {
   const out: BarSet3D[] = [];
   const [H, h, L, T] = [i.H, i.h, i.L, ft(i.t)];
   const c = ft(i.cover);
   const dm = ft(barDiameter(i.bars.bar));
-  const o = i.otherBars ?? { bar: 4, spacing: 12 };
+  const o = i.frontBars ?? i.otherBars ?? { bar: 4, spacing: 12 };
+  const v = i.vertBars ?? i.otherBars ?? { bar: 4, spacing: 12 };
   const d4 = ft(barDiameter(o.bar));
   const zIn = inward === 1 ? T - c - dm / 2 : c + dm / 2; // the retained face
   const zOut = inward === 1 ? c + d4 / 2 : T - c - d4 / 2;
@@ -377,8 +378,8 @@ export function wingwallBars(host: number, i: WingwallBarInputs, inward: 1 | -1)
   for (const y of stations(c, H - c, ft(i.bars.spacing)))
     out.push(local(host, i.bars.bar, "main", `#${i.bars.bar} @ ${i.bars.spacing} in, retained face`, [p3(-embed, y, zIn + toward * leg), p3(-embed, y, zIn), p3(Math.max(0, reach(y)), y, zIn)], [p3(0, 0, 0)]));
   for (const y of stations(c, H - c, ft(o.spacing))) out.push(local(host, o.bar, "main", `#${o.bar} @ ${o.spacing} in, front face`, [p3(-embed, y, zOut), p3(Math.max(0, reach(y)), y, zOut)], [p3(0, 0, 0)]));
-  for (const x of stations(c, L - c, ft(o.spacing)))
-    for (const z of [zIn, zOut]) out.push(local(host, o.bar, "stirrup", `#${o.bar} @ ${o.spacing} in vertical, each face`, [p3(x, bottom(x) + c, z), p3(x, H - c, z)], [p3(0, 0, 0)]));
+  for (const x of stations(c, L - c, ft(v.spacing)))
+    for (const z of [zIn, zOut]) out.push(local(host, v.bar, "stirrup", `#${v.bar} @ ${v.spacing} in vertical, each face`, [p3(x, bottom(x) + c, z), p3(x, H - c, z)], [p3(0, 0, 0)]));
   return out;
 }
 

@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { DesignError } from "@/lib/design/walls/cip";
-import { designWingwall, type WingwallInputs } from "@/lib/design/walls/wingwall";
+import { designWingwall, wingwallBarSets, type WingwallInputs } from "@/lib/design/walls/wingwall";
 import { BarsField, ChecksBanner, ChecksTable, DesignErrorCard, DesignHeader, Field, fmt, KeyValues, Section, Toggle } from "./design-kit";
 import { TakeoffPanel } from "./takeoff-panel";
 import { WingwallSketch } from "./wingwall-sketch";
@@ -23,6 +23,7 @@ export function WingwallEditor({ design, projects }: { design: { id: string; nam
     }
   }, [inputs]);
   const r = outcome.result;
+  const bars = wingwallBarSets(inputs);
 
   return (
     <div className="space-y-4">
@@ -55,7 +56,11 @@ export function WingwallEditor({ design, projects }: { design: { id: string; nam
               <Field label="fy" unit="ksi" value={inputs.fy} onChange={set("fy")} />
               <Field label="Concrete unit weight γc" unit="pcf" value={inputs.gammaC} scale={1000} onChange={set("gammaC")} />
               <BarsField label="Horizontal bars, retained face" value={inputs.bars} onChange={set("bars")} />
-              <BarsField label="Other bars (vertical each face, horizontal front face)" value={inputs.otherBars ?? { bar: 4, spacing: 12 }} onChange={set("otherBars")} />
+              <BarsField label="Horizontal bars, front face" value={bars.front} onChange={set("frontBars")} />
+              <BarsField label="Vertical bars, each face" value={bars.vert} onChange={set("vertBars")} />
+              <BarsField label="Corner bars into the abutment's back face" value={inputs.cornerBars ?? inputs.bars} onChange={set("cornerBars")} />
+              <Toggle label="Cast monolithically with the abutment (else a roughened construction joint)" value={inputs.joint === "monolithic"} onChange={(v) => set("joint")(v ? "monolithic" : "construction")} />
+              <Toggle label="Epoxy-coated bars (CDOT BDM 5.4.5)" value={inputs.epoxy !== false} onChange={set("epoxy")} />
               <Field label="Cover" unit="in" value={inputs.cover} onChange={set("cover")} step={0.25} />
               <Field label="Exposure class (1 or 2)" value={inputs.exposure} onChange={(v) => set("exposure")(v >= 1.5 ? 2 : 1)} />
             </Section>
@@ -74,7 +79,7 @@ export function WingwallEditor({ design, projects }: { design: { id: string; nam
                     <WingwallSketch inputs={inputs} result={r} />
                   </CardContent>
                 </Card>
-                <ChecksTable checks={r.checks} groupOf={(id) => (id.startsWith("temp-") ? "Shrinkage and temperature steel" : "Section A: horizontal bars")} />
+                <ChecksTable checks={r.checks} groupOf={(id) => (id.startsWith("temp-") ? "Shrinkage and temperature steel" : id.startsWith("dev-") ? "Bars into the abutment" : id.startsWith("w-") ? "Self weight in the wall's plane" : "Section A: horizontal bars")} />
                 <TakeoffPanel kind="cantilever-wingwall" design={design} inputs={inputs} ok={r.checks.every((c) => c.advisory || c.ok)} onSettings={(t) => setInputs((s) => ({ ...s, takeoff: t }))} />
                 <div className="grid gap-4 xl:grid-cols-2">
                   <KeyValues
@@ -87,6 +92,8 @@ export function WingwallEditor({ design, projects }: { design: { id: string; nam
                       ["Thrust from the abutment / top (service)", `${fmt(r.service.x)} / ${fmt(r.service.y)} ft`],
                       ["Per foot of height, Ms / Mu", `${fmt(r.sectionA.Ms)} / ${fmt(r.sectionA.Mu)} kip·ft/ft`],
                       ["Self weight, and its moment (factored)", `${fmt(r.wall.Vs)} kip, ${fmt(r.wall.Mu)} kip·ft`],
+                      ["Into the abutment: hook / straight / available", `${fmt(r.anchorage.hook.required)} / ${fmt(r.anchorage.straight.required)} / ${fmt(r.anchorage.available)} in`],
+                      ["Shrinkage and temperature steel, each face", `${fmt(r.temperature.AsTemp)} in²/ft`],
                     ]}
                   />
                   <KeyValues

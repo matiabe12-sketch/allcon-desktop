@@ -20,6 +20,9 @@ import { designWingwall, pressureResultants, WINGWALL_DEFAULTS, type WingwallInp
 //   the spacing limit of 5.6.7 now. Not compared.
 // - The example's backfill slopes at 18.5° (Rankine pressure parallel to the slope, its horizontal part × cos 18.5°);
 //   the tool takes a level backfill with the coefficient entered. Compared on the horizontal parts.
+// Not in the example (its wall stands on its own footing): the horizontal bars' development into the abutment, the
+// shrinkage and temperature checks of each bar set and the wall's self weight carried in its plane; wingwall.test.ts
+// works those by hand.
 // No discrepancy in what is shared.
 
 const near = (v: number, ref: number, tol: number) => expect(Math.abs(v - ref) / Math.abs(ref)).toBeLessThanOrEqual(tol);

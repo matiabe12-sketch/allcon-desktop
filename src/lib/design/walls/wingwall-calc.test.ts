@@ -31,6 +31,8 @@ describe("wingwall calc package", () => {
   for (const [name, inputs] of [
     ["the default wingwall", WINGWALL_DEFAULTS],
     ["active pressure, no skew, light bars that fail", { ...WINGWALL_DEFAULTS, atRest: false, k: 0.28, skew: 0, gEH: 1.5, bars: { bar: 5, spacing: 12 }, exposure: 1 }],
+    ["#9 bars hooked into a square 2.5 ft abutment (short), plain bars, wide front bars", { ...WINGWALL_DEFAULTS, skew: 0, A: 2.5, bars: { bar: 9, spacing: 8 }, frontBars: { bar: 5, spacing: 18 }, vertBars: { bar: 4, spacing: 18 }, epoxy: false }],
+    ["a saved wingwall with the older single other bars", { ...WINGWALL_DEFAULTS, frontBars: undefined, vertBars: undefined, otherBars: { bar: 3, spacing: 16 } }],
   ] as [string, WingwallInputs][]) {
     it(`works out ${name} with no errors, matching the engine`, () => {
       const r = designWingwall(inputs);
@@ -44,6 +46,12 @@ describe("wingwall calc package", () => {
       close(c.value("V_r\\coloneq", "kip/ft"), r.sectionA.VR);
       close(c.value("M_{yu}\\coloneq", "kip*ft"), r.sectionB.strength.My);
       close(c.value("T_{zu}\\coloneq", "kip*ft"), r.sectionB.strength.Tz);
+      close(c.value("l_{av}\\coloneq", "in"), r.anchorage.available);
+      close(c.value("l_{dh}\\coloneq", "in"), r.anchorage.hook.required);
+      close(c.value("l_{df}\\coloneq", "in"), r.anchorage.straight.required);
+      close(c.value("A_{st}\\coloneq", "in^2/ft"), r.temperature.AsTemp);
+      close(c.value("M_{rw}\\coloneq", "kip*ft"), r.inPlane.MrW);
+      close(c.value("V_{rw}\\coloneq", "kip"), r.inPlane.VrW);
       expect(c.checks.filter((x) => x.includes("NG")).length).toBe(r.checks.filter((x) => !x.ok).length);
       expect(c.checks.length).toBe(r.checks.length);
     });

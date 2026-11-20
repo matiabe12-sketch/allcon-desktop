@@ -8,10 +8,10 @@ import type { SignInputs } from "../signs/cantilever";
 import type { StripSealInputs } from "../joints/strip-seal";
 import type { CipInputs } from "../walls/cip";
 import type { MseInputs } from "../walls/mse";
-import type { WingwallInputs } from "../walls/wingwall";
+import { designWingwall, wingwallBarSets, type WingwallInputs } from "../walls/wingwall";
 import { bar } from "../stm/aashto";
 import type { Pt } from "../stm/geometry";
-import { ftIn, hookLeg, roundDown, splitRun } from "../rebar/bars";
+import { ftIn, hookLeg, roundDown, splitRun, stockLength } from "../rebar/bars";
 import { countAt, runGroups, type PreGroup, type RunOptions } from "../rebar/runs";
 import { markGroups, schedule, type BarShape, type ConcreteItem, type ExtraSteel } from "../rebar/schedule";
 import { num } from "../calc-style";
@@ -28,10 +28,10 @@ const fit = (n: number) => Math.round(n * 1000) / 1000;
 const rect = (x0: number, y0: number, x1: number, y1: number): Pt[] => [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
 
 /** Collects groups and their drawn lines for a take-off. */
-function collector(steel: { fy: number; fc: number }) {
+function collector(steel: { fy: number; fc: number; coating?: "uncoated" | "epoxy" }) {
   const pre: PreGroup[] = [];
   const run = (o: Omit<RunOptions, "lap"> & { cover?: number; spacing?: number; lap?: boolean }) => {
-    const r = runGroups({ ...o, lap: o.lap === false ? undefined : { fy: steel.fy, fc: steel.fc, clearCover: o.cover ?? 2, clearSpacing: Math.max(0.5, (o.spacing ?? 6) - bar(o.size).db) } });
+    const r = runGroups({ ...o, lap: o.lap === false ? undefined : { fy: steel.fy, fc: steel.fc, coating: steel.coating, clearCover: o.cover ?? 2, clearSpacing: Math.max(0.5, (o.spacing ?? 6) - bar(o.size).db) } });
     pre.push(...r.groups);
     return r;
   };
@@ -487,13 +487,16 @@ export function wingwallTakeoff(i: WingwallInputs): Takeoff {
   const h = i.h * 12;
   const t = i.t;
   const c = i.cover;
-  const { pre, run } = collector(i);
+  const coating = i.epoxy === false ? "uncoated" : "epoxy";
+  const { pre, run } = collector({ fy: i.fy, fc: i.fc, coating });
   const notes: string[] = [];
   const lines: DetailView["lines"] = [];
-  // Horizontal bars, retained face: the design's, in rows up the wall, each as long as the wall is at its height, run into the abutment with a standard hook.
+  // Horizontal bars, retained face: the design's, in rows up the wall, each as long as the wall is at its height, run
+  // along the wall through the abutment to its far face (its width along the skew, less the cover) and hooked there,
+  // as the design develops them (walls/wingwall.ts, AASHTO 5.10.8.2.4).
   const b = i.bars;
   const rows = countAt(H - 2 * c, b.spacing);
-  const embed = Math.max(0, i.A * 12 - c);
+  const embed = Math.max(0, (i.A * 12) / Math.cos((i.skew * Math.PI) / 180) - c);
   // A bar series (CDOT 4.3): the bars' straight part varies with the wall's sloping bottom; counted at the average.
   // The wall's top is level (the roadway); its bottom rises from H below the top at the abutment to h at the tip,
   // the design's pressure depths (walls/wingwall.ts). y is up from the wall's bottom at the abutment.
@@ -511,18 +514,39 @@ export function wingwallTakeoff(i: WingwallInputs): Takeoff {
     horiz.push(Math.max(12, len - c) + embed);
     lines.push({ pts: [[-embed, y], [Math.max(12, len - c), y]], mark: "Horizontal, retained face", kind: "main" });
   }
-  series(b.bar, rows, horiz, hookLeg(b.bar).leg, "Horizontal, retained face", `#${b.bar} @ ${ftIn(b.spacing)} (retained face)`);
-  // Front face horizontals and verticals each face: the shrinkage and temperature bars (5.10.6), the design's other bars.
-  const ob = i.otherBars ?? { bar: 4, spacing: 12 };
-  run({ size: ob.bar, count: countAt(H - 2 * c, ob.spacing), straight: L - c + embed, use: "Horizontal, front face", callout: `#${ob.bar} @ ${ftIn(ob.spacing)} (front face)`, spacing: ob.spacing, cover: c });
-  const nv = countAt(L - 2 * c, ob.spacing);
+  const leg = hookLeg(b.bar).leg;
+  const retainedCallout = `#${b.bar} @ ${ftIn(b.spacing)} (retained face)`;
+  if (Math.max(...horiz) + leg > stockLength(b.bar)) {
+    // Longer than stock: every row taken at the longest bar, lapped Class B (5.10.8.4.3a) away from the abutment.
+    run({ size: b.bar, count: rows, straight: Math.max(...horiz), hooks: [true, false], use: "Horizontal, retained face", callout: retainedCallout, spacing: b.spacing, cover: c });
+    notes.push(`The retained face's #${b.bar} bars are longer than stock: each row is taken at the longest bar, lapped (Class B, staggered) away from the abutment face.`);
+  } else series(b.bar, rows, horiz, leg, "Horizontal, retained face", retainedCallout);
+  // Front face horizontals (run straight through the abutment, 5.10.8.2.1) and verticals each face: the shrinkage and
+  // temperature bars (5.10.6), as the design enters them.
+  const { front, vert } = wingwallBarSets(i);
+  run({ size: front.bar, count: countAt(H - 2 * c, front.spacing), straight: L - c + embed, use: "Horizontal, front face", callout: `#${front.bar} @ ${ftIn(front.spacing)} (front face)`, spacing: front.spacing, cover: c });
+  const nv = countAt(L - 2 * c, vert.spacing);
   const verts = Array.from({ length: nv }, (_, k) => Math.max(12, H - ((H - h) * (c + ((L - 2 * c) * k) / Math.max(1, nv - 1))) / L - 2 * c));
-  series(ob.bar, 2 * nv, verts, 0, "Vertical, each face", `#${ob.bar} @ ${ftIn(ob.spacing)} each face (vert.)`);
-  notes.push("The front face's horizontals and the vertical bars are the shrinkage and temperature bars (AASHTO 5.10.6), checked in the design. Tie to the abutment per M-601-20.");
+  series(vert.bar, 2 * nv, verts, 0, "Vertical, each face", `#${vert.bar} @ ${ftIn(vert.spacing)} each face (vert.)`);
+  // Corner bars round the inside corner (the design's connection): L-bars, one leg along the abutment's back face past
+  // the wingwall, the other through the abutment and lapped with the retained face's bars (walls/wingwall.ts).
+  let conn: ReturnType<typeof designWingwall>["connection"] | null = null;
+  try {
+    conn = designWingwall(i).connection;
+  } catch {
+    conn = null;
+  }
+  if (conn) {
+    const cb = conn.abutBars;
+    pre.push({ size: cb.bar, count: countAt(H - 2 * c, cb.spacing), shape: { kind: "bent", dims: [conn.legAb, conn.legWing].map(roundDown), hooks: 0 }, length: roundDown(conn.legAb + conn.legWing), use: "Corner bars (the abutment's back face)", callout: `#${cb.bar} @ ${ftIn(cb.spacing)} corner bars` });
+    notes.push(`Corner bars at the abutment: L-bars round the inside corner, ${ftIn(conn.legAb)} along the abutment's back face past the wingwall and ${ftIn(conn.legWing)} into the wingwall from the abutment's front face, lapped (Class B) with the retained face's bars (AASHTO 5.10.8.2.1, 5.10.8.4.3a).`);
+  }
+  notes.push(`Both faces' horizontal bars run along the wall through the abutment to ${ftIn(c)} short of its far face (${ftIn(embed)} into it): the retained face's end in a standard 90° hook, the front face's straight, as the design develops them (AASHTO 5.10.8.2.4 and 5.10.8.2.1). The front face's horizontals and the vertical bars are the shrinkage and temperature bars (AASHTO 5.10.6).`);
+  notes.push(i.epoxy === false ? "The bars are uncoated, as the design takes them." : "All reinforcing steel is epoxy coated (CDOT BDM 5.4.5).");
   const area = ((H + h) / 2) * L; // in² of elevation
   const concrete: ConcreteItem[] = [{ label: "Wingwall", cy: (area * t) / 46656, basis: `${fit(area / 144)} ft² of elevation by ${ftIn(t)} thick`, math: `${avgT(inT(H), inT(h))}\\cdot ${inT(L)}\\cdot ${inT(t)}`, ref: `Wingwall: ${H === h ? "height" : "average height (at the abutment and the tip)"} × length × thickness` }];
   const { sch, markOf } = finish(pre, concrete);
-  const view: DetailView = { title: "Elevation (retained face)", polys: [{ pts: [[0, 0], [L, H - h], [L, H], [0, H]], style: "concrete" }, { pts: rect(-i.A * 12, 0, 0, H), style: "dashed" }], lines: lines.map((l) => ({ ...l, mark: markOf(l.mark) })), dots: [], labels: [{ x: -i.A * 6, y: H + 8, text: "Abutment", anchor: "middle" }] };
+  const view: DetailView = { title: "Elevation (retained face)", polys: [{ pts: [[0, 0], [L, H - h], [L, H], [0, H]], style: "concrete" }, { pts: rect(-embed - c, 0, 0, H), style: "dashed" }], lines: lines.map((l) => ({ ...l, mark: markOf(l.mark) })), dots: [], labels: [{ x: -(embed + c) / 2, y: H + 8, text: "Abutment", anchor: "middle" }] };
   return { what: "wingwall", schedule: sch, quantities: {}, views: [view], notes };
 }
 

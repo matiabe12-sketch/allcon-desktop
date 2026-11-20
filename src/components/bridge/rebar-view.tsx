@@ -23,7 +23,7 @@ export const ROLE_COLOR: Record<BarRole, number> = { main: 0xc2410c, stirrup: 0x
 const ROLE_NAME: Record<BarRole, string> = { main: "Main bars", stirrup: "Stirrups and ties", spiral: "Spirals", strand: "Strands", sheathed: "Debonded (sheathed) lengths" };
 const CONCRETE = 0xb8bec7;
 const STEEL = 0x64748b;
-const SUPER: RebarCategory[] = ["girder", "deck", "barrier", "bearing", "diaphragm"];
+const SUPER: RebarCategory[] = ["girder", "deck", "barrier", "bearing", "diaphragm", "joint"];
 
 type Concrete = "ghost" | "solid" | "hidden";
 type Show = { roles: Record<BarRole, boolean>; schematic: boolean; concrete: Concrete; superstructure: boolean };

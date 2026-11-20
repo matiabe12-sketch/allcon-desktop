@@ -9,7 +9,8 @@ import type { StmInputs } from "../stm/strut-tie";
 import { bearingsFromLink, buildTemplate, HAMMERHEAD_DEFAULTS, MULTICOLUMN_DEFAULTS, type StmTemplate } from "../stm/templates";
 import type { ColumnInputs, ColumnLink } from "../piers/column";
 import type { ApproachSlabInputs } from "../approach/approach-slab";
-import type { StripSealInputs } from "../joints/strip-seal";
+import type { FingerJointInputs } from "../joints/finger";
+import type { ModularJointInputs } from "../joints/modular";
 import type { WingwallInputs } from "../walls/wingwall";
 import type { ColumnResult } from "../piers/column";
 import { GIRDER_DEFAULTS, girderShape, type GirderInputs } from "../girders/prestressed";
@@ -19,7 +20,7 @@ import type { HlmrInputs } from "../bearings/pot-disc";
 
 /** The pad the stiffness split takes before a bearing design is linked. */
 const BEARING_PAD_DEFAULT = BEARING_DEFAULTS;
-import { spacingAt, spanGroups, type BridgeInputs, type BridgeRun, type PierShape } from "./bridge";
+import { spacingAt, spanGroups, type BridgeInputs, type BridgeRun, type JointKind, type PierShape } from "./bridge";
 
 // The load path from a Bridge run down through its linked designs (docs/bridge-model.md): each
 // function takes a component's inputs as saved and returns them with what the Bridge decides (its
@@ -294,11 +295,37 @@ export function fixedPoint(b: BridgeInputs) {
  * its end diaphragm, so the device is at the slab's far end (the sleeper slab, CDOT BDM 11.3.1, 11.3.2) and the slab's
  * own length is added (the conservative choice).
  */
-export function jointFromBridge(b: BridgeInputs, support: number, approachL: number, current: StripSealInputs): StripSealInputs {
+export function jointFromBridge<T extends { L: number; skew: number }>(b: BridgeInputs, support: number, approachL: number, current: T): T {
   const s = b.supports[support];
   const atSlabEnd = s.type === "integral-abutment" || s.type === "semi-integral-abutment";
   const L = Math.abs(s.station - fixedPoint(b)) + (atSlabEnd ? approachL : 0);
   return { ...current, L: Math.round(L * 100) / 100, skew: Math.abs(s.skew) };
+}
+
+/** A modular joint at an abutment: as the strip seal (the length and skew), with the deck's width and whether it sits at the approach slab's end. */
+export function modularFromBridge(b: BridgeInputs, support: number, approachL: number, current: ModularJointInputs): ModularJointInputs {
+  const s = b.supports[support];
+  return { ...jointFromBridge(b, support, approachL, current), width: Math.round((b.leftEdge + b.rightEdge) * 100) / 100, atApproachSlab: s.type === "integral-abutment" || s.type === "semi-integral-abutment" };
+}
+
+/** A finger joint at an abutment: the length and skew, and the deck's width. */
+export function fingerFromBridge(b: BridgeInputs, support: number, approachL: number, current: FingerJointInputs): FingerJointInputs {
+  return { ...jointFromBridge(b, support, approachL, current), width: Math.round((b.leftEdge + b.rightEdge) * 100) / 100 };
+}
+
+/**
+ * The expansion device an abutment takes, from the strip seal's movement there (CDOT BDM 14.4.4–14.4.6): a strip seal for
+ * 4 in or less (over a 25° skew with an oversized gland); otherwise a modular joint (finger joints only replace existing ones). What was
+ * chosen in the supports stands. Why, in a line.
+ */
+export function recommendJoint(choice: "auto" | "strip-seal" | "modular" | "finger" | undefined, strip: { total: number; skew: number }): { kind: JointKind; why: string } {
+  if (choice === "strip-seal") return { kind: "strip-seal-joint", why: "chosen in the supports" };
+  if (choice === "modular") return { kind: "modular-joint", why: "chosen in the supports" };
+  if (choice === "finger") return { kind: "finger-joint", why: "chosen in the supports (CDOT: only to replace an existing finger joint)" };
+  const m = Math.round(strip.total * 100) / 100;
+  if (strip.total <= 4 && strip.skew <= 25) return { kind: "strip-seal-joint", why: `recommended: ${m} in of movement, skew ${strip.skew}° (strip seal to 4 in and 25°, CDOT BDM 14.4.4)` };
+  if (strip.total <= 4) return { kind: "strip-seal-joint", why: `recommended: ${m} in of movement at a ${strip.skew}° skew: a strip seal with an oversized gland, with the Unit Leader's approval (CDOT BDM 14.4.4)` };
+  return { kind: "modular-joint", why: `recommended: ${m} in of movement, over a strip seal's 4 in (CDOT BDM 14.4.5)` };
 }
 
 /**

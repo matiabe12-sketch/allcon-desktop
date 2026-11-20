@@ -30,6 +30,8 @@ export type Support = {
   bearing?: "fixed" | "expansion";
   /** The bearings' type: elastomeric pads (default), or pot or disc bearings (the Pot or Disc Bearing design). */
   bearingKind?: "elastomeric" | "pot" | "disc";
+  /** At an abutment, its expansion device: recommended from the movement (default), or the one chosen. */
+  jointKind?: "auto" | "strip-seal" | "modular" | "finger";
 };
 
 export type PierShape = {
@@ -50,6 +52,9 @@ export type PierShape = {
 
 /** A pier's description to start from: a three-column bent under the deck's width. */
 export const PIER_DEFAULTS: PierShape = { kind: "multicolumn", capLength: 46, capDepth: 4.5, capWidth: 48, columns: 3, columnSpacing: 18, columnShape: "round", columnSize: 42, columnDepth: 42, foundationTop: 0, foundation: "spread-footing" };
+
+/** The expansion device's design kind at an abutment. */
+export type JointKind = "strip-seal-joint" | "modular-joint" | "finger-joint";
 
 export type BridgeInputs = {
   alignment: Alignment;
@@ -81,7 +86,7 @@ export type BridgeInputs = {
   deckDesignId?: string | null;
   // The linked designs (the Bridge sets their layout and loads)
   girderDesignIds: (string | null)[]; // one per group of spans (continuous across continuous piers)
-  components: { support: number; bearingId?: string | null; abutmentId?: string | null; approachSlabId?: string | null; wingwallId?: string | null; jointId?: string | null; capId?: string | null; columnId?: string | null; foundationId?: string | null; foundationKind?: "spread-footing" | "pile-foundation" | "drilled-shaft" | null }[];
+  components: { support: number; bearingId?: string | null; abutmentId?: string | null; approachSlabId?: string | null; wingwallId?: string | null; jointId?: string | null; capId?: string | null; columnId?: string | null; foundationId?: string | null; foundationKind?: "spread-footing" | "pile-foundation" | "drilled-shaft" | null; jointKind?: JointKind | null }[];
 };
 
 /** A two-span continuous BT-72 bridge, 120 ft spans, on a tangent with a sag vertical curve, integral abutments. */

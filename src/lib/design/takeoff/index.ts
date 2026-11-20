@@ -25,6 +25,10 @@ import type { ShaftInputs } from "../foundations/shaft";
 import type { SteelGirderInputs } from "../girders/steel";
 import { steelTakeoff } from "../girders/steel-takeoff";
 import type { StripSealInputs } from "../joints/strip-seal";
+import type { ModularJointInputs } from "../joints/modular";
+import type { FingerJointInputs } from "../joints/finger";
+import { designModular } from "../joints/modular";
+import { fingerTakeoff, modularTakeoff } from "../joints/detail";
 import type { CipInputs } from "../walls/cip";
 import type { MseInputs } from "../walls/mse";
 import type { WingwallInputs } from "../walls/wingwall";
@@ -74,6 +78,10 @@ export function takeoffFor(kind: string, inputs: unknown, s?: TakeoffSettings): 
       return abutmentTakeoff(inputs as AbutmentInputs);
     case "steel-girder-check":
       return steelTakeoff(inputs as SteelGirderInputs, L);
+    case "modular-joint":
+      return modularTakeoff(inputs as ModularJointInputs, L ?? (inputs as ModularJointInputs).width);
+    case "finger-joint":
+      return fingerTakeoff(inputs as FingerJointInputs, L ?? (inputs as FingerJointInputs).width);
     case "strip-seal-joint":
       return jointTakeoff(inputs as StripSealInputs, L ?? 40);
     default:
@@ -102,6 +110,10 @@ function defaultFor(kind: string, role: QuantityRole, inputs: unknown): string |
     return payItem(code) ? code : undefined;
   }
   // A bearing with a PTFE sliding surface: Bearing Device (Type II); a pad alone, Type I.
+  if (kind === "modular-joint" && role === "joint") {
+    const code = `518-010${String(Math.min(12, designModular(inputs as ModularJointInputs).size)).padStart(2, "0")}`;
+    return payItem(code) ? code : undefined;
+  }
   if (kind === "elastomeric-bearing" && role === "bearing") return (inputs as { sliding?: boolean }).sliding ? "512-00102" : "512-00101";
   if ((kind === "deck-slab" || kind === "lrfd-girder-check") && role === "rail") {
     const r = railDef((inputs as DeckInputs | GirderInputs).rail?.type ?? "custom");

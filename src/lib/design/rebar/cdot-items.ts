@@ -160,6 +160,8 @@ export const TOOL_PAY_ITEMS: Record<string, Partial<Record<QuantityRole, string[
   "approach-slab": { concrete: ["601-03056", "601-03040", "601-03000"], rebar: ["602-00020", "602-00000", "602-00025"], waterproofing: ["515-00120"], asphalt: ["403-09210"], joint: ["518-01004", "518-01002"], sealant: ["408-01100"] },
   "pot-disc-bearing": { bearing: ["512-00118"] },
   "slab-bridge": { concrete: ["601-03056", "601-03040"], rebar: ["602-00020", "602-00000"], waterproofing: ["515-00120"], asphalt: ["403-09210"] },
+  "modular-joint": { joint: ["518-01006", "518-01009", "518-01012"] },
+  "finger-joint": { joint: ["518-01201"] },
   "strip-seal-joint": { joint: ["518-01004", "518-01002", "518-01006", "518-01009", "518-01012", "518-01201"] },
   "steel-girder-check": { girder: ["509-00000", "509-00001", "509-00010"], bearing: ["512-00101", "512-00102", "512-00103", "512-00118"] },
   "sign-cantilever": { shaft: ["503-00036", "503-00024", "503-00030", "503-00042", "503-00048", "503-00054", "503-00060", "503-00072"], rebar: ["602-00000"] },

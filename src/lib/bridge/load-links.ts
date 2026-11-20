@@ -27,6 +27,8 @@ export function withLinks(b: BridgeInputs, links: DesignLink[]): BridgeInputs {
       for (const [field, prefix] of Object.entries(COMPONENT_KEYS) as [ComponentIdKey, string][]) c[field] = id(`${prefix}-${k}`);
       const f = links.find((l) => l.target === `foundation-${k}`);
       c.foundationKind = f && (f.kind === "spread-footing" || f.kind === "pile-foundation" || f.kind === "drilled-shaft") ? f.kind : null;
+      const j = links.find((l) => l.target === `joint-${k}`);
+      c.jointKind = j && (j.kind === "strip-seal-joint" || j.kind === "modular-joint" || j.kind === "finger-joint") ? j.kind : null;
       return c;
     }),
   };
@@ -46,7 +48,7 @@ export function linksFrom(b: BridgeInputs, before: DesignLink[], kinds: Record<s
       const key = `${prefix}-${c.support}`;
       const sp = b.supports[c.support];
       const hlmr = field === "bearingId" && (sp?.bearingKind === "pot" || sp?.bearingKind === "disc") && sp.type !== "integral-abutment" && sp.type !== "continuous-pier";
-      add(key, c[field], field === "foundationId" ? (c.foundationKind ?? undefined) : hlmr ? "pot-disc-bearing" : kinds[prefix]);
+      add(key, c[field], field === "foundationId" ? (c.foundationKind ?? undefined) : hlmr ? "pot-disc-bearing" : field === "jointId" && c.jointKind ? c.jointKind : kinds[prefix]);
     }
   return out;
 }

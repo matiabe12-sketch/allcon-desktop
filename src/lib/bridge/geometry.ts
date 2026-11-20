@@ -247,7 +247,7 @@ export function toBridgeInputs(d: BridgeDefinition): BridgeInputs {
     alignment: g.alignment,
     profile: g.profile,
     roadway: g.roadway,
-    supports: g.supports.map((s, k) => ({ ...s, ...(d.supports[k]?.bearing ? { bearing: d.supports[k].bearing } : {}), ...(d.supports[k]?.bearingKind && d.supports[k].bearingKind !== "elastomeric" ? { bearingKind: d.supports[k].bearingKind } : {}) })),
+    supports: g.supports.map((s, k) => ({ ...s, ...(d.supports[k]?.bearing ? { bearing: d.supports[k].bearing } : {}), ...(d.supports[k]?.bearingKind && d.supports[k].bearingKind !== "elastomeric" ? { bearingKind: d.supports[k].bearingKind } : {}), ...(d.supports[k]?.jointKind && d.supports[k].jointKind !== "auto" ? { jointKind: d.supports[k].jointKind } : {}) })),
     shape: d.girder.shape === "custom" ? BRIDGE_GIRDER_BASE.shape : d.girder.shape,
     superstructure: d.superstructure === "slab" ? "slab" : "girders",
     nGirders: d.nGirders,

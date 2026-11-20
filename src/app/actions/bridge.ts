@@ -11,7 +11,7 @@ import { abutmentInputs, foundationInputs, footingInputs, pileFoundationInputs, 
 import { runFoundation } from "@/lib/design/foundations/run";
 import { designGirder, girderShape, type GirderInputs, type HarpedStrands, type StrandRow } from "@/lib/design/girders/prestressed";
 import type { GirderShape } from "@/lib/design/girders/sections";
-import { approachSlabInputs, bearingInputs, deckInputs, designInputs, girderInputs, hlmrInputs, slabBridgeInputs, stripSealInputs, wingwallInputs } from "@/lib/design/kinds";
+import { approachSlabInputs, bearingInputs, deckInputs, designInputs, girderInputs, hlmrInputs, slabBridgeInputs, stripSealInputs, wingwallInputs, modularInputs, fingerInputs } from "@/lib/design/kinds";
 import { designWingwall } from "@/lib/design/walls/wingwall";
 import { columnInputs, designColumn } from "@/lib/design/piers/column";
 import { designStm, stmInputs } from "@/lib/design/stm/strut-tie";
@@ -40,6 +40,8 @@ import { layout } from "@/lib/calcs/library/templates";
 import { CALC_FILE, newCalcKey } from "@/lib/calcs/server";
 import { emptyCalc } from "@/lib/calcs/types";
 import { designStripSeal } from "@/lib/design/joints/strip-seal";
+import { designModular } from "@/lib/design/joints/modular";
+import { designFinger } from "@/lib/design/joints/finger";
 import { deleteFiles, putFile } from "@/lib/storage";
 
 // The Bridge section: a bridge modeled once (its geometry, girders, deck and piers), analyzed, and
@@ -113,6 +115,14 @@ async function describeBridgeModel(orgId: string, b: BridgeInputs, name: string)
         const inputs = approachSlabInputs(ap.inputs);
         comps.approachSlabs![c.support] = { id: ap.id, inputs };
         verdictTry(ap.id, () => designApproachSlab(inputs).checks);
+      }
+      // The expansion device, drawn as its parts.
+      const jk = c.jointKind ?? "strip-seal-joint";
+      const jd = await load(c.jointId, jk);
+      if (jd) {
+        const inputs = jk === "modular-joint" ? modularInputs(jd.inputs) : jk === "finger-joint" ? fingerInputs(jd.inputs) : stripSealInputs(jd.inputs);
+        (comps.joints ??= {})[c.support] = { id: jd.id, kind: jk, inputs };
+        verdictTry(jd.id, () => (jk === "modular-joint" ? designModular(modularInputs(jd.inputs)) : jk === "finger-joint" ? designFinger(fingerInputs(jd.inputs)) : designStripSeal(stripSealInputs(jd.inputs))).checks);
       }
       continue;
     }
@@ -230,7 +240,7 @@ export async function createBridgeDesign(bridgeId: string, targetKey: string): P
 }
 
 /** Design kinds the section starts only through the load path (they take the girders' reactions, the cap's model or the column's base forces). */
-const LOAD_PATH_ONLY = new Set(["abutment", "approach-slab", "cantilever-wingwall", "strip-seal-joint", "stm-d-region", "spread-footing", "pile-foundation", "drilled-shaft"]);
+const LOAD_PATH_ONLY = new Set(["abutment", "approach-slab", "cantilever-wingwall", "strip-seal-joint", "modular-joint", "finger-joint", "stm-d-region", "spread-footing", "pile-foundation", "drilled-shaft"]);
 
 /**
  * The load path through the bridge's designs (src/lib/design/bridge/load-path.server.ts) for a Bridge
@@ -300,6 +310,10 @@ export async function bridgeDesignStatus(bridgeId: string): Promise<BridgeDesign
                 ? designColumn(columnInputs(d.inputs)).ok
                 : d.kind === "strip-seal-joint"
                   ? designStripSeal(stripSealInputs(d.inputs)).ok
+                  : d.kind === "modular-joint"
+                  ? designModular(modularInputs(d.inputs)).ok
+                  : d.kind === "finger-joint"
+                  ? designFinger(fingerInputs(d.inputs)).ok
                   : d.kind === "approach-slab"
                     ? designApproachSlab(approachSlabInputs(d.inputs)).checks.every((c) => c.ok || c.advisory)
                     : d.kind === "cantilever-wingwall"

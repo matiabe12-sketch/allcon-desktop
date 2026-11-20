@@ -1,7 +1,7 @@
 "use client";
 
 import { Choice, Field, Toggle } from "@/components/design/design-kit";
-import { GIRDER_CHOICES, supportsFor, type BridgeDefinition } from "@/lib/bridge/definition";
+import { GIRDER_CHOICES, supportsFor, type BridgeDefinition, type JointChoice } from "@/lib/bridge/definition";
 import { applyEdit } from "@/lib/bridge/geometry";
 import { railDef, railWeight } from "@/lib/design/decks/rails";
 import { GeometryForm, PierShapesForm } from "./geometry-forms";
@@ -116,8 +116,24 @@ export function BridgeForm({ form, def, setDef: setRaw }: Props & { form: FormKe
             onChange={(v) => set("supports")(def.supports.map((x, j) => (j === k ? { ...x, bearingKind: v as "elastomeric" | "pot" | "disc" } : x)))}
           />
         ))}
+        {def.supports.map((s, k) =>
+          k === 0 || k === def.supports.length - 1 ? (
+            <Choice
+              key={`j${k}`}
+              label={`${lineName(k)}: expansion device`}
+              value={s.jointKind ?? "auto"}
+              options={[
+                { value: "auto", label: "Recommended from the movement" },
+                { value: "strip-seal", label: "Strip seal (to 4 in)" },
+                { value: "modular", label: "Modular joint (over 4 in)" },
+                { value: "finger", label: "Finger joint (replacement)" },
+              ]}
+              onChange={(v) => set("supports")(def.supports.map((x, j) => (j === k ? { ...x, jointKind: v as JointChoice } : x)))}
+            />
+          ) : null,
+        )}
         <Field label="Bearing height" unit="in" value={def.piers.bearingHeight} onChange={part("piers")("bearingHeight")} step={0.5} />
-        {note("Fixed bearings hold the girders along the bridge; expansion bearings let them slide. Every bearing holds its girder vertically and across the bridge.")}
+        {note("Fixed bearings hold the girders along the bridge; expansion bearings let them slide. Every bearing holds its girder vertically and across the bridge. An abutment's expansion device, recommended, is a strip seal for 4 in of movement or less (an oversized gland past a 25° skew) and a modular joint above (CDOT BDM 14.4.4–14.4.5); CDOT uses finger joints only to replace existing ones.")}
       </>
     );
   if (form === "piers")

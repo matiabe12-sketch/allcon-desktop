@@ -3,7 +3,8 @@ import { notFound } from "next/navigation";
 import { ApproachSlabEditor } from "@/components/design/approach-slab-editor";
 import { SlabBridgeEditor } from "@/components/design/slab-bridge-editor";
 import { PotDiscEditor } from "@/components/design/pot-disc-editor";
-import { hlmrInputs } from "@/lib/design/kinds";
+import { fingerInputs, hlmrInputs, modularInputs } from "@/lib/design/kinds";
+import { FingerJointEditor, ModularJointEditor } from "@/components/design/joint-editors";
 import { slabBridgeInputs } from "@/lib/design/kinds";
 import { FoundationEditor } from "@/components/design/foundation-editor";
 import { FOUNDATION_KINDS, foundationInputs, type FoundationKind } from "@/lib/design/foundations/kinds";
@@ -127,6 +128,18 @@ export default async function DesignEditorPage({ params }: PageProps<"/design/[d
     return (
       <PageBody>
         <FoundationEditor kind={design.kind as FoundationKind} design={{ ...base, inputs: foundationInputs(design.kind, design.inputs)! }} projects={projects} />
+      </PageBody>
+    );
+  if (design.kind === "modular-joint")
+    return (
+      <PageBody>
+        <ModularJointEditor design={{ ...base, inputs: modularInputs(design.inputs) }} projects={projects} />
+      </PageBody>
+    );
+  if (design.kind === "finger-joint")
+    return (
+      <PageBody>
+        <FingerJointEditor design={{ ...base, inputs: fingerInputs(design.inputs) }} projects={projects} />
       </PageBody>
     );
   if (design.kind === "pot-disc-bearing")

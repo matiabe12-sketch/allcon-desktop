@@ -11,7 +11,11 @@ export type SupportLine = {
   bearing: "fixed" | "expansion";
   /** The bearings' type: elastomeric pads (default), or high-load multirotational pot or disc bearings (the Pot or Disc Bearing design). */
   bearingKind?: "elastomeric" | "pot" | "disc";
+  /** At an abutment, its expansion device: recommended from the movement (default), or a strip seal, modular or finger joint. */
+  jointKind?: JointChoice;
 };
+
+export type JointChoice = "auto" | "strip-seal" | "modular" | "finger";
 
 export type BridgeDefinition = {
   // Layout (midas's wizard: Layout)
@@ -66,7 +70,7 @@ const obj = (v: unknown) => (v && typeof v === "object" ? (v as Record<string, u
 
 /** The support lines for a number of spans, keeping what's there: one fixed line (the first pier, or the first abutment), the rest expansion. */
 export function supportsFor(spans: number, current: SupportLine[] = []): SupportLine[] {
-  const out: SupportLine[] = Array.from({ length: spans + 1 }, (_, k) => ({ bearing: current[k]?.bearing === "fixed" ? "fixed" : "expansion", ...(current[k]?.bearingKind === "pot" || current[k]?.bearingKind === "disc" ? { bearingKind: current[k].bearingKind } : {}) }));
+  const out: SupportLine[] = Array.from({ length: spans + 1 }, (_, k) => ({ bearing: current[k]?.bearing === "fixed" ? "fixed" : "expansion", ...(current[k]?.bearingKind === "pot" || current[k]?.bearingKind === "disc" ? { bearingKind: current[k].bearingKind } : {}), ...(current[k]?.jointKind && current[k].jointKind !== "auto" ? { jointKind: current[k].jointKind } : {}) }));
   if (current.length !== spans + 1 || !out.some((s) => s.bearing === "fixed")) {
     out.forEach((s) => (s.bearing = "expansion"));
     out[spans > 1 ? 1 : 0].bearing = "fixed";

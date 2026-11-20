@@ -8,15 +8,17 @@ import { designDeck } from "../decks/deck";
 import { abutmentInputs, footingInputs, pileFoundationInputs, shaftInputs } from "../foundations/kinds";
 import { runFoundation } from "../foundations/run";
 import type { GirderInputs } from "../girders/prestressed";
-import { approachSlabInputs, bearingInputs, deckInputs, designInputs, girderInputs, hlmrInputs, kindInfo, slabBridgeInputs, stripSealInputs, wingwallInputs } from "../kinds";
+import { approachSlabInputs, bearingInputs, deckInputs, designInputs, girderInputs, hlmrInputs, kindInfo, slabBridgeInputs, stripSealInputs, wingwallInputs, modularInputs, fingerInputs } from "../kinds";
 import { designStripSeal } from "../joints/strip-seal";
+import { designModular } from "../joints/modular";
+import { designFinger, sizeFinger } from "../joints/finger";
 import { columnInputs, designColumn } from "../piers/column";
 import { columnLinkFrom } from "../piers/column-link";
 import { nodeLpSolver } from "../stm/lp-node";
 import { designStm, stmInputs } from "../stm/strut-tie";
 import { designWingwall } from "../walls/wingwall";
 import { BRIDGE_GIRDER_BASE, girderInputsFor, runBridge, spanGroups, type BridgeInputs } from "./bridge";
-import { abutmentFromBridge, approachSlabFromBridge, bearingFromBridge, bearingLineForce, capFromBridge, changedKeys, columnFromBridge, columnLongitudinal, deckFromBridge, footingFromColumn, hlmrFromBridge, integralStiffness, jointFromBridge, longitudinalShares, thermalReactions, approachOnAbutment, windAlong, padLineStiffness, pierStiffness, pilesFromColumn, shaftCageOf, shaftFromColumn, wingwallFromBridge, type LongStiffness } from "./loadpath";
+import { abutmentFromBridge, approachSlabFromBridge, bearingFromBridge, bearingLineForce, capFromBridge, changedKeys, columnFromBridge, columnLongitudinal, deckFromBridge, footingFromColumn, hlmrFromBridge, integralStiffness, jointFromBridge, modularFromBridge, fingerFromBridge, recommendJoint, longitudinalShares, thermalReactions, approachOnAbutment, windAlong, padLineStiffness, pierStiffness, pilesFromColumn, shaftCageOf, shaftFromColumn, wingwallFromBridge, type LongStiffness } from "./loadpath";
 
 // A bridge's load path through its linked designs (docs/bridge-model.md): each linked design's inputs
 // brought up to date from the bridge, top to bottom (girders, deck, bearings; abutments, approach slabs
@@ -236,10 +238,26 @@ export async function runLoadPath(o: {
       const wBefore = wingwallInputs(wd?.inputs ?? {});
       const wNext = wingwallFromBridge(b, k, next, wBefore);
       c.wingwallId = await upsert(`wingwall-${k}`, `${s.name}, wingwall`, "cantilever-wingwall", wd, wBefore, wNext, verdictTry(() => designWingwall(wNext).checks), `${prefix}, ${s.name} wingwall`);
+      // The expansion device: the one chosen in the supports, or recommended from the strip seal's movement (CDOT BDM
+      // 14.4.4–14.4.5). It carries no load the bearings or the backwall don't already take (its wheels are local).
       const jd = await load(c.jointId, "strip-seal-joint");
       const jBefore = stripSealInputs(jd?.inputs ?? {});
       const jNext = jointFromBridge(b, k, sNext.L, jBefore);
-      c.jointId = await upsert(`joint-${k}`, `${s.name}, expansion device`, "strip-seal-joint", jd, jBefore, jNext, verdictTry(() => designStripSeal(jNext).checks), `${prefix}, ${s.name} expansion device`);
+      const pick = recommendJoint(s.jointKind, { total: designStripSeal(jNext).total, skew: Math.abs(s.skew) });
+      c.jointKind = pick.kind;
+      if (pick.kind === "strip-seal-joint") c.jointId = await upsert(`joint-${k}`, `${s.name}, expansion device`, "strip-seal-joint", jd, jBefore, jNext, `${verdictTry(() => designStripSeal(jNext).checks)}; ${pick.why}`, `${prefix}, ${s.name} expansion device`);
+      else if (pick.kind === "modular-joint") {
+        const md = await load(c.jointId, "modular-joint");
+        const mBefore = modularInputs(md?.inputs ?? {});
+        const mNext = modularFromBridge(b, k, sNext.L, { ...mBefore, ...(md ? {} : { alpha: jBefore.alpha, creepShrink: jBefore.creepShrink, Tmax: jBefore.Tmax, Tmin: jBefore.Tmin, gammaTU: jBefore.gammaTU }) });
+        c.jointId = await upsert(`joint-${k}`, `${s.name}, modular joint`, "modular-joint", md, mBefore, mNext, `${verdictTry(() => designModular(mNext).checks)}; ${pick.why}`, `${prefix}, ${s.name} modular joint`);
+      } else {
+        const fd = await load(c.jointId, "finger-joint");
+        const fBefore = fingerInputs(fd?.inputs ?? {});
+        const seeded = fd ? fBefore : sizeFinger(jointFromBridge(b, k, sNext.L, { ...fBefore, alpha: jBefore.alpha, creepShrink: jBefore.creepShrink, Tmax: jBefore.Tmax, Tmin: jBefore.Tmin, gammaTU: jBefore.gammaTU }));
+        const fNext = fingerFromBridge(b, k, sNext.L, seeded);
+        c.jointId = await upsert(`joint-${k}`, `${s.name}, finger joint`, "finger-joint", fd, fBefore, fNext, `${verdictTry(() => designFinger(fNext).checks)}; ${pick.why}`, `${prefix}, ${s.name} finger joint`);
+      }
       continue;
     }
     // A pier: its cap (strut-and-tie from a standard pier cap), column and foundation, from the bridge's pier.
@@ -327,7 +345,7 @@ export async function runLoadPath(o: {
       deckDesignId: deckId,
       ...(isSlab ? { slabDesignId: slabId } : {}),
       girderDesignIds: girderIds,
-      components: comps.map(({ support, bearingId, abutmentId, approachSlabId, wingwallId, jointId, capId, columnId, foundationId, foundationKind }) => ({ support, bearingId: bearingId ?? null, abutmentId: abutmentId ?? null, approachSlabId: approachSlabId ?? null, wingwallId: wingwallId ?? null, jointId: jointId ?? null, capId: capId ?? null, columnId: columnId ?? null, foundationId: foundationId ?? null, foundationKind: foundationKind ?? null })),
+      components: comps.map(({ support, bearingId, abutmentId, approachSlabId, wingwallId, jointId, capId, columnId, foundationId, foundationKind, jointKind }) => ({ support, jointKind: jointKind ?? null, bearingId: bearingId ?? null, abutmentId: abutmentId ?? null, approachSlabId: approachSlabId ?? null, wingwallId: wingwallId ?? null, jointId: jointId ?? null, capId: capId ?? null, columnId: columnId ?? null, foundationId: foundationId ?? null, foundationKind: foundationKind ?? null })),
     },
   };
 }

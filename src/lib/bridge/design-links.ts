@@ -40,7 +40,9 @@ export function designTargets(d: BridgeDefinition): DesignTarget[] {
       out.push({ key: `abutment-${k}`, label: name, tool: "Abutment", kind: "abutment", from: "Its type, the girders' reactions, the seat and skew" });
       out.push({ key: `approach-${k}`, label: `${name} approach slab`, tool: "Approach Slab", kind: "approach-slab", from: "The roadway's width, skew and the abutment" });
       out.push({ key: `wingwall-${k}`, label: `${name} wingwall`, tool: "Cantilever Wingwall", kind: "cantilever-wingwall", from: "The abutment's height and the fill" });
-      out.push({ key: `joint-${k}`, label: `${name} expansion device`, tool: "Strip Seal Expansion Joint", kind: "strip-seal-joint", from: "The length from the bridge's middle (and the approach slab, at an integral abutment); the skew" });
+      const jk = d.supports[k]?.jointKind ?? "auto";
+      const from = "The length from the bridge's neutral point (and the approach slab, at an integral abutment); the skew";
+      out.push(jk === "modular" ? { key: `joint-${k}`, label: `${name} modular joint`, tool: "Modular Expansion Joint", kind: "modular-joint", from } : jk === "finger" ? { key: `joint-${k}`, label: `${name} finger joint`, tool: "Finger Expansion Joint", kind: "finger-joint", from } : jk === "strip-seal" ? { key: `joint-${k}`, label: `${name} expansion device`, tool: "Strip Seal Expansion Joint", kind: "strip-seal-joint", from } : { key: `joint-${k}`, label: `${name} expansion device`, tool: "Strip seal or modular joint (recommended)", kind: "strip-seal-joint", from: `${from}: a strip seal to 4 in, a modular joint above (CDOT BDM 14.4.4–14.4.5)` });
     } else if (s.pier && d.piers.model) {
       out.push({ key: `cap-${k}`, label: `${name} cap`, tool: "Strut-and-Tie Model", kind: "stm-d-region", from: "The pier's cap and columns, the girders' reactions at their bearings" });
       const f = s.pier.foundation;

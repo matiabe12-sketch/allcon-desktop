@@ -18,7 +18,10 @@ import { approachSlabCalcLines } from "@/lib/design/approach/approach-slab-calc"
 import { slabBridgeCalcLines } from "@/lib/design/slabs/slab-bridge-calc";
 import { hlmrCalcLines } from "@/lib/design/bearings/pot-disc-calc";
 import { hlmrTakeoff } from "@/lib/design/bearings/pot-disc-detail";
-import { hlmrInputs } from "@/lib/design/kinds";
+import { fingerInputs, hlmrInputs, modularInputs } from "@/lib/design/kinds";
+import { modularCalcLines } from "@/lib/design/joints/modular-calc";
+import { fingerCalcLines } from "@/lib/design/joints/finger-calc";
+import { fingerTakeoff, modularTakeoff } from "@/lib/design/joints/detail";
 import { slabBridgeInputs } from "@/lib/design/kinds";
 import { steelCalcLines } from "@/lib/design/girders/steel-calc";
 import { steelGirderInputs } from "@/lib/design/girders/steel";
@@ -327,6 +330,10 @@ export async function createCalcFromDesign(designId: string, variant?: "asd" | "
                             ? hlmrCalcLines(hlmrInputs(design.inputs), design.name, figures(() => takeoffFigures(hlmrTakeoff(hlmrInputs(design.inputs)))))
                             : design.kind === "slab-bridge"
                             ? slabBridgeCalcLines(slabBridgeInputs(design.inputs), design.name)
+                            : design.kind === "modular-joint"
+                            ? modularCalcLines(modularInputs(design.inputs), design.name, figures(() => takeoffFigures(modularTakeoff(modularInputs(design.inputs)))))
+                            : design.kind === "finger-joint"
+                            ? fingerCalcLines(fingerInputs(design.inputs), design.name, figures(() => takeoffFigures(fingerTakeoff(fingerInputs(design.inputs)))))
                             : design.kind === "strip-seal-joint"
                             ? stripSealCalcLines(stripSealInputs(design.inputs), design.name, figures(() => stripSealFigures(stripSealInputs(design.inputs))))
                             : null);

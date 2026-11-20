@@ -16,7 +16,11 @@ import { APPROACH_SLAB_DEFAULTS } from "../approach/approach-slab";
 import { railDef } from "../decks/rails";
 import type { WingwallInputs } from "../walls/wingwall";
 import { deckElevation, horizontalElements, offsetPoint, pointAt, profileAt, profileGeometry, sectionAt, stationOffset } from "./alignment";
-import type { BridgeInputs, BridgeRun } from "./bridge";
+import type { BridgeInputs, BridgeRun, JointKind } from "./bridge";
+import { designFinger, type FingerJointInputs } from "../joints/finger";
+import { designModular, type ModularJointInputs } from "../joints/modular";
+import { designStripSeal, type StripSealInputs } from "../joints/strip-seal";
+import { fingerParts, modularParts, stripSealParts, type JointPart } from "../joints/detail";
 import type { IfcRebar, RebarBox } from "./ifc-rebar";
 
 // The Bridge as an IFC 4.3 model (phase 2, docs/bridge-model.md): a neutral description the IFC
@@ -98,6 +102,8 @@ export type BridgeComponents = {
   ids?: { girders?: (string | null)[]; caps?: Record<number, string | null>; columns?: Record<number, string | null> };
   /** Each support's pot or disc bearing design, drawn as its parts where the support line takes them. */
   hlmr?: Record<number, HlmrInputs | undefined>;
+  /** Each abutment's expansion device design, drawn as its parts at the deck's end (or the approach slab's, at an integral abutment). */
+  joints?: Record<number, { id?: string | null; kind: JointKind; inputs: StripSealInputs | ModularJointInputs | FingerJointInputs } | undefined>;
 };
 
 const sub = (a: V3, b: V3): V3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
@@ -590,6 +596,64 @@ export function bridgeIfc(b: BridgeInputs, run: BridgeRun, c: BridgeComponents =
         box: { c: v3(P(slabMid.x, slabMid.y, zMid - ap.t / 24)), ax: [v3(bx), v3(by), UP], half: [r6(length / 2), r6(ap.L / 2), r6(ap.t / 24)] },
         grid: { top: slabTop, stA: offs.map((o) => r6(at(o, face).st)), stB: offs.map((o) => r6(at(o, face + ap.L).st)) },
       });
+      // The expansion device, as its parts at its installation opening: at the deck's end over a seat abutment, at the
+      // approach slab's far end behind an integral or semi-integral one; its parts swept along the joint between the
+      // deck's grid points across, each on the roadway's surface there.
+      const jt = c.joints?.[i];
+      if (jt) {
+        const atSlabEnd = b.supports[i].type === "integral-abutment" || b.supports[i].type === "semi-integral-abutment";
+        const dj = atSlabEnd ? face + ap.L : s.endDistance; // ft from the support line, toward the approach
+        const lineIn = ((oR - oL) / cosSk) * 12;
+        let parts: JointPart[];
+        let A: number; // in, the opening
+        let pay: string;
+        if (jt.kind === "modular-joint") {
+          const r = designModular(jt.inputs as ModularJointInputs);
+          A = r.design.A;
+          parts = modularParts(jt.inputs as ModularJointInputs, lineIn, A);
+          pay = `518-010${String(Math.min(12, r.size)).padStart(2, "0")} Bridge Expansion Device (0-${r.size} Inch)`;
+        } else if (jt.kind === "finger-joint") {
+          A = designFinger(jt.inputs as FingerJointInputs).design.D;
+          parts = fingerParts(jt.inputs as FingerJointInputs, lineIn, A);
+          pay = "518-01201 Bridge Expansion Device (Type 1)";
+        } else {
+          A = designStripSeal(jt.inputs as StripSealInputs).design.A;
+          parts = stripSealParts(jt.inputs as StripSealInputs, A);
+          pay = "518-01004 Bridge Expansion Device (0-4 Inch)";
+        }
+        const mid = sign * (dj + A / 24); // ft along the bridge (ahead) from the support line to the joint's middle
+        const jointPt = (o: number, xIn: number, zIn: number): V3 => {
+          const t = o / cosSk;
+          const x = s.x + t * lineX + (mid + xIn / 12) * fw.x;
+          const y = s.y + t * lineY + (mid + xIn / 12) * fw.y;
+          const so = stationOffset(b.alignment, x, y, s.station, cache);
+          return P(x, y, deckElevation(b.profile, b.roadway, so.station, so.offset, vcs) + zIn / 12);
+        };
+        const label = jt.kind === "modular-joint" ? "modular joint" : jt.kind === "finger-joint" ? "finger joint" : "strip seal";
+        for (const p of parts) {
+          const runs: [number, number][] = p.s0 === undefined ? offs.slice(1).map((o, k) => [offs[k], o]) : [[oL + (p.s0 / 12) * cosSk, oL + ((p.s1 ?? p.s0) / 12) * cosSk]];
+          for (const [oa, ob] of runs) {
+            const pa = jointPt(oa, p.x, p.z);
+            const run = sub(jointPt(ob, p.x, p.z), pa);
+            const len = Math.hypot(...run);
+            if (len < 1e-4) continue;
+            els.push({
+              cls: "IfcPlate",
+              type: "EXPANSION_JOINT",
+              name: `${p.name}, ${s.name} ${label}`,
+              part,
+              origin: v3(pa),
+              xdir: v3([fw.x, fw.y, 0]),
+              zdir: v3(unit(run)),
+              profile: { kind: "rect", x: r6(p.w / 12), y: r6(p.h / 12) },
+              depth: r6(len),
+              material: p.material,
+              color: [...(p.seal ? COLORS.bearing : COLORS.steel)],
+              psets: designPset(jt.kind, jt.id ?? null, { Part: p.name, PayItem: pay }),
+            });
+          }
+        }
+      }
       return;
     }
     // A pier: its cap, columns and foundations.

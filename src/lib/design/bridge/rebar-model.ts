@@ -29,7 +29,7 @@ import type { PileInputs } from "../foundations/piles";
 // void) grouped for its toggles, and every bar set (rebar3d.ts), the designs' placement where phase 1
 // has it and the IFC model's schematic layout elsewhere.
 
-export type RebarCategory = "girder" | "deck" | "barrier" | "bearing" | "diaphragm" | "cap" | "column" | "shaft" | "pile" | "footing" | "abutment" | "approach" | "wingwall" | "other";
+export type RebarCategory = "girder" | "deck" | "barrier" | "bearing" | "diaphragm" | "cap" | "column" | "shaft" | "pile" | "footing" | "abutment" | "approach" | "wingwall" | "joint" | "other";
 export type RebarElement = {
   name: string;
   part: string; // the support's key ("support-2") or "super"
@@ -51,6 +51,7 @@ export type RebarModel = { elements: RebarElement[]; bars: BarSet3D[]; parts: { 
 function categoryOf(e: IfcElement): RebarCategory {
   const n = e.name.toLowerCase();
   if (e.type === "GIRDER_SEGMENT") return "girder";
+  if (e.type === "EXPANSION_JOINT") return "joint";
   if (e.cls === "IfcBearing") return "bearing";
   if (e.cls === "IfcRailing") return "barrier";
   if (e.type === "PIERCAP") return "cap";

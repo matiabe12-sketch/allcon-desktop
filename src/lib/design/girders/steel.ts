@@ -1,4 +1,5 @@
 import { DesignError, type Check } from "../walls/cip";
+import { LRFR_DEFAULTS } from "./lrfr";
 import { modulus, distributionFactors, type DistFactors, type GirderInputs } from "./prestressed";
 import { appendixA6, effectivePlasticMoment, negativeYieldMoments, redistributionMoment, refinedRedistribution, rotationalStiffness, thetaRL } from "./steel-appendix";
 import { CF_CONNECTION_DEFAULTS, BOLT_DIAMETERS, cfConnection, type CfConnection } from "./steel-connection";
@@ -105,7 +106,11 @@ export type SteelGirderInputs = {
   sole: SoleInputs; // sole plates and anchor rods at the bearings (14.8)
   splice: SpliceInputs; // bolted field splices at the sections' changes (6.13.6.1.3), designed; shopWelded: the changes made in the shop
   crossFrame: CrossFrame & { check: boolean; connection: CfConnection }; // intermediate cross-frames: stability bracing (6.7.4.2.2), wind (4.6.2.7.1), curvature; the members' end connections (6.13)
-  wind: { V: number; exposure: "B" | "C" | "D"; Z: number; lateral: boolean; construction: number }; // construction: the wind speed while the deck is placed (mph, 0: not checked) // lateral: the wind's lateral bending of the bottom flange at Strength III and V (C4.6.2.7.1, exterior girder) // Strength III design wind speed (mph, 0: none), exposure, height (ft); Strength V uses 80 mph // plate bearing stiffeners at the supports; without them the web at the bearing (D6.5): bearing length N, flange-to-web weld or fillet (in)
+  wind: { V: number; exposure: "B" | "C" | "D"; Z: number; lateral: boolean; construction: number };
+  /** The load rating's: the live load's effects scaled (girders/lrfr-steel.ts splits each check's dead and live parts with it); 1 when designing. */
+  llScale?: number;
+  /** Load and Resistance Factor Rating (girders/lrfr-steel.ts): its settings, off unless turned on. */
+  rating?: import("./lrfr").LrfrSettings; // construction: the wind speed while the deck is placed (mph, 0: not checked) // lateral: the wind's lateral bending of the bottom flange at Strength III and V (C4.6.2.7.1, exterior girder) // Strength III design wind speed (mph, 0: none), exposure, height (ft); Strength V uses 80 mph // plate bearing stiffeners at the supports; without them the web at the bearing (D6.5): bearing length N, flange-to-web weld or fillet (in)
 };
 
 const plate = (b: number, t: number): Plate => ({ b, t });
@@ -246,6 +251,7 @@ export function steelGirderInputs(saved: unknown): SteelGirderInputs {
     })(),
     haunchTo: s.haunchTo === "flange" ? "flange" : "web",
     girder: s.girder === "interior" || s.girder === "exterior" ? s.girder : "both",
+    ...(s.rating && typeof s.rating === "object" ? { rating: { ...LRFR_DEFAULTS, ...(s.rating as object) } } : {}),
   };
 }
 
@@ -492,6 +498,7 @@ export function designSteelGirder(i: SteelGirderInputs) {
   };
 
   const eta = i.eta;
+  const llk = i.llScale ?? 1;
   /** The unfactored effects at a point. */
   const effectsCache = new Map<number, ReturnType<typeof effectsRaw>>();
   const effects = (X: number) => {
@@ -510,12 +517,12 @@ export function designSteelGirder(i: SteelGirderInputs) {
     const negativeRegion = longLine.beam.uniformAll(s, x).M < 0;
     if (grid) {
       const gx = grid.at(X, !!at && at.x >= spans[at.s] - 1e-9 && at.s < spans.length - 1);
-      return { s, x, k, M: gx.M, V: gx.V, dfM: 1, dfV: 1, negativeRegion };
+      return { s, x, k, M: { ...gx.M, llPos: llk * gx.M.llPos, llNeg: llk * gx.M.llNeg }, V: { ...gx.V, ll: llk * gx.V.ll }, dfM: 1, dfV: 1, negativeRegion };
     }
     const pier = x > spans[s] / 2 ? s : s - 1; // the nearer interior pier
     const dfM = negativeRegion && pier >= 0 && pier < pierDF.length ? pierDF[pier].moment : spanDF[s].moment;
     const dfV = spanDF[s].shear;
-    return { s, x, k, M: { dc1: d1.M, dc2: d2.M, dw: dW.M, llPos: dfM * env.Mpos, llNeg: dfM * env.Mneg }, V: { dc1: d1.V, dc2: d2.V, dw: dW.V, ll: dfV * env.V }, dfM, dfV, negativeRegion };
+    return { s, x, k, M: { dc1: d1.M, dc2: d2.M, dw: dW.M, llPos: llk * dfM * env.Mpos, llNeg: llk * dfM * env.Mneg }, V: { dc1: d1.V, dc2: d2.V, dw: dW.V, ll: llk * dfV * env.V }, dfM, dfV, negativeRegion };
   }
   /** The fatigue truck (3.6.1.4.1: 8, 32 and 32 kip axles, 14 and 30 ft apart) on the short-term girder line: per girder, with its factors and 15% IM, unfactored. */
   const fatigueAt = (X: number) => {

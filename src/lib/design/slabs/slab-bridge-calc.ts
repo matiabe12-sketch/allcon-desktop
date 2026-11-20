@@ -1,4 +1,6 @@
 import type { Line } from "@/lib/calcs/library/templates";
+import { rateSlabBridge } from "./lrfr-slab";
+import { ratingFactorLines, ratingTableLines } from "../girders/lrfr-calc";
 import { checksSummary } from "../checks-summary";
 import { COLOR_NOTE, info, INPUT_COLOR, isInput, num } from "../calc-style";
 import { BARS, type Bars } from "../walls/cip";
@@ -144,6 +146,14 @@ export function slabBridgeCalcLines(i: SlabBridgeInputs, title: string): Line[] 
     m(`R_{${k + 1}}\\coloneq ${num(x.DC, 3)}${"\\frac{\\mathrm{kip}}{\\mathrm{ft}}"}`, `Support ${k + 1}: DC ${num(x.DC, 3)}, DW ${num(x.DW, 3)}, LL ${num(x.LL, 3)} (with IM ${num(x.LLIM, 3)}) kip/ft, every lane with its multiple presence factor over the width`);
   });
 
+  // The load rating (LRFR), when it's turned on.
+  if (i.rating?.on) {
+    const q = rateSlabBridge(i, i.rating);
+    lines.push(...ratingFactorLines(q, "Load and Resistance Factor Rating by the AASHTO Manual for Bridge Evaluation, Section 6A.5, with the CDOT Bridge Rating Manual: the interior and edge strips above rated in flexure from their dead loads, strips and resistances; other vehicles take HL-93's strip scaled by their effect over HL-93's on the same beam. Shear isn't rated (AASHTO 5.12.2.1)."));
+    const at = (a: { span: number; x: number; limit: string }) => `span ${a.span + 1}, ${num(a.x, 1)} ft: ${a.limit.toLowerCase()}`;
+    text(`HL-93 inventory RF ${num(q.hl93.inventory.rf, 2)} at ${at(q.hl93.inventory)}; operating RF ${num(q.hl93.operating.rf, 2)} at ${at(q.hl93.operating)}.`);
+    lines.push(...ratingTableLines(q, `${num(i.wearing, 2)} in`));
+  }
   lines.push(...checksSummary(SLAB_BRIDGE_GROUPS.map((g) => ({ title: g.title, checks: r.checks.filter((c) => g.of(c.id)) }))));
   return lines;
 }

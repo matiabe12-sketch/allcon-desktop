@@ -7,6 +7,8 @@ import { SLAB_BRIDGE_GROUPS } from "@/lib/design/slabs/slab-bridge-calc";
 import { DesignError } from "@/lib/design/walls/cip";
 import { BarsField, ChecksBanner, ChecksTable, Choice, DesignErrorCard, DesignHeader, Field, fmt, KeyValues, Section, Toggle } from "./design-kit";
 import { TakeoffPanel } from "./takeoff-panel";
+import { LrfrResults, LrfrSettingsFields } from "./lrfr-panel";
+import { rateSlabBridge } from "@/lib/design/slabs/lrfr-slab";
 
 // Designing a cast-in-place slab bridge: the inputs on the left, worked out as they change (the sketch, the checks,
 // the strips and the reactions) on the right, saved as you go.
@@ -60,6 +62,14 @@ export function SlabBridgeEditor({ design, projects }: { design: { id: string; n
     }
   }, [inputs]);
   const r = outcome.result;
+  const rating = useMemo(() => {
+    if (!r || !inputs.rating?.on) return null;
+    try {
+      return rateSlabBridge(inputs, inputs.rating);
+    } catch {
+      return null;
+    }
+  }, [r, inputs]);
   const n = inputs.spans.length;
   const setSpans = (k: number) => setInputs((s) => ({ ...s, spans: Array.from({ length: k }, (_, j) => s.spans[j] ?? s.spans[s.spans.length - 1] ?? 30) }));
 
@@ -104,6 +114,9 @@ export function SlabBridgeEditor({ design, projects }: { design: { id: string; n
                 </>
               )}
             </Section>
+            <Section title="Load rating (LRFR)">
+              <LrfrSettingsFields value={inputs.rating} onChange={(v) => setInputs((s) => ({ ...s, rating: v }))} />
+            </Section>
             <Section title="Deflection (2.5.2.6.2)">
               <Toggle label="Check the live load deflection" value={inputs.llDeflection} onChange={set("llDeflection")} />
               {inputs.llDeflection && <Field label="Limit, L /" value={inputs.deflectionLimit} onChange={set("deflectionLimit")} />}
@@ -124,6 +137,7 @@ export function SlabBridgeEditor({ design, projects }: { design: { id: string; n
                 </Card>
                 <ChecksTable checks={r.checks} groupOf={groupOf} />
                 <TakeoffPanel kind="slab-bridge" design={design} inputs={inputs} ok={r.checks.every((c) => c.advisory || c.ok)} onSettings={(t) => setInputs((s) => ({ ...s, takeoff: t }))} />
+                {rating && <LrfrResults rating={rating} note="The design's interior and edge strips rated in flexure (positive, and negative over the piers where continuous), from its own dead loads, strips and resistances; other vehicles take HL-93's strip scaled by their effect over HL-93's on the same beam (IM 33%). Shear isn't rated: a slab designed for moment by 4.6.2.3 is satisfactory for shear (5.12.2.1). The edge strip stands in for the exterior girder; the color code takes the interior strip." />}
                 <div className="grid gap-4 xl:grid-cols-2">
                   <KeyValues title="Strips (AASHTO 4.6.2.3)" rows={r.strips.map((s, k) => [`Span ${k + 1}: E / edge`, `${fmt(s.E, 1)} / ${fmt(s.Eedge, 1)} in`] as [string, string]).concat([["Skew factor r", fmt(r.r)]])} />
                   <KeyValues title="Reactions per foot (kip/ft, unfactored)" rows={r.reactions.map((x, k) => [`Support ${k + 1}`, `DC ${fmt(x.DC)}, DW ${fmt(x.DW)}, LL ${fmt(x.LL)}`] as [string, string])} />

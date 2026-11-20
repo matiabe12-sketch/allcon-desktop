@@ -24,11 +24,11 @@ export function lrfrCalcLines(i: GirderInputs, design: Design, q: LrfrResult = r
   text("Factors", "subheading");
   m(`\\varphi_c\\coloneq ${num(f.phiC)}`, `Condition: ${s.condition} (MBE Table 6A.4.2.3-1; new bridges 1.0, BRM 15-6)`);
   m(`\\varphi_s\\coloneq ${num(f.phiS)}`, "System, MBE Table 6A.4.2.4-1");
-  m("\\varphi_{cs}\\coloneq\\max\\left(0.85,\\varphi_c\\cdot\\varphi_s\\right)=", "MBE Eq. 6A.4.2.1-3");
+  m("\\varphi_{cs}\\coloneq\\max\\left(0.85,\\varphi_c\\cdot\\varphi_s\\right)=", "MBE Eq. 6A.4.2.1-3; for shear φs = 1.0 (MBE C6A.4.2.4)");
   m(`\\gamma_{DC}\\coloneq ${num(f.gDC)}`, "MBE Table 6A.4.2.2-1");
   m(`\\gamma_{DW}\\coloneq ${num(f.gDW)}`, s.dwMeasured ? "Wearing surface measured" : "Wearing surface not measured");
   m(`\\gamma_{L}\\coloneq ${num(f.gLegal, 3)}`, `Legal loads, ADTT ${s.adtt ?? "unknown"} (MBE ${s.edition === "3rd" ? "3rd" : "2nd"} ed. Table 6A.4.4.2.3a-1)`);
-  m(`\\gamma_{P}\\coloneq ${num(f.gPermit, 3)}`, "Routine permit, unlimited crossings, mixed with traffic (MBE Table 6A.4.5.4.2a-1, BRM 1.4 X)");
+  m(`\\gamma_{P}\\coloneq ${num(f.gPermit, 3)}`, "Routine permit, unlimited crossings, mixed with traffic, by its weight ratio: the CO Permit's 2.5 kip/ft shown, the Modified Tandem (over 3.0) its own (MBE 3rd ed. Table 6A.4.5.4.2a-1, BRM 1.4 X)");
   text("RF = (C − γDC·DC − γDW·DW ± γP·P) / (γL·(LL + IM)), MBE Eq. 6A.4.2.1-1; strength C = φc·φs·φRn (Eq. 6A.4.2.1-3).", "note");
 
   // The HL-93 ratings worked out at their controlling points.
@@ -75,11 +75,22 @@ export function lrfrCalcLines(i: GirderInputs, design: Design, q: LrfrResult = r
   worked("Operating, Strength I (γL 1.35)", q.hl93.operating, 1.35, "RF_{op}");
   text(`HL-93: inventory RF ${num(q.hl93.inventory.rf, 2)}, operating RF ${num(q.hl93.operating.rf, 2)} (truncated, BRM 1.14).`, "note");
 
+  lines.push(...ratingTableLines(q, `${num(i.fws, 2)} psf`));
+  return lines;
+}
+
+type Summary = Pick<LrfrResult, "settings" | "hl93" | "ratings" | "posting" | "color">;
+
+/** The rating's chapter end, shared by every rated design: each vehicle's rating, the posting and color code, and the values for CDOT's LRFR Rating Summary Sheet. */
+export function ratingTableLines(q: Summary, wearing: string): Line[] {
+  const lines: Line[] = [];
+  const text = (t: string, style?: "heading" | "subheading" | "note") => lines.push({ text: t, ...(style ? { style } : {}) });
+  const s = q.settings;
   text("Legal, specialized hauling, emergency and permit vehicles (MBE 6A.4.4, 6A.4.5; BRM 1.2)", "subheading");
   lines.push({
     region: textTable(
       [{ title: "Vehicle", x: 4 }, { title: ["Weight", "(tons)"], x: 170, anchor: "end" }, { title: "γL", x: 215, anchor: "end" }, { title: "RF", x: 260, anchor: "end" }, { title: ["Rating", "(tons)"], x: 320, anchor: "end" }, { title: "Controls", x: 335 }],
-      q.ratings.map((v) => [v.name, v.tons === null ? "—" : num(v.tons, 2), num(v.gammaL, 2), num(trunc(v.rf.rf, 2), 2), v.ratingTons === null ? "—" : num(v.ratingTons, 1), `${v.rf.girder}, span ${v.rf.span + 1}, ${num(v.rf.x, 1)} ft, ${v.rf.limit.replace("Strength, ", "")}`]),
+      q.ratings.map((v) => [v.name, v.tons === null ? "—" : num(v.tons, 2), num(v.gammaL, 2), num(trunc(v.rf.rf, 2), 2), v.ratingTons === null ? "—" : num(v.ratingTons, 1), v.rf.at ? `${v.rf.at}, ${v.rf.limit.replace("Strength, ", "")}` : `${v.rf.girder}, span ${v.rf.span + 1}, ${num(v.rf.x, 1)} ft, ${v.rf.limit.replace("Strength, ", "")}`]),
       680,
     ),
   });
@@ -106,10 +117,29 @@ export function lrfrCalcLines(i: GirderInputs, design: Design, q: LrfrResult = r
         ["EV2, EV3 (tons)", ["EV2", "EV3"].map(tons).join(", ")],
         ["Permit truck, Modified Tandem (tons)", ["CO Permit", "CO Mod Tandem"].map(tons).join(", ")],
         ["Distribution for legal and permit vehicles", s.lanes === "multi" ? "Multi-lane" : "Single lane"],
-        ["Wearing surface (DW)", `${num(i.fws, 2)} psf`],
+        ["Wearing surface (DW)", wearing],
       ],
       420,
     ),
   });
+  return lines;
+}
+
+/** The factors' part of a rating chapter, shared by every rated design. */
+export function ratingFactorLines(q: Pick<LrfrResult, "settings" | "factors">, intro: string): Line[] {
+  const lines: Line[] = [];
+  const text = (t: string, style?: "heading" | "subheading" | "note") => lines.push({ text: t, ...(style ? { style } : {}) });
+  const m = (math: string, ref?: string) => lines.push({ math, ...(ref ? { ref } : {}) });
+  const f = q.factors;
+  const s = q.settings;
+  text("LOAD RATING (LRFR)", "heading");
+  text(intro);
+  text("Factors", "subheading");
+  m(`\\varphi_c\\coloneq ${num(f.phiC)}`, `Condition: ${s.condition} (MBE Table 6A.4.2.3-1; new bridges 1.0, BRM 15-6)`);
+  m(`\\varphi_s\\coloneq ${num(f.phiS)}`, "System, MBE Table 6A.4.2.4-1");
+  m("\\varphi_{cs}\\coloneq\\max\\left(0.85,\\varphi_c\\cdot\\varphi_s\\right)=", "MBE Eq. 6A.4.2.1-3; for shear φs = 1.0 (MBE C6A.4.2.4)");
+  m(`\\gamma_{L}\\coloneq ${num(f.gLegal, 3)}`, `Legal loads, ADTT ${s.adtt ?? "unknown"} (MBE ${s.edition} ed. Table 6A.4.4.2.3a-1)`);
+  m(`\\gamma_{P}\\coloneq ${num(f.gPermit, 3)}`, "Routine permit, unlimited crossings, mixed with traffic, by its weight ratio: the CO Permit's 2.5 kip/ft shown, the Modified Tandem (over 3.0) its own (MBE 3rd ed. Table 6A.4.5.4.2a-1, BRM 1.4 X)");
+  text("RF = (C − γDC·DC − γDW·DW ± γP·P) / (γL·(LL + IM)), MBE Eq. 6A.4.2.1-1; strength C = φc·φs·φRn (Eq. 6A.4.2.1-3).", "note");
   return lines;
 }

@@ -144,7 +144,7 @@ export function mseInputs(saved: unknown): MseInputs {
 export function cbcInputs(saved: unknown): CbcInputs {
   const s = (saved && typeof saved === "object" ? saved : {}) as Partial<CbcInputs>;
   const old = s.steel && !s.reinf ? ({ reinf: "wwr", construction: "precast" } as const) : {};
-  return { ...CBC_DEFAULTS, ...old, ...s, steel: { ...CBC_DEFAULTS.steel, ...(s.steel ?? {}) }, bars: { ...CBC_DEFAULTS.bars, ...(s.bars ?? {}) }, wingwalls: cleanWingwalls(s.wingwalls), cornerBars: s.cornerBars === true, extension: cleanExtension(s.extension), excavation: cleanExcavation(s.excavation) };
+  return { ...CBC_DEFAULTS, ...old, ...s, steel: { ...CBC_DEFAULTS.steel, ...(s.steel ?? {}) }, bars: { ...CBC_DEFAULTS.bars, ...(s.bars ?? {}) }, wingwalls: cleanWingwalls(s.wingwalls), cornerBars: s.cornerBars === true, extension: cleanExtension(s.extension), excavation: cleanExcavation(s.excavation), ...(s.rating ? { rating: { ...LRFR_DEFAULTS, ...s.rating } } : {}) };
 }
 
 /** A haunch design's inputs as saved, filled in from the defaults. */
@@ -210,7 +210,7 @@ export function hlmrInputs(saved: unknown): HlmrInputs {
 /** A slab bridge's inputs as saved, filled in from the defaults. */
 export function slabBridgeInputs(saved: unknown): SlabBridgeInputs {
   const s = (saved && typeof saved === "object" ? saved : {}) as Partial<SlabBridgeInputs>;
-  return { ...SLAB_BRIDGE_DEFAULTS, ...s, spans: Array.isArray(s.spans) && s.spans.length ? s.spans.map(Number) : SLAB_BRIDGE_DEFAULTS.spans, edgeBars: s.edgeBars === null ? null : { ...SLAB_BRIDGE_DEFAULTS.edgeBars!, ...(s.edgeBars ?? {}) } };
+  return { ...SLAB_BRIDGE_DEFAULTS, ...s, ...(s.rating ? { rating: { ...LRFR_DEFAULTS, ...s.rating } } : {}), spans: Array.isArray(s.spans) && s.spans.length ? s.spans.map(Number) : SLAB_BRIDGE_DEFAULTS.spans, edgeBars: s.edgeBars === null ? null : { ...SLAB_BRIDGE_DEFAULTS.edgeBars!, ...(s.edgeBars ?? {}) } };
 }
 
 /** A modular joint's inputs as saved, filled in from the defaults. */

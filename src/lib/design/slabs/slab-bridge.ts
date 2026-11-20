@@ -35,6 +35,8 @@ export type SlabBridgeInputs = {
   edgeBars: { count: number; bar: number } | null;
   llDeflection: boolean;
   deflectionLimit: number; // L / this
+  /** Load and Resistance Factor Rating (slabs/lrfr-slab.ts): its settings, off unless turned on. */
+  rating?: import("../girders/lrfr").LrfrSettings;
 };
 
 export const SLAB_BRIDGE_DEFAULTS: SlabBridgeInputs = {

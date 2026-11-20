@@ -7,6 +7,8 @@ import { CASES, checkGroup, designCbc, PHI_BOX, type CbcInputs, type CbcResult, 
 import { DesignError } from "@/lib/design/walls/cip";
 import { BarsField, ChecksBanner, ChecksTable, Choice, DesignErrorCard, DesignHeader, Field, fmt, KeyValues, Section, Toggle } from "./design-kit";
 import { TakeoffPanel } from "./takeoff-panel";
+import { LrfrResults, LrfrSettingsFields } from "./lrfr-panel";
+import { rateCulvert } from "@/lib/design/culverts/lrfr-culvert";
 import { WingwallInputs, WingwallResults } from "./culvert-wingwalls";
 import { CbcSketch } from "./wall-sketch";
 
@@ -39,6 +41,14 @@ export function CbcEditor({ design, projects }: { design: { id: string; name: st
     }
   }, [inputs]);
   const r = outcome.result;
+  const rating = useMemo(() => {
+    if (!r || !inputs.rating?.on) return null;
+    try {
+      return rateCulvert(inputs, inputs.rating);
+    } catch {
+      return null;
+    }
+  }, [r, inputs]);
   const multi = inputs.cells > 1;
 
   return (
@@ -197,6 +207,9 @@ export function CbcEditor({ design, projects }: { design: { id: string; name: st
             <Section title="Wingwalls (M-601-20)" open={(inputs.wingwalls ?? []).length > 0}>
               <WingwallInputs walls={inputs.wingwalls ?? []} rise={inputs.rise} onChange={set("wingwalls")} />
             </Section>
+            <Section title="Load rating (LRFR)">
+              <LrfrSettingsFields value={inputs.rating} onChange={(v) => setInputs((s) => ({ ...s, rating: v }))} />
+            </Section>
             <Section title="Factors">
               <Choice
                 label="Box"
@@ -237,6 +250,7 @@ export function CbcEditor({ design, projects }: { design: { id: string; name: st
                 <ChecksTable checks={r.checks} groupOf={checkGroup} />
                 <WingwallResults walls={inputs.wingwalls ?? []} />
                 <TakeoffPanel kind="box-culvert" design={design} inputs={inputs} ok={r.checks.every((c) => c.advisory || c.ok)} onSettings={(t) => setInputs((s) => ({ ...s, takeoff: t }))} />
+                {rating && <LrfrResults rating={rating} note="Every station of the box rated in flexure (each face) and shear, against each Strength I combination's permanent loads as designed (DC, EV, EH, LS, water), with the vehicles moved across the top through the fill. CDOT's culvert factors (BRM 1.3 M): HL-93 1.75 inventory and 1.35 operating with m = 1.2; legal loads 2.0 and permits 1.4 at every traffic level, one lane with m = 1.0 (the ADTT and MBE edition settings don't apply). The service limit states aren't rated (BRM 1.3 P)." />}
                 <Working r={r} />
               </>
             )

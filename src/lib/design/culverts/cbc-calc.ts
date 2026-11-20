@@ -1,4 +1,6 @@
 import type { Line } from "@/lib/calcs/library/templates";
+import { rateCulvert } from "./lrfr-culvert";
+import { ratingFactorLines, ratingTableLines } from "../girders/lrfr-calc";
 import { checksSummary } from "../checks-summary";
 import { COLOR_NOTE, INPUT_COLOR, isInput, num } from "../calc-style";
 import type { Figure } from "../figures";
@@ -353,6 +355,13 @@ export function cbcCalcLines(i: CbcInputs, title: string, figures?: { section?: 
       m(`W_{w${n + 1}}\\coloneq ${num(w.L)}\\mathrm{ft}\\cdot ${num(x.cell.lbPerLf)}\\frac{\\mathrm{lb}}{\\mathrm{ft}}=`, `${w.name}: m = ${x.mR}, k = ${x.kR}, ${x.colLabel}`, "lb");
     });
     for (const { w, r: x } of ws) if (!x.inTable) text(`${w.name}: ${x.issues.join(" ")}`, "note");
+  }
+  // The load rating (LRFR), when it's turned on.
+  if (i.rating?.on) {
+    const q = rateCulvert(i, i.rating);
+    lines.push(...ratingFactorLines(q, "Load and Resistance Factor Rating by the AASHTO Manual for Bridge Evaluation, 6A.5.12, with the CDOT Bridge Rating Manual: every station of the box above rated in flexure (each face) and shear against each Strength I combination's permanent loads, the vehicles moved across the top through the fill. CDOT's culvert factors (BRM 1.3 M): HL-93 1.75 inventory and 1.35 operating with m = 1.2; legal loads 2.0 and permits 1.4, one lane with m = 1.0."));
+    text(`HL-93 inventory RF ${num(q.hl93.inventory.rf, 2)} (${q.hl93.inventory.at}: ${q.hl93.inventory.limit.toLowerCase()}); operating RF ${num(q.hl93.operating.rf, 2)}.`);
+    lines.push(...ratingTableLines(q, `fill ${num(i.fill, 2)} ft`));
   }
   // The summary in groups, as the design tool lists them: each member, then the wingwalls.
   const groups = CHECK_GROUPS.map((title) => ({ title, checks: r.checks.filter((c) => checkGroup(c.id) === title) })).filter((g) => g.checks.length);

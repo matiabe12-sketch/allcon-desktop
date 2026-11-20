@@ -1,4 +1,6 @@
 import type { Line } from "@/lib/calcs/library/templates";
+import { rateSteelGirder } from "./lrfr-steel";
+import { ratingFactorLines, ratingTableLines } from "./lrfr-calc";
 import type { Figure } from "../figures";
 import { COLOR_NOTE, isInput, num } from "../calc-style";
 import { checksSummary } from "../checks-summary";
@@ -1058,6 +1060,14 @@ export function steelCalcLines(i: SteelGirderInputs, title: string, result?: Ste
       m(`L_{${t}}\\coloneq ${num(r.spans[d.span])}\\mathrm{ft}`);
       m(ok(`\\Delta_{${t}}`, `\\frac{L_{${t}}}{${num(i.deflection.limit)}}`), "AASHTO 2.5.2.6.2");
     });
+  }
+  // The load rating (LRFR), when it's turned on.
+  if (i.rating?.on) {
+    const q = rateSteelGirder(i, i.rating);
+    lines.push(...ratingFactorLines(q, "Load and Resistance Factor Rating by the AASHTO Manual for Bridge Evaluation, Section 6A.6, with the CDOT Bridge Rating Manual: every check of the girder line above rated (flexure, shear, Service II's flange stresses), each check's dead and live parts found by running it with almost none and with all of the live load; other vehicles scale the live part by their effect over HL-93's on the same beam."));
+    const at = (a: { girder: string; span: number; x: number; limit: string }) => `span ${a.span + 1}, ${num(a.x, 1)} ft: ${a.limit.toLowerCase()}`;
+    text(`HL-93 inventory RF ${num(q.hl93.inventory.rf, 2)} (strength ${num(q.hl93.inventoryStrength.rf, 3)} at ${at(q.hl93.inventoryStrength)}; Service II, γL 1.30, ${num(q.hl93.inventoryService.rf, 3)} at ${at(q.hl93.inventoryService)}); operating RF ${num(q.hl93.operating.rf, 2)} at ${at(q.hl93.operating)}.`);
+    lines.push(...ratingTableLines(q, `${num(i.loads.fws, 2)} psf`));
   }
   lines.push(
     ...checksSummary([

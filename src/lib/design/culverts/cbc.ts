@@ -15,6 +15,8 @@ export type Steel = { topIn: number; topOut: number; botIn: number; botOut: numb
 export type Face = keyof Steel;
 
 export type CbcInputs = {
+  /** Load and Resistance Factor Rating (culverts/lrfr-culvert.ts): its settings, off unless turned on. */
+  rating?: import("../girders/lrfr").LrfrSettings;
   // Geometry
   cells: number;
   span: number; // clear span of each cell, ft
@@ -463,21 +465,25 @@ export function designCbc(i: CbcInputs) {
       E.vmax = Math.max(E.vmax, e.V);
       E.vmin = Math.min(E.vmin, e.V);
     });
+  /** A vehicle (axle loads, kip, and spacings, ft) moved across the box both ways, each position's results passed on. */
+  const moveVehicle = (axles0: number[], gaps0: number[], onResult: (res: EndForces[]) => void) => {
+    const length = gaps0.reduce((s, g) => s + g, 0);
+    const steps = Math.max(40, Math.ceil((B + length + ll.Lp) / Math.min(0.5, ll.Lp / 3)));
+    const same = axles0.every((p, k) => Math.abs(p - axles0[axles0.length - 1 - k]) < 1e-9) && gaps0.every((g, k) => Math.abs(g - gaps0[gaps0.length - 1 - k]) < 1e-9);
+    for (const dir of same ? [1] : [1, -1]) {
+      const axles = dir === 1 ? axles0 : [...axles0].reverse();
+      const gaps = dir === 1 ? gaps0 : [...gaps0].reverse();
+      for (let k = 0; k <= steps; k++) {
+        const x0 = -length - ll.Lp / 2 + ((B + length + ll.Lp) * k) / steps;
+        const ps = patches(i, axles, gaps, x0);
+        if (!ps.some((p) => p.b > 0 && p.a < B)) continue;
+        onResult(frame.solve(liveCase(model, ps)));
+      }
+    }
+  };
   if (i.liveLoad) {
     for (const v of VEHICLES) {
-      const length = v.gaps.reduce((s, g) => s + g, 0);
-      const steps = Math.max(40, Math.ceil((B + length + ll.Lp) / Math.min(0.5, ll.Lp / 3)));
-      const dirs = v.axles[0] === v.axles[v.axles.length - 1] ? [1] : [1, -1];
-      for (const dir of dirs) {
-        const axles = dir === 1 ? v.axles : [...v.axles].reverse();
-        const gaps = dir === 1 ? v.gaps : [...v.gaps].reverse();
-        for (let k = 0; k <= steps; k++) {
-          const x0 = -length - ll.Lp / 2 + ((B + length + ll.Lp) * k) / steps;
-          const ps = patches(i, axles, gaps, x0);
-          if (!ps.some((p) => p.b > 0 && p.a < B)) continue;
-          record(frame.solve(liveCase(model, ps)));
-        }
-      }
+      moveVehicle(v.axles, v.gaps, record);
       // The heaviest footprint, for the record.
       const ps = patches(i, v.axles, v.gaps, 0);
       const big = ps.reduce((a, p) => (p.w * (p.b - p.a) > a.w * (a.b - a.a) ? p : a), ps[0]);
@@ -723,6 +729,21 @@ export function designCbc(i: CbcInputs) {
     diagram,
     beta1,
     cdMax,
+    /** Any vehicle's envelope at the stations (with the multiple presence factor and IM the patches carry), for the load rating. */
+    vehicleEnv: (axles: number[], gaps: number[]) => {
+      const out = stations.map(() => ({ pos: zero(), neg: zero(), vmax: 0, vmin: 0 }));
+      moveVehicle(axles, gaps, (res) =>
+        stations.forEach((p, m) => {
+          const e = at(res, p);
+          const E = out[m];
+          if (e.M > E.pos.M) E.pos = e;
+          if (e.M < E.neg.M) E.neg = e;
+          E.vmax = Math.max(E.vmax, e.V);
+          E.vmin = Math.min(E.vmin, e.V);
+        }),
+      );
+      return out;
+    },
   };
 }
 

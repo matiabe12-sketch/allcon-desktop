@@ -30,10 +30,10 @@ export function LrfrSettingsFields({ value, onChange }: { value: LrfrSettings | 
   );
 }
 
-const where = (a: RatingAt) => `${a.girder}, span ${a.span + 1}, ${fmt(a.x, 1)} ft: ${a.limit.toLowerCase()}`;
+const where = (a: RatingAt) => (a.at ? `${a.at}: ${a.limit.toLowerCase()}` : `${a.girder}, span ${a.span + 1}, ${fmt(a.x, 1)} ft: ${a.limit.toLowerCase()}`);
 const LEVEL: Record<string, string> = { legal: "Legal", su: "Specialized hauling", ev: "Emergency", permit: "Permit" };
 
-export function LrfrResults({ rating }: { rating: LrfrResult }) {
+export function LrfrResults({ rating, note }: { rating: LrfrResult; note?: string }) {
   const q = rating;
   const f = q.factors;
   return (
@@ -102,7 +102,8 @@ export function LrfrResults({ rating }: { rating: LrfrResult }) {
           </div>
         </div>
         <p className="text-muted-foreground">
-          The girder check&apos;s own capacities, dead loads, distribution factors and stresses at every point; vehicles moved over the spans with IM 33% (BRM 15-4). Service III is rated for HL-93 inventory only (γL 0.80); BRM 1.3 P lets the legal and permit ratings skip the service limit states. Shear capacity is the design&apos;s, worked out at the design&apos;s factored forces.
+          {note ??
+            "The girder check's own capacities, dead loads, distribution factors and stresses at every point; vehicles moved over the spans with IM 33% (BRM 15-4). Service III is rated for HL-93 inventory only (γL 0.80); BRM 1.3 P lets the legal and permit ratings skip the service limit states. Shear capacity is the design's, worked out at the design's factored forces."}
         </p>
       </CardContent>
     </Card>

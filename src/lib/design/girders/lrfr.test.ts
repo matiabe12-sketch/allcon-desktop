@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { DEFAULT_SETTINGS, evaluateSheet, type SheetItem, type Value } from "@/lib/calcs/evaluate";
 import { layout } from "@/lib/calcs/library/templates";
 import { readingOrder } from "@/lib/calcs/types";
-import { colorCode, INTERSTATE_LEGAL, legalGamma, LRFR_DEFAULTS, permitGamma, rateGirder, ratingVehicles } from "./lrfr";
+import { colorCode, INTERSTATE_LEGAL, legalGamma, LRFR_DEFAULTS, permitGamma, rateGirder, ratingVehicles, weightRatio } from "./lrfr";
 import { lrfrCalcLines } from "./lrfr-calc";
 import { designGirder, GIRDER_DEFAULTS, type GirderInputs } from "./prestressed";
 
@@ -18,8 +18,16 @@ describe("LRFR factors (MBE 6A, CDOT BRM)", () => {
     expect(legalGamma(3000, "3rd")).toBeCloseTo(1.3 + (0.15 * 2000) / 4000, 9);
     expect(legalGamma(null, "2nd")).toBe(1.8);
     expect(legalGamma(550, "2nd")).toBeCloseTo(1.4 + (0.25 * 450) / 900, 9);
-    expect(permitGamma(null)).toBe(1.8);
-    expect(permitGamma(50)).toBe(1.4);
+    // MBE 3rd ed. Table 6A.4.5.4.2a-1: by ADTT and the weight ratio; unknown traffic as over 5000 (BRM 15-6).
+    expect(permitGamma(null, 2.5)).toBe(1.35);
+    expect(permitGamma(null, 5)).toBe(1.3);
+    expect(permitGamma(50, 1.5)).toBe(1.3);
+    expect(permitGamma(1000, 2.5)).toBe(1.25);
+    expect(permitGamma(3000, 1.5)).toBeCloseTo(1.35 + (0.05 * 2000) / 4000, 9);
+    expect(permitGamma(null, 2.5, "2nd")).toBe(1.8);
+    // The CO Permit (192 kip over 77 ft) and the Modified Tandem (100 kip over 20 ft).
+    const permits = ratingVehicles({ route: "state" }).filter((v) => v.level === "permit");
+    expect(permits.map((v) => Math.round(weightRatio(v) * 100) / 100)).toEqual([2.49, 5]);
   });
 
   it("rates the Interstate trucks at their posted weights (BRM Figure 1-5)", () => {

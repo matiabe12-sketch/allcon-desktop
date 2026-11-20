@@ -85,13 +85,28 @@ export function legalGamma(adtt: number | null, edition: MbeEdition) {
   return t[t.length - 1].g;
 }
 
-/** γL for routine (annual) permits, unlimited crossings, mixed with traffic (MBE Table 6A.4.5.4.2a-1; BRM 1.4 X). */
-export function permitGamma(adtt: number | null) {
-  const t = [{ a: 100, g: 1.4 }, { a: 1000, g: 1.6 }, { a: 5000, g: 1.8 }];
-  if (adtt === null || !(adtt >= 0)) return 1.8;
+/**
+ * γL for routine (annual) permits, unlimited crossings, mixed with traffic, two or more lanes (MBE 3rd ed. Table
+ * 6A.4.5.4.2a-1; BRM 1.4 X): by ADTT (over 5000, 1000, under 100, interpolated; unknown as over 5000, BRM 15-6) and the
+ * permit's weight ratio, its gross weight over its front-to-rear axle length (kip/ft). The 2nd edition's 1.80/1.60/1.40.
+ */
+export function permitGamma(adtt: number | null, ratio = 2.5, edition: MbeEdition = "3rd") {
+  const rows = edition === "2nd" ? [{ a: 100, g: [1.4, 1.4, 1.4] }, { a: 1000, g: [1.6, 1.6, 1.6] }, { a: 5000, g: [1.8, 1.8, 1.8] }] : [{ a: 100, g: [1.3, 1.2, 1.15] }, { a: 1000, g: [1.35, 1.25, 1.2] }, { a: 5000, g: [1.4, 1.35, 1.3] }];
+  const col = ratio < 2 ? 0 : ratio <= 3 ? 1 : 2;
+  const t = rows.map((r) => ({ a: r.a, g: r.g[col] }));
+  if (adtt === null || !(adtt >= 0) || adtt >= t[2].a) return t[2].g;
   if (adtt <= t[0].a) return t[0].g;
   for (let k = 1; k < t.length; k++) if (adtt <= t[k].a) return t[k - 1].g + ((t[k].g - t[k - 1].g) * (adtt - t[k - 1].a)) / (t[k].a - t[k - 1].a);
-  return 1.8;
+  return t[2].g;
+}
+
+/** A permit vehicle's weight ratio, gross weight over front-to-rear axle length (kip/ft), for Table 6A.4.5.4.2a-1. */
+export const weightRatio = (v: Pick<RatingVehicle, "axles">) => v.axles.reduce((t, a) => t + a.P, 0) / Math.max(1, v.axles[v.axles.length - 1].d - v.axles[0].d);
+
+/** γL for a vehicle under a setting: legal, emergency (BRM 1.3 L) or permit (by its weight ratio). */
+export function vehicleGamma(v: RatingVehicle, s: LrfrSettings) {
+  const legal = legalGamma(s.adtt, s.edition);
+  return v.level === "permit" ? permitGamma(s.adtt, weightRatio(v), s.edition) : v.level === "ev" && s.evAt130 ? 1.3 : legal;
 }
 
 export type RatingVehicle = { name: string; level: "design" | "legal" | "su" | "ev" | "permit"; tons: number | null; axles: Axle[] };
@@ -104,7 +119,7 @@ export function ratingVehicles(s: Pick<LrfrSettings, "route">): RatingVehicle[] 
   return [...legal.map(toV), ...CDOT_VEHICLES.filter((v) => v.cls === "su" || v.cls === "ev" || v.cls === "permit").map(toV)];
 }
 
-export type RatingAt = { rf: number; span: number; girder: "interior" | "exterior"; x: number; limit: string };
+export type RatingAt = { rf: number; span: number; girder: "interior" | "exterior"; x: number; limit: string; /** Where, in words, when not a girder's span and distance (a culvert's station). */ at?: string };
 export type VehicleRating = { name: string; level: RatingVehicle["level"] | "design"; tons: number | null; gammaL: number; rf: RatingAt; rfInterior: RatingAt; ratingTons: number | null };
 export type LrfrResult = ReturnType<typeof rateGirder>;
 
@@ -117,10 +132,12 @@ const trunc = (v: number, d: number) => Math.floor(v * 10 ** d + 1e-9) / 10 ** d
 export function rateGirder(i: GirderInputs, r: { spans: { index: number; L: number; interior: GirderResult; exterior: GirderResult }[]; continuous: boolean }, settings: LrfrSettings = LRFR_DEFAULTS) {
   const s = settings;
   const phiCS = Math.max(0.85, CONDITION_FACTOR[s.condition] * s.system);
+  // Shear: φs = 1.0 (MBE C6A.4.2.4: system factors aren't for shear).
+  const phiCV = Math.max(0.85, CONDITION_FACTOR[s.condition]);
   const gDC = 1.25;
   const gDW = s.dwMeasured ? 1.25 : 1.5;
   const gLegal = legalGamma(s.adtt, s.edition);
-  const gPermit = permitGamma(s.adtt);
+  const gPermit = permitGamma(s.adtt, 2.5, s.edition); // the CO Permit's ratio (192 kip over 77 ft); each permit takes its own below
   const gEV = s.evAt130 ? 1.3 : gLegal;
   const vehicles = ratingVehicles(s);
   const tensLimit = i.exposure === "moderate" ? Math.min(0.19 * Math.sqrt(i.fc), 0.6) : i.exposure === "severe" ? Math.min(0.0948 * Math.sqrt(i.fc), 0.3) : 0;
@@ -139,10 +156,19 @@ export function rateGirder(i: GirderInputs, r: { spans: { index: number; L: numb
         // A continuity joint that isn't fully effective is enveloped with the simple span, as the girder check does.
         e = { Mpos: Math.max(c.Mpos, one.Mpos), Mneg: c.Mneg, V: Math.max(c.V, one.V) };
       } else e = { Mpos: one.Mpos, Mneg: 0, V: one.V };
+      // A permit's lane load (MBE 6A.4.5.4.1, BRM 15-8): 0.2 klf per lane where it adds to the permit's effect, on
+      // spans of 200 ft or more, and for negative moments over the piers of continuous spans. No impact on it.
+      if (v.level === "permit") {
+        const lane = laneEffects(k, line, x);
+        const long = r.spans[k].L >= 200;
+        e = { Mpos: e.Mpos + (long ? lane.Mpos : 0), Mneg: e.Mneg + (beam ? lane.Mneg : 0), V: e.V + (long ? lane.V : 0) };
+      }
       envCache.set(key, e);
     }
     return e;
   };
+
+  const laneEffects = (k: number, line: GirderResult, x: number) => (beam ? laneEffect(beam, k, x + line.shift) : laneEffect(simple[k], 0, x));
 
   type Effect = { M: number; Mneg: number; V: number };
   /** The lowest RF on a girder line for a live load given per station (with its distribution), at a γL. */
@@ -163,7 +189,7 @@ export function rateGirder(i: GirderInputs, r: { spans: { index: number; L: numb
         take((phiCS * negCap - dead) / (gammaL * -L.Mneg), st.x, "Strength, flexure (negative)");
       }
       // Shear, where the girder check works it out (from the critical section in).
-      if (s.shear && st.phiVn && L.V > 1e-6) take((phiCS * st.phiVn - gDC * Math.abs(st.Vdc) - gDW * Math.abs(st.Vdw)) / (gammaL * L.V), st.x, "Strength, shear");
+      if (s.shear && st.phiVn && L.V > 1e-6) take((phiCV * st.phiVn - gDC * Math.abs(st.Vdc) - gDW * Math.abs(st.Vdw)) / (gammaL * L.V), st.x, "Strength, shear");
     }
     return best;
   };
@@ -197,7 +223,7 @@ export function rateGirder(i: GirderInputs, r: { spans: { index: number; L: numb
   // one lane with the multiple presence factor divided out (MBE 6A.4.5.4.2b).
   const dfOf = (line: GirderResult) => (s.lanes === "single" ? { M: line.df.momentOne / 1.2, V: line.df.shearOne / 1.2 } : { M: line.df.moment, V: line.df.shear });
   const ratings: VehicleRating[] = vehicles.map((v) => {
-    const gammaL = v.level === "permit" ? gPermit : v.level === "ev" ? gEV : gLegal;
+    const gammaL = vehicleGamma(v, s);
     const of = (l: (typeof lines)[number]) => {
       const df = dfOf(l.line);
       return lineRating(
@@ -216,6 +242,18 @@ export function rateGirder(i: GirderInputs, r: { spans: { index: number; L: numb
     return { name: v.name, level: v.level, tons: v.tons, gammaL, rf, rfInterior, ratingTons: v.tons === null ? null : trunc(rf.rf * v.tons, 1) };
   });
 
+  const summary = summarizeRatings(ratings, s);
+  return {
+    settings: s,
+    factors: { phiC: CONDITION_FACTOR[s.condition], phiS: s.system, phiCS, phiCV, gDC, gDW, gLegal, gPermit, gEV, tensLimit },
+    hl93: { inventory: { ...inventory, rf: trunc(inventory.rf, 2) }, inventoryStrength: invStrength, inventoryService: serviceOnly, operating: { ...operating, rf: trunc(operating.rf, 2) } },
+    ratings,
+    ...summary,
+  };
+}
+
+/** Posting (BRM 1.15) and the overload color code (BRM 1.16, from the interior members' permit ratings) from a set of vehicle ratings. */
+export function summarizeRatings(ratings: VehicleRating[], s: Pick<LrfrSettings, "route">) {
   // Posting (BRM 1.15): the legal loads below their weight limits; 95% exempts; under 0.3 restricted; under 3 tons closed.
   const legalish = ratings.filter((v) => v.level === "legal" || v.level === "su" || v.level === "ev");
   const nrl = ratings.find((v) => v.name === "NRL");
@@ -233,12 +271,33 @@ export function rateGirder(i: GirderInputs, r: { spans: { index: number; L: numb
   const pTons = permit ? trunc(permit.rfInterior.rf * (permit.tons ?? 0), 1) : 0;
   const tTons = tandem ? trunc(tandem.rfInterior.rf * (tandem.tons ?? 0), 1) : 0;
   return {
-    settings: s,
-    factors: { phiC: CONDITION_FACTOR[s.condition], phiS: s.system, phiCS, gDC, gDW, gLegal, gPermit, gEV, tensLimit },
-    hl93: { inventory: { ...inventory, rf: trunc(inventory.rf, 2) }, inventoryStrength: invStrength, inventoryService: serviceOnly, operating: { ...operating, rf: trunc(operating.rf, 2) } },
-    ratings,
     posting,
     needsPosting: posting.some((p) => p.action !== "none" && p.action !== "not used on this route"),
     color: { permitTons: pTons, tandemTons: tTons, code: colorCode(pTons, tTons) },
   };
+}
+
+/** The rating factors and load factors a setting gives (MBE 6A.4.2, Tables 6A.4.4.2.3a-1 and 6A.4.5.4.2a-1; BRM 1.3 L). */
+export function ratingFactors(s: LrfrSettings) {
+  const gLegal = legalGamma(s.adtt, s.edition);
+  return { phiC: CONDITION_FACTOR[s.condition], phiS: s.system, phiCS: Math.max(0.85, CONDITION_FACTOR[s.condition] * s.system), phiCV: Math.max(0.85, CONDITION_FACTOR[s.condition]), gDC: 1.25, gDW: s.dwMeasured ? 1.25 : 1.5, gLegal, gPermit: permitGamma(s.adtt, 2.5, s.edition), gEV: s.evAt130 ? 1.3 : gLegal };
+}
+
+export const truncate = trunc;
+
+/** A 0.2 klf lane load's largest effects at x in span s of a beam, per lane: its influence lines' positive and negative areas (kip·ft and kip). */
+export function laneEffect(b: ContinuousBeam, s: number, x: number, w = 0.2) {
+  const ilM = b.influence(s, x, "M");
+  const ilV = b.influence(s, x, "V");
+  const step = Math.max(0.25, b.total / 2000);
+  let Mpos = 0;
+  let Mneg = 0;
+  let V = 0;
+  for (let p = step / 2; p < b.total; p += step) {
+    const m = ilM(p);
+    if (m > 0) Mpos += m * step;
+    else Mneg += m * step;
+    V += Math.max(0, ilV(p)) * step;
+  }
+  return { Mpos: w * Mpos, Mneg: w * Mneg, V: w * V };
 }

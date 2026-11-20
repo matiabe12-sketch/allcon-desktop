@@ -10,6 +10,8 @@ import { FATIGUE_CATEGORIES, type FatigueCategory } from "@/lib/design/girders/s
 import type { SteelSegment } from "@/lib/design/girders/steel-section";
 import { DesignError } from "@/lib/design/walls/cip";
 import { TakeoffPanel } from "./takeoff-panel";
+import { LrfrResults, LrfrSettingsFields } from "./lrfr-panel";
+import { rateSteelGirder } from "@/lib/design/girders/lrfr-steel";
 import { ChecksBanner, ChecksTable, Choice, DesignErrorCard, DesignHeader, Field, fmt, KeyValues, Section, Toggle } from "./design-kit";
 import { SteelGirderSketch } from "./steel-girder-sketch";
 import { SteelCamberDiagram, SteelCamberTable, SteelCrossFrameDetail, SteelGirderElevationSheet, SteelPlateSchedule, SteelSoleDetail, SteelSpliceDetail } from "./steel-girder-sheet";
@@ -111,6 +113,15 @@ export function SteelGirderEditor({ design, projects }: { design: { id: string; 
     }
   }, [deferred]);
   const r = outcome.result;
+  // The load rating (LRFR), when it's turned on: two more runs of the girder line, on the deferred copy.
+  const rating = useMemo(() => {
+    if (!outcome.result || !deferred.rating?.on) return null;
+    try {
+      return rateSteelGirder(deferred, deferred.rating);
+    } catch {
+      return null;
+    }
+  }, [outcome.result, deferred]);
   const total = inputs.spans.reduce((s, L) => s + L, 0);
   const segTotal = inputs.segments.reduce((s, x) => s + x.length, 0);
   const L = inputs.loads;
@@ -597,6 +608,10 @@ export function SteelGirderEditor({ design, projects }: { design: { id: string; 
               )}
             </Section>
 
+            <Section title="Load rating (LRFR)">
+              <LrfrSettingsFields value={inputs.rating} onChange={(v) => setInputs((s) => ({ ...s, rating: v }))} />
+            </Section>
+
             <Section title="Live load and options">
               <Choice
                 label="Analysis"
@@ -659,6 +674,7 @@ export function SteelGirderEditor({ design, projects }: { design: { id: string; 
                 </Card>
                 <ChecksTable checks={r.checks} groupOf={groupOf} />
                 <TakeoffPanel kind="steel-girder-check" design={design} inputs={inputs} ok={r.checks.every((c) => c.advisory || c.ok)} onSettings={(t) => setInputs((s) => ({ ...s, takeoff: t }))} />
+                {rating && <LrfrResults rating={rating} note="Every check of the girder line rated: flexure (6.10.7, 6.10.8 or A6), shear (6.10.9), and Service II's flange stresses (6.10.4.2.2, MBE 6A.6.4.2.2: γL 1.30 inventory and legal, 1.00 operating and permit). Each check's dead and live parts are found by running it with almost none and with all of the live load; other vehicles scale the live part by their effect over HL-93's on the same beam (IM as entered). Multi-lane distribution; fatigue (MBE Section 7) not rated." />}
                 <div className="grid gap-4 xl:grid-cols-2">
                   <KeyValues
                     title="Deck, loads and distribution"

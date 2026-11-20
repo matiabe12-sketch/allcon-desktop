@@ -41,6 +41,7 @@ import { CALC_FILE, newCalcKey } from "@/lib/calcs/server";
 import { emptyCalc } from "@/lib/calcs/types";
 import { designStripSeal } from "@/lib/design/joints/strip-seal";
 import { designModular } from "@/lib/design/joints/modular";
+import { LRFR_DEFAULTS, rateGirder } from "@/lib/design/girders/lrfr";
 import { designFinger } from "@/lib/design/joints/finger";
 import { deleteFiles, putFile } from "@/lib/storage";
 
@@ -284,7 +285,9 @@ export async function updateBridgeDesigns(bridgeId: string, create: boolean): Pr
   return sectionLoadPath(user, bridge, bridgeDefinition(bridge.definition), { create });
 }
 
-export type BridgeDesignStatus = { id: string; target: string; name: string; ok: boolean | null };
+/** A girder group's load rating (LRFR, girders/lrfr.ts): HL-93's rating factors, the permit's tons, the color code, posting. */
+export type GirderRatingSummary = { inventory: number; operating: number; permitTons: number; color: string; posting: boolean; lowest: { name: string; tons: number | null; rf: number } };
+export type BridgeDesignStatus = { id: string; target: string; name: string; ok: boolean | null; rating?: GirderRatingSummary };
 
 /** The designs started from the bridge, each with whether its checks pass (null: it can't be worked out as entered; missing: deleted). */
 export async function bridgeDesignStatus(bridgeId: string): Promise<BridgeDesignStatus[]> {
@@ -296,7 +299,22 @@ export async function bridgeDesignStatus(bridgeId: string): Promise<BridgeDesign
     const d = designs.find((x) => x.id === l.id);
     if (!d) return null;
     let ok: boolean | null = null;
+    let rating: GirderRatingSummary | undefined;
     try {
+      if (d.kind === "lrfd-girder-check") {
+        // The girders' load rating, with the design's own settings where it has them (CDOT BRM defaults otherwise).
+        const gi = girderInputs(d.inputs);
+        const g = designGirder(gi);
+        ok = g.ok;
+        try {
+          const q = rateGirder(gi, g, { ...LRFR_DEFAULTS, ...(gi.rating ?? {}), on: true });
+          const low = q.ratings.filter((v) => v.level !== "permit").reduce((a, b) => (b.rf.rf < a.rf.rf ? b : a));
+          rating = { inventory: q.hl93.inventory.rf, operating: q.hl93.operating.rf, permitTons: q.color.permitTons, color: q.color.code, posting: q.needsPosting, lowest: { name: low.name, tons: low.ratingTons, rf: low.rf.rf } };
+        } catch {
+          rating = undefined;
+        }
+        return { id: d.id, target: l.target, name: d.name, ok, rating };
+      }
       ok =
         d.kind === "stm-d-region"
           ? (await designStm(stmInputs(d.inputs), nodeLpSolver)).checks.every((c) => c.ok || c.advisory)
@@ -324,7 +342,7 @@ export async function bridgeDesignStatus(bridgeId: string): Promise<BridgeDesign
     } catch {
       ok = null;
     }
-    return { id: d.id, target: l.target, name: d.name, ok };
+    return { id: d.id, target: l.target, name: d.name, ok, rating };
   }));
   return rows.filter((r): r is BridgeDesignStatus => r !== null);
 }

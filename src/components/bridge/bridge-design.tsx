@@ -141,7 +141,15 @@ export function DesignPanel({ bridgeId, def, saved, onLinks }: { bridgeId: strin
                     <span className="text-muted-foreground">{gone ? "Deleted" : link && !status ? "…" : "Not started"}</span>
                   )}
                 </td>
-                <td className={cn("px-2 font-medium", s?.ok === true ? "text-emerald-600" : s?.ok === false ? "text-red-600" : "text-muted-foreground")}>{s ? (s.ok === true ? "Pass" : s.ok === false ? "Fail" : "Can't be worked out") : "—"}</td>
+                <td className={cn("px-2 font-medium", s?.ok === true ? "text-emerald-600" : s?.ok === false ? "text-red-600" : "text-muted-foreground")}>
+                  {s ? (s.ok === true ? "Pass" : s.ok === false ? "Fail" : "Can't be worked out") : "—"}
+                  {s?.rating && (
+                    <span className={cn("block font-normal", s.rating.inventory < 1 || s.rating.posting ? "text-red-600" : "text-muted-foreground")} title="Load rating (LRFR), MBE 6A with the CDOT Bridge Rating Manual">
+                      HL-93 {s.rating.inventory.toFixed(2)} / {s.rating.operating.toFixed(2)} · permit {s.rating.permitTons.toFixed(1)} T · {s.rating.color}
+                      {s.rating.posting ? " · posting" : ""}
+                    </span>
+                  )}
+                </td>
                 <td className="pl-2 text-right">
                   <button type="button" disabled={!!busy || !saved} onClick={() => void start(t.key)} title={saved ? undefined : "Saving the bridge first"} className="inline-flex items-center gap-1 rounded border px-2 py-0.5 hover:bg-accent disabled:opacity-50">
                     {busy === t.key ? <Loader2 className="size-3 animate-spin" /> : s ? <RefreshCw className="size-3" /> : <Plus className="size-3" />}
@@ -153,6 +161,23 @@ export function DesignPanel({ bridgeId, def, saved, onLinks }: { bridgeId: strin
           })}
         </tbody>
       </table>
+      {(() => {
+        const rated = (status ?? []).filter((x) => x.rating);
+        if (!rated.length) return null;
+        const inv = rated.reduce((a, b) => (b.rating!.inventory < a.rating!.inventory ? b : a));
+        const op = rated.reduce((a, b) => (b.rating!.operating < a.rating!.operating ? b : a));
+        const permit = rated.reduce((a, b) => (b.rating!.permitTons < a.rating!.permitTons ? b : a));
+        const low = rated.reduce((a, b) => (b.rating!.lowest.rf < a.rating!.lowest.rf ? b : a));
+        return (
+          <div className="rounded-md border px-3 py-2">
+            <p className="font-medium">Load rating (LRFR) — the bridge, the lowest of its girders</p>
+            <p className="text-muted-foreground">
+              HL-93 inventory {inv.rating!.inventory.toFixed(2)} ({inv.name}), operating {op.rating!.operating.toFixed(2)} ({op.name}); the lowest legal load {low.rating!.lowest.name} at {low.rating!.lowest.tons?.toFixed(1) ?? "—"} T (RF {low.rating!.lowest.rf.toFixed(2)}); CO Permit {permit.rating!.permitTons.toFixed(1)} T, color code {permit.rating!.color}
+              {rated.some((x) => x.rating!.posting) ? "; posting needed" : "; no posting"}. Each girder design&apos;s &ldquo;Load rating (LRFR)&rdquo; section sets the ADTT, route and condition.
+            </p>
+          </div>
+        );
+      })()}
       <p className="text-muted-foreground">
         A design starts with the bridge&apos;s geometry and the forces from this analysis filled in, and is then an ordinary design: its own checks and calc package, edited in Design. It doesn&apos;t follow later changes to the bridge: &ldquo;Start again&rdquo; makes a new one
         from the bridge as it is now. The girder check does its own line-girder analysis with AASHTO&apos;s distribution factors, to compare with this model&apos;s. The abutments, approach slabs, wingwalls, pier caps and foundations take their loads down the load path (&ldquo;Update linked designs&rdquo; keeps them all in step).

@@ -147,3 +147,47 @@ only pays for bridges without a design in allcon, and those can come in through 
   - a CDOT LRFR package as a benchmark;
   - the permit's lane load for negative moments and spans over 200 ft (BRM 15-8, MBE 6A.4.5.4.1);
   - phase 2 (steel, slab, culvert).
+
+## Status (2026-11-20, later): the follow-ups and phase 2
+- **Permit lane load** (MBE 6A.4.5.4.1, BRM 15-8): 0.2 klf per lane over the influence line's adverse area, on spans of
+  200 ft or more and over the piers of continuous spans, no impact (`laneEffect`).
+- **In the Bridge:** the Designs list shows each girder group's HL-93 inventory and operating RF, the permit's tons and
+  the color code, and a line for the bridge, the lowest of its girders. Each girder design's settings are used, or
+  CDOT's defaults.
+- **Steel girders** (`girders/lrfr-steel.ts`):
+  - every check of the girder line is rated: flexure, shear, and Service II's flange stresses (γL 1.30 for inventory
+    and legal loads, 1.00 for operating and permits);
+  - the engine runs twice, with the live load scaled to 0.001 and to 1 (`SteelGirderInputs.llScale`), to split each
+    check's demand into its dead and live parts;
+  - other vehicles scale the live part by their effect over HL-93's on the same beam;
+  - fatigue (MBE Section 7) isn't rated.
+- **Slab bridges** (`slabs/lrfr-slab.ts`):
+  - the interior and edge strips' flexure; the edge strip stands in for the exterior girder;
+  - shear isn't rated (AASHTO 5.12.2.1).
+- **Box culverts** (`culverts/lrfr-culvert.ts`):
+  - every station's faces in flexure and its shear, against each Strength I combination's permanent loads;
+  - the vehicles are moved across the top through the fill (`designCbc(...).vehicleEnv`);
+  - BRM 1.3 M: HL-93 1.75 / 1.35 with m 1.2; legal 2.0 and permits 1.4, one lane with m 1.0.
+- Each has the "Load rating (LRFR)" section in its editor and a calc chapter. Tests: `lrfr-phase2.test.ts`.
+- Not yet: the single-lane option on steel and slab (multi-lane only there; the culvert is one lane by BRM 1.3 M), and a CDOT LRFR package as a
+  benchmark.
+
+## Checked against the full MBE 3rd edition (2018), with the BRM governing where they differ
+- Confirmed:
+  - Table 6A.4.2.2-1, the load factors by limit state;
+  - Table 6A.4.4.2.3a-1, the legal loads' 1.45 / 1.30 (the default edition setting);
+  - Table 6A.4.4.2.3b-1, the specialized hauling vehicles, the same;
+  - the condition and system factor tables;
+  - 6A.4.5.4.1, the permit's 0.2 klf lane load.
+- Changed:
+  - Permits take Table 6A.4.5.4.2a-1 (3rd ed.) by ADTT and their weight ratio, gross weight over front-to-rear axle
+    length. For ADTT over 5000 or unknown, 1.40, 1.35 and 1.30 for ratios under 2.0, 2.0–3.0 and over 3.0 kip/ft. The
+    CO Permit (192 kip over 77 ft, 2.5) takes 1.35; the Modified Tandem (100 kip over 20 ft) takes 1.30.
+  - Shear takes φs = 1.0 (C6A.4.2.4).
+- BRM over MBE (the owner's rule):
+  - the culvert factors (1.3 M);
+  - posting without Eq. 6A.8.3-1 (1.15);
+  - full impact always (15-4);
+  - Colorado or Interstate legal trucks, no AASHTO lane-type legal load (1.2.2; 15-7's older note is superseded);
+  - the permit's lane load on spans of 200 ft or more (15-8; the MBE says 200–300 ft);
+  - no service limit states for legal and permit loads on concrete (1.3 P).

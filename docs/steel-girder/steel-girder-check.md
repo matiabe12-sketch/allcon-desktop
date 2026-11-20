@@ -302,6 +302,37 @@ Article 6.10, and its details (phase 2).
 - **Outputs:** the drawing (the cross-frame detail on the bearing stiffeners), a calc section, and the
   take-off, where the abutment lines take the end frame's angles and bolts.
 
+## Sole plates and anchor bolts (steel-sole.ts)
+
+- **Where:** every bearing, except at integral abutments, where the girders are cast in (CDOT BDM 11.3.1).
+  Bearings are fixed along the girder at the piers by default, otherwise slotted.
+- **The plate:**
+  - 2 in longer than the bearing; across, the anchor bolts outside the flange with 2d to the edge, or 2 in
+    wider than the bearing and flange without bolts (CDOT BDM 14.5.7);
+  - at least 3/4 in at its thin edge, and thick enough to cantilever past the flange over the bearing's
+    pressure (φf 1.0);
+  - beveled where the girder's underside slopes more than 0.01 rad (14.8.2). The slope is the end rotation
+    under the full permanent load, from the camber line, plus the grade.
+- **Welds to the flange:** two fillets the plate's length, for the horizontal force (14.8.1, 6.13.3.2.4b).
+- **Horizontal forces per bearing:**
+  - the design wind across (Strength III, or V with WL 0.10 klf);
+  - braking along, shared by the fixed bearings (3.6.4);
+  - Zone 1's connection force (3.10.9.2): 0.15 or 0.25 of the permanent reaction across, and of the unit's
+    whole permanent load along at the fixed bearings.
+
+  AS defaults to 0 and comes from the geotechnical report.
+- **Anchor bolts:**
+  - ASTM A449, zinc plated (CDOT 512.02), in shear by Eq. 6.13.2.7-2 with the threads included; or F1554
+    rods by Eq. 6.13.2.12-1. φs is 0.75 for both.
+  - The concrete's shear breakout toward the seat's edge and pryout are by ACI 318-19 Chapter 17 (AASHTO 5.13):
+    cracked concrete, no supplementary bars, φ 0.70.
+  - The number and diameter step up (2, 4 or 6 bolts; up to 2 in) until the bolts and the concrete pass.
+- **Not here:** the bearing and the concrete under it, which are designed in the elastomeric bearing tool.
+- **Pay items:** the sole plate and bolts are part of the Type I bearing device (CDOT 512.03), paid each.
+  The take-off counts the bearings under 512-00101.
+- **Benchmark:** the connection force factor against CDOT BDM Example 9 (0.25 for AS 0.165: 15.5 kip per
+  bearing across at abutment 1, 88 kip along at the fixed pier).
+
 ## Bolted field splices (steel-splice.ts)
 
 - **Where:** at each change of section, unless it's marked as welded in the shop (`splice.shopWelded`). Saved

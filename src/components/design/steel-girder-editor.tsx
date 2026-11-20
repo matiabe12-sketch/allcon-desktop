@@ -12,7 +12,7 @@ import { DesignError } from "@/lib/design/walls/cip";
 import { TakeoffPanel } from "./takeoff-panel";
 import { ChecksBanner, ChecksTable, Choice, DesignErrorCard, DesignHeader, Field, fmt, KeyValues, Section, Toggle } from "./design-kit";
 import { SteelGirderSketch } from "./steel-girder-sketch";
-import { SteelCamberDiagram, SteelCamberTable, SteelCrossFrameDetail, SteelGirderElevationSheet, SteelPlateSchedule, SteelSpliceDetail } from "./steel-girder-sheet";
+import { SteelCamberDiagram, SteelCamberTable, SteelCrossFrameDetail, SteelGirderElevationSheet, SteelPlateSchedule, SteelSoleDetail, SteelSpliceDetail } from "./steel-girder-sheet";
 
 // Checking a steel I-girder line: the spans, deck and girder's sections along it on the left, the
 // envelopes, checks and properties on the right, worked out as the inputs change and saved as you go.
@@ -38,6 +38,8 @@ const groupOf = (id: string) =>
                     ? "Moment redistribution (Appendix B6)"
                     : id.startsWith("cw")
                     ? "Wind during construction"
+                    : id.startsWith("sole")
+                    ? "Sole plates and anchor bolts"
                     : id.startsWith("ef")
                     ? "End cross-frames (abutments)"
                     : id.startsWith("splice")
@@ -429,6 +431,52 @@ export function SteelGirderEditor({ design, projects }: { design: { id: string; 
               )}
             </Section>
 
+            <Section title="Sole plates and anchor bolts">
+              <Toggle label="Design the sole plates and anchor bolts at the bearings (14.8)" value={inputs.sole.check} onChange={(v) => setInputs((s) => ({ ...s, sole: { ...s.sole, check: v } }))} />
+              {inputs.sole.check && (
+                <>
+                  <Field label="Bearing length, along the girder" unit="in" value={inputs.sole.padL} onChange={(v) => setInputs((s) => ({ ...s, sole: { ...s.sole, padL: v } }))} hint="From the bearing's design" />
+                  <Field label="Bearing width, across" unit="in" value={inputs.sole.padW} onChange={(v) => setInputs((s) => ({ ...s, sole: { ...s.sole, padW: v } }))} />
+                  <Field label="Profile grade at the bearings" unit="%" value={inputs.sole.grade} onChange={(v) => setInputs((s) => ({ ...s, sole: { ...s.sole, grade: v } }))} hint="Adds to the girder's end slope for the bevel (14.8.2)" />
+                  <Choice
+                    label="Fixed along the girder"
+                    value={inputs.sole.fixed}
+                    options={[
+                      { value: "piers", label: "At the piers" },
+                      { value: "abutments", label: "At the abutments" },
+                      { value: "all", label: "Everywhere" },
+                    ]}
+                    onChange={(v) => setInputs((s) => ({ ...s, sole: { ...s.sole, fixed: v } }))}
+                  />
+                  <Field label="Acceleration coefficient AS (Zone 1)" value={inputs.sole.AS} onChange={(v) => setInputs((s) => ({ ...s, sole: { ...s.sole, AS: v } }))} step={0.01} hint="From the geotechnical report; 0: no seismic connection force (3.10.9.2)" />
+                  <Field label="Sole plate Fy" unit="ksi" value={inputs.sole.Fy} onChange={(v) => setInputs((s) => ({ ...s, sole: { ...s.sole, Fy: v } }))} />
+                  <Field label="Fillet welds to the flange" unit="in" value={inputs.sole.weld} onChange={(v) => setInputs((s) => ({ ...s, sole: { ...s.sole, weld: v } }))} step={0.0625} />
+                  <Toggle label="Anchor bolts through the sole plate" value={inputs.sole.anchors.use} onChange={(v) => setInputs((s) => ({ ...s, sole: { ...s.sole, anchors: { ...s.sole.anchors, use: v } } }))} />
+                  {inputs.sole.anchors.use && (
+                    <>
+                      <Choice
+                        label="Bolts"
+                        value={String(inputs.sole.anchors.grade)}
+                        options={[
+                          { value: "A449", label: "ASTM A449, zinc plated (CDOT 512.02)" },
+                          { value: "36", label: "ASTM F1554 Grade 36" },
+                          { value: "55", label: "ASTM F1554 Grade 55" },
+                          { value: "105", label: "ASTM F1554 Grade 105" },
+                        ]}
+                        onChange={(v) => setInputs((s) => ({ ...s, sole: { ...s.sole, anchors: { ...s.sole.anchors, grade: v === "A449" ? "A449" : (Number(v) as 36 | 55 | 105) } } }))}
+                      />
+                      <Field label="At least, per bearing" value={inputs.sole.anchors.n} onChange={(v) => setInputs((s) => ({ ...s, sole: { ...s.sole, anchors: { ...s.sole.anchors, n: v } } }))} hint="More or larger bolts are chosen as needed" />
+                      <Field label="Diameter, at least" unit="in" value={inputs.sole.anchors.d} onChange={(v) => setInputs((s) => ({ ...s, sole: { ...s.sole, anchors: { ...s.sole.anchors, d: v } } }))} step={0.125} />
+                      <Field label="Embedment" unit="in" value={inputs.sole.anchors.hef} onChange={(v) => setInputs((s) => ({ ...s, sole: { ...s.sole, anchors: { ...s.sole.anchors, hef: v } } }))} />
+                      <Field label="To the seat's edge" unit="in" value={inputs.sole.anchors.edge} onChange={(v) => setInputs((s) => ({ ...s, sole: { ...s.sole, anchors: { ...s.sole.anchors, edge: v } } }))} hint="For the concrete's breakout in shear" />
+                      <Field label="Substructure f'c" unit="ksi" value={inputs.sole.anchors.fc} onChange={(v) => setInputs((s) => ({ ...s, sole: { ...s.sole, anchors: { ...s.sole.anchors, fc: v } } }))} />
+                    </>
+                  )}
+                  <p className="pt-1 text-[11px] text-muted-foreground">Not at integral abutments, whose girders are cast into the abutment. The bearing pad and the concrete under it are designed in the elastomeric bearing tool.</p>
+                </>
+              )}
+            </Section>
+
             <Section title="Field splices">
               <Toggle label="Design bolted field splices at the section changes (6.13.6.1.3)" value={sp.check} onChange={setSp("check")} />
               {sp.check && (
@@ -681,6 +729,23 @@ export function SteelGirderEditor({ design, projects }: { design: { id: string; 
                     </CardContent>
                   </Card>
                 )}
+                {r.soles &&
+                  [r.soles.supports.find((x) => !x.fixed), r.soles.supports.find((x) => x.fixed)]
+                    .filter((x): x is NonNullable<typeof x> => !!x)
+                    .map((s) => (
+                      <Card key={s.X}>
+                        <CardContent className="space-y-2 py-3">
+                          <div className="text-sm font-medium">
+                            Sole plate, {s.label} <span className="font-normal text-muted-foreground">· {s.fixed ? "fixed" : "expansion"}{r.soles!.supports.length > 2 ? ", typical of its kind" : ""}</span>
+                          </div>
+                          <div className="overflow-x-auto">
+                            <div className="min-w-[640px]">
+                              <SteelSoleDetail inputs={inputs} sole={s} />
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
                 {r.splices.map((s) => (
                   <Card key={s.X}>
                     <CardContent className="space-y-2 py-3">

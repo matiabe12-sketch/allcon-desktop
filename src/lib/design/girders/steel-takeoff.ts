@@ -169,9 +169,20 @@ export function steelTakeoff(i: SteelGirderInputs, nGirders?: number): Takeoff {
         terms: rows.map((x) => x.term),
         ref: "Computed weight, CDOT 509.32(a): plates at net dimensions × 490.5 lb/ft³, rolled shapes and angles at their nominal weight, bolts by Table 509-4",
       },
+      // The bearings with their sole plates and anchor bolts: Type I bearing devices, each (CDOT 512.03, 512.19).
+      ...(r.soles && r.soles.supports.length
+        ? {
+            bearing: {
+              value: N * r.soles.supports.length,
+              basis: `${N} girders × ${r.soles.supports.length} supports (${r.soles.supports.map((x) => x.label).join(", ")}), each an elastomeric bearing with its sole plate and anchor bolts`,
+              math: `${N}\\cdot ${r.soles.supports.length}`,
+              ref: "girders × supports with bearings; the sole plate and anchor bolts are part of the bearing device (CDOT 512.03)",
+            },
+          }
+        : {}),
     },
     views: [],
-    notes,
+    notes: r.soles && r.soles.supports.length ? [...notes, "Sole plates and their anchor bolts (ASTM A449, CDOT 512.02) are part of the Type I bearing devices, paid each (512.19), not in the structural steel's weight."] : notes,
     length: { label: "Girders", value: N, unit: "EA" },
   };
 }

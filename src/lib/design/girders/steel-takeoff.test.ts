@@ -24,10 +24,10 @@ describe("steel girder take-off (CDOT 509)", () => {
     for (const p of ["Bearing stiffeners, abutments", "Bearing stiffeners, piers", "Cross-frame struts (top and bottom)", "Stud shear connectors"]) expect(rows.some((x) => x.part === p)).toBe(true);
     expect(rows.some((x) => x.part.startsWith("Connection plates"))).toBe(true);
   });
-  it("one pay line, 509-00000 Structural Steel (LB), to the nearest 10 lb; galvanized by choice", () => {
+  it("509-00000 Structural Steel (LB), to the nearest 10 lb, galvanized by choice; the bearing devices each (512)", () => {
     const t = takeoffFor("steel-girder-check", STEEL_DEFAULTS)!;
     const lines = takeoffPayLines("steel-girder-check", t, {}, STEEL_DEFAULTS);
-    expect(lines.map((l) => l.code)).toEqual(["509-00000"]);
+    expect(lines.map((l) => l.code)).toEqual(["509-00000", "512-00101"]); // the steel, and the bearings with their sole plates (512.03)
     expect(lines[0].quantity % 10).toBe(0);
     expect(Math.abs(lines[0].quantity - rows.reduce((s, x) => s + x.lb, 0))).toBeLessThanOrEqual(5);
     expect(takeoffPayLines("steel-girder-check", t, { girder: "509-00001" }, STEEL_DEFAULTS)[0].code).toBe("509-00001");

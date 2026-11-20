@@ -3,6 +3,7 @@ import { modulus, distributionFactors, type DistFactors, type GirderInputs } fro
 import { appendixA6, effectivePlasticMoment, negativeYieldMoments, redistributionMoment, refinedRedistribution, rotationalStiffness, thetaRL } from "./steel-appendix";
 import { CF_CONNECTION_DEFAULTS, BOLT_DIAMETERS, cfConnection, type CfConnection } from "./steel-connection";
 import { designSplice, SPLICE_DEFAULTS, type SpliceInputs, type SpliceResult } from "./steel-splice";
+import { connectionFactor, designSole, F1554_FU, SOLE_DEFAULTS, type SoleInputs } from "./steel-sole";
 import { nonprismaticBeam } from "./steel-beam";
 import { angle, L_SHAPE_NAMES, singleAngle, stabilityBracing, type CrossFrame } from "./steel-crossframe";
 import { deadEffects, gridGeometry, gridModel, leverStrip, leverWeights, liveExtremes, type GridInput, type Sparse } from "./steel-grid";
@@ -101,6 +102,7 @@ export type SteelGirderInputs = {
   stiffener: StiffenerPlate; // the intermediate transverse stiffeners in the stiffened zones
   bearing: BearingStiffeners & { use: boolean; N: number; weld: number };
   endFrame: { check: boolean; abutment: "integral" | "semi-integral" | "seat"; type: "X" | "K"; diagonal: string; strut: string; hb: number }; // hb 0: 0.8 of the girder's depth, to the inch; // the cross-frames at the abutments, on the bearing stiffeners (6.7.4.2.1)
+  sole: SoleInputs; // sole plates and anchor rods at the bearings (14.8)
   splice: SpliceInputs; // bolted field splices at the sections' changes (6.13.6.1.3), designed; shopWelded: the changes made in the shop
   crossFrame: CrossFrame & { check: boolean; connection: CfConnection }; // intermediate cross-frames: stability bracing (6.7.4.2.2), wind (4.6.2.7.1), curvature; the members' end connections (6.13)
   wind: { V: number; exposure: "B" | "C" | "D"; Z: number; lateral: boolean; construction: number }; // construction: the wind speed while the deck is placed (mph, 0: not checked) // lateral: the wind's lateral bending of the bottom flange at Strength III and V (C4.6.2.7.1, exterior girder) // Strength III design wind speed (mph, 0: none), exposure, height (ft); Strength V uses 80 mph // plate bearing stiffeners at the supports; without them the web at the bearing (D6.5): bearing length N, flange-to-web weld or fillet (in)
@@ -156,6 +158,7 @@ export const STEEL_DEFAULTS: SteelGirderInputs = {
   stiffener: { bt: 5.5, tp: 0.5, Fys: 50, pair: false },
   bearing: { use: true, bt: 6, tp: 0.625, Fys: 50, clip: 1.5, pairsEnd: 1, pairsPier: 2, gap: 8, N: 10, weld: 0.3125 },
   splice: SPLICE_DEFAULTS,
+  sole: SOLE_DEFAULTS,
   endFrame: { check: true, abutment: "semi-integral", type: "X", diagonal: "L5X5X1/2", strut: "L5X5X1/2", hb: 0 },
   crossFrame: { check: true, type: "X", diagonal: "L5X5X1/2", strut: "L5X5X1/2", hb: 36, Fy: 50, fullDepthPlates: true, plateWidth: 10, plateThickness: 0.5, connection: CF_CONNECTION_DEFAULTS },
   wind: { V: 0, exposure: "C", Z: 33, lateral: true, construction: 0 },
@@ -221,6 +224,13 @@ export function steelGirderInputs(saved: unknown): SteelGirderInputs {
       const raw = s.endFrame && typeof s.endFrame === "object" ? (s.endFrame as Record<string, unknown>) : null;
       const k = raw ? o(raw, d.endFrame) : { ...d.endFrame, check: false };
       return { ...k, abutment: k.abutment === "integral" || k.abutment === "seat" ? k.abutment : "semi-integral", type: k.type === "K" ? "K" : "X", diagonal: L_SHAPE_NAMES.includes(k.diagonal) ? k.diagonal : d.endFrame.diagonal, strut: L_SHAPE_NAMES.includes(k.strut) ? k.strut : d.endFrame.strut } as SteelGirderInputs["endFrame"];
+    })(),
+    sole: (() => {
+      // Designs saved before the sole plates were designed keep them off.
+      const raw = s.sole && typeof s.sole === "object" ? (s.sole as Record<string, unknown>) : null;
+      const k = raw ? o(raw, d.sole) : { ...d.sole, check: false };
+      const an = o(raw?.anchors, d.sole.anchors);
+      return { ...k, fixed: k.fixed === "abutments" || k.fixed === "all" ? k.fixed : "piers", anchors: { ...an, grade: an.grade === "A449" || (typeof an.grade === "number" && an.grade in F1554_FU) ? an.grade : "A449" } } as SoleInputs;
     })(),
     splice: (() => {
       // Designs saved before the splices were designed keep them off.
@@ -1667,6 +1677,66 @@ export function designSteelGirder(i: SteelGirderInputs) {
     return { frame, ends, abutment: ef.abutment };
   })();
 
+  // --- Sole plates and anchor rods at the bearings (14.8): not at integral abutments, whose girders are cast into
+  // the abutment (CDOT BDM 11.3.1). The horizontal forces per bearing: the design wind across (Strength III; V with
+  // the wind on the live load), braking along at the fixed bearings (3.6.4), and Zone 1's connection force (3.10.9.2). ---
+  const soles = (() => {
+    const so = i.sole;
+    if (!so.check) return null;
+    const ng = i.nGirders;
+    const integralEnds = i.endFrame.abutment === "integral";
+    const sups = reactions.filter((rc) => !(integralEnds && (rc.support === 0 || rc.support === spans.length)));
+    if (!sups.length) return { supports: [], fixedCount: 0, notes: ["Integral abutments, a single span: no bearings to plate."] };
+    const isPier = (sup: number) => sup > 0 && sup < spans.length;
+    let fixedSet = sups.filter((rc) => (so.fixed === "all" ? true : so.fixed === "piers" ? isPier(rc.support) : !isPier(rc.support))).map((rc) => rc.support);
+    if (!fixedSet.length) fixedSet = [sups[0].support];
+    const superDepth = (Math.max(...i.segments.map((x) => plates(x).D + plates(x).top.t + plates(x).bottom.t)) + Math.max(0, i.haunch) + i.deckT) / 12 + 42 / 12; // ft
+    const lanes = Math.max(1, Math.floor(roadway / 12));
+    const mpf = [1.2, 1, 0.85, 0.65][Math.min(3, lanes - 1)];
+    const BR = Math.max(0.25 * 72, 0.05 * (72 + 0.64 * total)) * lanes * mpf; // kip, the whole bridge (3.6.4)
+    const permAll = reactions.reduce((s, rc) => s + rc.dc + rc.dw, 0); // kip per girder line
+    const f = connectionFactor(so.AS);
+    // The girder's underside slope at a support under the full permanent load: d = a x + b x² through the deflections
+    // at 0.1 and 0.2 of the span next to it; the larger of the two spans at a pier; plus the grade.
+    const slopeAt = (sup: number) => {
+      const fromSpan = (j: number, fromEnd: boolean) => {
+        const pts = camber.filter((c) => c.span === j);
+        const near = fromEnd ? [pts[pts.length - 1], pts[pts.length - 2]] : [pts[0], pts[1]];
+        const x1 = 0.1 * spans[j] * 12;
+        const x2 = 0.2 * spans[j] * 12;
+        const d = (c: (typeof camber)[number]) => c.steel + c.deck + c.dc2 + c.dw;
+        const d1 = d(near[0]);
+        const d2 = d(near[1]);
+        return (d1 * x2 * x2 - d2 * x1 * x1) / (x1 * x2 * (x2 - x1));
+      };
+      const th = Math.max(sup > 0 ? Math.abs(fromSpan(sup - 1, true)) : 0, sup < spans.length ? Math.abs(fromSpan(sup, false)) : 0);
+      return Math.abs(so.grade) / 100 + (sup > 0 && sup < spans.length ? 0 : th);
+    };
+    const supports = sups.map((rc) => {
+      const X = rc.support === 0 ? 0 : starts[rc.support - 1] + spans[rc.support - 1];
+      const p = plates(i.segments[segAt(Math.min(Math.max(X, 1e-6), total - 1e-6))]);
+      const trib = ((rc.support > 0 ? spans[rc.support - 1] : 0) + (rc.support < spans.length ? spans[rc.support] : 0)) / 2;
+      const w3 = i.wind.V > 0 ? windPressure("Strength III", i.wind).PZ * superDepth : 0;
+      const w5 = windPressure("Strength V", i.wind).PZ * superDepth + 0.1; // klf, with WL 0.10 klf (3.8.1.3)
+      const fixed = fixedSet.includes(rc.support);
+      const Ru = eta * (1.25 * rc.dc + 1.5 * rc.dw + 1.75 * (rc.truck + rc.lane));
+      return designSole(so, {
+        label: rc.support === 0 ? "start abutment" : rc.support === spans.length ? "end abutment" : `pier ${rc.support}`,
+        X,
+        fixed,
+        bf: p.bottom.b,
+        tf: p.bottom.t,
+        Rperm: rc.dc + rc.dw,
+        Ru,
+        Hwind: (eta * Math.max(w3, w5) * trib) / ng,
+        Hbrake: fixed ? (eta * 1.75 * BR) / (fixedSet.length * ng) : 0,
+        Hseis: { across: f * (rc.dc + rc.dw), along: fixed ? (f * permAll) / fixedSet.length : 0 },
+        slope: slopeAt(rc.support),
+      });
+    });
+    return { supports, fixedCount: fixedSet.length, notes: [] as string[] };
+  })();
+
   // --- Checks ---
   const checks: Check[] = [];
   const at = (s: SteelStation | null) => (s ? ` at ${s.X.toFixed(1)} ft (span ${s.span + 1}, ${(s.x / spans[s.span]).toFixed(2)}L)` : "");
@@ -1832,6 +1902,10 @@ export function designSteelGirder(i: SteelGirderInputs) {
     }
   }
 
+  if (soles)
+    for (const sp of soles.supports)
+      sp.checks.forEach((c, k) => checks.push({ id: `sole-${sp.X}-${k}`, name: `Sole plate, ${sp.label}${sp.fixed ? " (fixed)" : " (expansion)"}: ${c.name}`, demand: c.demand, capacity: c.capacity, unit: c.unit, ok: c.demand <= c.capacity * (1 + 1e-9), ref: c.ref }));
+
   // --- Bolted field splices (6.13.6.1.3): at each change of section not welded in the shop ---
   const splices: SpliceResult[] = [];
   if (i.splice.check)
@@ -1911,6 +1985,7 @@ export function designSteelGirder(i: SteelGirderInputs) {
     camber,
     crossFrames,
     endFrames,
+    soles,
     splices,
     pourResults,
     b6: { active: b6Active, refined, piers: piersB6 },

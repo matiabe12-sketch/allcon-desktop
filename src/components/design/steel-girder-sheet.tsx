@@ -648,3 +648,102 @@ export function SteelSpliceDetail({ inputs: i, splice: s }: { inputs: SteelGirde
     </svg>
   );
 }
+
+/**
+ * A bearing's sole plate: in plan (the plate, the flange and the bearing dashed, the anchor bolts, slotted along
+ * the girder at an expansion bearing) and in section across the girder (the flange welded to the plate, the bearing,
+ * the bolts into the seat), with its size, bevel, welds and bolts noted. To scale.
+ */
+export function SteelSoleDetail({ inputs: i, sole: s }: { inputs: SteelGirderInputs; sole: NonNullable<SteelGirderResult["soles"]>["supports"][number] }) {
+  const so = i.sole;
+  const a = so.anchors;
+  const sc = Math.min(300 / s.L, 230 / s.W, 14);
+  const px = 60;
+  const py = 70;
+  const cx = px + (s.L * sc) / 2;
+  const cy = py + (s.W * sc) / 2;
+  const holes = s.n > 0 ? Array.from({ length: s.n }, (_, k) => k) : [];
+  const perSide = Math.max(1, Math.ceil(s.n / 2));
+  const rodAt = (k: number) => {
+    const side = k % 2 === 0 ? -1 : 1;
+    const along = perSide > 1 ? ((Math.floor(k / 2) / (perSide - 1)) - 0.5) * (s.L - 4 * s.d) : 0;
+    return [cx + along * sc, cy + (side * s.gauge * sc) / 2] as const;
+  };
+  const slot = !s.fixed;
+  // Section across: the seat, the bearing, the plate, the flange and a stub of the web.
+  const ex0 = 560;
+  const scS = Math.min(380 / Math.max(s.W, so.padW), 14);
+  const exC = ex0 + 190;
+  const ySeat = 300;
+  const padH = 2.5 * scS;
+  const yPad = ySeat - padH;
+  const tPl = s.tThick * scS;
+  const yPl = yPad - tPl;
+  const yFl = yPl - s.tf * scS;
+  const fr = (v: number) => fracIn(v);
+  const notes = [
+    `Sole plate ${fr(s.L)} × ${fr(s.W)} in, ASTM A709 Grade ${so.Fy}, ${s.tapered ? `beveled ${fr(s.tThin)} to ${fr(s.tThick)} in to level the girder's ${s.slope.toFixed(4)} rad slope (14.8.2)` : `${fr(s.tThin)} in (the girder's slope ${s.slope.toFixed(4)} rad is within 0.01, 14.8.2)`}; 2 in longer than the bearing (CDOT BDM 14.5.7).`,
+    `Welded to the flange: ${fr(so.weld)} in fillets along both edges, ${fr(s.L)} in long.`,
+    s.n > 0 ? `Anchor bolts: ${s.n} – ${fr(s.d)} in ${a.grade === "A449" ? "ASTM A449, zinc plated (CDOT 512.02)" : `ASTM F1554 Grade ${a.grade}`}, ${fr(s.gauge)} in apart across, embedded ${fr(a.hef)} in; holes ${slot ? "slotted along the girder (expansion bearing)" : "round (fixed bearing)"}.` : "No anchor bolts: the plate 2 in wider than the bearing and flange (CDOT BDM 14.5.7); transverse restraint by shear blocks.",
+    `Horizontal force at the strength and extreme event limit states: ${s.H.toFixed(1)} kip (across ${s.across.toFixed(1)}, along ${s.along.toFixed(1)}); ${s.fixed ? "fixed" : "expansion"} bearing.`,
+  ];
+  const yNotes = Math.max(py + s.W * sc + 56, 360);
+  const H = yNotes + notes.length * 15 + 10;
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label={`Sole plate at the ${s.label}`}>
+      <text x={cx} y={40} fontSize="10.5" fontWeight="600" textAnchor="middle" fill={LINE}>
+        {`Sole plate, ${s.label} (${s.fixed ? "fixed" : "expansion"}): plan`}
+      </text>
+      <rect x={px} y={py} width={s.L * sc} height={s.W * sc} fill="#e7ecf1" stroke={LINE} strokeWidth="0.9" />
+      <rect x={cx - (so.padL / 2) * sc} y={cy - (so.padW / 2) * sc} width={so.padL * sc} height={so.padW * sc} fill="none" stroke={MUTED} strokeWidth="0.7" strokeDasharray="5 3" />
+      <rect x={px - 30} y={cy - (s.bf / 2) * sc} width={s.L * sc + 60} height={s.bf * sc} fill="none" stroke={LINE} strokeWidth="0.6" strokeDasharray="10 3" />
+      <line x1={px - 40} x2={px + s.L * sc + 40} y1={cy} y2={cy} stroke={MUTED} strokeWidth="0.5" strokeDasharray="8 3 2 3" />
+      {holes.map((k) => {
+        const [x, y] = rodAt(k);
+        const r = ((s.d + 0.1875) / 2) * sc;
+        return slot ? <rect key={k} x={x - r - 0.5 * sc} y={y - r} width={2 * r + 1 * sc} height={2 * r} rx={r} fill="#ffffff" stroke={LINE} strokeWidth="0.8" /> : <circle key={k} cx={x} cy={y} r={r} fill="#ffffff" stroke={LINE} strokeWidth="0.8" />;
+      })}
+      <text x={px + s.L * sc + 8} y={cy - (s.bf / 2) * sc - 4} fontSize="9" fill={MUTED}>
+        flange {fr(s.bf)}
+      </text>
+      <text x={cx} y={py + s.W * sc + 16} fontSize="9.5" textAnchor="middle" fill={DIM}>
+        {`${fr(s.L)} along the girder`}
+      </text>
+      <text x={px - 8} y={py + 12} fontSize="9.5" textAnchor="end" fill={DIM}>
+        {`${fr(s.W)} across`}
+      </text>
+      <text x={cx} y={py + s.W * sc + 30} fontSize="9" textAnchor="middle" fill={MUTED}>
+        {`bearing ${fr(so.padL)} × ${fr(so.padW)} dashed`}
+      </text>
+      <text x={exC} y={40} fontSize="10.5" fontWeight="600" textAnchor="middle" fill={LINE}>
+        Section across the girder
+      </text>
+      <rect x={ex0} y={ySeat} width={380} height={30} fill="#eef1f4" stroke={MUTED} strokeWidth="0.6" />
+      <rect x={exC - (so.padW / 2) * scS} y={yPad} width={so.padW * scS} height={padH} fill="#3b3b3b" opacity={0.75} />
+      <rect x={exC - (s.W / 2) * scS} y={yPl} width={s.W * scS} height={tPl} fill={STEEL} stroke={LINE} strokeWidth="0.8" />
+      <rect x={exC - (s.bf / 2) * scS} y={yFl} width={s.bf * scS} height={s.tf * scS} fill={STEEL} stroke={LINE} strokeWidth="0.8" />
+      <rect x={exC - 2} y={yFl - 90} width={4} height={90} fill={STEEL} stroke={LINE} strokeWidth="0.5" />
+      {[-1, 1].map((dir) => (
+        <path key={dir} d={`M ${exC + dir * (s.bf / 2) * scS} ${yPl} l ${dir * 6} 0 l ${-dir * 6} -6 z`} fill={LINE} />
+      ))}
+      {s.n > 0 &&
+        [-1, 1].map((dir) => (
+          <g key={`b${dir}`}>
+            <line x1={exC + (dir * s.gauge * scS) / 2} x2={exC + (dir * s.gauge * scS) / 2} y1={yPl - 10} y2={ySeat + 30} stroke={LINE} strokeWidth={Math.max(1.5, s.d * scS * 0.5)} />
+            <rect x={exC + (dir * s.gauge * scS) / 2 - 6} y={yPl - 12} width={12} height={5} fill={LINE} />
+          </g>
+        ))}
+      <text x={ex0 + 382} y={ySeat + 18} fontSize="9" textAnchor="end" fill={MUTED}>
+        seat
+      </text>
+      <text x={exC - (so.padW / 2) * scS - 6} y={yPad + padH - 2} fontSize="9" textAnchor="end" fill={MUTED}>
+        bearing
+      </text>
+      {notes.map((t, n) => (
+        <text key={n} x={40} y={yNotes + n * 15} fontSize="9.5" fill={LINE}>
+          {n + 1}. {t}
+        </text>
+      ))}
+    </svg>
+  );
+}

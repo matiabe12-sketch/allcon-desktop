@@ -6,6 +6,7 @@ import { designSteelGirder, hybridRh, type SteelGirderInputs, type SteelGirderRe
 import { FATIGUE_CATEGORIES, fatigueResistance, studResistance } from "./steel-details";
 import { plates } from "./steel-section";
 import { fuOf } from "./steel-splice";
+import { connectionFactor } from "./steel-sole";
 
 // A steel girder check as a Calcs worksheet: the bridge, the girder's sections and the loads; the girder
 // line's governing effects as given values (from the analysis with the girder's own stiffness and HL-93 by
@@ -18,7 +19,7 @@ const unitTex = (u: string) => ({ kip: "\\mathrm{kip}", ksi: "\\mathrm{ksi}", "k
 
 const ok = (demand: string, capacity: string) => `\\operatorname{if}\\left(${demand}\\le ${capacity},\\text{OK},\\text{NG}\\right)=`;
 
-export function steelCalcLines(i: SteelGirderInputs, title: string, result?: SteelGirderResult, figures?: { elevation?: Figure; camber?: Figure; screed?: Figure; crossFrame?: Figure; endFrame?: Figure; splices?: Figure[] }): Line[] {
+export function steelCalcLines(i: SteelGirderInputs, title: string, result?: SteelGirderResult, figures?: { elevation?: Figure; camber?: Figure; screed?: Figure; crossFrame?: Figure; endFrame?: Figure; soles?: Figure[]; splices?: Figure[] }): Line[] {
   const r = result ?? designSteelGirder(i);
   const lines: Line[] = [];
   const text = (t: string, style?: "heading" | "subheading" | "note", extra?: { newPage?: boolean; keepWithNext?: boolean }) => lines.push({ text: t, ...(style ? { style } : {}), ...(extra ?? {}) });
@@ -760,6 +761,40 @@ export function steelCalcLines(i: SteelGirderInputs, title: string, result?: Ste
         m(ok(`f_{${tag}}`, `F_{${tag}}`), c.ref);
       });
     }
+  }
+
+  // --- Sole plates and anchor bolts (14.8) ---
+  if (r.soles && r.soles.supports.length) {
+    const so = i.sole;
+    text("Sole plates and anchor bolts at the bearings (AASHTO 14.8)", "subheading", { newPage: true, keepWithNext: true });
+    text(
+      `Method:- Each bearing's sole plate is 2 in longer than the bearing (CDOT BDM 14.5.7) and at least 3/4 in at its thin edge, thick enough to carry the bearing's pressure as a cantilever past the flange, and beveled where the girder's underside slopes more than 0.01 rad under the full permanent load with the ${num(so.grade)}% grade (AASHTO 14.8.2). It's welded to the flange, and anchor bolts through it carry the horizontal forces into the seat (AASHTO 14.8.1, 14.8.3): the design wind across (Strength III, or V with the wind on the live load), braking along at the fixed bearings (AASHTO 3.6.4)${so.AS > 0 ? `, and Zone 1's connection force, ${num(connectionFactor(so.AS), 2)} of the permanent reaction (AASHTO 3.10.9.2, AS = ${num(so.AS, 3)})` : ""}. The concrete's shear breakout and pryout follow ACI 318 Chapter 17 (AASHTO 5.13).`,
+      undefined,
+      { keepWithNext: true },
+    );
+    r.soles.supports.forEach((s, q) => {
+      const t = `s${q + 1}`;
+      if (figures?.soles?.[q] && (q === r.soles!.supports.findIndex((x) => x.fixed === s.fixed))) lines.push({ region: figures.soles[q] });
+      text(`${s.label[0].toUpperCase()}${s.label.slice(1)} (${s.fixed ? "fixed" : "expansion"}):- plate ${num(s.L)} × ${num(s.W)} in${s.tapered ? `, beveled ${num(s.tThin, 3)} to ${num(s.tThick, 3)} in` : `, ${num(s.tThin, 3)} in`}${s.n ? `; ${s.n} anchor bolts of ${num(s.d, 3)} in` : ""}.`, undefined, { keepWithNext: true });
+      given(`R_{u${t}}\\coloneq ${num(s.Ru)}\\mathrm{kip}`, "Strength I reaction per bearing");
+      m(`q_{${t}}\\coloneq\\frac{R_{u${t}}}{${num(so.padL)}\\mathrm{in}\\cdot ${num(so.padW)}\\mathrm{in}}=`, "The bearing's pressure", "ksi");
+      m(`c_{${t}}\\coloneq ${num(s.c, 3)}\\mathrm{in}`, "The plate past the flange's edge, over the bearing");
+      m(`t_{b${t}}\\coloneq\\sqrt{\\frac{4\\cdot q_{${t}}\\cdot c_{${t}}^{2}}{2\\cdot 1.0\\cdot ${num(so.Fy)}\\mathrm{ksi}}}=`, "Plate bending, φf 1.0", "in");
+      m(ok(`\\max\\left(0.75\\mathrm{in},t_{b${t}}\\right)`, `${num(s.tThin, 4)}\\mathrm{in}`), "The thin edge, CDOT BDM 14.5.7");
+      given(`\\theta_{${t}}\\coloneq ${num(s.slope, 4)}`, "The girder's underside slope, rad: its end rotation under the permanent load and the grade");
+      if (s.tapered) m(`t_{k${t}}\\coloneq ${num(s.tThin, 4)}\\mathrm{in}+\\theta_{${t}}\\cdot ${num(s.L)}\\mathrm{in}=`, "Beveled to level the bearing, AASHTO 14.8.2", "in");
+      given(`H_{${t}}\\coloneq ${num(s.H, 3)}\\mathrm{kip}`, `Horizontal: across ${num(s.across, 2)} kip${s.fixed ? `, along ${num(s.along, 2)} kip` : ""}, the larger of the wind${s.fixed ? ", braking" : ""} and the connection force each way`);
+      m(`R_{w${t}}\\coloneq2\\cdot ${num(s.L)}\\mathrm{in}\\cdot 0.6\\cdot 0.80\\cdot 70\\mathrm{ksi}\\cdot 0.707\\cdot ${num(so.weld, 4)}\\mathrm{in}=`, "Two fillet welds along the flange, AASHTO Eq. 6.13.3.2.4b-1", "kip");
+      m(ok(`H_{${t}}`, `R_{w${t}}`), "AASHTO 14.8.1");
+      const rest = s.checks.filter((c) => /anchor|breakout|pryout|edge distance/.test(c.name));
+      rest.forEach((c, k) => {
+        const tag = `z${t}${k + 1}`;
+        text(`${c.name}:-`, undefined, { keepWithNext: true });
+        given(`f_{${tag}}\\coloneq ${num(c.demand, 3)}${unitTex(c.unit)}`);
+        given(`F_{${tag}}\\coloneq ${num(c.capacity, 3)}${unitTex(c.unit)}`);
+        m(ok(`f_{${tag}}`, `F_{${tag}}`), c.ref);
+      });
+    });
   }
 
   // --- Bolted field splices (6.13.6.1.3) ---

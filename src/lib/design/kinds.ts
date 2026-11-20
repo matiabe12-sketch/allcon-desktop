@@ -27,6 +27,7 @@ import { HLMR_DEFAULTS, type HlmrInputs } from "./bearings/pot-disc";
 import { FOUNDATION_INFO, FOUNDATION_KINDS, foundationInputs } from "./foundations/kinds";
 import { DECK_DEFAULTS, RAIL_DEFAULT, type DeckInputs } from "./decks/deck";
 import { STRIP_SEAL_DEFAULTS, type StripSealInputs } from "./joints/strip-seal";
+import { LRFR_DEFAULTS } from "./girders/lrfr";
 import { MODULAR_DEFAULTS, type ModularJointInputs } from "./joints/modular";
 import { FINGER_DEFAULTS, type FingerJointInputs } from "./joints/finger";
 import { HAUNCH_DEFAULTS, type HaunchInputs } from "./girders/haunch";
@@ -243,6 +244,7 @@ export function girderInputs(saved: unknown): GirderInputs {
     harped: { ...GIRDER_DEFAULTS.harped, ...(phase1.harped ?? {}), ...(s.harped ?? {}) },
     bottomBars: { ...GIRDER_DEFAULTS.bottomBars, ...(s.bottomBars ?? {}) },
     pierBars: { ...GIRDER_DEFAULTS.pierBars, ...(s.pierBars ?? {}) },
+    ...(s.rating ? { rating: { ...LRFR_DEFAULTS, ...s.rating } } : {}),
     connection: (() => {
       const c = { ...GIRDER_DEFAULTS.connection, ...(s.connection ?? {}) };
       const st = (s.connection as { strands?: unknown } | undefined)?.strands as { count?: unknown; length?: unknown; y?: unknown } | undefined;

@@ -13,6 +13,8 @@ import { BARS, DesignError } from "@/lib/design/walls/cip";
 import { cn } from "@/lib/utils";
 import { ChecksBanner, ChecksTable, Choice, DesignErrorCard, DesignHeader, Field, fmt, KeyValues, Section, Toggle } from "./design-kit";
 import { TakeoffPanel } from "./takeoff-panel";
+import { LrfrResults, LrfrSettingsFields } from "./lrfr-panel";
+import { rateGirder } from "@/lib/design/girders/lrfr";
 import { BridgeElevation, GirderElevation, GirderSketch, HandlingSketch } from "./girder-sketch";
 import { FromPlansPanel } from "./from-plans-panel";
 import { BridgeSectionSketch } from "./bridge-section-sketch";
@@ -137,6 +139,15 @@ export function GirderEditor({ design, projects }: { design: { id: string; name:
     }
   }, [inputs]);
   const r = outcome.result;
+  // The load rating (LRFR), from the design's own results, when it's turned on.
+  const rating = useMemo(() => {
+    if (!r || !inputs.rating?.on) return null;
+    try {
+      return rateGirder(inputs, r, inputs.rating);
+    } catch {
+      return null;
+    }
+  }, [r, inputs]);
   const nSpans = 1 + inputs.extraSpans.length;
   const multi = nSpans > 1;
   const shown = r ? (view ?? r.controlling) : null;
@@ -421,6 +432,9 @@ export function GirderEditor({ design, projects }: { design: { id: string; name:
                 )}
               </Section>
             )}
+            <Section title="Load rating (LRFR)">
+              <LrfrSettingsFields value={inputs.rating} onChange={(v) => setInputs((s) => ({ ...s, rating: v }))} />
+            </Section>
             <Section title="Loads to the substructure (wind, braking)">
               <SubstructureLoads inputs={inputs} onChange={(site) => setInputs((s) => ({ ...s, site }))} />
             </Section>
@@ -546,6 +560,7 @@ export function GirderEditor({ design, projects }: { design: { id: string; name:
                 </Card>
                 <ChecksTable checks={g.checks} groupOf={groupOf} />
                 <TakeoffPanel kind="lrfd-girder-check" design={design} inputs={inputs} ok={g.checks.every((c) => c.advisory || c.ok)} onSettings={(t) => setRawInputs((s) => ({ ...s, takeoff: t }))} />
+                {rating && <LrfrResults rating={rating} />}
                 <StationTable result={g} />
                 <div className="grid gap-4 xl:grid-cols-2">
                   <KeyValues

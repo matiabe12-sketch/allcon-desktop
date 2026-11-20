@@ -165,6 +165,8 @@ export type GirderInputs = {
   site?: import("./substructure-loads").SiteWind;
   /** Started from uploaded plans: each value's source on the sheets and whether it's confirmed (from-plans.ts). */
   fromPlans?: import("./from-plans").FromPlans;
+  /** Load and Resistance Factor Rating of the girders (lrfr.ts): its settings, off unless turned on. */
+  rating?: import("./lrfr").LrfrSettings;
 };
 
 /** Lifting and hauling: where the girder is picked up and supported, the tolerances, the truck. Defaults are WSDOT's (PGSuper). */

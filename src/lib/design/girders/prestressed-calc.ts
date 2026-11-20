@@ -7,6 +7,7 @@ import { BARS } from "../walls/cip";
 import { railDef } from "../decks/rails";
 import { textTable, wrap } from "../svg-table";
 import { checksSummary, checkTable } from "../checks-summary";
+import { lrfrCalcLines } from "./lrfr-calc";
 import { girderSchedule, SCHEDULE_HEAD, scheduleCells } from "./schedule";
 import { CONNECTION_STRESS, criteriaInputs, designGirder, EP, liveLoad, spanInputs, strandGroups, STRANDS, zoneCallout, type GirderInputs, type GirderResult } from "./prestressed";
 
@@ -642,6 +643,8 @@ export function girderCalcLines(entered: GirderInputs, title: string, figures?: 
     ),
     ...design.piers.flatMap((p) => (["interior", "exterior"] as const).map((side) => ({ title: `Pier ${p.index}, ${side} girders`, checks: p[side].checks.map((c) => ({ ...c, ref: /^\d|^T\./.test(c.ref) ? `AASHTO ${c.ref}` : c.ref })) }))),
   ];
+  // The load rating (LRFR), when it's turned on.
+  if (entered.rating?.on) lines.push(...lrfrCalcLines(input, design));
   lines.push(...checksSummary(summaryGroups));
   if (design.spans.some((s) => [s.interior, s.exterior].some((r) => r.checks.some((c) => c.advisory)))) text("Info:- lifting and hauling are the fabricator's design (CDOT BDM 5.5.1.8), shown for information.", "note");
   return lines;

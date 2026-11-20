@@ -92,6 +92,44 @@ describe("steel girder calc package", { timeout: 60000 }, () => {
     expect(cr.checks.filter((x) => x.result.includes("NG")).length).toBe(rr.checks.filter((x) => !x.ok && !x.advisory).length);
   });
 
+  it("works out the refined method (B6.6), Strength III and V wind, and the cross-frame connections as the engine does", () => {
+    const i: SteelGirderInputs = { ...STEEL_DEFAULTS, redistributionMethod: "refined", wind: { ...STEEL_DEFAULTS.wind, V: 115 }, crossFrame: { ...STEEL_DEFAULTS.crossFrame, connection: { ...STEEL_DEFAULTS.crossFrame.connection, fatigueRange: 4 } } };
+    const r = designSteelGirder(i);
+    const c = workOut(i);
+    expect(c.errors).toEqual([]);
+    expect(c.checks.filter((x) => x.result.includes("NG")).length).toBe(r.checks.filter((x) => !x.ok && !x.advisory).length);
+    const q = r.b6.piers[0];
+    close(c.value(String.raw`\theta_{RL1}\coloneq`), q.thetaRL);
+    close(c.value(String.raw`M_{c1}\coloneq`, "kip ft"), q.byCombo.I.M);
+    close(c.value(String.raw`M_{m1}\coloneq`, "kip ft"), q.byCombo.I.M);
+    close(c.value(String.raw`M_{wV}\coloneq`, "kip ft") * 0 + c.value(String.raw`W_{V}\coloneq`, "kip/ft"), r.windW.V);
+    const g = r.crossFrames!.connections;
+    expect(g.length).toBe(2);
+    close(c.value(String.raw`R_{ns}\coloneq`, "kip") * 0.8 * i.crossFrame.connection.bolts, g[0].Rshear);
+    close(c.value(String.raw`R_{nb}\coloneq`, "kip") * 0.8, g.reduce((b, x) => (x.checks[0].demand > b.checks[0].demand ? x : b)).Rbearing);
+  });
+
+  it("works out a curved girder within 4.6.1.2.4b, and welded connections, with no errors", () => {
+    const i: SteelGirderInputs = { ...STEEL_DEFAULTS, radius: 2000, crossFrame: { ...STEEL_DEFAULTS.crossFrame, connection: { ...STEEL_DEFAULTS.crossFrame.connection, kind: "welded", weld: 0.3125, weldLength: 8, fatigueRange: 3 } } };
+    const r = designSteelGirder(i);
+    const c = workOut(i);
+    expect(c.errors).toEqual([]);
+    expect(c.checks.filter((x) => x.result.includes("NG")).length).toBe(r.checks.filter((x) => !x.ok && !x.advisory).length);
+    const st = r.stations.find((s) => s.ratios["flex-pos-t"] !== undefined)!;
+    expect(st).toBeTruthy();
+    expect(c.value(String.raw`M_{lat}\coloneq`, "kip ft")).toBeGreaterThan(0);
+  });
+
+  it("works out the grid (refined analysis) on a tight curve, and the wind during construction, with no errors", () => {
+    const i: SteelGirderInputs = { ...STEEL_DEFAULTS, analysis: "grid", radius: 600, wind: { ...STEEL_DEFAULTS.wind, construction: 70 } };
+    const r = designSteelGirder(i);
+    const c = workOut(i);
+    expect(c.errors).toEqual([]);
+    expect(r.checks.some((x) => x.id.startsWith("cw-"))).toBe(true);
+    expect(r.checks.some((x) => x.id.startsWith("curve-"))).toBe(false);
+    expect(c.checks.filter((x) => x.result.includes("NG")).length).toBe(r.checks.filter((x) => !x.ok && !x.advisory).length);
+  });
+
   it("works out a single span with Fatigue II (low traffic) with no errors", () => {
     const i: SteelGirderInputs = { ...STEEL_DEFAULTS, spans: [100], segments: [{ ...STEEL_DEFAULTS.segments[0], length: 100 }], stiffeners: [], fatigue: { ...STEEL_DEFAULTS.fatigue, adttSL: 300 } };
     const c = workOut(i);

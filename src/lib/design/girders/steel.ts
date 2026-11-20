@@ -1,8 +1,10 @@
 import { DesignError, type Check } from "../walls/cip";
 import { modulus, distributionFactors, type DistFactors, type GirderInputs } from "./prestressed";
-import { appendixA6, effectivePlasticMoment, negativeYieldMoments, redistributionMoment } from "./steel-appendix";
+import { appendixA6, effectivePlasticMoment, negativeYieldMoments, redistributionMoment, refinedRedistribution, rotationalStiffness, thetaRL } from "./steel-appendix";
+import { CF_CONNECTION_DEFAULTS, BOLT_DIAMETERS, cfConnection, type CfConnection } from "./steel-connection";
 import { nonprismaticBeam } from "./steel-beam";
-import { L_SHAPE_NAMES, singleAngle, stabilityBracing, type CrossFrame } from "./steel-crossframe";
+import { angle, L_SHAPE_NAMES, singleAngle, stabilityBracing, type CrossFrame } from "./steel-crossframe";
+import { deadEffects, gridGeometry, gridModel, leverStrip, leverWeights, liveExtremes, type GridInput, type Sparse } from "./steel-grid";
 import { windPressure } from "./substructure-loads";
 import { ES, plasticMoment, plates, sectionProps, selfWeight, type DeckSection, type Plate, type SectionProps, type SteelSegment, type Stage } from "./steel-section";
 import { W_SHAPES } from "./w-shapes";
@@ -64,7 +66,10 @@ export type SteelGirderInputs = {
   pours: { from: number; to: number; order: number }[]; // the deck placed in this order (ft along the girder); empty: one pour
   braces: number[]; // ft along the girder: the cross-frames where given (the supports are braced too); empty: equally spaced by crossFrames
   appendixA6: boolean; // negative flexure by Appendix A6 where it applies (compact and noncompact webs)
-  redistribution: boolean; // moment redistribution from the interior piers (Appendix B6, simplified method)
+  analysis: "line" | "grid"; // the loads' effects: a line girder with distribution factors (4.6.2.2), or a grid of the whole bridge (4.6.3.3)
+  redistribution: boolean; // moment redistribution from the interior piers (Appendix B6)
+  redistributionMethod: "simplified" | "refined"; // B6.3–B6.5 (effective plastic moment) or B6.6 (rotational continuity)
+  radius: number; // ft, the girder's horizontal radius; 0: straight (curved: within 4.6.1.2.4b, flange lateral bending by Eq. C4.6.1.2.4b-1)
   stiffeners: StiffenerZone[]; // transverse stiffeners; none: unstiffened web
   studsThroughout: boolean; // shear connectors along the whole girder (6.10.4.2.1: the deck effective in negative flexure at service)
   // Loads
@@ -93,8 +98,8 @@ export type SteelGirderInputs = {
   studs: Studs & { check: boolean; zones: { from: number; to: number; pitch: number }[] }; // stud shear connectors: diameter, studs across, pitch (in), height (in), Fu (ksi); zones of other pitches along the girder (ft, in)
   stiffener: StiffenerPlate; // the intermediate transverse stiffeners in the stiffened zones
   bearing: BearingStiffeners & { use: boolean; N: number; weld: number };
-  crossFrame: CrossFrame & { check: boolean }; // intermediate cross-frames: stability bracing (6.7.4.2.2) and wind (4.6.2.7.1)
-  wind: { V: number; exposure: "B" | "C" | "D"; Z: number }; // Strength III design wind speed (mph, 0: none), exposure, height (ft); Strength V uses 80 mph // plate bearing stiffeners at the supports; without them the web at the bearing (D6.5): bearing length N, flange-to-web weld or fillet (in)
+  crossFrame: CrossFrame & { check: boolean; connection: CfConnection }; // intermediate cross-frames: stability bracing (6.7.4.2.2), wind (4.6.2.7.1), curvature; the members' end connections (6.13)
+  wind: { V: number; exposure: "B" | "C" | "D"; Z: number; lateral: boolean; construction: number }; // construction: the wind speed while the deck is placed (mph, 0: not checked) // lateral: the wind's lateral bending of the bottom flange at Strength III and V (C4.6.2.7.1, exterior girder) // Strength III design wind speed (mph, 0: none), exposure, height (ft); Strength V uses 80 mph // plate bearing stiffeners at the supports; without them the web at the bearing (D6.5): bearing length N, flange-to-web weld or fillet (in)
 };
 
 const plate = (b: number, t: number): Plate => ({ b, t });
@@ -127,6 +132,9 @@ export const STEEL_DEFAULTS: SteelGirderInputs = {
   braces: [20, 40, 60, 80, 100, 120, 140, 160], // 2A: 20 ft bays, 10 ft each side of the pier
   appendixA6: true,
   redistribution: true, // 2A redistributes 937 kip·ft from the pier (Appendix B6)
+  redistributionMethod: "simplified",
+  radius: 0,
+  analysis: "line",
   stiffeners: [],
   studsThroughout: true,
   loads: { mode: "computed", dc1: 0, dc2: 0, dw: 0, sip: 15, misc: 15, otherDC1: 0, barrierWeight: 0.52, otherDC2: 0, fws: 25 },
@@ -142,8 +150,8 @@ export const STEEL_DEFAULTS: SteelGirderInputs = {
   studs: { check: true, d: 0.875, perRow: 3, pitch: 10, height: 6, Fu: 60, zones: [] },
   stiffener: { bt: 5.5, tp: 0.5, Fys: 50, pair: false },
   bearing: { use: true, bt: 6, tp: 0.625, Fys: 50, clip: 1.5, pairsEnd: 1, pairsPier: 2, gap: 8, N: 10, weld: 0.3125 },
-  crossFrame: { check: true, type: "X", diagonal: "L5X5X1/2", strut: "L5X5X1/2", hb: 36, Fy: 50, fullDepthPlates: true, plateWidth: 10, plateThickness: 0.5 },
-  wind: { V: 0, exposure: "C", Z: 33 },
+  crossFrame: { check: true, type: "X", diagonal: "L5X5X1/2", strut: "L5X5X1/2", hb: 36, Fy: 50, fullDepthPlates: true, plateWidth: 10, plateThickness: 0.5, connection: CF_CONNECTION_DEFAULTS },
+  wind: { V: 0, exposure: "C", Z: 33, lateral: true, construction: 0 },
 };
 
 // --- inputs as saved ----------------------------------------------------------------------------------
@@ -175,6 +183,9 @@ export function steelGirderInputs(saved: unknown): SteelGirderInputs {
     appendixA6: s.appendixA6 === true,
     pours: Array.isArray(s.pours) ? (s.pours as unknown[]).slice(0, 20).map((z) => o(z, { from: 0, to: 0, order: 1 })) : [],
     redistribution: s.redistribution === true,
+    redistributionMethod: s.redistributionMethod === "refined" ? "refined" : "simplified",
+    analysis: s.analysis === "grid" ? "grid" : "line",
+    radius: Math.max(0, num(s.radius, 0)),
     stiffeners: Array.isArray(s.stiffeners) ? (s.stiffeners as unknown[]).slice(0, 30).map((z) => o(z, { from: 0, to: 0, spacing: 0 })) : [],
     bars: o(s.bars, d.bars),
     loads: o(s.loads, d.loads),
@@ -191,11 +202,16 @@ export function steelGirderInputs(saved: unknown): SteelGirderInputs {
     bearing: o(s.bearing, d.bearing),
     crossFrame: (() => {
       const c = o(s.crossFrame, d.crossFrame);
-      return { ...c, type: c.type === "K" ? "K" : "X", diagonal: L_SHAPE_NAMES.includes(c.diagonal) ? c.diagonal : d.crossFrame.diagonal, strut: L_SHAPE_NAMES.includes(c.strut) ? c.strut : d.crossFrame.strut } as SteelGirderInputs["crossFrame"];
+      // Designs saved before the connections were checked keep them off.
+      const raw = (s.crossFrame as { connection?: unknown } | undefined)?.connection;
+      const k = raw && typeof raw === "object" ? o(raw, CF_CONNECTION_DEFAULTS) : { ...CF_CONNECTION_DEFAULTS, check: false };
+      const connection: CfConnection = { ...k, kind: k.kind === "welded" ? "welded" : "bolted", d: BOLT_DIAMETERS.includes(k.d) ? k.d : 0.875, grade: k.grade === "A490" ? "A490" : "A325", threads: k.threads === "excluded" ? "excluded" : "included", holes: k.holes === "drilled" ? "drilled" : "punched", surface: k.surface === "A" || k.surface === "C" ? k.surface : "B" };
+      return { ...c, type: c.type === "K" ? "K" : "X", diagonal: L_SHAPE_NAMES.includes(c.diagonal) ? c.diagonal : d.crossFrame.diagonal, strut: L_SHAPE_NAMES.includes(c.strut) ? c.strut : d.crossFrame.strut, connection } as SteelGirderInputs["crossFrame"];
     })(),
     wind: (() => {
       const w = o(s.wind, d.wind);
-      return { ...w, exposure: w.exposure === "B" || w.exposure === "D" ? w.exposure : "C" } as SteelGirderInputs["wind"];
+      // Designs saved before the wind's lateral bending was checked keep it off.
+      return { ...w, exposure: w.exposure === "B" || w.exposure === "D" ? w.exposure : "C", lateral: (s.wind as { lateral?: unknown } | undefined)?.lateral === true, construction: Math.max(0, num(w.construction, 0)) } as SteelGirderInputs["wind"];
     })(),
     haunchTo: s.haunchTo === "flange" ? "flange" : "web",
     girder: s.girder === "interior" || s.girder === "exterior" ? s.girder : "both",
@@ -273,6 +289,10 @@ export function webFcrw(D: number, tw: number, Dc: number, Rh: number, Fyc: numb
   const k = 9 / (Dc / D) ** 2;
   return Math.min((0.9 * ES * k) / (D / tw) ** 2, Rh * Fyc, Fyw / 0.7);
 }
+
+export type ComboKey = "I" | "III" | "V";
+const LL_FACTOR: Record<ComboKey, number> = { I: 1.75, III: 0, V: 1.35 };
+const COMBO_NAME: Record<ComboKey, string> = { I: "Strength I", III: "Strength III", V: "Strength V" };
 
 export type SteelStation = {
   X: number; // ft from the girder's start
@@ -455,6 +475,10 @@ export function designSteelGirder(i: SteelGirderInputs) {
     const dW = deadAt(longLine, s, x, dw);
     const env = shortLine.beam.liveEnvelope(s, x, i.IM);
     const negativeRegion = longLine.beam.uniformAll(s, x).M < 0;
+    if (grid) {
+      const gx = grid.at(X, !!at && at.x >= spans[at.s] - 1e-9 && at.s < spans.length - 1);
+      return { s, x, k, M: gx.M, V: gx.V, dfM: 1, dfV: 1, negativeRegion };
+    }
     const pier = x > spans[s] / 2 ? s : s - 1; // the nearer interior pier
     const dfM = negativeRegion && pier >= 0 && pier < pierDF.length ? pierDF[pier].moment : spanDF[s].moment;
     const dfV = spanDF[s].shear;
@@ -462,6 +486,7 @@ export function designSteelGirder(i: SteelGirderInputs) {
   }
   /** The fatigue truck (3.6.1.4.1: 8, 32 and 32 kip axles, 14 and 30 ft apart) on the short-term girder line: per girder, with its factors and 15% IM, unfactored. */
   const fatigueAt = (X: number) => {
+    if (grid) return grid.fatigue(X);
     const e = effects(X);
     const ilM = shortLine.beam.influence(e.s, e.x, "M");
     const ilV = shortLine.beam.influence(e.s, e.x, "V");
@@ -496,13 +521,15 @@ export function designSteelGirder(i: SteelGirderInputs) {
     return { Mmax: Mmax * dfM * im, Mmin: Mmin * dfM * im, Vmax: Vmax * dfV * im, Vmin: Vmin * dfV * im, dfM, dfV };
   };
   const g = (m: number, positive: boolean, up: number, down: number) => ((positive ? m >= 0 : m <= 0) ? up : down);
-  /** Strength I moments, the dead loads' factors chosen for the extreme (Table 3.4.1-2). */
-  const strength = (e: ReturnType<typeof effects>) => {
-    const pos = eta * (g(e.M.dc1, true, 1.25, 0.9) * e.M.dc1 + g(e.M.dc2, true, 1.25, 0.9) * e.M.dc2 + g(e.M.dw, true, 1.5, 0.65) * e.M.dw + 1.75 * e.M.llPos);
-    const neg = eta * (g(e.M.dc1, false, 1.25, 0.9) * e.M.dc1 + g(e.M.dc2, false, 1.25, 0.9) * e.M.dc2 + g(e.M.dw, false, 1.5, 0.65) * e.M.dw + 1.75 * e.M.llNeg);
-    const Vu = eta * (1.25 * Math.abs(e.V.dc1 + e.V.dc2) + 1.5 * Math.abs(e.V.dw) + 1.75 * e.V.ll);
+  /** Strength I, III or V moments, the dead loads' factors chosen for the extreme (Tables 3.4.1-1, -2): the live load at 1.75, none, or 1.35. */
+  const strengthC = (e: ReturnType<typeof effects>, c: ComboKey) => {
+    const ll = LL_FACTOR[c];
+    const pos = eta * (g(e.M.dc1, true, 1.25, 0.9) * e.M.dc1 + g(e.M.dc2, true, 1.25, 0.9) * e.M.dc2 + g(e.M.dw, true, 1.5, 0.65) * e.M.dw + ll * e.M.llPos);
+    const neg = eta * (g(e.M.dc1, false, 1.25, 0.9) * e.M.dc1 + g(e.M.dc2, false, 1.25, 0.9) * e.M.dc2 + g(e.M.dw, false, 1.5, 0.65) * e.M.dw + ll * e.M.llNeg);
+    const Vu = eta * (1.25 * Math.abs(e.V.dc1 + e.V.dc2) + 1.5 * Math.abs(e.V.dw) + ll * e.V.ll);
     return { pos, neg, Vu };
   };
+  const strength = (e: ReturnType<typeof effects>) => strengthC(e, "I");
   /** Flange stresses (ksi, compression positive at the flange that M compresses) from staged moments (kip·ft) on their sections. */
   const stress = (k: number, parts: { M: number; stage: Stage }[]) => {
     let top = 0;
@@ -537,6 +564,169 @@ export function designSteelGirder(i: SteelGirderInputs) {
     return [bracesU[a], bracesU[b]] as [number, number];
   };
 
+  // --- Refined analysis (4.6.3.3): a grid of all the girders, the cross-frames and the deck. DC1 on the steel, DC2 and
+  // DW on the long-term composite stage, the live load on the short-term stage by influence surfaces; the deck's loads
+  // to the girders by the lever rule. The girder checked: the interior or exterior girders' envelope, as chosen ---
+  const grid = i.analysis === "grid" ? buildGrid() : null;
+  function buildGrid() {
+    const halfDeck = ((i.nGirders - 1) * i.S) / 2 + i.overhang;
+    const roadway: [number, number] = [-halfDeck + i.barrierWidth, halfDeck - i.barrierWidth];
+    if (!(roadway[1] - roadway[0] >= 10)) throw new DesignError("The roadway is too narrow for a lane.");
+    const gin: GridInput = {
+      spans,
+      nGirders: i.nGirders,
+      S: i.S,
+      overhang: i.overhang,
+      barrierWidth: i.barrierWidth,
+      radius: i.radius,
+      skew: i.skew,
+      braces: bracesU.filter((b) => b > 1e-6 && b < total - 1e-6 && !starts.some((x) => Math.abs(x - b) < 1e-6)),
+      extraStations: segStart.slice(1),
+      section: (X, stage) => {
+        const k = segAt(Math.min(Math.max(X, 1e-6), total - 1e-6));
+        const p = plates(i.segments[k]);
+        const J = (p.top.b * p.top.t ** 3 + p.bottom.b * p.bottom.t ** 3 + p.D * p.tw ** 3) / 3;
+        const Iyc = (p.top.t * p.top.b ** 3) / 12;
+        const Iyt = (p.bottom.t * p.bottom.b ** 3) / 12;
+        const h = p.D + (p.top.t + p.bottom.t) / 2;
+        return { I: prop(k, stage).I, J, Cw: (h * h * Iyc * Iyt) / (Iyc + Iyt) };
+      },
+      cf: { type: i.crossFrame.type, Ad: 0.65 * angle(i.crossFrame.diagonal).A, As: 0.65 * angle(i.crossFrame.strut).A, hb: i.crossFrame.hb },
+      deck: { ts, Ec },
+      E: ES,
+      G: 11200,
+    };
+    const geo = gridGeometry(gin);
+    const ys = geo.ys;
+    // The girders' line loads (klf), each girder's share by the lever rule.
+    const entered = L.mode === "entered";
+    const deckShare = entered ? [] : leverStrip(ys, (i.deckT / 12) * i.wcDeck, -halfDeck, halfDeck);
+    const sipShare = ys.map((_, j) => (entered ? 0 : ((j > 0 ? 1 : 0) + (j < ys.length - 1 ? 1 : 0)) * 0.5 * (L.sip / 1000) * Math.max(0, i.S - avgTop / 12)));
+    const edge = halfDeck - i.barrierWidth / 2;
+    const barrierShare = entered ? [] : leverWeights(ys, -edge).map((v, j) => L.barrierWeight * (v + leverWeights(ys, edge)[j]));
+    const fwsShare = entered ? [] : leverStrip(ys, L.fws / 1000, roadway[0], roadway[1]);
+    const segOf = (X: number) => i.segments[segAt(Math.min(Math.max(X, 1e-6), total - 1e-6))];
+    const dc1Line = (j: number, X: number) => selfWeight(segOf(X)) + (entered ? L.dc1 : deckShare[j] + (i.haunch / 12) * (plates(segOf(X)).top.b / 12) * i.wcDeck + sipShare[j] + L.misc / 1000 + L.otherDC1);
+    const dc2Line = (j: number) => (entered ? L.dc2 : barrierShare[j] + L.otherDC2);
+    const dwLine = (j: number) => (entered ? L.dw : fwsShare[j]);
+    const symmetric = !(i.radius > 0) && Math.abs(i.skew) < 1e-9;
+    const all = ys.map((_, j) => j);
+    let cand = i.girder === "interior" ? all.filter((j) => j > 0 && j < ys.length - 1) : i.girder === "exterior" ? [0, ys.length - 1] : all;
+    if (!cand.length) cand = all;
+    if (symmetric) cand = cand.filter((j) => j <= (ys.length - 1) / 2);
+    const steelM = gridModel(gin, geo, "steel");
+    const longM = gridModel(gin, geo, "3n");
+    const shortM = gridModel(gin, geo, "n");
+    const d1 = deadEffects(geo, steelM, dc1Line);
+    const d2 = deadEffects(geo, longM, (j) => dc2Line(j));
+    const dW = deadEffects(geo, longM, (j) => dwLine(j));
+    const lanes = Math.max(1, Math.floor((roadway[1] - roadway[0]) / 12));
+    const live = (row: Sparse | null, negative: boolean) => {
+      if (!row) return null;
+      const lam = shortM.adjoint(row);
+      const infl = Float64Array.from(geo.nodes.map((_, n) => -lam[n * 3]));
+      return liveExtremes(gin, geo, infl, { IM: i.IM, roadway, lanes, negative });
+    };
+    const zero = { pos: 0, neg: 0, fatigue: { max: 0, min: 0, range: 0 } };
+    const llM = cand.map((j) => geo.stations.map((_, k) => live(shortM.momentRow(j, k), true) ?? zero));
+    const llV = cand.map((j) => geo.stations.map((_, k) => live(shortM.shearRow(j, k), false) ?? zero));
+    // The cross-frames' members: Strength I (the dead loads' factors either way), the deck placement (1.5 DC1),
+    // Service II, and the fatigue truck's range.
+    const frames = geo.frames.map((f, fi) =>
+      shortM.frameModels[fi].names.map((name, m) => {
+        const dc = d1.frames[fi][m] + d2.frames[fi][m];
+        const dw = dW.frames[fi][m];
+        const l = live(shortM.memberRow(fi, m), false) ?? zero;
+        const fac = (v: number, up: number, down: number, tension: boolean) => (tension === v >= 0 ? up : down) * v;
+        const tens = eta * (fac(dc, 1.25, 0.9, true) + fac(dw, 1.5, 0.65, true) + 1.75 * l.pos);
+        const comp = eta * (fac(dc, 1.25, 0.9, false) + fac(dw, 1.5, 0.65, false) + 1.75 * l.neg);
+        return { name, bay: f.bay, X: f.Xa, support: f.support, dc1: d1.frames[fi][m], dc, dw, ll: l, strength: { tension: Math.max(0, tens), compression: Math.max(0, -comp) }, construction: 1.5 * eta * Math.abs(d1.frames[fi][m]), service: Math.max(Math.abs(dc + dw + 1.3 * l.pos), Math.abs(dc + dw + 1.3 * l.neg)), range: l.fatigue.range };
+      }),
+    );
+    const st = geo.stations;
+    const kAt = (X: number) => {
+      let k = 0;
+      while (k + 1 < st.length && st[k + 1] <= X + 1e-9) k++;
+      return k;
+    };
+    const interp = (v: number[], X: number) => {
+      const k = Math.min(kAt(X), st.length - 2);
+      const t = Math.max(0, Math.min(1, (X - st[k]) / (st[k + 1] - st[k])));
+      return v[k] + (v[k + 1] - v[k]) * t;
+    };
+    /** Shear just right of X (or left, at a station): the element's, constant along it. */
+    const shearOf = (v: number[], X: number, left: boolean) => {
+      let k = kAt(X);
+      if (left && Math.abs(st[k] - X) < 1e-6 && k > 0) k--;
+      return v[Math.min(k, v.length - 1)];
+    };
+    const pickAbs = (vals: number[]) => vals.reduce((b, v) => (Math.abs(v) > Math.abs(b) ? v : b), 0);
+    const at = (X: number, left = false) => {
+      const M = { dc1: pickAbs(cand.map((j) => interp(d1.M[j], X))), dc2: pickAbs(cand.map((j) => interp(d2.M[j], X))), dw: pickAbs(cand.map((j) => interp(dW.M[j], X))), llPos: Math.max(0, ...cand.map((_, c) => interp(llM[c].map((r) => r.pos), X) / 12)), llNeg: Math.min(0, ...cand.map((_, c) => interp(llM[c].map((r) => r.neg), X) / 12)) };
+      const V = { dc1: pickAbs(cand.map((j) => shearOf(d1.V[j], X, left))), dc2: pickAbs(cand.map((j) => shearOf(d2.V[j], X, left))), dw: pickAbs(cand.map((j) => shearOf(dW.V[j], X, left))), ll: Math.max(0, ...cand.map((_, c) => Math.max(Math.abs(shearOf(llV[c].map((r) => r.pos), X, left)), Math.abs(shearOf(llV[c].map((r) => r.neg), X, left))))) };
+      return { M, V };
+    };
+    const fatigue = (X: number) => ({
+      Mmax: Math.max(0, ...cand.map((_, c) => interp(llM[c].map((r) => r.fatigue.max), X) / 12)),
+      Mmin: Math.min(0, ...cand.map((_, c) => interp(llM[c].map((r) => r.fatigue.min), X) / 12)),
+      // The range at one girder: its largest and smallest at the truck's governing place across.
+      ...cand.reduce(
+        (b, _, c) => {
+          const mx = shearOf(llV[c].map((r) => r.fatigue.max), X, false);
+          const mn = shearOf(llV[c].map((r) => r.fatigue.min), X, false);
+          return mx - mn > b.Vmax - b.Vmin ? { Vmax: mx, Vmin: mn } : b;
+        },
+        { Vmax: 0, Vmin: 0 },
+      ),
+      dfM: 1,
+      dfV: 1,
+    });
+    const group = (label: "strut" | "diagonal") => {
+      const ms = frames.flat().filter((m) => (label === "strut" ? m.name.includes("strut") : m.name === "diagonal"));
+      return { compression: Math.max(0, ...ms.map((m) => m.strength.compression)), tension: Math.max(0, ...ms.map((m) => m.strength.tension)), construction: Math.max(0, ...ms.map((m) => m.construction)), service: Math.max(0, ...ms.map((m) => m.service)), range: Math.max(0, ...ms.map((m) => m.range)) };
+    };
+    // Each girder's Strength I moment at mid-span of each span, for the record.
+    const girderMoments = ys.map((_, j) => spans.map((Ls, s) => {
+      const X = starts[s] + Ls / 2;
+      return { dc1: interp(d1.M[j], X), dc2: interp(d2.M[j], X), dw: interp(dW.M[j], X) };
+    }));
+    return { geo, cand, at, fatigue, frames, strut: group("strut"), diag: group("diagonal"), girderMoments, lanes, roadway };
+  }
+
+  // --- Flange lateral bending (6.10.1.6): from horizontal curvature (Eq. C4.6.1.2.4b-1, Mlat = M ℓ² / (N R D), N = 10),
+  // and from the wind on the exterior girder's bottom flange at Strength III and V (Eqs. C4.6.2.7.1-1, -2,
+  // W = η γ PD d / 2, Mw = W Lb² / 10), each on the flange's lateral section modulus tf bf² / 6 ---
+  const curved = i.radius > 0;
+  const flOf = (Mlat: number, fl: Plate) => (Math.abs(Mlat) * 12 * 6) / (fl.t * fl.b ** 2); // ksi from kip·ft
+  /** First-order lateral bending from curvature (ksi) under the major-axis moment M (kip·ft) over an unbraced length Lb (ft). */
+  const flCurve = (M: number, Lb: number, D: number, fl: Plate) => (curved ? flOf((Math.abs(M) * Lb ** 2) / (10 * i.radius * (D / 12)), fl) : 0);
+  const depthFt = Math.max(...i.segments.map((x) => plates(x).D + plates(x).top.t + plates(x).bottom.t)) / 12;
+  const windOnFlange = i.wind.lateral && i.girder !== "interior";
+  const windW: Record<ComboKey, number> = {
+    I: 0,
+    III: windOnFlange && i.wind.V > 0 ? (eta * 1.0 * windPressure("Strength III", i.wind).PZ * depthFt) / 2 : 0,
+    V: windOnFlange ? (eta * 1.0 * windPressure("Strength V", i.wind).PZ * depthFt) / 2 : 0,
+  };
+  /** First-order lateral bending of the bottom flange from the wind (ksi) over an unbraced length Lb (ft). */
+  const flWind = (c: ComboKey, Lb: number, fl: Plate) => (windW[c] > 0 ? flOf((windW[c] * Lb ** 2) / 10, fl) : 0);
+  /** The construction wind on the fascia girder's flanges (klf): the lower half of the girder on the bottom flange, the upper half with the haunch and the wet deck on the top. */
+  const windConstruction =
+    i.girder !== "interior" && i.wind.construction > 0
+      ? (() => {
+          const pz = windPressure("Strength III", { ...i.wind, V: i.wind.construction }).PZ;
+          const steelFt = depthFt;
+          return { PZ: pz, Wbot: (eta * 1.0 * pz * steelFt) / 2, Wtop: eta * 1.0 * pz * (steelFt / 2 + (i.haunch + i.deckT) / 12) };
+        })()
+      : null;
+  const combos: ComboKey[] = ["I", ...(windW.III > 0 ? (["III"] as const) : []), ...(windW.V > 0 ? (["V"] as const) : [])];
+  /** A discretely braced compression flange's first-order fℓ amplified (Eqs. 6.10.1.6-2, -4); Infinity where fbu reaches Fcr. */
+  const amplify = (fl1: number, fbu: number, Lb: number, f: { rt: number; Lp: number }, Cb: number, Rb: number) => {
+    if (!(fl1 > 0) || !(fbu > 0)) return fl1;
+    if (Lb <= 1.2 * f.Lp * Math.sqrt((Cb * Rb) / (fbu / i.Fyf))) return fl1;
+    const Fcr = (Cb * Rb * Math.PI ** 2 * ES) / (Lb / f.rt) ** 2; // Eq. 6.10.8.2.3-8
+    return fbu >= Fcr ? Infinity : Math.max(fl1, (0.85 / (1 - fbu / Fcr)) * fl1);
+  };
+
   // --- Negative flexure by Appendix A6 at a point, where it applies and the unbraced length is prismatic ---
   const MuNegAt = (Xq: number) => strength(effects(Math.min(total, Math.max(0, Xq)))).neg;
   const cbNeg = (a: number, b: number, at: number) => {
@@ -561,6 +751,10 @@ export function designSteelGirder(i: SteelGirderInputs) {
     const Cb = cbNeg(a, b, X);
     const a6 = appendixA6({ D: p.D, tw: p.tw, bfc: p.bottom.b, tfc: p.bottom.t, bft: p.top.b, tft: p.top.t, Dc, Dcp: pm.Dcp, Mp: pm.Mp, Myc: ym.Myc, Myt: ym.Myt, SxcElastic: bars.Sbot, Fyc: i.Fyf, Fyt: i.Fyf, Fyw: i.Fyw, Rh, Lb: (b - a) * 12, Cb, rolled: seg.kind === "rolled" });
     const prismatic = segAt(a + 1e-3) === segAt(b - 1e-3);
+    // A6 is for straight bridges with supports skewed no more than 20° (6.10.6.2.3).
+    if (curved) a6.reasons.push("the girder is curved (6.10.6.2.3)");
+    if (Math.abs(i.skew) > 20) a6.reasons.push("the supports are skewed more than 20° (6.10.6.2.3)");
+    if (a6.reasons.length) a6.applicable = false;
     return { p, ym, pm, Dc, Rh, Cb, a6, prismatic, MD1 };
   };
 
@@ -586,6 +780,7 @@ export function designSteelGirder(i: SteelGirderInputs) {
     const reqs: { name: string; demand: number; capacity: number; unit: string; ref: string }[] = [];
     const req = (name: string, demand: number, capacity: number, unit: string, ref: string) => reqs.push({ name, demand, capacity, unit, ref });
     req("Skew of the supports", Math.abs(i.skew), 10, "°", "AASHTO B6.2");
+    req("A straight girder (radius 0)", curved ? 1 : 0, 0, "", "AASHTO B6.2");
     req("Yield strengths", Math.max(i.Fyf, i.Fyw), 70, "ksi", "AASHTO B6.2");
     req("Web D/tw", p.D / p.tw, 150, "", "AASHTO Eq. B6.2.1-1");
     req("Web 2Dc/tw ≤ 6.8√(E/Fyc)", (2 * Dc) / p.tw, 6.8 * sq, "", "AASHTO Eq. B6.2.1-2");
@@ -617,8 +812,23 @@ export function designSteelGirder(i: SteelGirderInputs) {
     const stiffClose = i.stiffeners.some((z) => z.spacing > 0 && z.spacing <= p.D / 2 && z.from * 12 <= X * 12 - p.D / 2 && z.to * 12 >= X * 12 + p.D / 2);
     const enhanced = stiffClose || (2 * pm.Dcp) / p.tw <= 2.3 * sq;
     const Mpe = effectivePlasticMoment({ Mn, D: p.D, bfc: p.bottom.b, tfc: p.bottom.t, Fyc: i.Fyf, enhanced });
-    const rd = redistributionMoment(Me * 12, Mpe.strength, PHI_F);
     const rdSvc = redistributionMoment(MeSvc * 12, Mpe.service, 1);
+    // Each strength combination: Mn less a third of the pier flange's lateral bending (fℓ Sxc / 3, B6.6.2), from curvature
+    // and the wind, first order.
+    const Lside = Math.max(X - a, b - X);
+    const SxcB6 = ns.ym.Myc / i.Fyf;
+    const byCombo = Object.fromEntries(
+      combos.map((c) => {
+        const MeC = strengthC(e, c).neg;
+        const fl = flCurve(MeC, Lside, p.D, p.bottom) + flWind(c, Lside, p.bottom);
+        const MnC = Math.max(0, Mn - (fl * SxcB6) / 3);
+        const MpeC = effectivePlasticMoment({ Mn: MnC, D: p.D, bfc: p.bottom.b, tfc: p.bottom.t, Fyc: i.Fyf, enhanced }).strength;
+        const r = redistributionMoment(MeC * 12, MpeC, PHI_F);
+        return [c, { Me: MeC, fl, Mn: MnC, Mpe: MpeC, Mrd: r.Mrd / 12, MrdRaw: r.raw / 12, theta: 0, M: Math.abs(MeC) - r.Mrd / 12 }];
+      }),
+    ) as Record<ComboKey, { Me: number; fl: number; Mn: number; Mpe: number; Mrd: number; MrdRaw: number; theta: number; M: number }>;
+    const rd = { Mrd: byCombo.I.Mrd * 12, raw: byCombo.I.MrdRaw * 12 };
+    const thetaLimit = thetaRL({ D: p.D, bfc: p.bottom.b, tfc: p.bottom.t, Fyc: i.Fyf, enhanced });
     // Service II regions not checked: from the pier to the nearest flange transition or permanent-load contraflexure, each side.
     const towards = (dir: -1 | 1) => {
       let Xq = X;
@@ -629,18 +839,34 @@ export function designSteelGirder(i: SteelGirderInputs) {
       }
       return Xq;
     };
-    return { pier, X, a, b, bfc: p.bottom.b, tfc: p.bottom.t, D: p.D, Me, MeSvc, reqs, qualifies, useA6, a6, Mn, enhanced, Mpe, Mrd: rd.Mrd / 12, MrdRaw: rd.raw / 12, MrdSvc: rdSvc.Mrd / 12, serviceRegion: [towards(-1), towards(1)] as [number, number], Myc: ns.ym.Myc / 12, Myt: ns.ym.Myt / 12, Mp: pm.Mp / 12, Dc, Dcp: pm.Dcp };
+    return { pier, X, a, b, bfc: p.bottom.b, tfc: p.bottom.t, D: p.D, Me, MeSvc, reqs, qualifies, useA6, a6, Mn, enhanced, Mpe, Mrd: rd.Mrd / 12, MrdRaw: rd.raw / 12, MrdSvc: rdSvc.Mrd / 12, byCombo, thetaRL: thetaLimit, thetaSvc: 0, ktheta: 0, serviceRegion: [towards(-1), towards(1)] as [number, number], Myc: ns.ym.Myc / 12, Myt: ns.ym.Myt / 12, Mp: pm.Mp / 12, Dc, Dcp: pm.Dcp };
   });
-  const b6Active = i.redistribution && piersB6.length > 0 && piersB6.every((q) => q.qualifies);
+  // The refined method (B6.6): every pier's continuity with the plastic rotations at the piers that may yield (those
+  // meeting B6.2), on the short-term composite stiffness with the deck effective throughout (B6.6.1); the others elastic.
+  const refined = i.redistribution && i.redistributionMethod === "refined" && piersB6.length > 0;
+  if (refined) {
+    const K = rotationalStiffness(spans, (X) => ES * prop(segAt(Math.min(Math.max(X, 1e-6), total - 1e-6)), "n").I);
+    const yielding = piersB6.map((q) => q.qualifies);
+    for (const c of combos) {
+      const sol = refinedRedistribution({ Me: piersB6.map((q) => Math.abs(q.byCombo[c].Me) * 12), Mn: piersB6.map((q) => q.byCombo[c].Mn), phi: PHI_F, K, yielding });
+      sol.forEach((r, k) => Object.assign(piersB6[k].byCombo[c], { Mrd: r.Mrd / 12, MrdRaw: r.Mrd / 12, theta: r.theta, M: r.M / 12 }));
+    }
+    const svc = refinedRedistribution({ Me: piersB6.map((q) => Math.abs(q.MeSvc) * 12), Mn: piersB6.map((q) => q.Mn), phi: 1, K, yielding });
+    svc.forEach((r, k) => Object.assign(piersB6[k], { MrdSvc: r.Mrd / 12, thetaSvc: r.theta }));
+    piersB6.forEach((q, k) => Object.assign(q, { Mrd: q.byCombo.I.Mrd, MrdRaw: q.byCombo.I.MrdRaw, ktheta: K[k][k] }));
+  }
+  const b6Active = i.redistribution && piersB6.length > 0 && (refined ? piersB6.some((q) => q.qualifies) : piersB6.every((q) => q.qualifies));
   /** The redistribution moment at X (kip·ft, sagging +): straight lines between the piers' values, zero at the abutments (B6.3.3.2, B6.4.2.2). */
-  const mrdAt = (X: number, svc = false) => {
+  const mrdAt = (X: number, c: ComboKey | "svc" = "I") => {
     if (!b6Active) return 0;
-    const v = [0, ...piersB6.map((q) => (svc ? q.MrdSvc : q.Mrd)), 0];
+    const v = [0, ...piersB6.map((q) => (c === "svc" ? q.MrdSvc : (q.byCombo[c]?.Mrd ?? 0))), 0];
     const { s, x } = located(X);
     return v[s] + ((v[s + 1] - v[s]) * x) / spans[s];
   };
-  const nearPier = (X: number) => b6Active && piersB6.some((q) => X >= q.a - 1e-6 && X <= q.b + 1e-6);
-  const inServiceRegion = (X: number) => b6Active && piersB6.some((q) => q.MrdSvc > 0 && X >= q.serviceRegion[0] - 1e-6 && X <= q.serviceRegion[1] + 1e-6);
+  // Flexure isn't checked in the unbraced lengths next to a pier that redistributes (B6.4.1.1), nor the service flange
+  // limits from it to the nearest transition or contraflexure (B6.3.2.1).
+  const nearPier = (X: number) => b6Active && piersB6.some((q) => q.qualifies && X >= q.a - 1e-6 && X <= q.b + 1e-6);
+  const inServiceRegion = (X: number) => b6Active && piersB6.some((q) => q.qualifies && q.MrdSvc > 0 && X >= q.serviceRegion[0] - 1e-6 && X <= q.serviceRegion[1] + 1e-6);
 
   // --- The deck's pour sequence (6.10.3.4): each pour's wet concrete on the girder as it then is, steel where
   // the deck is still wet, short-term composite (n) where earlier pours have hardened (6.10.1.1.1d) ---
@@ -673,64 +899,83 @@ export function designSteelGirder(i: SteelGirderInputs) {
     const steel = prop(k, "steel");
     const Rh = hybridRh(p.D * p.tw, Math.min(p.top.b * p.top.t, p.bottom.b * p.bottom.t), Math.max(steel.yNA - p.bottom.t, steel.depth - p.top.t - steel.yNA), p.tw, i.Fyw, i.Fyf);
 
-    // --- Strength I, positive flexure (6.10.7), with any redistribution moment (B6.4.1.2) ---
-    const mrd = mrdAt(X);
-    if (sf.pos + mrd > 0 && e.M.llPos > 0) {
-      const MuPos = sf.pos + mrd;
-      const pm = plasticMoment(seg, deck, true, i.Fyw, i.Fyf);
-      const compact = i.Fyf <= 70 && p.D / p.tw <= 150 && (2 * pm.Dcp) / p.tw <= 3.76 * Math.sqrt(ES / i.Fyf);
-      // Yield moment (D6.2.2): the factored dead loads on their sections, the live load the rest, the first flange to yield.
-      const M1 = g(e.M.dc1, true, 1.25, 0.9) * e.M.dc1 * 12;
-      const M2 = (g(e.M.dc2, true, 1.25, 0.9) * e.M.dc2 + g(e.M.dw, true, 1.5, 0.65) * e.M.dw) * 12;
-      const nc = prop(k, "steel");
-      const lt = prop(k, "3n");
-      const sh = prop(k, "n");
-      const MAD = Math.min((i.Fyf - M1 / nc.Sbot - M2 / lt.Sbot) * sh.Sbot, (i.Fyf - M1 / nc.Stop - M2 / lt.Stop) * sh.Stop);
-      const My = (M1 + M2 + MAD) / 12;
-      if (compact) {
-        const Mp = pm.Mp / 12;
-        let Mn = pm.Dp <= 0.1 * pm.Dt ? Mp : Mp * (1.07 - (0.7 * pm.Dp) / pm.Dt);
-        const capped = spans.length > 1 && !b6Active && Mn > 1.3 * Rh * My;
-        if (capped) Mn = 1.3 * Rh * My; // 6.10.7.1.2-3 (no moment redistribution)
-        record("flex-pos", st, MuPos, PHI_F * Mn, `compact; Mp ${Mp.toFixed(0)} kip·ft, Dp/Dt ${(pm.Dp / pm.Dt).toFixed(3)}${capped ? ", limited to 1.3RhMy" : ""}${mrd > 0 ? `; Mrd ${mrd.toFixed(0)} kip·ft added (B6.4.1.2)` : ""}`);
-      } else {
-        const fs = stress(k, [
-          { M: g(e.M.dc1, true, 1.25, 0.9) * e.M.dc1 * eta, stage: "steel" },
-          { M: (g(e.M.dc2, true, 1.25, 0.9) * e.M.dc2 + g(e.M.dw, true, 1.5, 0.65) * e.M.dw) * eta + mrd, stage: "3n" },
-          { M: 1.75 * e.M.llPos * eta, stage: "n" },
-        ]);
-        record("flex-pos-c", st, fs.top, PHI_F * Rh * i.Fyf, "noncompact: compression flange, Rb = 1");
-        record("flex-pos-t", st, -fs.bot, PHI_F * Rh * i.Fyf, "noncompact: tension flange");
+    // --- Flexure at Strength I, and at Strength III and V with the wind on the exterior girder's bottom flange
+    // (6.10.7, 6.10.8), with any redistribution moment (B6.4.1.2) and the flange lateral bending (6.10.1.6) ---
+    const [ua, ub] = unbraced(X);
+    const LbFt = ub - ua;
+    // Positive flexure's resistance (the same for every combination: the dead loads' factors are the same).
+    const pm = plasticMoment(seg, deck, true, i.Fyw, i.Fyf);
+    // Curved girders' composite sections in positive flexure are noncompact (6.10.6.2.2).
+    const compact = !curved && i.Fyf <= 70 && p.D / p.tw <= 150 && (2 * pm.Dcp) / p.tw <= 3.76 * Math.sqrt(ES / i.Fyf);
+    // Yield moment (D6.2.2): the factored dead loads on their sections, the live load the rest, the first flange to yield.
+    const M1 = g(e.M.dc1, true, 1.25, 0.9) * e.M.dc1 * 12;
+    const M2 = (g(e.M.dc2, true, 1.25, 0.9) * e.M.dc2 + g(e.M.dw, true, 1.5, 0.65) * e.M.dw) * 12;
+    const nc = prop(k, "steel");
+    const lt = prop(k, "3n");
+    const sh = prop(k, "n");
+    const MADbot = (i.Fyf - M1 / nc.Sbot - M2 / lt.Sbot) * sh.Sbot;
+    const MAD = Math.min(MADbot, (i.Fyf - M1 / nc.Stop - M2 / lt.Stop) * sh.Stop);
+    const My = (M1 + M2 + MAD) / 12;
+    const Sxt = (M1 + M2 + MADbot) / i.Fyf; // in³, Myt / Fyt of the bottom flange
+    const Mp = pm.Mp / 12;
+    let MnPos = pm.Dp <= 0.1 * pm.Dt ? Mp : Mp * (1.07 - (0.7 * pm.Dp) / pm.Dt);
+    const capped = spans.length > 1 && !b6Active && MnPos > 1.3 * Rh * My;
+    if (capped) MnPos = 1.3 * Rh * My; // 6.10.7.1.2-3 (no moment redistribution)
+    let mrd = 0;
+    for (const c of combos) {
+      const pre = c === "I" ? "flex" : c === "III" ? "s3" : "s5";
+      const sc = c === "I" ? sf : strengthC(e, c);
+      const ll = LL_FACTOR[c];
+      mrd = mrdAt(X, c);
+      const tag = (fl: number) => (fl > 0 ? `; fℓ ${fl.toFixed(2)} ksi (${[curved ? "curvature" : "", c !== "I" && windW[c] > 0 ? "wind" : ""].filter(Boolean).join(" and ")})` : "");
+      if (sc.pos + mrd > 0 && (c === "III" || e.M.llPos > 0)) {
+        const MuPos = sc.pos + mrd;
+        // The bottom flange in tension: its lateral bending, not amplified (6.10.1.6).
+        const flB = flCurve(MuPos, LbFt, p.D, p.bottom) + flWind(c, LbFt, p.bottom);
+        if (flB > 0) record(`${pre}-fl`, st, flB, 0.6 * i.Fyf, "bottom flange, Eq. 6.10.1.6-1");
+        if (compact) {
+          record(`${pre}-pos`, st, MuPos + (flB * Sxt) / 36, PHI_F * MnPos, `compact; Mp ${Mp.toFixed(0)} kip·ft, Dp/Dt ${(pm.Dp / pm.Dt).toFixed(3)}${capped ? ", limited to 1.3RhMy" : ""}${mrd > 0 ? `; Mrd ${mrd.toFixed(0)} kip·ft added (B6.4.1.2)` : ""}${flB > 0 ? `; Mu + fℓ Sxt / 3, Sxt ${Sxt.toFixed(1)} in³` : ""}${tag(flB)}`);
+        } else {
+          const fs = stress(k, [
+            { M: g(e.M.dc1, true, 1.25, 0.9) * e.M.dc1 * eta, stage: "steel" },
+            { M: (g(e.M.dc2, true, 1.25, 0.9) * e.M.dc2 + g(e.M.dw, true, 1.5, 0.65) * e.M.dw) * eta + mrd, stage: "3n" },
+            { M: ll * e.M.llPos * eta, stage: "n" },
+          ]);
+          record(`${pre}-pos-c`, st, fs.top, PHI_F * Rh * i.Fyf, "noncompact: compression flange, Rb = 1");
+          record(`${pre}-pos-t`, st, -fs.bot + flB / 3, PHI_F * Rh * i.Fyf, `noncompact: tension flange${tag(flB)}`);
+        }
+        if (c === "I") record("ductility", st, pm.Dp, 0.42 * pm.Dt, "Dp ≤ 0.42 Dt");
       }
-      record("ductility", st, pm.Dp, 0.42 * pm.Dt, "Dp ≤ 0.42 Dt");
-    }
 
-    // --- Strength I, negative flexure (6.10.8): the bottom flange discretely braced, the top continuously by the deck ---
-    // Within the unbraced lengths next to a pier whose moment is redistributed, flexure isn't checked (B6.4.1.1).
-    if (sf.neg + mrd < 0 && e.M.llNeg < 0 && !nearPier(X)) {
-      const [a, b] = unbraced(X);
-      const Lb = (b - a) * 12;
-      const ns = i.appendixA6 ? negSection(k, X, a, b) : null;
-      if (ns && ns.a6.applicable && ns.prismatic) {
-        // Appendix A6: the moment format, Mu ≤ φf Mnc (A6.1.1) and, the top flange braced by the deck, Mu ≤ φf Rpt Myt (A6.1.4).
-        const Mu = Math.abs(sf.neg + mrd);
-        record("flex-neg-a6c", st, Mu, (PHI_F * ns.a6.Mnc) / 12, `Mnc by ${ns.a6.governs}; ${ns.a6.compact ? "compact" : "noncompact"} web, Rpc ${ns.a6.Rpc.toFixed(3)}; Lb ${(Lb / 12).toFixed(1)} ft, Cb ${ns.Cb.toFixed(2)}${mrd > 0 ? `; Mrd ${mrd.toFixed(0)} kip·ft` : ""}`);
-        record("flex-neg-a6t", st, Mu, (PHI_F * ns.a6.Mnt) / 12, `Rpt ${ns.a6.Rpt.toFixed(3)}, Myt ${(ns.ym.Myt / 12).toFixed(0)} kip·ft`);
-      } else {
+      // Negative flexure (6.10.8): the bottom flange discretely braced, the top continuously by the deck. Within the
+      // unbraced lengths next to a pier whose moment is redistributed, flexure isn't checked (B6.4.1.1).
+      if (sc.neg + mrd < 0 && (c === "III" || e.M.llNeg < 0) && !nearPier(X)) {
+        const Lb = LbFt * 12;
         const parts = [
           { M: g(e.M.dc1, false, 1.25, 0.9) * e.M.dc1 * eta, stage: "steel" as Stage },
-          { M: (g(e.M.dc2, false, 1.25, 0.9) * e.M.dc2 + g(e.M.dw, false, 1.5, 0.65) * e.M.dw + 1.75 * e.M.llNeg) * eta + mrd, stage: "bars" as Stage },
+          { M: (g(e.M.dc2, false, 1.25, 0.9) * e.M.dc2 + g(e.M.dw, false, 1.5, 0.65) * e.M.dw + ll * e.M.llNeg) * eta + mrd, stage: "bars" as Stage },
         ];
         const fs = stress(k, parts);
         const fbu = fs.bot; // compression in the bottom flange
         const bars = prop(k, "bars");
         const Dc = Math.max(0, bars.yNA - p.bottom.t);
         const Rb = webRb(Dc, p.tw, p.bottom.b, p.bottom.t, i.Fyf);
-        const Cb = cbNeg(a, b, X);
+        const Cb = cbNeg(ua, ub, X);
         const f = flangeFnc({ bfc: p.bottom.b, tfc: p.bottom.t, Dc, tw: p.tw, Fyc: i.Fyf, Fyw: i.Fyw, Lb, Cb, Rb, Rh });
-        const why = i.appendixA6 && ns ? (!ns.a6.applicable ? `; Appendix A6 doesn't apply: ${ns.a6.reasons.join(", ")}` : "; Appendix A6 not used: the unbraced length isn't prismatic") : "";
-        record("flex-neg-c", st, fbu, PHI_F * f.Fnc, `Fnc by ${f.governs}; Lb ${(Lb / 12).toFixed(1)} ft, Cb ${Cb.toFixed(2)}, Rb ${Rb.toFixed(3)}${mrd > 0 ? `; Mrd ${mrd.toFixed(0)} kip·ft` : ""}${why}`);
-        record("flex-neg-t", st, -fs.top, PHI_F * Rh * i.Fyf, "tension flange (continuously braced by the deck), Eq. 6.10.8.1.3-1");
+        const Mu = Math.abs(sc.neg + mrd);
+        const fl1 = flCurve(Mu, LbFt, p.D, p.bottom) + flWind(c, LbFt, p.bottom);
+        const fl = amplify(fl1, fbu, Lb, f, Cb, Rb);
+        if (fl1 > 0) record(`${pre}-fl`, st, fl, 0.6 * i.Fyf, `bottom flange${fl > fl1 ? `, amplified from ${fl1.toFixed(2)} ksi (Eq. 6.10.1.6-4)` : ""}, Eq. 6.10.1.6-1`);
+        const ns = i.appendixA6 ? negSection(k, X, ua, ub) : null;
+        if (ns && ns.a6.applicable && ns.prismatic) {
+          // Appendix A6: Mu + fℓ Sxc / 3 ≤ φf Mnc (A6.1.1) and, the top flange braced by the deck, Mu ≤ φf Rpt Myt (A6.1.4).
+          record(`${pre}-neg-a6c`, st, Mu + (fl * ns.a6.Sxc) / 36, (PHI_F * ns.a6.Mnc) / 12, `Mnc by ${ns.a6.governs}; ${ns.a6.compact ? "compact" : "noncompact"} web, Rpc ${ns.a6.Rpc.toFixed(3)}; Lb ${LbFt.toFixed(1)} ft, Cb ${ns.Cb.toFixed(2)}${mrd > 0 ? `; Mrd ${mrd.toFixed(0)} kip·ft` : ""}${tag(fl)}`);
+          record(`${pre}-neg-a6t`, st, Mu, (PHI_F * ns.a6.Mnt) / 12, `Rpt ${ns.a6.Rpt.toFixed(3)}, Myt ${(ns.ym.Myt / 12).toFixed(0)} kip·ft`);
+        } else {
+          const why = i.appendixA6 && ns ? (!ns.a6.applicable ? `; Appendix A6 doesn't apply: ${ns.a6.reasons.join(", ")}` : "; Appendix A6 not used: the unbraced length isn't prismatic") : "";
+          record(`${pre}-neg-c`, st, fbu + fl / 3, PHI_F * f.Fnc, `Fnc by ${f.governs}; Lb ${LbFt.toFixed(1)} ft, Cb ${Cb.toFixed(2)}, Rb ${Rb.toFixed(3)}${mrd > 0 ? `; Mrd ${mrd.toFixed(0)} kip·ft` : ""}${tag(fl)}${why}`);
+          record(`${pre}-neg-t`, st, -fs.top, PHI_F * Rh * i.Fyf, "tension flange (continuously braced by the deck), Eq. 6.10.8.1.3-1");
+        }
       }
     }
 
@@ -848,12 +1093,18 @@ export function designSteelGirder(i: SteelGirderInputs) {
       const Mmax = [McAt(a + 1e-3), McAt(b - 1e-3), ...Mq, Mc].reduce((m, v) => (Math.abs(sameSign(v)) > Math.abs(m) ? sameSign(v) : m), 0);
       const Cb = momentGradientCb(Mmax, sameSign(Mq[0]), sameSign(Mq[1]), sameSign(Mq[2]));
       const f = flangeFnc({ bfc: cf.b, tfc: cf.t, Dc, tw: p.tw, Fyc: i.Fyf, Fyw: i.Fyw, Lb, Cb, Rb: 1, Rh });
+      // Curvature's lateral bending on both bare flanges, the compression flange's amplified (6.10.1.6).
+      const flc1 = flCurve(Mc, b - a, p.D, cf);
+      const flCc = flc + amplify(flc1, fbu, Lb, f, Cb, 1);
+      const flCt = flc + flCurve(Mc, b - a, p.D, topComp ? p.bottom : p.top);
+      const curveNote = (x: number) => (curved && x > flc ? `; fℓ ${x.toFixed(2)} ksi with curvature` : "");
       if (fbu > 0) {
-        if (!pours.length) record("con-yield", st, fbu + flc, PHI_F * Rh * i.Fyf, `${topComp ? "top" : "bottom"} flange, Eq. 6.10.3.2.1-1`);
-        if (!pours.length) record("con-fnc", st, fbu + flc / 3, PHI_F * f.Fnc, `${topComp ? "top" : "bottom"} flange, Fnc by ${f.governs}; Lb ${(Lb / 12).toFixed(1)} ft, Cb ${Cb.toFixed(2)}`);
+        if (!pours.length) record("con-yield", st, fbu + flCc, PHI_F * Rh * i.Fyf, `${topComp ? "top" : "bottom"} flange, Eq. 6.10.3.2.1-1${curveNote(flCc)}`);
+        if (!pours.length) record("con-fnc", st, fbu + flCc / 3, PHI_F * f.Fnc, `${topComp ? "top" : "bottom"} flange, Fnc by ${f.governs}; Lb ${(Lb / 12).toFixed(1)} ft, Cb ${Cb.toFixed(2)}${curveNote(flCc)}`);
+        if (curved && flCc > 0) record("con-fl", st, flCc, 0.6 * i.Fyf, `${topComp ? "top" : "bottom"} flange, Eq. 6.10.1.6-1`);
         record("con-web", st, fbu, PHI_F * webFcrw(p.D, p.tw, Dc, Rh, i.Fyf, i.Fyw), "web bend-buckling, Eq. 6.10.3.2.1-3");
       }
-      if (fbt > 0 && !pours.length) record("con-tension", st, fbt + flc, PHI_F * Rh * i.Fyf, `${topComp ? "bottom" : "top"} flange, Eq. 6.10.3.2.2-1`);
+      if (fbt > 0 && !pours.length) record("con-tension", st, fbt + flCt, PHI_F * Rh * i.Fyf, `${topComp ? "bottom" : "top"} flange, Eq. 6.10.3.2.2-1${curveNote(flCt)}`);
       const Vcr = shearC(p.D, p.tw, i.Fyw, (() => {
         const zone = i.stiffeners.find((z) => X >= z.from - 1e-9 && X <= z.to + 1e-9 && z.spacing > 0 && z.spacing <= 3 * p.D);
         return zone ? 5 + 5 / (zone.spacing / p.D) ** 2 : 5;
@@ -861,7 +1112,37 @@ export function designSteelGirder(i: SteelGirderInputs) {
       record("con-shear", st, Vc * eta, PHI_V * Vcr, "Eq. 6.10.3.3-1");
     }
 
+    // --- Wind during construction (Strength III on the bare steel, 3.4.2.1): the deck still wet, so it can't carry
+    // the wind as a diaphragm; the fascia girder's lower half loads its bottom flange, its upper half with the wet
+    // deck and haunch its top flange, each flange bent between the cross-frames and, with no wind bracing, with all
+    // the girders' flanges over the span (Eq. C4.6.2.7.1-3), on 1.25 DC1 (Table 3.4.1-1) ---
+    if (windConstruction) {
+      const { Wtop, Wbot } = windConstruction;
+      const Mc = 1.25 * e.M.dc1 * eta;
+      const fs = stress(k, [{ M: Mc, stage: "steel" }]);
+      const topComp = Mc >= 0;
+      const Ls = spans[e.s];
+      const Mw = (W: number) => (W * LbFt ** 2) / 10 + (W * Ls ** 2) / (8 * i.nGirders);
+      const flT = flOf(Mw(Wtop), p.top) + i.flConstruction + flCurve(Mc, LbFt, p.D, p.top);
+      const flB = flOf(Mw(Wbot), p.bottom) + flCurve(Mc, LbFt, p.D, p.bottom);
+      const cf = topComp ? p.top : p.bottom;
+      const fbu = topComp ? fs.top : fs.bot;
+      const fbt = topComp ? -fs.bot : -fs.top;
+      const Dc = topComp ? Math.max(0, steel.depth - p.top.t - steel.yNA) : Math.max(0, steel.yNA - p.bottom.t);
+      const f = flangeFnc({ bfc: cf.b, tfc: cf.t, Dc, tw: p.tw, Fyc: i.Fyf, Fyw: i.Fyw, Lb: LbFt * 12, Cb: 1, Rb: 1, Rh });
+      const flc = amplify(topComp ? flT : flB, fbu, LbFt * 12, f, 1, 1);
+      const flt = topComp ? flB : flT;
+      const note = (x: number) => `${topComp ? "top" : "bottom"} flange; fℓ ${x.toFixed(2)} ksi (wind${curved ? ", curvature" : ""}${i.flConstruction ? ", brackets" : ""})`;
+      if (fbu > 0) {
+        record("cw-yield", st, fbu + flc, PHI_F * Rh * i.Fyf, `${note(flc)}, Eq. 6.10.3.2.1-1`);
+        record("cw-fnc", st, fbu + flc / 3, PHI_F * f.Fnc, `${note(flc)}, Fnc by ${f.governs}, Lb ${LbFt.toFixed(1)} ft, Cb 1, Eq. 6.10.3.2.1-2`);
+      }
+      if (fbt > 0) record("cw-tension", st, fbt + flt, PHI_F * Rh * i.Fyf, `${topComp ? "bottom" : "top"} flange; fℓ ${flt.toFixed(2)} ksi, Eq. 6.10.3.2.2-1`);
+      record("cw-fl", st, Math.max(flc, flt), 0.6 * i.Fyf, "the larger flange's, Eq. 6.10.1.6-1");
+    }
+
     // --- Service II (6.10.4.2): 1.0 DC + 1.0 DW + 1.3 LL ---
+    const LbFtS = LbFt;
     for (const sign of [1, -1] as const) {
       const ll = sign > 0 ? e.M.llPos : e.M.llNeg;
       if (!(Math.abs(ll) > 0)) continue;
@@ -875,11 +1156,12 @@ export function designSteelGirder(i: SteelGirderInputs) {
       ]);
       // Redistribution at service (B6.3.2): the flange limits not checked from a pier to the nearest flange
       // transition or permanent-load contraflexure; elsewhere the redistribution moment is added, on the long-term section.
-      const mrdS = mrdAt(X, true);
+      const mrdS = mrdAt(X, "svc");
       const fr = mrdS ? stress(k, [{ M: mrdS, stage: composite }]) : { top: 0, bot: 0 };
+      const flS = flCurve(e.M.dc1 + e.M.dc2 + e.M.dw + 1.3 * ll + mrdS, LbFtS, p.D, p.bottom);
       if (!inServiceRegion(X)) {
         record("svc-top", st, Math.abs(fs.top + fr.top), 0.95 * Rh * i.Fyf, `${negative ? "negative" : "positive"} moment, Eq. 6.10.4.2.2-1${mrdS ? `; Mrd ${mrdS.toFixed(0)} kip·ft` : ""}`);
-        record("svc-bot", st, Math.abs(fs.bot + fr.bot), 0.95 * Rh * i.Fyf, `${negative ? "negative" : "positive"} moment, Eq. 6.10.4.2.2-2${mrdS ? `; Mrd ${mrdS.toFixed(0)} kip·ft` : ""}`);
+        record("svc-bot", st, Math.abs(fs.bot + fr.bot) + flS / 2, 0.95 * Rh * i.Fyf, `${negative ? "negative" : "positive"} moment, Eq. 6.10.4.2.2-2${mrdS ? `; Mrd ${mrdS.toFixed(0)} kip·ft` : ""}${flS > 0 ? `; ff + fℓ/2, fℓ ${flS.toFixed(2)} ksi (curvature)` : ""}`);
       }
       // Web bend-buckling at service (Eq. 6.10.4.2.2-4): all sections but composite ones in positive flexure with D/tw ≤ 150.
       if (negative || p.D / p.tw > 150) {
@@ -1014,12 +1296,14 @@ export function designSteelGirder(i: SteelGirderInputs) {
       let top = (m0 * 12) / sSteel.Stop; // + compression in the top flange
       let bot = (-m0 * 12) / sSteel.Sbot;
       let deckT = 0; // ksi, + tension at the deck's top where it has hardened
+      let Mtot = m0; // kip·ft, for curvature's lateral bending
       for (const sg of pourStages) {
         const M = deadAt(sg.line, s, x, 0, sg.w).M * gamma;
         const sec = sg.hardened(st.X) ? sN : sSteel;
         top += (M * 12) / sec.Stop;
         bot -= (M * 12) / sec.Sbot;
         if (sg.hardened(st.X)) deckT += (-M * 12 * (sN.depth - sN.yNA)) / (sN.I * n);
+        Mtot += M;
         pourResults.push({ stage: sg.n + 1, X: st.X, top, bot, deck: deckT });
         // Constructibility of the noncomposite flanges at this stage (6.10.3.4.1): the steel section's resistance.
         const wet = !sg.hardened(st.X); // the top flange still bare or under wet concrete
@@ -1027,17 +1311,22 @@ export function designSteelGirder(i: SteelGirderInputs) {
         const Lb = (b - a) * 12;
         const Dc = top > 0 ? Math.max(0, sSteel.depth - p.top.t - sSteel.yNA) : Math.max(0, sSteel.yNA - p.bottom.t);
         const tag = `pour ${sg.n + 1} (${sg.pour.from}–${sg.pour.to} ft)`;
+        // Curvature's lateral bending, the bare top flange and the bottom flange (the compression flange's amplified).
+        const flTop = wet ? flCurve(Mtot, b - a, p.D, p.top) : 0;
+        const flBot = flCurve(Mtot, b - a, p.D, p.bottom);
         if (top > 0 && wet) {
           const f = flangeFnc({ bfc: p.top.b, tfc: p.top.t, Dc, tw: p.tw, Fyc: i.Fyf, Fyw: i.Fyw, Lb, Cb: 1, Rb: 1, Rh: 1 });
-          record("pour-yield", st, top + i.flConstruction, PHI_F * i.Fyf, `top flange, ${tag}`);
-          record("pour-fnc", st, top + i.flConstruction / 3, PHI_F * f.Fnc, `top flange, ${tag}; Fnc by ${f.governs}, Lb ${(Lb / 12).toFixed(1)} ft, Cb 1`);
+          const fl = i.flConstruction + amplify(flTop, top, Lb, f, 1, 1);
+          record("pour-yield", st, top + fl, PHI_F * i.Fyf, `top flange, ${tag}`);
+          record("pour-fnc", st, top + fl / 3, PHI_F * f.Fnc, `top flange, ${tag}; Fnc by ${f.governs}, Lb ${(Lb / 12).toFixed(1)} ft, Cb 1`);
         }
         if (bot > 0) {
           const f = flangeFnc({ bfc: p.bottom.b, tfc: p.bottom.t, Dc, tw: p.tw, Fyc: i.Fyf, Fyw: i.Fyw, Lb, Cb: 1, Rb: 1, Rh: 1 });
-          record("pour-yield", st, bot, PHI_F * i.Fyf, `bottom flange, ${tag}`);
-          record("pour-fnc", st, bot, PHI_F * f.Fnc, `bottom flange, ${tag}; Fnc by ${f.governs}, Lb ${(Lb / 12).toFixed(1)} ft, Cb 1`);
+          const fl = amplify(flBot, bot, Lb, f, 1, 1);
+          record("pour-yield", st, bot + fl, PHI_F * i.Fyf, `bottom flange, ${tag}`);
+          record("pour-fnc", st, bot + fl / 3, PHI_F * f.Fnc, `bottom flange, ${tag}; Fnc by ${f.governs}, Lb ${(Lb / 12).toFixed(1)} ft, Cb 1`);
         }
-        record("pour-tension", st, Math.max(-top, -bot, 0), PHI_F * i.Fyf, `tension flange, ${tag}`);
+        record("pour-tension", st, Math.max(top < 0 ? -top + (wet ? i.flConstruction : 0) + flTop : 0, bot < 0 ? -bot + flBot : 0), PHI_F * i.Fyf, `tension flange, ${tag}`);
         if (deckT > 0) record("pour-deck", st, deckT, fr, `hardened deck, ${tag}; fr = 0.24√f'c`);
       }
     }
@@ -1190,22 +1479,71 @@ export function designSteelGirder(i: SteelGirderInputs) {
       return { ...c, ...sb, Iyeff: Iyeff(c.k, c.topComp), Ix: sp.I };
     });
     // The wind on the lower half of the fascia girder goes to the bottom flange and on to the cross-frames: W = γ PD d / 2 (C4.6.2.7.1-1).
-    const depthFt = Math.max(...i.segments.map((s) => plates(s).D + plates(s).top.t + plates(s).bottom.t)) / 12;
     const LbMax = Math.max(...bracesU.slice(1).map((x, q) => x - bracesU[q]));
     const winds = (["Strength III", "Strength V"] as const)
       .filter((c) => c === "Strength V" || i.wind.V > 0)
       .map((c) => {
         const pz = windPressure(c, i.wind);
         const W = eta * 1.0 * pz.PZ * depthFt / 2; // klf
-        return { combination: c, PZ: pz.PZ, W, F: W * LbMax };
+        return { combination: c as string, PZ: pz.PZ, W, F: W * LbMax };
       });
+    if (windConstruction) winds.push({ combination: "Construction (deck wet)", PZ: windConstruction.PZ, W: Math.max(windConstruction.Wtop, windConstruction.Wbot), F: Math.max(windConstruction.Wtop, windConstruction.Wbot) * LbMax });
     const Fwind = Math.max(0, ...winds.map((w) => w.F));
-    const strutForce = Math.max(Fwind, ...cases.map((c) => c.Fstrut));
-    const diagForce = Math.max(...cases.map((c) => c.Fdiag));
     const Ld = cases[0].Ld;
+    // Curvature (V-load approximation): each flange's force M/D turns through ℓ/R between brace points, a radial
+    // force P = M ℓ / (R D) at the struts; the girders' torques M ℓ / R balanced by vertical shears across the
+    // cross-frames, linear in the girders' offsets from the bridge's center (equilibrium of the cross-section), the
+    // diagonals taking the largest bay's shear. At every cross-frame, under the deck's placement (1.5 DC1 on the
+    // steel) and Strength I.
+    const curve = (() => {
+      if (!curved || grid) return null;
+      const ng = i.nGirders;
+      const xs = Array.from({ length: ng }, (_, q) => (q - (ng - 1) / 2) * i.S);
+      const sumX2 = xs.reduce((a, x) => a + x * x, 0);
+      let best = { X: 0, M: 0, ell: 0, P: 0, V: 0, stage: "" };
+      for (const X of bracesU) {
+        const q = bracesU.indexOf(X);
+        const ell = Math.max(q > 0 ? X - bracesU[q - 1] : 0, q + 1 < bracesU.length ? bracesU[q + 1] - X : 0);
+        const e = effects(Math.min(total, Math.max(0, X)));
+        const Dft = plates(i.segments[segAt(Math.min(Math.max(X, 1e-6), total - 1e-6))]).D / 12;
+        const sfx = strength(e);
+        for (const [stage, M] of [["deck placement", 1.5 * eta * e.M.dc1], ["Strength I", Math.abs(sfx.pos) > Math.abs(sfx.neg) ? sfx.pos : sfx.neg]] as const) {
+          const P = (Math.abs(M) * ell) / (i.radius * Dft);
+          const T = (Math.abs(M) * ell) / i.radius; // kip·ft per girder
+          let cum = 0;
+          let V = 0;
+          for (let gq = 0; gq < ng - 1; gq++) {
+            cum += (ng * T * xs[gq]) / sumX2;
+            V = Math.max(V, Math.abs(cum));
+          }
+          if (P > best.P) best = { X, M, ell, P, V, stage };
+        }
+      }
+      return { ...best, diag: (best.V / 2) * (Ld / cf.hb) };
+    })();
+    // With the grid: its forces at Strength I and during the deck's placement (with the stability bracing's).
+    const stabS = Math.max(...cases.map((c) => c.Fstrut));
+    const stabD = Math.max(...cases.map((c) => c.Fdiag));
+    const strutForce = grid ? Math.max(Fwind, stabS + grid.strut.construction, grid.strut.compression, grid.strut.tension) : Math.max(Fwind, stabS) + (curve?.P ?? 0);
+    const diagForce = grid ? Math.max(stabD + grid.diag.construction, grid.diag.compression, grid.diag.tension) : stabD + (curve?.diag ?? 0);
     const strut = singleAngle(cf.strut, cf.type === "K" ? Sin / 2 : Sin, cf.Fy);
     const diag = singleAngle(cf.diagonal, Ld, cf.Fy);
-    return { cases, winds, Fwind, strutForce, diagForce, strut, diag, depthFt, LbMax };
+    // The members' end connections (6.13): for the members' forces, either way (the diagonals and the wind reverse);
+    // on a curved bridge, where the cross-frames are primary members, the larger of the average of the force and the
+    // member's resistance, and 75% of the resistance (6.13.1).
+    const cn = cf.connection;
+    const cycles = i.S > 20 ? 1 : 2; // transverse members (Table 6.6.1.2.5-2)
+    const connections = cn.check
+      ? ([["strut", strut, strutForce, Math.max(...cases.map((c) => c.Fstrut))], ["diagonal", diag, diagForce, Math.max(...cases.map((c) => c.Fdiag))]] as const).map(([label, m, F, stab]) => {
+          const Pr = Math.min(m.Pr, m.Pt);
+          const Pu = curved ? Math.max(F, (F + Pr) / 2, 0.75 * Pr) : F;
+          const gm = grid ? (label === "strut" ? grid.strut : grid.diag) : null;
+          const Ps = cn.serviceForce > 0 ? cn.serviceForce : gm ? Math.max(gm.service, stab / 1.5) : stab / 1.5;
+          const c2 = gm && !(cn.fatigueRange > 0) ? { ...cn, fatigueRange: gm.range } : cn;
+          return { label, Pu, Ps, ...cfConnection(c2, m.name, -Pu, Ps, cf.Fy, i.fatigue.adttSL, i.fatigue.life, cycles) };
+        })
+      : [];
+    return { cases, winds, Fwind, strutForce, diagForce, strut, diag, depthFt, LbMax, curve, connections, cycles };
   })();
 
   // --- Checks ---
@@ -1224,12 +1562,45 @@ export function designSteelGirder(i: SteelGirderInputs) {
   add("flex-neg-t", "Strength I, negative flexure: top flange", "ksi", "AASHTO Eq. 6.10.8.1.3-1");
   add("flex-neg-a6c", "Strength I, negative flexure (Appendix A6): Mu ≤ φf Mnc", "kip·ft", "AASHTO Eq. A6.1.1-1");
   add("flex-neg-a6t", "Strength I, negative flexure (Appendix A6): Mu ≤ φf Rpt Myt", "kip·ft", "AASHTO Eq. A6.1.4-1");
+  add("flex-fl", "Strength I: flange lateral bending fℓ ≤ 0.6 Fyf (curvature)", "ksi", "AASHTO Eq. 6.10.1.6-1");
+  // Strength III and V: the wind on the exterior girder's bottom flange (and any curvature).
+  for (const [pre, c] of [["s3", "III"], ["s5", "V"]] as const) {
+    const nm = COMBO_NAME[c];
+    add(`${pre}-pos`, `${nm}, positive flexure: Mu + fℓ Sxt / 3 ≤ φf Mn`, "kip·ft", "AASHTO Eq. 6.10.7.1.1-1, C4.6.2.7.1");
+    add(`${pre}-pos-c`, `${nm}, positive flexure (noncompact): compression flange`, "ksi", "AASHTO Eq. 6.10.7.2.1-1");
+    add(`${pre}-pos-t`, `${nm}, positive flexure (noncompact): tension flange fbu + fℓ/3`, "ksi", "AASHTO Eq. 6.10.7.2.1-2");
+    add(`${pre}-neg-c`, `${nm}, negative flexure: bottom flange fbu + fℓ/3 ≤ φf Fnc`, "ksi", "AASHTO Eq. 6.10.8.1.1-1");
+    add(`${pre}-neg-t`, `${nm}, negative flexure: top flange`, "ksi", "AASHTO Eq. 6.10.8.1.3-1");
+    add(`${pre}-neg-a6c`, `${nm}, negative flexure (Appendix A6): Mu + fℓ Sxc / 3 ≤ φf Mnc`, "kip·ft", "AASHTO Eq. A6.1.1-1");
+    add(`${pre}-neg-a6t`, `${nm}, negative flexure (Appendix A6): Mu ≤ φf Rpt Myt`, "kip·ft", "AASHTO Eq. A6.1.4-1");
+    add(`${pre}-fl`, `${nm}: bottom flange lateral bending fℓ ≤ 0.6 Fyf`, "ksi", "AASHTO Eq. 6.10.1.6-1");
+  }
+  // Horizontal curvature: the line girder stands for a curved one only within these limits (4.6.1.2.4b).
+  if (curved && !grid) {
+    spans.forEach((Ls, j) => {
+      const factor = spans.length === 1 ? 1 : j === 0 || j === spans.length - 1 ? 0.9 : 0.8;
+      const ratio = (factor * Ls) / i.radius;
+      checks.push({ id: `curve-span-${j}`, name: `Curvature, span ${j + 1}: Las / R < 0.06 rad (Las = ${factor} × arc span), else a refined analysis`, demand: ratio, capacity: 0.06, unit: "rad", ok: ratio < 0.06, ref: "AASHTO 4.6.1.2.4b" });
+    });
+    checks.push({ id: "curve-skew", name: "Curvature: bearing lines within 10° of radial, else a refined analysis", demand: Math.abs(i.skew), capacity: 10, unit: "°", ok: Math.abs(i.skew) <= 10, ref: "AASHTO 4.6.1.2.4b" });
+  }
   // Moment redistribution (Appendix B6): the pier sections' requirements, and the 20% limit.
   if (i.redistribution)
     for (const q of piersB6) {
       // A pier missing one of these isn't redistributed (its flexure is checked as usual): for information.
       q.reqs.forEach((r, n) => checks.push({ id: `b6-req-${q.pier}-${n}`, name: `Redistribution at pier ${q.pier}: ${r.name}`, demand: r.demand, capacity: r.capacity, unit: r.unit, ok: r.demand <= r.capacity + 1e-9, ref: r.ref, advisory: true }));
-      if (b6Active) {
+      if (b6Active && refined) {
+        // The refined method: each yielding pier's plastic rotation within θRL, at strength (φf Mn) and at service (Mn).
+        if (q.qualifies) {
+          for (const c of combos)
+            checks.push({ id: `b6r-${c}-${q.pier}`, name: `Redistribution at pier ${q.pier} (refined), ${COMBO_NAME[c]}: θp ≤ θRL (Me ${Math.abs(q.byCombo[c].Me).toFixed(0)}, M ${q.byCombo[c].M.toFixed(0)}, Mrd ${q.byCombo[c].Mrd.toFixed(0)} kip·ft)`, demand: q.byCombo[c].theta, capacity: q.thetaRL, unit: "rad", ok: q.byCombo[c].theta <= q.thetaRL + 1e-12, ref: "AASHTO B6.6.1, Eqs. B6.6.2-1, -2" });
+          checks.push({ id: `b6r-svc-${q.pier}`, name: `Redistribution at pier ${q.pier} (refined), Service II: θp ≤ θRL (Me ${Math.abs(q.MeSvc).toFixed(0)}, Mrd ${q.MrdSvc.toFixed(0)} kip·ft)`, demand: q.thetaSvc, capacity: q.thetaRL, unit: "rad", ok: q.thetaSvc <= q.thetaRL + 1e-12, ref: "AASHTO B6.6.1, Eqs. B6.6.2-1, -2" });
+        }
+      } else if (b6Active) {
+        for (const c of combos.filter((x) => x !== "I")) {
+          const b = q.byCombo[c];
+          checks.push({ id: `b6-mrd-${c}-${q.pier}`, name: `Redistribution at pier ${q.pier}, ${COMBO_NAME[c]}: Mrd ≤ 0.2|Me| (Me ${Math.abs(b.Me).toFixed(0)}, Mpe ${(b.Mpe / 12).toFixed(0)} kip·ft, Mn less fℓ Sxc/3)`, demand: b.Mrd, capacity: 0.2 * Math.abs(b.Me), unit: "kip·ft", ok: b.MrdRaw <= 0.2 * Math.abs(b.Me) + 1e-9, ref: "AASHTO Eqs. B6.4.2.1-1, -3" });
+        }
         checks.push({ id: `b6-mrd-${q.pier}`, name: `Redistribution at pier ${q.pier}: Mrd = |Me| − φf Mpe ≤ 0.2|Me| (Me ${Math.abs(q.Me).toFixed(0)}, Mpe ${(q.Mpe.strength / 12).toFixed(0)} kip·ft)`, demand: q.Mrd, capacity: 0.2 * Math.abs(q.Me), unit: "kip·ft", ok: q.MrdRaw <= 0.2 * Math.abs(q.Me) + 1e-9, ref: "AASHTO Eqs. B6.4.2.1-1, -3" });
         checks.push({ id: `b6-svc-${q.pier}`, name: `Redistribution at pier ${q.pier}, Service II: Mrd ≤ 0.2|Me| (Me ${Math.abs(q.MeSvc).toFixed(0)}, Mpe ${(q.Mpe.service / 12).toFixed(0)} kip·ft)`, demand: q.MrdSvc, capacity: 0.2 * Math.abs(q.MeSvc), unit: "kip·ft", ok: Math.abs(q.MeSvc) - q.Mpe.service / 12 <= 0.2 * Math.abs(q.MeSvc) + 1e-9, ref: "AASHTO Eqs. B6.3.3.1-1, -2" });
       }
@@ -1240,6 +1611,11 @@ export function designSteelGirder(i: SteelGirderInputs) {
   add("con-web", "Constructibility: web bend-buckling fbu ≤ φf Fcrw", "ksi", "AASHTO Eq. 6.10.3.2.1-3");
   add("con-tension", "Constructibility: tension flange", "ksi", "AASHTO Eq. 6.10.3.2.2-1");
   add("con-shear", "Constructibility: shear Vu ≤ φv Vcr", "kip", "AASHTO Eq. 6.10.3.3-1");
+  add("con-fl", "Constructibility: flange lateral bending fℓ ≤ 0.6 Fyf (curvature)", "ksi", "AASHTO Eq. 6.10.1.6-1");
+  add("cw-yield", "Construction wind (Strength III, deck wet): compression flange fbu + fℓ ≤ φf Rh Fyc", "ksi", "AASHTO Eq. 6.10.3.2.1-1, C4.6.2.7.1");
+  add("cw-fnc", "Construction wind (Strength III, deck wet): compression flange fbu + fℓ/3 ≤ φf Fnc", "ksi", "AASHTO Eq. 6.10.3.2.1-2, C4.6.2.7.1");
+  add("cw-tension", "Construction wind (Strength III, deck wet): tension flange fbu + fℓ ≤ φf Rh Fyt", "ksi", "AASHTO Eq. 6.10.3.2.2-1");
+  add("cw-fl", "Construction wind: flange lateral bending fℓ ≤ 0.6 Fyf", "ksi", "AASHTO Eq. 6.10.1.6-1");
   add("pour-yield", "Deck placement, pour by pour: flange fbu + fℓ ≤ φf Fyc", "ksi", "AASHTO 6.10.3.4.1, Eq. 6.10.3.2.1-1");
   add("pour-fnc", "Deck placement, pour by pour: compression flange fbu + fℓ/3 ≤ φf Fnc", "ksi", "AASHTO 6.10.3.4.1, Eq. 6.10.3.2.1-2");
   add("pour-tension", "Deck placement, pour by pour: tension flange ≤ φf Fyt", "ksi", "AASHTO 6.10.3.4.1, Eq. 6.10.3.2.2-1");
@@ -1305,10 +1681,14 @@ export function designSteelGirder(i: SteelGirderInputs) {
     const cf = crossFrames;
     for (const c of cf.cases)
       checks.push({ id: `cf-stiff-${c.label}`, name: `Cross-frames, ${c.label}: stability bracing stiffness (βT)act ≥ (βT)req (Mu ${(c.Mu).toFixed(0)} kip·ft, n ${c.n})`, demand: c.req, capacity: c.act, unit: "kip·in/rad", ok: c.act >= c.req, ref: `AASHTO Eqs. 6.7.4.2.2-1, ${c.full ? "-2" : "-3"}, -6` });
-    checks.push({ id: "cf-strut", name: `Cross-frames: strut ${cf.strut.name} in compression (stability ${Math.max(...cf.cases.map((c) => c.Fstrut)).toFixed(1)} kip, wind ${cf.Fwind.toFixed(1)} kip)`, demand: cf.strutForce, capacity: cf.strut.Pr, unit: "kip", ok: cf.strutForce <= cf.strut.Pr, ref: "AASHTO 6.9.4.4, Eq. 6.7.4.2.2-14, C4.6.2.7.1" });
-    checks.push({ id: "cf-diag", name: `Cross-frames: diagonal ${cf.diag.name} in compression (stability bracing)`, demand: cf.diagForce, capacity: cf.diag.Pr, unit: "kip", ok: cf.diagForce <= cf.diag.Pr, ref: "AASHTO 6.9.4.4, Eq. 6.7.4.2.2-14" });
-    checks.push({ id: "cf-sl-strut", name: `Cross-frames: strut slenderness ℓ/rz ≤ 140`, demand: cf.strut.slenderness, capacity: 140, unit: "", ok: cf.strut.slenderness <= 140, ref: "AASHTO 6.9.3" });
-    checks.push({ id: "cf-sl-diag", name: `Cross-frames: diagonal slenderness ℓ/rz ≤ 140`, demand: cf.diag.slenderness, capacity: 140, unit: "", ok: cf.diag.slenderness <= 140, ref: "AASHTO 6.9.3" });
+    checks.push({ id: "cf-strut", name: `Cross-frames: strut ${cf.strut.name} in compression (stability ${Math.max(...cf.cases.map((c) => c.Fstrut)).toFixed(1)} kip, wind ${cf.Fwind.toFixed(1)} kip${cf.curve ? `, curvature ${cf.curve.P.toFixed(1)} kip` : ""})`, demand: cf.strutForce, capacity: cf.strut.Pr, unit: "kip", ok: cf.strutForce <= cf.strut.Pr, ref: "AASHTO 6.9.4.4, Eq. 6.7.4.2.2-14, C4.6.2.7.1" });
+    checks.push({ id: "cf-diag", name: `Cross-frames: diagonal ${cf.diag.name} in compression (stability bracing${cf.curve ? `, curvature ${cf.curve.diag.toFixed(1)} kip` : ""})`, demand: cf.diagForce, capacity: cf.diag.Pr, unit: "kip", ok: cf.diagForce <= cf.diag.Pr, ref: "AASHTO 6.9.4.4, Eq. 6.7.4.2.2-14" });
+    // Secondary members 140; on a curved bridge the cross-frames are primary members, 120 (6.9.3, 6.7.4.1).
+    const slim = curved ? 120 : 140;
+    checks.push({ id: "cf-sl-strut", name: `Cross-frames: strut slenderness ℓ/rz ≤ ${slim}`, demand: cf.strut.slenderness, capacity: slim, unit: "", ok: cf.strut.slenderness <= slim, ref: "AASHTO 6.9.3" });
+    checks.push({ id: "cf-sl-diag", name: `Cross-frames: diagonal slenderness ℓ/rz ≤ ${slim}`, demand: cf.diag.slenderness, capacity: slim, unit: "", ok: cf.diag.slenderness <= slim, ref: "AASHTO 6.9.3" });
+    for (const c of cf.connections)
+      c.checks.forEach((x, q) => checks.push({ id: `cfc-${c.label}-${q}`, name: `Cross-frame connections, ${c.label} (${c.a.name}, Pu ${c.Pu.toFixed(1)} kip): ${x.name}`, demand: x.demand, capacity: x.capacity, unit: x.unit, ok: x.demand <= x.capacity + 1e-9, ref: x.ref }));
     for (const [m, label] of [[cf.strut, "strut"], [cf.diag, "diagonal"]] as const)
       if (m.slenderLeg) checks.push({ id: `cf-leg-${label}`, name: `Cross-frames: ${label}'s legs b/t ≤ 0.45√(E/Fy) (else reduce for local buckling)`, demand: m.b / m.t, capacity: 0.45 * Math.sqrt(ES / i.crossFrame.Fy), unit: "", ok: false, ref: "AASHTO Table 6.9.4.2.1-1" });
   }
@@ -1335,7 +1715,12 @@ export function designSteelGirder(i: SteelGirderInputs) {
     camber,
     crossFrames,
     pourResults,
-    b6: { active: b6Active, piers: piersB6 },
+    b6: { active: b6Active, refined, piers: piersB6 },
+    combos,
+    grid: grid ? { girders: grid.cand, nodes: grid.geo.nodes.length, frames: grid.frames, strut: grid.strut, diag: grid.diag, girderMoments: grid.girderMoments, lanes: grid.lanes, ys: grid.geo.ys } : null,
+    windW,
+    windConstruction,
+    curved,
     studStrength,
     stiffenerChecks,
     bearings,

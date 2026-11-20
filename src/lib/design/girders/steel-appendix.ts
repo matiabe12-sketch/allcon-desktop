@@ -102,3 +102,96 @@ export function redistributionMoment(Me: number, Mpe: number, phi = 1) {
   const raw = Math.abs(Me) - phi * Mpe;
   return { raw, Mrd: Math.max(0, raw), limit: 0.2 * Math.abs(Me) };
 }
+
+// --- Appendix B6.6, the refined method: rotational continuity with the piers' moment-rotation curves ---
+
+/** θRL, the plastic rotation at which an interior-pier section's moment begins to drop (Eqs. B6.6.2-1, -2), rad. */
+export function thetaRL(p: { D: number; bfc: number; tfc: number; Fyc: number; enhanced: boolean }) {
+  const s = (p.bfc / p.tfc) * Math.sqrt(p.Fyc / ES);
+  const r = p.D / p.bfc;
+  return (p.enhanced ? 0.137 : 0.128) - 0.143 * s - 0.0216 * r + 0.0241 * s * r;
+}
+
+/**
+ * The unit rotational stiffness constants kθij (Eq. B6.6.1): the moment at pier i from a unit plastic rotation at
+ * pier j, kip·in/rad, on the girder line's stiffness EI(X) (kip·in², X in ft), the deck effective over the whole
+ * length. The pier moments are the redundants of the simple spans; their flexibility F (rotation discontinuity at
+ * pier i from a unit moment at pier j) inverted.
+ */
+export function rotationalStiffness(spans: number[], EI: (X: number) => number) {
+  const starts: number[] = [];
+  spans.reduce((a, L) => (starts.push(a), a + L), 0);
+  const np = spans.length - 1;
+  /** The moment diagram of a unit hogging moment at pier q, at X. */
+  const m = (q: number, X: number) => {
+    const P = starts[q + 1];
+    const Lw = spans[q];
+    const Le = spans[q + 1];
+    if (X >= P - Lw && X <= P) return (X - (P - Lw)) / Lw;
+    if (X > P && X <= P + Le) return (P + Le - X) / Le;
+    return 0;
+  };
+  const F = Array.from({ length: np }, () => new Array<number>(np).fill(0));
+  const total = spans.reduce((s, L) => s + L, 0);
+  const N = 4000;
+  const h = total / N;
+  for (let k = 0; k < N; k++) {
+    const X = (k + 0.5) * h;
+    const w = (h * 12) / EI(X); // in / (kip·in²) · in: the rotation from a unit moment over the strip
+    for (let a = 0; a < np; a++) {
+      const ma = m(a, X);
+      if (!ma) continue;
+      for (let b = 0; b < np; b++) F[a][b] += ma * m(b, X) * w;
+    }
+  }
+  return invert(F);
+}
+
+function invert(A: number[][]) {
+  const n = A.length;
+  const M = A.map((r, i) => [...r, ...Array.from({ length: n }, (_, j) => (i === j ? 1 : 0))]);
+  for (let c = 0; c < n; c++) {
+    let p = c;
+    for (let r = c + 1; r < n; r++) if (Math.abs(M[r][c]) > Math.abs(M[p][c])) p = r;
+    [M[c], M[p]] = [M[p], M[c]];
+    const d = M[c][c];
+    for (let j = 0; j < 2 * n; j++) M[c][j] /= d;
+    for (let r = 0; r < n; r++) {
+      if (r === c) continue;
+      const f = M[r][c];
+      for (let j = 0; j < 2 * n; j++) M[r][j] -= f * M[c][j];
+    }
+  }
+  return M.map((r) => r.slice(n));
+}
+
+/** The nominal moment-rotation curve of an interior-pier section (Fig. B6.6.2-1) to θRL: M/Mn = 0.7 + 60θp to 0.005 rad, then 1.0. */
+export const momentRotation = (theta: number) => (theta <= 0.005 ? 0.7 + 60 * theta : 1);
+
+/**
+ * The refined method's solution (B6.6.1): the plastic rotations θp at the piers where the total continuity moment
+ * |Me| − Σ kθij θpj reaches the moment-rotation curve φ Mn (0.7 + 60θp, then 1.0), the others elastic. Me and Mn
+ * in kip·in (magnitudes, hogging); yielding[i] false for piers that may not yield (B6.2 not met). Returns each pier's
+ * plastic rotation, continuity moment and redistribution moment (Σ kθij θpj, kip·in).
+ */
+export function refinedRedistribution(p: { Me: number[]; Mn: number[]; phi: number; K: number[][]; yielding: boolean[] }) {
+  const n = p.Me.length;
+  const theta = new Array<number>(n).fill(0);
+  const M = (i: number) => p.Me[i] - p.K[i].reduce((s, k, j) => s + k * theta[j], 0);
+  for (let it = 0; it < 500; it++) {
+    let change = 0;
+    for (let i = 0; i < n; i++) {
+      if (!p.yielding[i]) continue;
+      const others = p.Me[i] - p.K[i].reduce((s, k, j) => (j === i ? s : s + k * theta[j]), 0);
+      const kii = p.K[i][i];
+      const cap = p.phi * p.Mn[i];
+      // Solve others − kii θ = cap (0.7 + 60θ) on the rising branch, else others − kii θ = cap.
+      let t = Math.max(0, (others - 0.7 * cap) / (kii + 60 * cap));
+      if (t > 0.005) t = Math.max(0.005, (others - cap) / kii);
+      change = Math.max(change, Math.abs(t - theta[i]));
+      theta[i] = t;
+    }
+    if (change < 1e-12) break;
+  }
+  return theta.map((t, i) => ({ theta: t, M: M(i), Mrd: p.Me[i] - M(i) }));
+}

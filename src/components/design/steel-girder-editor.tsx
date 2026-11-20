@@ -5,6 +5,7 @@ import { Plus, Trash2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { designSteelGirder, W_SHAPE_NAMES, type StiffenerZone, type SteelGirderInputs } from "@/lib/design/girders/steel";
 import { L_SHAPE_NAMES } from "@/lib/design/girders/steel-crossframe";
+import { BOLT_DIAMETERS, type CfConnection } from "@/lib/design/girders/steel-connection";
 import { FATIGUE_CATEGORIES, type FatigueCategory } from "@/lib/design/girders/steel-details";
 import type { SteelSegment } from "@/lib/design/girders/steel-section";
 import { DesignError } from "@/lib/design/walls/cip";
@@ -34,9 +35,17 @@ const groupOf = (id: string) =>
                   ? "Deck placement, pour by pour"
                   : id.startsWith("b6")
                     ? "Moment redistribution (Appendix B6)"
-                    : id.startsWith("cf")
-                      ? "Cross-frames"
-                      : "Proportions and detailing";
+                    : id.startsWith("cw")
+                    ? "Wind during construction"
+                    : id.startsWith("cfc")
+                      ? "Cross-frame connections"
+                      : id.startsWith("cf")
+                        ? "Cross-frames"
+                        : /^s[35]-/.test(id)
+                          ? "Strength III and V (wind on the bottom flange)"
+                          : id.startsWith("curve")
+                            ? "Horizontal curvature"
+                            : "Proportions and detailing";
 
 /** Rows of three numbers (from, to and a value) with add and remove: stud pitch zones, deck pours. */
 function Triples<T extends { from: number; to: number }>({ rows, third, label, add, onChange }: { rows: T[]; third: keyof T & string; label: string; add: T; onChange: (rows: T[]) => void }) {
@@ -77,6 +86,8 @@ export function SteelGirderEditor({ design, projects }: { design: { id: string; 
   const setBrg = <K extends keyof SteelGirderInputs["bearing"]>(key: K) => (v: SteelGirderInputs["bearing"][K]) => setInputs((s) => ({ ...s, bearing: { ...s.bearing, [key]: v } }));
   const setCf = <K extends keyof SteelGirderInputs["crossFrame"]>(key: K) => (v: SteelGirderInputs["crossFrame"][K]) => setInputs((s) => ({ ...s, crossFrame: { ...s.crossFrame, [key]: v } }));
   const setWind = <K extends keyof SteelGirderInputs["wind"]>(key: K) => (v: SteelGirderInputs["wind"][K]) => setInputs((s) => ({ ...s, wind: { ...s.wind, [key]: v } }));
+  const setCn = <K extends keyof CfConnection>(key: K) => (v: CfConnection[K]) => setInputs((s) => ({ ...s, crossFrame: { ...s.crossFrame, connection: { ...s.crossFrame.connection, [key]: v } } }));
+  const cn = inputs.crossFrame.connection;
   const [spansText, setSpansText] = useState(inputs.spans.join(", "));
   const [bracesText, setBracesText] = useState(inputs.braces.join(", "));
   const angles = L_SHAPE_NAMES.map((n) => ({ value: n, label: n }));
@@ -119,7 +130,8 @@ export function SteelGirderEditor({ design, projects }: { design: { id: string; 
               <Field label="Girder spacing" unit="ft" value={inputs.S} onChange={set("S")} step={0.25} />
               <Field label="Overhang (girder to deck edge)" unit="ft" value={inputs.overhang} onChange={set("overhang")} step={0.25} />
               <Field label="Deck edge to barrier face" unit="ft" value={inputs.barrierWidth} onChange={set("barrierWidth")} step={0.25} />
-              <Field label="Skew" unit="°" value={inputs.skew} onChange={set("skew")} />
+              <Field label="Skew" unit="°" value={inputs.skew} onChange={set("skew")} hint={inputs.radius > 0 ? "Of the bearing lines from radial" : undefined} />
+              <Field label="Horizontal radius (0: straight)" unit="ft" value={inputs.radius} onChange={set("radius")} step={100} hint={inputs.analysis === "grid" ? "Curved: spans as arc lengths along the centerline, by the grid" : "Curved: spans as arc lengths; within 4.6.1.2.4b, else use the grid"} />
             </Section>
 
             <Section title="Deck" open>
@@ -236,7 +248,82 @@ export function SteelGirderEditor({ design, projects }: { design: { id: string; 
                       <Field label="Connection plate thickness" unit="in" value={inputs.crossFrame.plateThickness} onChange={setCf("plateThickness")} step={0.0625} />
                     </>
                   )}
+                  <Toggle label="Check the members' end connections (6.13)" value={cn.check} onChange={setCn("check")} />
+                  {cn.check && (
+                    <>
+                      <Choice
+                        label="Connection"
+                        value={cn.kind}
+                        options={[
+                          { value: "bolted", label: "Bolted, slip-critical" },
+                          { value: "welded", label: "Welded along the leg" },
+                        ]}
+                        onChange={setCn("kind")}
+                      />
+                      {cn.kind === "bolted" ? (
+                        <>
+                          <Choice label="Bolt diameter" value={cn.d} options={BOLT_DIAMETERS.map((d) => ({ value: d, label: `${d} in` }))} onChange={setCn("d")} />
+                          <Choice
+                            label="Grade (ASTM F3125)"
+                            value={cn.grade}
+                            options={[
+                              { value: "A325", label: "A325" },
+                              { value: "A490", label: "A490" },
+                            ]}
+                            onChange={setCn("grade")}
+                          />
+                          <Choice
+                            label="Threads"
+                            value={cn.threads}
+                            options={[
+                              { value: "included", label: "In the shear plane" },
+                              { value: "excluded", label: "Excluded" },
+                            ]}
+                            onChange={setCn("threads")}
+                          />
+                          <Choice
+                            label="Holes"
+                            value={cn.holes}
+                            options={[
+                              { value: "punched", label: "Punched full size" },
+                              { value: "drilled", label: "Drilled or reamed" },
+                            ]}
+                            onChange={setCn("holes")}
+                          />
+                          <Choice
+                            label="Faying surface"
+                            value={cn.surface}
+                            options={[
+                              { value: "A", label: "Class A" },
+                              { value: "B", label: "Class B" },
+                              { value: "C", label: "Class C" },
+                            ]}
+                            onChange={setCn("surface")}
+                          />
+                          <Field label="Bolts per member end, in a line" value={cn.bolts} onChange={setCn("bolts")} step={1} />
+                          <Field label="Bolt spacing" unit="in" value={cn.spacing} onChange={setCn("spacing")} step={0.25} />
+                          <Field label="End distance" unit="in" value={cn.edge} onChange={setCn("edge")} step={0.125} />
+                          <Field label="Gage from the angle's heel" unit="in" value={cn.gage} onChange={setCn("gage")} step={0.25} />
+                        </>
+                      ) : (
+                        <>
+                          <Field label="Fillet weld size" unit="in" value={cn.weld} onChange={setCn("weld")} step={0.0625} />
+                          <Field label="Each weld's length (two per leg)" unit="in" value={cn.weldLength} onChange={setCn("weldLength")} step={0.5} />
+                        </>
+                      )}
+                      <Field label="Connection plate (or gusset) thickness" unit="in" value={cn.plateT} onChange={setCn("plateT")} step={0.0625} />
+                      <Field label="Fu of the angles and plate" unit="ksi" value={cn.Fu} onChange={setCn("Fu")} />
+                      <Field label="Fatigue force range per member (0: none)" unit="kip" value={cn.fatigueRange} onChange={setCn("fatigueRange")} hint="From a refined analysis (4.6.3.3)" />
+                      <Field label="Service II force per member (0: the deck's)" unit="kip" value={cn.serviceForce} onChange={setCn("serviceForce")} hint="For slip, from a refined analysis" />
+                    </>
+                  )}
+                </>
+              )}
+              <Toggle label="Wind's lateral bending of the bottom flange, Strength III and V" value={inputs.wind.lateral} onChange={setWind("lateral")} />
+              {(inputs.wind.lateral || inputs.crossFrame.check) && (
+                <>
                   <Field label="Wind speed, Strength III (0: none)" unit="mph" value={inputs.wind.V} onChange={setWind("V")} hint="3.8.1.1.2; Strength V uses 80 mph" />
+                  <Field label="Wind speed while the deck is placed (0: none)" unit="mph" value={inputs.wind.construction} onChange={setWind("construction")} hint="Strength III on the bare steel, the deck wet" />
                   {inputs.wind.V > 0 && (
                     <>
                       <Choice
@@ -355,6 +442,15 @@ export function SteelGirderEditor({ design, projects }: { design: { id: string; 
 
             <Section title="Live load and options">
               <Choice
+                label="Analysis"
+                value={inputs.analysis}
+                options={[
+                  { value: "line", label: "Line girder, distribution factors (4.6.2.2)" },
+                  { value: "grid", label: "Grid of the whole bridge (4.6.3.3)" },
+                ]}
+                onChange={set("analysis")}
+              />
+              <Choice
                 label="Girder"
                 value={inputs.girder}
                 options={[
@@ -374,6 +470,17 @@ export function SteelGirderEditor({ design, projects }: { design: { id: string; 
               <Field label="η (ηD·ηR·ηI)" value={inputs.eta} onChange={set("eta")} step={0.05} hint="1.3.2" />
               <Toggle label="Negative flexure by Appendix A6 where it applies" value={inputs.appendixA6} onChange={set("appendixA6")} />
               <Toggle label="Moment redistribution from the piers (Appendix B6)" value={inputs.redistribution} onChange={set("redistribution")} />
+              {inputs.redistribution && (
+                <Choice
+                  label="Method"
+                  value={inputs.redistributionMethod}
+                  options={[
+                    { value: "simplified", label: "Effective plastic moment (B6.3–B6.5)" },
+                    { value: "refined", label: "Refined, rotational continuity (B6.6)" },
+                  ]}
+                  onChange={set("redistributionMethod")}
+                />
+              )}
             </Section>
           </CardContent>
         </Card>
@@ -447,18 +554,28 @@ export function SteelGirderEditor({ design, projects }: { design: { id: string; 
                     title={`Pier sections (Appendices A6${inputs.redistribution ? ", B6" : ""}): kip·ft`}
                     rows={r.b6.piers.map((q) => [
                       `Pier ${q.pier}`,
-                      `Me ${fmt(Math.abs(q.Me), 0)}; Myc ${fmt(q.Myc, 0)}, Myt ${fmt(q.Myt, 0)}, Mp ${fmt(q.Mp, 0)}; Mn ${fmt(q.Mn / 12, 0)}${q.useA6 ? ` (A6, Rpc ${fmt(q.a6.Rpc, 3)})` : " (6.10.8)"}${inputs.redistribution ? (r.b6.active ? `; Mpe ${fmt(q.Mpe.strength / 12, 0)}, Mrd ${fmt(q.Mrd, 0)} (service ${fmt(q.MrdSvc, 0)})` : "; not redistributed: a B6.2 limit is missed") : ""}`,
+                      `Me ${fmt(Math.abs(q.Me), 0)}; Myc ${fmt(q.Myc, 0)}, Myt ${fmt(q.Myt, 0)}, Mp ${fmt(q.Mp, 0)}; Mn ${fmt(q.Mn / 12, 0)}${q.useA6 ? ` (A6, Rpc ${fmt(q.a6.Rpc, 3)})` : " (6.10.8)"}${inputs.redistribution ? (r.b6.active && r.b6.refined ? (q.qualifies ? `; refined: θp ${fmt(q.byCombo.I.theta, 4)} of θRL ${fmt(q.thetaRL, 4)} rad, Mrd ${fmt(q.Mrd, 0)} (service θp ${fmt(q.thetaSvc, 4)}, Mrd ${fmt(q.MrdSvc, 0)})` : `; elastic (a B6.2 limit is missed), Mrd ${fmt(q.Mrd, 0)} from the other piers`) : r.b6.active ? `; Mpe ${fmt(q.Mpe.strength / 12, 0)}, Mrd ${fmt(q.Mrd, 0)} (service ${fmt(q.MrdSvc, 0)})` : "; not redistributed: a B6.2 limit is missed") : ""}`,
                     ] as [string, string])}
                   />
                 )}
                 {r.crossFrames && (
                   <KeyValues
-                    title="Cross-frames: stability bracing (kip·in/rad, kip)"
-                    rows={r.crossFrames.cases.map((c) => [`${c.label[0].toUpperCase()}${c.label.slice(1)}`, `required ${fmt(c.req, 0)}, provided ${fmt(c.act, 0)} (brace ${fmt(c.bbr, 0)}, girders ${fmt(c.bg, 0)}); Mbr ${fmt(c.Mbr, 1)} kip·in, strut ${fmt(c.Fstrut, 2)}, diagonal ${fmt(c.Fdiag, 2)}`] as [string, string])}
+                    title={r.grid ? "Cross-frames: stability bracing and the grid's forces (kip·in/rad, kip)" : "Cross-frames: stability bracing (kip·in/rad, kip)"}
+                    rows={[
+                      ...r.crossFrames.cases.map((c) => [`${c.label[0].toUpperCase()}${c.label.slice(1)}`, `required ${fmt(c.req, 0)}, provided ${fmt(c.act, 0)} (brace ${fmt(c.bbr, 0)}, girders ${fmt(c.bg, 0)}); Mbr ${fmt(c.Mbr, 1)} kip·in, strut ${fmt(c.Fstrut, 2)}, diagonal ${fmt(c.Fdiag, 2)}`] as [string, string]),
+                      ...(r.grid
+                        ? (["strut", "diag"] as const).map((m) => [`Grid, ${m === "strut" ? "struts" : "diagonals"}`, `Strength I ${fmt(r.grid![m].compression, 1)} compression, ${fmt(r.grid![m].tension, 1)} tension; deck placement ${fmt(r.grid![m].construction, 1)}; Service II ${fmt(r.grid![m].service, 1)}; fatigue range ${fmt(r.grid![m].range, 2)}`] as [string, string])
+                        : []),
+                      ...(r.grid ? [["Grid, DC1 at mid-span by girder", r.grid.girderMoments.map((g, j) => `G${j + 1} ${g.map((x) => fmt(x.dc1, 0)).join("/")}`).join(", ") + " kip·ft"] as [string, string]] : []),
+                      ...(r.crossFrames.curve ? [["Curvature (V-load)", `at ${fmt(r.crossFrames.curve.X, 1)} ft, ${r.crossFrames.curve.stage}: radial force ${fmt(r.crossFrames.curve.P, 2)} kip, bay shear ${fmt(r.crossFrames.curve.V, 2)} kip, diagonal ${fmt(r.crossFrames.curve.diag, 2)} kip`] as [string, string]] : []),
+                      ...r.crossFrames.connections.map((c) => [`Connection, ${c.label}`, `Pu ${fmt(c.Pu, 1)} kip; ${c.Rshear ? `bolts ${fmt(c.Rshear, 1)}, bearing ${fmt(c.Rbearing, 1)}, slip ${fmt(c.Rslip, 1)}` : `welds ${fmt(c.Rweld, 1)}`}, tension ${fmt(c.Ptension, 1)}, block shear ${fmt(c.Rblock, 1)} kip${c.fatigue ? `; fatigue ${c.fatigue.cat}: γΔf ${fmt(c.fatigue.gamma * c.fatigue.range, 2)} of ${fmt(c.fatigue.Fn, 2)} ksi` : ""}`] as [string, string]),
+                    ]}
                   />
                 )}
                 <p className="text-[11px] text-muted-foreground">
-                  Not checked here: the cross-frames&apos; connections and their fatigue, wind&apos;s lateral bending of the bottom flange at Strength III and V, and the refined method of Appendix B6.6. Camber leaves out the vertical profile.
+                  {r.grid
+                    ? "By the grid: the girders' dead and live load effects and the cross-frames' forces; the deflection, camber and bearing reactions stay the line girder's. Camber leaves out the vertical profile."
+                    : "Not checked here: the cross-frames' live load forces and a curved bridge outside 4.6.1.2.4b, both by the grid (Analysis). Camber leaves out the vertical profile."}
                 </p>
               </>
             )

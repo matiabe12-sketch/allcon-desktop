@@ -18,6 +18,9 @@ Article 6.10, and its details (phase 2).
 - `steel-appendix.ts` (phase 3): yield moments in negative flexure (D6.2.3), Appendix A6, and the B6
   effective plastic moment and redistribution moment. `steel-crossframe.ts` and `l-shapes.ts`: the
   cross-frames and the AISC equal-leg angles.
+- `steel-connection.ts` (phase 4): the cross-frame members' end connections (6.13). `steel-appendix.ts`
+  also holds B6.6, the refined method (θRL, kθ, the continuity solution).
+- `steel-grid.ts` (phase 5): the grid of the whole bridge (refined analysis, 4.6.3.3).
 - `steel-calc.ts`: the calc package. `steel-girder-editor.tsx` and `steel-girder-sketch.tsx` are the UI.
 - Distribution factors reuse `distributionFactors` from `prestressed.ts`, with shape `"steel"`.
 
@@ -101,6 +104,88 @@ Article 6.10, and its details (phase 2).
   nac = As fsr/Zr are reported.
 - **Reactions.** Unfactored DC, DW, truck+IM and lane per girder, the way the NSBA plans tabulate them.
 
+## Phase 4: connections, wind, refined redistribution, curvature
+
+- **Cross-frame connections (6.13).** Each single angle connects through one leg to the connection plate,
+  either by pretensioned slip-critical bolts in one line or by two fillet welds along the leg.
+  - Bolts: shear 0.56 or 0.45 Ab Fub (10th Edition), bearing 1.2 Lc t Fu ≤ 2.4 d t Fu, and slip at Service II
+    (Kh Ks Ns Pt; Ks 0.30, 0.50 or 0.30 for Classes A, B and C).
+  - The angle in tension (U from Table 6.8.2.2-1: 0.60 or 0.80, or 1 − x̄/L) and block shear (6.13.4,
+    Rp 0.9 for punched holes); at least two bolts, spacing 3d, and the minimum end distance.
+  - Fatigue (6.6.1.2.3) when a force range is given: Δf = ΔP / (U Ag); category B (drilled), D
+    (punched, the default for cross-frames) or E′ (welded single angles, after the full-scale tests);
+    1 or 2 cycles per truck by girder spacing (Table 6.6.1.2.5-2).
+  - A line girder gives the cross-frames no live load force. The Service II force for slip is the
+    deck placement's force divided by 1.5, unless one is entered from a refined analysis.
+  - On a curved bridge the cross-frames are primary members: the connection takes 75% of the member's
+    resistance at least (6.13.1), and ℓ/rz ≤ 120.
+- **Wind on the bottom flange (C4.6.2.7.1).** On the exterior girder (not an interior-only check) at
+  Strength III (with the site's wind speed) and Strength V (80 mph, LL 1.35).
+  - W = η γ PD d / 2 and Mw = W Lb² / 10 give fℓ on tf bf² / 6.
+  - Compression flanges are amplified by Eq. 6.10.1.6-4 where Lb > 1.2 Lp √(Cb Rb / (fbu/Fyc)).
+  - Checks: Mu + fℓ Sxt / 3 (compact positive), fbu + fℓ/3 (6.10.8 and noncompact), Mu + fℓ Sxc / 3
+    (A6), and fℓ ≤ 0.6 Fyf.
+  - B6 is recomputed for each combination with Mn less fℓ Sxc / 3.
+- **B6.6, refined method.**
+  - kθij come from the pier moments' flexibility on the short-term composite section with the deck
+    effective throughout (B6.6.1).
+  - Each pier meeting B6.2 may yield on the curve M/Mn = 0.7 + 60θp to 0.005 rad, then 1.0 to θRL
+    (Eqs. B6.6.2-1, -2); the others stay elastic. Strength uses φf, service the nominal curve.
+  - The descending branch past θRL isn't used: θp > θRL fails.
+  - The redistribution moments are applied as in the simplified method, without the 20% limit.
+  - Example 2A: θp 0.0047 rad against θRL 0.0289; Mrd 776 kip·ft (simplified 677).
+- **Curved girders within 4.6.1.2.4b.** The girder is analyzed straight on its arc spans when
+  Las / R < 0.06 for every span (Las 1.0, 0.9 or 0.8 of the arc span) and the bearing lines are within
+  10° of radial; otherwise the check fails and a refined analysis is needed.
+  - Lateral bending by Eq. C4.6.1.2.4b-1 with N = 10, on both bare flanges during construction and pours
+    (compression flanges amplified), and on the bottom flange at strength (fℓ/3) and Service II (fℓ/2).
+  - Composite sections in positive flexure are noncompact (6.10.6.2.2); A6 and B6 don't apply
+    (6.10.6.2.3, B6.2).
+  - The cross-frames take the V-load approximation's forces: a radial force M ℓ / (R D) at the struts,
+    and bay shears from the girders' torques M ℓ / R by equilibrium, linear in the girders' offsets.
+
+## Phase 5: the grid (refined analysis) and wind during construction
+
+- **Wind during construction (Strength III on the bare steel).** Give the wind speed while the deck is placed.
+  - It applies to the exterior girder, on 1.25 DC1 with the deck wet, which can't yet act as a diaphragm.
+  - The girder's lower half loads the bottom flange; its upper half, with the haunch and the wet deck, loads
+    the top flange.
+  - Each flange: Mw = W Lb² / 10 + W L² / (8 Nb) (Eq. C4.6.2.7.1-3, no wind bracing).
+  - The compression flange's fℓ is amplified; the checks are 6.10.3.2.1-1, -2, 6.10.3.2.2-1 and fℓ ≤ 0.6 Fy.
+  - The cross-frames take W Lb at each brace point.
+- **The grid (Analysis: grid).** A plane grid of every girder, cross-frame and (composite) deck strip.
+  - Three degrees of freedom per node: deflection and rotation about X and Y. Solved by banded Cholesky.
+  - Girders: beam elements in bending and torsion. The torsion uses J raised for warping restrained at the
+    brace points: Jeq = J / [1 − (2/λLb) tanh(λLb/2)], λ = √(GJ/ECw), from Vlasov's theory.
+  - Cross-frames: each frame's truss (single angles at 0.65 A) condensed onto its two girders' deflection
+    and twist, which also gives its members' forces.
+  - Deck: transverse strips (Ec, or Ec/3 at 3n) in bending and torsion.
+  - Curved girders are concentric arcs. Skewed supports sit on the bearing lines, with their cross-frames
+    along them; intermediate cross-frames are normal or radial.
+  - Dead loads go from the deck to the girders by the lever rule: deck, SIP forms, barriers at the deck's
+    edges, the wearing surface over the roadway.
+  - **Live load by adjoint influence surfaces.** One solve per response, Kλ = c.
+    - HL-93: the design truck (14 or 30 ft rear axles) or tandem with the lane, each lane's vehicle placed
+      for the extreme along it. For negative moment, 90% of two trucks with 90% of the lane.
+    - Lanes are 12 ft wide anywhere across the roadway (dynamic programming), wheels 2 ft from the lane's
+      edge, with the multiple presence factors.
+    - The fatigue truck alone: its range at one transverse place.
+  - The girder checked takes the envelope of the interior, exterior or all girders, as chosen. The
+    cross-frames take the grid's Strength I, deck-placement (with the stability bracing's), Service II and
+    fatigue forces, so their connections' fatigue and slip come from the grid.
+  - Curved bridges outside 4.6.1.2.4b are designed this way. fℓ is still from Eq. C4.6.1.2.4b-1, on the
+    grid's moments.
+  - Deflection, camber and bearing reactions stay the line girder's.
+  - Benchmarks (steel-grid.test.ts):
+    - Statics: wL²/8 on every girder, zero cross-frame forces, and the shared moment summing back.
+    - HL-93 on a 100 ft span: two lanes of 1520 × 1.33 + 800 kip·ft exactly; the fatigue truck exactly.
+    - A curved simple span against the rigid cross-section solution, the V-load method's equilibrium
+      (outside girder 1 + 0.104 x n L² / (R Σx²) of the average): within 3%.
+    - Example 2A: DC1 within 3% of the line girder's, the live load 7% below AASHTO's distribution
+      factors, and every check passing.
+  - FHWA's curved Design Example 3 couldn't be reached (ROSAP blocks automated downloads; AISC's link is
+    gone).
+
 ## Plan sheets
 
 The editor and the calc package draw the girder elevation and camber as plan sheets show them (`src/components/design/steel-girder-sheet.tsx`, helpers in `src/lib/design/girders/steel-sheet.ts`, tests in `steel-sheet.test.ts`):
@@ -149,7 +234,8 @@ See `benchmarks.md`.
 
 ## Not yet
 
-- the cross-frames' connections and their fatigue;
-- the wind's lateral bending of the bottom flange at Strength III and V;
-- B6.6, the refined method;
-- curved girders.
+- deflection, camber and bearing reactions by the grid (the line girder's are used);
+- a 3D finite element model (the grid is the 2D refined analysis; NCHRP 725 warns 2D grids can
+  underestimate cross-frame forces in sharply skewed or curved bridges);
+- a benchmark against FHWA's curved Design Example 3 (not reachable from here);
+- the descending branch of the B6.6.2 moment-rotation curve past θRL.

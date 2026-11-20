@@ -12,6 +12,9 @@ import { plates } from "./steel-section";
 // flexure and ductility, negative flexure (local and lateral-torsional buckling), shear, constructibility,
 // Service II, the proportion limits and the live load deflection.
 
+/** A check's unit as the worksheet writes it. */
+const unitTex = (u: string) => ({ kip: "\\mathrm{kip}", ksi: "\\mathrm{ksi}", "kip·ft": "\\mathrm{kip}\\cdot\\mathrm{ft}", in: "\\mathrm{in}", "kip·in/rad": "\\mathrm{kip}\\cdot\\mathrm{in}", "in⁴": "\\mathrm{in}^{4}", "°": "\\mathrm{deg}" })[u] ?? "";
+
 const ok = (demand: string, capacity: string) => `\\operatorname{if}\\left(${demand}\\le ${capacity},\\text{OK},\\text{NG}\\right)=`;
 
 export function steelCalcLines(i: SteelGirderInputs, title: string, result?: SteelGirderResult, figures?: { elevation?: Figure; camber?: Figure }): Line[] {
@@ -31,6 +34,10 @@ export function steelCalcLines(i: SteelGirderInputs, title: string, result?: Ste
   text(
     "Method:- A line girder: DC1 on the steel alone, DC2 and DW on the long-term composite section (3n), the live load on the short-term composite section (n), each with the girder's stiffness along it (6.10.1.5); HL-93 placed by influence lines, with 90% of two trucks and the lane for negative moment and pier reactions (3.6.1.3.1); distribution factors by 4.6.2.2. The effects at the governing sections are given; the resistances are worked out here.",
   );
+  if (r.grid)
+    text(
+      `Refined analysis:- The loads' effects from a grid of the whole bridge (AASHTO 4.6.3.3): ${i.nGirders} girders${i.radius > 0 ? ` on a ${num(i.radius)} ft radius` : ""}${i.skew ? `, supports skewed ${num(i.skew)}°` : ""}, each bending and twisting (the torsion constant raised for warping restrained at the cross-frames), the cross-frames' trusses (single angles at 0.65 of their area, AASHTO C4.6.3.3.4), and the deck as transverse strips in the composite stages; the deck's loads to the girders by the lever rule. HL-93 placed on each response's influence surface, lanes 12 ft wide anywhere across the roadway with the multiple presence factors; the fatigue truck alone. The girder checked takes the envelope of the ${i.girder === "both" ? "girders" : `${i.girder} girders`} (girders ${r.grid.girders.map((j) => j + 1).join(", ")}). The distribution factors below are for information.`,
+    );
   text(COLOR_NOTE, "note");
 
   if (figures?.elevation) {
@@ -59,8 +66,10 @@ export function steelCalcLines(i: SteelGirderInputs, title: string, result?: Ste
   if (pos && sp) {
     text("Positive flexure (AASHTO 6.10.7.1)", "subheading", { newPage: true, keepWithNext: true });
     text(`Section:- ${where(sp)}, section ${sp.seg + 1}.`);
-    given(`M_{u}\\coloneq ${num(sp.Mpos)}\\mathrm{kip}\\cdot\\mathrm{ft}`, "Strength I from the girder line");
     const note = pos.note ?? "";
+    const flP = Number(/fℓ ([\d.]+) ksi/.exec(note)?.[1] ?? 0);
+    const SxtP = Number(/Sxt ([\d.]+) in³/.exec(note)?.[1] ?? 0);
+    given(`M_{u}\\coloneq ${num(pos.demand - (flP * SxtP) / 36)}\\mathrm{kip}\\cdot\\mathrm{ft}`, note.includes("Mrd") ? "Strength I from the girder line, with the redistribution moment (AASHTO B6.4.1.2)" : "Strength I from the girder line");
     const Mp = Number(/Mp ([\d.]+)/.exec(note)?.[1] ?? 0);
     const dpdt = Number(/Dp\/Dt ([\d.]+)/.exec(note)?.[1] ?? 0);
     given(`M_{p}\\coloneq ${num(Mp)}\\mathrm{kip}\\cdot\\mathrm{ft}`, "Plastic moment, AASHTO D6.1");
@@ -70,7 +79,11 @@ export function steelCalcLines(i: SteelGirderInputs, title: string, result?: Ste
       given(`M_{n}\\coloneq ${num(pos.capacity)}\\mathrm{kip}\\cdot\\mathrm{ft}`, "Limited to 1.3RhMy in a continuous span, AASHTO Eq. 6.10.7.1.2-3");
     } else m("M_{n}\\coloneq M_{n1}=", undefined, "kip*ft");
     m("\\phi_f\\coloneq1.0", "AASHTO 6.5.4.2");
-    m(ok("M_{u}", "\\phi_f\\cdot M_{n}"), "AASHTO Eq. 6.10.7.1.1-1");
+    if (flP > 0) {
+      given(`f_{lp}\\coloneq ${num(flP)}\\mathrm{ksi}`, "The bottom flange's lateral bending (curvature), AASHTO 6.10.1.6");
+      given(`S_{xt}\\coloneq ${num(SxtP)}\\mathrm{in}^{3}`, "Myt / Fyt, the bottom flange");
+      m(ok("M_{u}+\\frac{f_{lp}\\cdot S_{xt}}{3}", "\\phi_f\\cdot M_{n}"), "AASHTO Eq. 6.10.7.1.1-1");
+    } else m(ok("M_{u}", "\\phi_f\\cdot M_{n}"), "AASHTO Eq. 6.10.7.1.1-1");
   }
   const duc = check("ductility");
   if (duc) {
@@ -90,7 +103,10 @@ export function steelCalcLines(i: SteelGirderInputs, title: string, result?: Ste
     const Rb = Number(/Rb ([\d.]+)/.exec(note)?.[1] ?? 1);
     text("Negative flexure (AASHTO 6.10.8)", "subheading", { newPage: true, keepWithNext: true });
     text(`Section:- ${where(sn)}, section ${sn.seg + 1}: the bottom flange in compression, braced at the cross-frames; the top flange braced by the deck.`);
-    given(`f_{bu}\\coloneq ${num(neg.demand)}\\mathrm{ksi}`, "Strength I, DC1 on the steel, the rest on the steel and the deck's bars, AASHTO 6.10.1.1.1c");
+    if (!(pos && sp)) m("\\phi_f\\coloneq1.0", "AASHTO 6.5.4.2");
+    const flN = Number(/fℓ ([\d.]+) ksi/.exec(note)?.[1] ?? 0);
+    given(`f_{bu}\\coloneq ${num(neg.demand - flN / 3)}\\mathrm{ksi}`, "Strength I, DC1 on the steel, the rest on the steel and the deck's bars, AASHTO 6.10.1.1.1c");
+    if (flN > 0) given(`f_{ln}\\coloneq ${num(flN)}\\mathrm{ksi}`, `The bottom flange's lateral bending (curvature)${note.includes("amplified") ? ", amplified by Eq. 6.10.1.6-4" : ""}, AASHTO 6.10.1.6`);
     m(`b_{fc}\\coloneq ${num(p.bottom.b)}\\mathrm{in}`);
     m(`t_{fc}\\coloneq ${num(p.bottom.t)}\\mathrm{in}`);
     m(`D\\coloneq ${num(p.D)}\\mathrm{in}`);
@@ -119,7 +135,7 @@ export function steelCalcLines(i: SteelGirderInputs, title: string, result?: Ste
       "ksi",
     );
     m("F_{nc}\\coloneq\\min\\left(F_{FLB},F_{LTB}\\right)=", "AASHTO 6.10.8.2.1", "ksi");
-    m(ok("f_{bu}", "\\phi_f\\cdot F_{nc}"), "AASHTO Eq. 6.10.8.1.1-1");
+    m(ok(flN > 0 ? "f_{bu}+\\frac{f_{ln}}{3}" : "f_{bu}", "\\phi_f\\cdot F_{nc}"), "AASHTO Eq. 6.10.8.1.1-1");
     const t = check("flex-neg-t");
     if (t) {
       given(`f_{bt}\\coloneq ${num(t.demand)}\\mathrm{ksi}`, "The top flange, in tension");
@@ -158,18 +174,27 @@ export function steelCalcLines(i: SteelGirderInputs, title: string, result?: Ste
   }
 
   // --- Constructibility, Service II, deflection: the governing values and their limits ---
-  const flat = (ids: [string, string, string][], heading: string, prefix: string) => {
+  const flat = (ids: [string, string, string][], heading: string, prefix: string, newPage = heading.startsWith("Constructibility")) => {
     const rows = ids.map(([id, name, ref]) => ({ c: check(id), name, ref })).filter((x) => x.c);
     if (!rows.length) return;
-    text(heading, "subheading", { newPage: heading.startsWith("Constructibility"), keepWithNext: true });
+    text(heading, "subheading", { newPage, keepWithNext: true });
     rows.forEach(({ c, name, ref }, k) => {
       const tag = `${prefix}${k + 1}`;
-      text(`${name}:- ${c!.name.replace(/^[^:]+: /, "")}.`, undefined, { keepWithNext: true });
-      given(`f_{${tag}}\\coloneq ${num(c!.demand)}\\mathrm{${c!.unit === "kip" ? "kip" : "ksi"}}`, "From the girder line");
-      given(`F_{${tag}}\\coloneq ${num(c!.capacity)}\\mathrm{${c!.unit === "kip" ? "kip" : "ksi"}}`, "The limit, worked out as for the strength checks");
+      text(`${name}:- ${c!.name.replace(/^[^:]+: /, "")}${c!.note ? ` (${c!.note})` : ""}.`, undefined, { keepWithNext: true });
+      given(`f_{${tag}}\\coloneq ${num(c!.demand, 3)}${unitTex(c!.unit)}`, "From the girder line");
+      given(`F_{${tag}}\\coloneq ${num(c!.capacity, 3)}${unitTex(c!.unit)}`, "The limit, worked out as for the strength checks");
       m(ok(`f_{${tag}}`, `F_{${tag}}`), ref);
     });
   };
+  flat(
+    [
+      ["flex-pos-c", "Compression flange", "AASHTO Eq. 6.10.7.2.1-1"],
+      ["flex-pos-t", "Tension flange, fbu + fℓ/3", "AASHTO Eq. 6.10.7.2.1-2"],
+    ],
+    `Positive flexure, noncompact section${r.curved ? " (a curved girder's, AASHTO 6.10.6.2.2)" : ""} (AASHTO 6.10.7.2)`,
+    "n",
+    true,
+  );
   flat(
     [
       ["con-yield", "Compression flange, yielding", "AASHTO Eq. 6.10.3.2.1-1"],
@@ -177,9 +202,32 @@ export function steelCalcLines(i: SteelGirderInputs, title: string, result?: Ste
       ["con-web", "Web bend-buckling", "AASHTO Eq. 6.10.3.2.1-3"],
       ["con-tension", "Tension flange", "AASHTO Eq. 6.10.3.2.2-1"],
       ["con-shear", "Shear", "AASHTO Eq. 6.10.3.3-1"],
+      ["con-fl", "Flange lateral bending", "AASHTO Eq. 6.10.1.6-1"],
     ],
     "Constructibility: the deck placed on the steel (AASHTO 6.10.3)",
     "c",
+  );
+  if (r.windConstruction) {
+    const wc = r.windConstruction;
+    text("Wind during construction (AASHTO 3.4.2.1, C4.6.2.7.1)", "subheading", { keepWithNext: true });
+    text(
+      `Method:- Strength III on the bare steel at ${num(i.wind.construction)} mph (PZ ${num(wc.PZ, 4)} ksf): 1.25 DC1 with the deck wet, which can't yet carry the wind as a diaphragm. The fascia girder's lower half loads its bottom flange, its upper half with the haunch and the wet deck its top flange; each flange bends between the cross-frames and, with no wind bracing, with all the girders' flanges over the span: Mw = W Lb² / 10 + W L² / (8 Nb) (AASHTO Eq. C4.6.2.7.1-3).`,
+      undefined,
+      { keepWithNext: true },
+    );
+    given(`W_{ct}\\coloneq ${num(wc.Wtop, 4)}\\mathrm{klf}`, "On the top flange");
+    given(`W_{cb}\\coloneq ${num(wc.Wbot, 4)}\\mathrm{klf}`, "On the bottom flange");
+  }
+  flat(
+    [
+      ["cw-yield", "Compression flange, yielding", "AASHTO Eq. 6.10.3.2.1-1"],
+      ["cw-fnc", "Compression flange, buckling", "AASHTO Eq. 6.10.3.2.1-2"],
+      ["cw-tension", "Tension flange", "AASHTO Eq. 6.10.3.2.2-1"],
+      ["cw-fl", "Flange lateral bending", "AASHTO Eq. 6.10.1.6-1"],
+    ],
+    "Construction wind: the checks",
+    "cw",
+    false,
   );
   flat(
     [
@@ -245,7 +293,34 @@ export function steelCalcLines(i: SteelGirderInputs, title: string, result?: Ste
         m(`M_{nt${t}}\\coloneq R_{pt${t}}\\cdot M_{yt${t}}=`, "AASHTO A6.4", "kip*ft");
         m(`M_{n${t}}\\coloneq\\min\\left(M_{nc${t}},M_{nt${t}}\\right)=`, "AASHTO B6.5", "kip*ft");
       } else given(`M_{n${t}}\\coloneq ${num(q.Mn / 12)}\\mathrm{kip}\\cdot\\mathrm{ft}`, "The smaller of Fnc Sxc and Fnt Sxt by 6.10.8, AASHTO B6.5");
-      if (i.redistribution && r.b6.active) {
+      if (i.redistribution && r.b6.active && r.b6.refined && q.qualifies) {
+        // B6.6: the continuity relation and the moment-rotation curve meet at the pier's plastic rotation.
+        m(`b_{fc${t}}\\coloneq ${num(q.bfc)}\\mathrm{in}`);
+        m(`t_{fc${t}}\\coloneq ${num(q.tfc, 3)}\\mathrm{in}`);
+        m(`D_{w${t}}\\coloneq ${num(q.D)}\\mathrm{in}`);
+        m(
+          `\\theta_{RL${t}}\\coloneq ${q.enhanced ? "0.137" : "0.128"}-0.143\\cdot\\frac{b_{fc${t}}}{t_{fc${t}}}\\cdot\\sqrt{\\frac{F_{yf}}{E_s}}-0.0216\\cdot\\frac{D_{w${t}}}{b_{fc${t}}}+0.0241\\cdot\\frac{b_{fc${t}}}{t_{fc${t}}}\\cdot\\sqrt{\\frac{F_{yf}}{E_s}}\\cdot\\frac{D_{w${t}}}{b_{fc${t}}}=`,
+          q.enhanced ? "Enhanced moment-rotation, AASHTO Eq. B6.6.2-1" : "AASHTO Eq. B6.6.2-2",
+        );
+        given(`k_{\\theta${t}}\\coloneq ${num(q.ktheta)}\\mathrm{kip}\\cdot\\mathrm{in}`, "Moment at the pier from a unit plastic rotation there, per radian: the short-term composite section with the deck effective throughout, AASHTO B6.6.1");
+        given(`\\theta_{p${t}}\\coloneq ${num(q.byCombo.I.theta, 5)}`, "Plastic rotation, rad: continuity and the moment-rotation curve solved together at every pier, AASHTO B6.6.1");
+        if (r.b6.piers.length === 1) m(`M_{c${t}}\\coloneq M_{e${t}}-k_{\\theta${t}}\\cdot\\theta_{p${t}}=`, "Continuity, the total moment at the pier", "kip*ft");
+        else given(`M_{c${t}}\\coloneq ${num(q.byCombo.I.M)}\\mathrm{kip}\\cdot\\mathrm{ft}`, "Continuity, with the other piers' plastic rotations");
+        m(`M_{m${t}}\\coloneq\\phi_f\\cdot M_{n${t}}\\cdot\\min\\left(0.7+60\\cdot\\theta_{p${t}},1\\right)=`, "The nominal moment-rotation curve to θRL, AASHTO Fig. B6.6.2-1", "kip*ft");
+        m(`M_{rd${t}}\\coloneq M_{e${t}}-M_{c${t}}=`, "AASHTO B6.6.1", "kip*ft");
+        m(ok(`\\theta_{p${t}}`, `\\theta_{RL${t}}`), "AASHTO B6.6.2");
+        text(`Redistribution (refined):- The moment ${num(q.Mrd)} kip·ft at the pier, straight lines to zero at the abutments (AASHTO B6.4.2.2), is added to the elastic moments elsewhere; flexure within the unbraced lengths next to the pier isn't checked (B6.4.1.1). At Service II on the nominal curve: θp ${num(q.thetaSvc, 5)} rad, Mrd ${num(q.MrdSvc)} kip·ft (Me ${num(Math.abs(q.MeSvc))} kip·ft).`);
+        const svc = r.checks.find((x) => x.id === `b6r-svc-${q.pier}`);
+        if (svc) {
+          given(`\\theta_{ps${t}}\\coloneq ${num(q.thetaSvc, 5)}`, "Service II plastic rotation, rad");
+          m(ok(`\\theta_{ps${t}}`, `\\theta_{RL${t}}`), "AASHTO B6.6.2");
+        }
+        for (const c of r.combos.filter((x) => x !== "I")) {
+          const b = q.byCombo[c];
+          given(`\\theta_{p${c}${t}}\\coloneq ${num(b.theta, 5)}`, `Strength ${c} plastic rotation, rad (Mn less fℓ Sxc / 3, fℓ ${num(b.fl, 3)} ksi)`);
+          m(ok(`\\theta_{p${c}${t}}`, `\\theta_{RL${t}}`), "AASHTO B6.6.2");
+        }
+      } else if (i.redistribution && r.b6.active && !r.b6.refined) {
         m(`b_{fc${t}}\\coloneq ${num(q.bfc)}\\mathrm{in}`);
         m(`t_{fc${t}}\\coloneq ${num(q.tfc, 3)}\\mathrm{in}`);
         m(`D_{w${t}}\\coloneq ${num(q.D)}\\mathrm{in}`);
@@ -257,6 +332,13 @@ export function steelCalcLines(i: SteelGirderInputs, title: string, result?: Ste
         );
         m(`M_{rd${t}}\\coloneq\\max\\left(M_{e${t}}-\\phi_f\\cdot M_{pe${t}},0\\mathrm{kip}\\cdot\\mathrm{ft}\\right)=`, "AASHTO Eq. B6.4.2.1-1 (no flange lateral bending)", "kip*ft");
         m(ok(`M_{rd${t}}`, `0.2\\cdot M_{e${t}}`), "AASHTO Eq. B6.4.2.1-3");
+        for (const c of r.combos.filter((x) => x !== "I")) {
+          const b = q.byCombo[c];
+          given(`M_{e${c}${t}}\\coloneq ${num(Math.abs(b.Me))}\\mathrm{kip}\\cdot\\mathrm{ft}`, `Strength ${c} elastic moment at the pier`);
+          given(`M_{pe${c}${t}}\\coloneq ${num(b.Mpe / 12)}\\mathrm{kip}\\cdot\\mathrm{ft}`, `Mpe with Mn less fℓ Sxc / 3 (fℓ ${num(b.fl, 3)} ksi, the wind), AASHTO B6.5`);
+          m(`M_{rd${c}${t}}\\coloneq\\max\\left(M_{e${c}${t}}-\\phi_f\\cdot M_{pe${c}${t}},0\\mathrm{kip}\\cdot\\mathrm{ft}\\right)=`, "AASHTO Eq. B6.4.2.1-1", "kip*ft");
+          m(ok(`M_{rd${c}${t}}`, `0.2\\cdot M_{e${c}${t}}`), "AASHTO Eq. B6.4.2.1-3");
+        }
         text(`Redistribution:- The moment ${num(q.Mrd)} kip·ft at the pier, straight lines to zero at the abutments (AASHTO B6.4.2.2), is added to the elastic moments elsewhere; flexure within the unbraced lengths next to the pier isn't checked (B6.4.1.1). At Service II the redistribution moment is ${num(q.MrdSvc)} kip·ft (Me ${num(Math.abs(q.MeSvc))}, Mpe ${num(q.Mpe.service / 12)} kip·ft, B6.3.3.1).`);
       }
     }
@@ -298,7 +380,7 @@ export function steelCalcLines(i: SteelGirderInputs, title: string, result?: Ste
     m(ok("\\beta_{Treq}", "\\beta_{Tact}"), "AASHTO Eq. 6.7.4.2.2-1");
     text(`Members:- The brace moment Mbr ${num(c.Mbr, 2)} kip·in (AASHTO Eq. 6.7.4.2.2-${c.full ? "14" : "15"}) as a couple at the struts and a shear across the bay; the wind on the fascia girder's bottom half, W = PD d/2 (AASHTO C4.6.2.7.1-1), ${cfr.winds.map((w) => `${w.combination} ${num(w.W, 3)} klf`).join(", ")}, ${num(cfr.Fwind, 2)} kip at a cross-frame.`, undefined, { keepWithNext: true });
     for (const [mb, label, P] of [[cfr.strut, "st", cfr.strutForce], [cfr.diag, "dg", cfr.diagForce]] as const) {
-      given(`P_{u${label}}\\coloneq ${num(P, 3)}\\mathrm{kip}`, label === "st" ? "Strut: the larger of the stability and wind forces" : "Diagonal: the stability bracing force");
+      given(`P_{u${label}}\\coloneq ${num(P, 3)}\\mathrm{kip}`, r.grid ? (label === "st" ? "Strut: the larger of the grid's Strength I force, the deck placement's with the stability bracing's, and the wind's" : "Diagonal: the larger of the grid's Strength I force and the deck placement's with the stability bracing's") : label === "st" ? `Strut: the larger of the stability and wind forces${cfr.curve ? ", with the curvature's radial force" : ""}` : `Diagonal: the stability bracing force${cfr.curve ? ", with the curvature's shear" : ""}`);
       m(`\l_{${label}}\\coloneq ${num(mb.l)}\\mathrm{in}`, label === "st" ? "Between its connections" : "Its length");
       m(`r_{x${label}}\\coloneq ${num(mb.rx, 3)}\\mathrm{in}`, `${mb.name}, about the axis parallel to the connected leg`);
       m(`A_{${label}}\\coloneq ${num(mb.A, 3)}\\mathrm{in}^{2}`);
@@ -307,8 +389,156 @@ export function steelCalcLines(i: SteelGirderInputs, title: string, result?: Ste
       m(`P_{o${label}}\\coloneq${num(i.crossFrame.Fy)}\\mathrm{ksi}\\cdot A_{${label}}=`, undefined, "kip");
       m(`P_{n${label}}\\coloneq\\operatorname{if}\\left(\\frac{P_{e${label}}}{P_{o${label}}}\\ge0.44,0.658^{\\frac{P_{o${label}}}{P_{e${label}}}}\\cdot P_{o${label}},0.877\\cdot P_{e${label}}\\right)=`, "AASHTO Eqs. 6.9.4.1.1-1, -2", "kip");
       m(ok(`P_{u${label}}`, `0.95\\cdot P_{n${label}}`), "φc = 0.95, AASHTO 6.9.2.1");
-      m(ok(`\\frac{\l_{${label}}}{${num(mb.rz, 3)}\\mathrm{in}}`, "140"), "ℓ/rz, secondary members, AASHTO 6.9.3");
+      m(ok(`\\frac{\l_{${label}}}{${num(mb.rz, 3)}\\mathrm{in}}`, r.curved ? "120" : "140"), r.curved ? "ℓ/rz, primary members (cross-frames of a curved girder, AASHTO 6.7.4.1), AASHTO 6.9.3" : "ℓ/rz, secondary members, AASHTO 6.9.3");
     }
+    if (cfr.curve) {
+      const cv = cfr.curve;
+      text(
+        `Curvature's forces (V-load approximation):- Each flange's force M/D turns through ℓ/R between cross-frames, a radial force at the struts; the girders' torques M ℓ / R are balanced by vertical shears across the cross-frames, linear in the girders' offsets from the bridge's center. Governing: ${cv.stage}, the cross-frame at ${num(cv.X, 2)} ft.`,
+        undefined,
+        { keepWithNext: true },
+      );
+      given(`M_{cv}\\coloneq ${num(Math.abs(cv.M))}\\mathrm{kip}\\cdot\\mathrm{ft}`, `${cv.stage}, per girder`);
+      m(`l_{cv}\\coloneq ${num(cv.ell)}\\mathrm{ft}`, "The longer bay beside the cross-frame");
+      m(`R_{cv}\\coloneq ${num(i.radius)}\\mathrm{ft}`, "Girder radius");
+      const kcv = Math.max(0, r.segmentStarts.filter((x) => x <= cv.X + 1e-9).length - 1);
+      given(`D_{cv}\\coloneq ${num(plates(i.segments[kcv]).D)}\\mathrm{in}`, "Web depth");
+      m("P_{cv}\\coloneq\\frac{M_{cv}\\cdot l_{cv}}{R_{cv}\\cdot D_{cv}}=", "The radial force at a strut", "kip");
+      given(`V_{cv}\\coloneq ${num(cv.V, 3)}\\mathrm{kip}`, `The largest bay's shear: ${i.nGirders} girders' torques by equilibrium across the cross-section`);
+      m(`F_{cv}\\coloneq\\frac{V_{cv}}{2}\\cdot\\frac{L_{d}}{h_{b}}=`, "Each diagonal's share", "kip");
+    }
+    // --- The members' end connections ---
+    const cons = cfr.connections;
+    if (cons.length) {
+      const cn = i.crossFrame.connection;
+      const g = cons.reduce((b, x) => (Math.max(...x.checks.map((k) => k.demand / Math.max(1e-9, k.capacity))) > Math.max(...b.checks.map((k) => k.demand / Math.max(1e-9, k.capacity))) ? x : b), cons[0]);
+      text("Cross-frame connections (AASHTO 6.13)", "subheading", { newPage: true, keepWithNext: true });
+      text(
+        `Method:- ${cn.kind === "bolted" ? `Each angle bolted through one leg to the connection plate with ${cn.bolts} – ${num(cn.d, 3)} in ${cn.grade} bolts in a line, pretensioned, slip-critical (AASHTO 6.13.2.1.1), holes ${cn.holes} full size` : `Each angle welded along both edges of one leg to the connection plate, 2 × ${num(cn.weld, 3)} in fillets ${num(cn.weldLength)} in long`}. The members' forces either way (the diagonals and the wind reverse)${r.curved ? "; on a curved girder the cross-frames are primary members, so the connections take the larger of the average of the force and the member's resistance, and 75% of the resistance (AASHTO 6.13.1)" : ""}. Worked: the ${g.label}; the other member's checks are listed.`,
+        undefined,
+        { keepWithNext: true },
+      );
+      given(`P_{uc}\\coloneq ${num(g.Pu, 3)}\\mathrm{kip}`, `The ${g.label}'s design force`);
+      m(`F_{uc}\\coloneq ${num(cn.Fu)}\\mathrm{ksi}`, "Tensile strength of the angles and plate, AASHTO Table 6.4.1-1");
+      m(`A_{gc}\\coloneq ${num(g.a.A, 3)}\\mathrm{in}^{2}`, `${g.a.name}`);
+      m(`t_{ac}\\coloneq ${num(g.a.t, 3)}\\mathrm{in}`, "Angle leg");
+      const worked = new Set<number>();
+      const idx = (start: string) => g.checks.findIndex((k) => k.name.startsWith(start));
+      if (cn.kind === "bolted") {
+        m(`d_{b}\\coloneq ${num(cn.d, 3)}\\mathrm{in}`);
+        m(`n_{bt}\\coloneq ${cn.bolts}`, "Bolts in the line");
+        m("A_{bt}\\coloneq\\frac{\\pi\\cdot d_{b}^{2}}{4}=", undefined, "in^2");
+        m(`F_{ub}\\coloneq ${cn.grade === "A490" ? 150 : 120}\\mathrm{ksi}`, `ASTM F3125 Grade ${cn.grade}, AASHTO Table 6.4.3.1.1-1`);
+        m(`R_{ns}\\coloneq${cn.threads === "excluded" ? "0.56" : "0.45"}\\cdot A_{bt}\\cdot F_{ub}=`, `One shear plane, threads ${cn.threads}, AASHTO Eq. 6.13.2.7-${cn.threads === "excluded" ? "1" : "2"}`, "kip");
+        m(ok("P_{uc}", "0.80\\cdot n_{bt}\\cdot R_{ns}"), "φs = 0.80, AASHTO 6.5.4.2");
+        worked.add(idx("bolts in shear"));
+        m(`t_{pc}\\coloneq\\min\\left(t_{ac},${num(cn.plateT, 3)}\\mathrm{in}\\right)=`, "The thinner ply", "in");
+        m(`L_{ce}\\coloneq ${num(cn.edge, 3)}\\mathrm{in}-\\frac{d_{b}+\\frac{1}{16}\\mathrm{in}}{2}=`, "Clear end distance", "in");
+        m(`L_{cs}\\coloneq ${num(cn.spacing, 3)}\\mathrm{in}-\\left(d_{b}+\\frac{1}{16}\\mathrm{in}\\right)=`, "Clear spacing", "in");
+        m(
+          "R_{nb}\\coloneq\\min\\left(1.2\\cdot L_{ce}\\cdot t_{pc}\\cdot F_{uc},2.4\\cdot d_{b}\\cdot t_{pc}\\cdot F_{uc}\\right)+\\left(n_{bt}-1\\right)\\cdot\\min\\left(1.2\\cdot L_{cs}\\cdot t_{pc}\\cdot F_{uc},2.4\\cdot d_{b}\\cdot t_{pc}\\cdot F_{uc}\\right)=",
+          "AASHTO Eqs. 6.13.2.9-1, -2",
+          "kip",
+        );
+        m(ok("P_{uc}", "0.80\\cdot R_{nb}"), "φbb = 0.80, AASHTO 6.5.4.2");
+        worked.add(idx("bearing at the bolt holes"));
+        given(`P_{sc}\\coloneq ${num(g.Ps, 3)}\\mathrm{kip}`, cn.serviceForce > 0 ? "Service II force, as given from a refined analysis" : "Service II: the deck placement's unfactored force (the line girder gives the cross-frames no live load force)");
+        m(`R_{sl}\\coloneq n_{bt}\\cdot ${num({ A: 0.3, B: 0.5, C: 0.3 }[cn.surface], 2)}\\cdot${num(g.Pt)}\\mathrm{kip}=`, `Kh 1.0, Ks for a Class ${cn.surface} surface, Pt, AASHTO Eq. 6.13.2.8-1, Tables 6.13.2.8-1, -3`, "kip");
+        m(ok("P_{sc}", "R_{sl}"), "AASHTO Eq. 6.13.2.2-1");
+        worked.add(idx("slip at Service II"));
+        m("A_{nc}\\coloneq A_{gc}-\\left(d_{b}+\\frac{1}{8}\\mathrm{in}\\right)\\cdot t_{ac}=", "The hole and 1/16 in, AASHTO 6.8.3", "in^2");
+      } else {
+        m(`w_{c}\\coloneq ${num(cn.weld, 3)}\\mathrm{in}`, "Fillet size");
+        m(`L_{w}\\coloneq ${num(cn.weldLength, 3)}\\mathrm{in}`, "Each of the two welds");
+        m("R_{w}\\coloneq2\\cdot0.6\\cdot0.80\\cdot70\\mathrm{ksi}\\cdot0.707\\cdot w_{c}\\cdot L_{w}=", "E70 electrodes, φe2 = 0.80, AASHTO Eq. 6.13.3.2.4b-1", "kip");
+        m(ok("P_{uc}", "R_{w}"), "AASHTO 6.13.3.2.4b");
+        worked.add(idx("fillet welds"));
+        m("A_{nc}\\coloneq A_{gc}=", "No holes", "in^2");
+      }
+      given(`U_{c}\\coloneq ${num(g.U, 3)}`, "Shear lag, the larger of 1 − x̄/L and the single-angle value, AASHTO Table 6.8.2.2-1");
+      const ti = idx(`${g.a.name} in tension`);
+      if (ti >= 0) {
+        m(`P_{rt}\\coloneq\\min\\left(0.95\\cdot${num(i.crossFrame.Fy)}\\mathrm{ksi}\\cdot A_{gc},0.80\\cdot F_{uc}\\cdot A_{nc}\\cdot ${cn.kind === "bolted" && cn.holes === "punched" ? "0.9" : "1.0"}\\cdot U_{c}\\right)=`, "AASHTO Eqs. 6.8.2.1-1, -2", "kip");
+        m(ok("P_{uc}", "P_{rt}"), "The member in tension");
+        worked.add(ti);
+      }
+      const bi = idx("block shear");
+      given(`R_{bs}\\coloneq ${num(g.Rblock, 3)}\\mathrm{kip}`, cn.kind === "bolted" ? "0.80 Rp (0.58 Fu Avn + Fu Atn) ≤ 0.80 Rp (0.58 Fy Avg + Fu Atn): shear along the bolt line to the end, tension to the leg's toe, AASHTO Eq. 6.13.4-1" : "The plate along the two welds and across the leg, AASHTO Eq. 6.13.4-1");
+      m(ok("P_{uc}", "R_{bs}"), "AASHTO 6.13.4");
+      worked.add(bi);
+      if (g.fatigue) {
+        given(`\\Delta_{Pc}\\coloneq ${num(cn.fatigueRange, 3)}\\mathrm{kip}`, "The member's force range under the fatigue truck, from a refined analysis");
+        m("\\Delta_{fc}\\coloneq\\frac{\\Delta_{Pc}}{U_{c}\\cdot A_{gc}}=", "AASHTO 6.6.1.2.3 (slip-critical: on the gross section with shear lag)", "ksi");
+        given(`\\Delta_{Fc}\\coloneq ${num(g.fatigue.Fn, 3)}\\mathrm{ksi}`, `Category ${g.fatigue.cat}, ${g.fatigue.combo}, ${i.S > 20 ? 1 : 2} cycles per truck (transverse members, AASHTO Table 6.6.1.2.5-2)`);
+        m(ok(`${num(g.fatigue.gamma, 2)}\\cdot\\Delta_{fc}`, "\\Delta_{Fc}"), "AASHTO Eq. 6.6.1.2.2-1");
+        worked.add(idx("fatigue"));
+      }
+      const rest = [...cons.filter((x) => x !== g).flatMap((x) => x.checks.map((k) => ({ ...k, label: x.label }))), ...g.checks.filter((_, n) => !worked.has(n)).map((k) => ({ ...k, label: g.label }))];
+      rest.forEach((k, n) => {
+        text(`${k.label[0].toUpperCase()}${k.label.slice(1)}, ${k.name}:-`, undefined, { keepWithNext: true });
+        given(`f_{k${n + 1}}\\coloneq ${num(k.demand, 3)}${unitTex(k.unit === "bolts" ? "" : k.unit)}`, "Demand");
+        given(`F_{k${n + 1}}\\coloneq ${num(k.capacity, 3)}${unitTex(k.unit === "bolts" ? "" : k.unit)}`, "Resistance or limit");
+        m(ok(`f_{k${n + 1}}`, `F_{k${n + 1}}`), k.ref);
+      });
+    }
+  }
+
+  // --- Strength III and V: the wind on the exterior girder's bottom flange; and the curvature's flange bending ---
+  if (r.combos.length > 1 || r.curved) {
+    text(r.combos.length > 1 ? `Flange lateral bending: ${r.combos.length > 1 ? "the wind at Strength III and V" : ""}${r.curved ? " and curvature" : ""} (AASHTO 6.10.1.6)` : "Flange lateral bending: curvature (AASHTO 6.10.1.6)", "subheading", { newPage: true, keepWithNext: true });
+    if (r.combos.length > 1) {
+      const sw = stationOf("s5-fl") ?? stationOf("s3-fl");
+      const p = plates(i.segments[sw ? sw.seg : 0]);
+      const lb = (() => {
+        if (!sw) return r.crossFrames?.LbMax ?? 0;
+        const b = r.braces;
+        let a = 0;
+        while (a + 1 < b.length && b[a + 1] <= sw.X + 1e-9) a++;
+        return Math.max(b[Math.min(a + 1, b.length - 1)] - b[a], a > 0 && Math.abs(b[a] - sw.X) < 1e-6 ? b[a] - b[a - 1] : 0);
+      })();
+      text(`Method:- The wind on the lower half of the fascia girder is carried by its bottom flange to the cross-frames (AASHTO 4.6.2.7.1); Strength III ${r.windW.III > 0 ? `at the site's ${num(i.wind.V)} mph` : "not considered (no design wind speed given)"}, Strength V at 80 mph (AASHTO Table 3.8.1.1.2-1), WS factor 1.0, live load 1.35 at Strength V; the redistribution moments recomputed with Mn less fℓ Sxc / 3.${sw ? ` Worked at ${where(sw)}.` : ""}`, undefined, { keepWithNext: true });
+      for (const c of ["III", "V"] as const) {
+        if (!(r.windW[c] > 0)) continue;
+        given(`W_{${c}}\\coloneq ${num(r.windW[c], 4)}\\mathrm{klf}`, `η γ PD d / 2 with PD ${num((2 * r.windW[c]) / i.eta / (r.crossFrames?.depthFt ?? 1), 4)} ksf (AASHTO 3.8.1.2) on the girder's depth, AASHTO Eq. C4.6.2.7.1-1`);
+        m(`L_{bw${c}}\\coloneq ${num(lb)}\\mathrm{ft}`, "Unbraced length");
+        m(`M_{w${c}}\\coloneq\\frac{W_{${c}}\\cdot L_{bw${c}}^{2}}{10}=`, "AASHTO Eq. C4.6.2.7.1-2", "kip*ft");
+        m(`f_{lw${c}}\\coloneq\\frac{6\\cdot M_{w${c}}}{${num(p.bottom.t, 3)}\\mathrm{in}\\cdot\\left(${num(p.bottom.b, 3)}\\mathrm{in}\\right)^{2}}=`, "On the bottom flange's lateral section modulus tf bf² / 6", "ksi");
+      }
+    }
+    if (r.curved) {
+      const sc = stationOf("flex-pos") ?? stationOf("flex-pos-t");
+      if (sc) {
+        const p = plates(i.segments[sc.seg]);
+        const b = r.braces;
+        let a = 0;
+        while (a + 1 < b.length && b[a + 1] <= sc.X + 1e-9) a++;
+        const ell = b[Math.min(a + 1, b.length - 1)] - b[a];
+        text(`Curvature:- The girder of radius ${num(i.radius)} ft is analyzed straight on its arc spans (AASHTO 4.6.1.2.4b, its limits checked below); the flanges' lateral bending by Eq. C4.6.1.2.4b-1 with N = 10. Worked at ${where(sc)}, Strength I.`, undefined, { keepWithNext: true });
+        given(`M_{lc}\\coloneq ${num(sc.Mpos)}\\mathrm{kip}\\cdot\\mathrm{ft}`, "Strength I major-axis moment");
+        m(`l_{lc}\\coloneq ${num(ell)}\\mathrm{ft}`, "Unbraced length");
+        m(`R_{lc}\\coloneq ${num(i.radius)}\\mathrm{ft}`);
+        m(`D_{lc}\\coloneq ${num(p.D)}\\mathrm{in}`);
+        m("M_{lat}\\coloneq\\frac{M_{lc}\\cdot l_{lc}^{2}}{10\\cdot R_{lc}\\cdot D_{lc}}=", "AASHTO Eq. C4.6.1.2.4b-1", "kip*ft");
+        m(`f_{lc}\\coloneq\\frac{6\\cdot M_{lat}}{${num(p.bottom.t, 3)}\\mathrm{in}\\cdot\\left(${num(p.bottom.b, 3)}\\mathrm{in}\\right)^{2}}=`, "The bottom flange", "ksi");
+      }
+    }
+    const ids: [string, string, string][] = [];
+    if (r.curved) {
+      r.spans.forEach((_, j) => ids.push([`curve-span-${j}`, `Curvature limit, span ${j + 1}`, "AASHTO 4.6.1.2.4b"]));
+      ids.push(["curve-skew", "Curvature, skew of the bearing lines", "AASHTO 4.6.1.2.4b"]);
+      ids.push(["flex-fl", "Strength I, fℓ ≤ 0.6 Fyf", "AASHTO Eq. 6.10.1.6-1"]);
+    }
+    for (const [pre, c] of [["s3", "III"], ["s5", "V"]] as const) {
+      ids.push([`${pre}-pos`, `Strength ${c}, positive flexure, Mu + fℓ Sxt / 3`, "AASHTO Eq. 6.10.7.1.1-1"]);
+      ids.push([`${pre}-pos-c`, `Strength ${c}, positive flexure, compression flange`, "AASHTO Eq. 6.10.7.2.1-1"]);
+      ids.push([`${pre}-pos-t`, `Strength ${c}, positive flexure, tension flange`, "AASHTO Eq. 6.10.7.2.1-2"]);
+      ids.push([`${pre}-neg-c`, `Strength ${c}, negative flexure, bottom flange fbu + fℓ/3`, "AASHTO Eq. 6.10.8.1.1-1"]);
+      ids.push([`${pre}-neg-t`, `Strength ${c}, negative flexure, top flange`, "AASHTO Eq. 6.10.8.1.3-1"]);
+      ids.push([`${pre}-neg-a6c`, `Strength ${c}, Appendix A6, Mu + fℓ Sxc / 3`, "AASHTO Eq. A6.1.1-1"]);
+      ids.push([`${pre}-neg-a6t`, `Strength ${c}, Appendix A6, tension flange`, "AASHTO Eq. A6.1.4-1"]);
+      ids.push([`${pre}-fl`, `Strength ${c}, fℓ ≤ 0.6 Fyf`, "AASHTO Eq. 6.10.1.6-1"]);
+    }
+    flat(ids, "Checks with flange lateral bending", "w", false);
   }
 
   // --- Fatigue: the governing flange detail ---
@@ -499,6 +729,7 @@ export function steelCalcLines(i: SteelGirderInputs, title: string, result?: Ste
     ...checksSummary([
       { title: "Strength I", checks: r.checks.filter((c) => /^(flex|ductility|shear)/.test(c.id)) },
       { title: "Constructibility", checks: r.checks.filter((c) => c.id.startsWith("con-")) },
+      { title: "Wind during construction", checks: r.checks.filter((c) => c.id.startsWith("cw-")) },
       { title: "Service II", checks: r.checks.filter((c) => c.id.startsWith("svc-")) },
       { title: "Proportions", checks: r.checks.filter((c) => c.id.startsWith("prop-") || c.id === "deck-bars") },
       { title: "Live load deflection", checks: r.checks.filter((c) => c.id.startsWith("defl-")) },
@@ -506,10 +737,16 @@ export function steelCalcLines(i: SteelGirderInputs, title: string, result?: Ste
       { title: "Shear connectors", checks: r.checks.filter((c) => c.id.startsWith("stud-")) },
       { title: "Stiffeners and bearings", checks: r.checks.filter((c) => c.id.startsWith("stf-") || c.id.startsWith("brg-")) },
       { title: "Deck placement, pour by pour", checks: r.checks.filter((c) => c.id.startsWith("pour-")) },
-      { title: "Moment redistribution (Appendix B6)", checks: r.checks.filter((c) => c.id.startsWith("b6-")) },
+      { title: "Strength III and V (wind on the bottom flange)", checks: r.checks.filter((c) => /^s[35]-/.test(c.id)) },
+      { title: "Horizontal curvature", checks: r.checks.filter((c) => c.id.startsWith("curve-")) },
+      { title: "Moment redistribution (Appendix B6)", checks: r.checks.filter((c) => c.id.startsWith("b6-") || c.id.startsWith("b6r-")) },
       { title: "Cross-frames", checks: r.checks.filter((c) => c.id.startsWith("cf-")) },
+      { title: "Cross-frame connections", checks: r.checks.filter((c) => c.id.startsWith("cfc-")) },
     ]),
   );
-  text("Not covered:- The cross-frames' connections and their fatigue, the wind's lateral bending of the bottom flange at Strength III and V, and the refined method of Appendix B6.6.", "note");
+  text(
+    r.grid ? "Not covered:- The grid's deflection and camber (the line girder's are given), and the bearings' reactions (the line girder's)." : `Not covered:- The cross-frames' live load forces, which need the grid (refined analysis; their fatigue is checked when a force range is given)${r.windConstruction ? "" : "; the wind during construction (give its speed)"}${r.curved ? "; the V-loads' effect on the girders' vertical moments, which AASHTO 4.6.1.2.4b lets a girder within its limits ignore" : ""}; a curved bridge outside those limits needs the grid.`,
+    "note",
+  );
   return lines;
 }

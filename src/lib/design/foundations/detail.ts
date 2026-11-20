@@ -368,7 +368,11 @@ export function abutmentTakeoff(i: AbutmentInputs): Takeoff {
       const w = Td - 4;
       const h = Hd - 4;
       pre.push({ size: sd.stirrup.bar, count: countAt(Li - 4, sd.stirrup.spacing), shape: { kind: "closed", dims: [roundDown(w), roundDown(h)], hook: 6 }, length: roundDown(2 * (w + h) + 12), use: "End diaphragm, ties", callout: `#${sd.stirrup.bar} ties @ ${ftIn(sd.stirrup.spacing)} (end diaphragm)`, where: "end diaphragm" });
-    } else run({ size: i.backwallBars.bar, count: 2 * countAt(Li - 4, i.backwallBars.spacing), straight: i.backwallH * 12 + 24, use: "Backwall, vertical", callout: `#${i.backwallBars.bar} @ ${ftIn(i.backwallBars.spacing)} each face (backwall)`, cover: 2, spacing: i.backwallBars.spacing });
+    } else {
+      run({ size: i.backwallBars.bar, count: 2 * countAt(Li - 4, i.backwallBars.spacing), straight: i.backwallH * 12 + 24, use: "Backwall, vertical", callout: `#${i.backwallBars.bar} @ ${ftIn(i.backwallBars.spacing)} each face (backwall)`, cover: 2, spacing: i.backwallBars.spacing });
+      const bh = i.backwallHorizBars ?? { bar: 5, spacing: 12 };
+      run({ size: bh.bar, count: countAt(i.backwallH * 12 - 4, bh.spacing), times: 2, straight: Li - 4, use: "Backwall, horizontal", callout: `#${bh.bar} @ ${ftIn(bh.spacing)} each face (backwall, horizontal)`, cover: 2, spacing: bh.spacing });
+    }
     run({ size: i.toeBars.bar, count: countAt(Li - 6, i.toeBars.spacing), straight: B * 12 - 6, use: "Footing, bottom", callout: `#${i.toeBars.bar} @ ${ftIn(i.toeBars.spacing)} (footing, bottom)`, cover: 3, spacing: i.toeBars.spacing });
     run({ size: i.heelBars.bar, count: countAt(Li - 6, i.heelBars.spacing), straight: B * 12 - 6, use: "Footing, top", callout: `#${i.heelBars.bar} @ ${ftIn(i.heelBars.spacing)} (footing, top)`, cover: 2, spacing: i.heelBars.spacing });
     // The stem's other bars, the seat's, and the footing's along the abutment (CDOT's usual #5 @ 12 in where not given).

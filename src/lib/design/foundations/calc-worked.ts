@@ -511,7 +511,23 @@ function seatWorked(w: Writer, i: AbutmentInputs, r: AbutmentResult, s: NonNulla
 
   if (!semi) {
     text("Backwall at the seat", "subheading", { keepWithNext: true });
-    member(w, "bw", "Backwall", { Mu: "\\gamma_{EH}\\cdot K\\cdot\\gamma_{s}\\cdot\\frac{H_{b}^{3}}{6}=", h: i.backwallT * 12, cover: 2, bars: i.backwallBars, exposure: i.exposure });
+    text("Loads per foot: earth pressure at H/3 (AASHTO 3.11.5), the live load surcharge at H/2 (3.11.6.4), and the trucks' rear axles with 2 ft of lane in every lane on its top, with IM and the multiple presence factor (3.6.1.1.2), eccentric to its centerline (as FHWA NHI-04-041 Step 7.9). Strength I governs over V (1.35).", undefined, { keepWithNext: true });
+    m("R_{EHb}\\coloneq0.5\\cdot K\\cdot\\gamma_{s}\\cdot H_{b}^{2}=", "Earth pressure", "kip/ft");
+    m(`h_{eqb}\\coloneq ${num(s.heqBw, 3)}\\mathrm{ft}`, `Table 3.11.6.4-1 for a ${num(i.backwallH)} ft height`);
+    m("R_{LSb}\\coloneq K\\cdot\\gamma_{s}\\cdot h_{eqb}\\cdot H_{b}=", "Live load surcharge", "kip/ft");
+    m(`R_{LLb}\\coloneq ${num(s.RLLbw, 3)}\\frac{\\mathrm{kip}}{\\mathrm{ft}}`, `${Math.max(1, Math.floor(i.lanes ?? 1))} lanes × m × (32 kip × (1 + IM) + 0.64 klf × 2 ft) / ${num(i.length)} ft`);
+    m(`e_{LLb}\\coloneq ${num(s.eLL, 3)}\\mathrm{ft}`, "The axles from the backwall's centerline");
+    member(w, "bw", "Backwall", {
+      Mu: "1.75\\cdot R_{LLb}\\cdot e_{LLb}+\\gamma_{EH}\\cdot R_{EHb}\\cdot\\frac{H_{b}}{3}+1.75\\cdot R_{LSb}\\cdot\\frac{H_{b}}{2}=",
+      Ms: "R_{LLb}\\cdot e_{LLb}+R_{EHb}\\cdot\\frac{H_{b}}{3}+R_{LSb}\\cdot\\frac{H_{b}}{2}=",
+      h: i.backwallT * 12,
+      cover: 2,
+      bars: i.backwallBars,
+      min: true,
+      crack: true,
+      exposure: i.exposure,
+    });
+    m(`V_{ubw}\\coloneq\\gamma_{EH}\\cdot R_{EHb}+1.75\\cdot R_{LSb}=`, "Shear at the seat", "kip/ft");
   }
   const sd = s.semi;
   if (semi && sd) {

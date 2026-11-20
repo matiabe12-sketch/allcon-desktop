@@ -91,6 +91,8 @@ export type AbutmentInputs = {
   semi?: Partial<SemiDiaphragm>;
   stemBars: Bars; // back face, vertical
   backwallBars: Bars;
+  backwallHorizBars?: Bars; // horizontal, each face (5.10.6), CDOT's usual #5 @ 12 in where not given
+  backwallLLecc?: number; // ft, the axles on the backwall's top from its centerline (default half its thickness)
   toeBars: Bars; // footing bottom, across it
   heelBars: Bars; // footing top, across it
   /** Seat and semi-integral: the stem's other bars and the footing's bars along the abutment (all optional, CDOT's usual #5 @ 12 in). */
@@ -340,6 +342,9 @@ export function continuousBeam(L: number, supports: number[], loads: { x: number
   }
   return { xs, M, Mpos: Math.max(0, ...M), Mneg: Math.max(0, ...M.map((v) => -v)), Vmax };
 }
+
+/** AASHTO Table 3.11.6.4-1: the equivalent soil height for vehicular load on an abutment of height H (ft), interpolated. */
+export const heqAbutment = (H: number) => (H <= 5 ? 4 : H <= 10 ? 4 - (H - 5) / 5 : H <= 20 ? 3 - (H - 10) / 10 : 2);
 
 /** AASHTO Table 3.6.1.1.2-1. */
 const presence = (lanes: number) => (lanes <= 1 ? 1.2 : lanes === 2 ? 1.0 : lanes === 3 ? 0.85 : 0.65);
@@ -682,9 +687,34 @@ export function designAbutment(i: AbutmentInputs) {
     add({ id: "stem-crack", name: "Stem: crack control (spacing)", demand: i.stemBars.spacing, capacity: fs.sMax, unit: "in", ref: "AASHTO 5.6.7" });
     const dvS = Math.max(0.9 * fs.de, 0.72 * i.stemT * 12);
     add({ id: "stem-shear", name: "Stem: shear at the footing", demand: Vstem, capacity: 0.9 * 0.0316 * 2 * Math.sqrt(i.fc) * 12 * dvS, unit: "kip/ft", ref: "AASHTO 5.7.3.3" });
-    const Mbw = (gEH.max * K * g * Hb ** 3) / 6;
-    const fb = flexure({ ...common, Mu: Mbw, Ms: Mbw / gEH.max, h: i.backwallT * 12, cover: 2, bars: i.backwallBars });
-    if (i.type !== "semi-integral") add({ id: "backwall", name: "Backwall: flexure at the seat", demand: Mbw, capacity: fb.MR, unit: "kip·ft/ft", ref: "AASHTO 5.6.3.2, 3.11.5" });
+    // The backwall (seat type, BDM 11.3.3), a cantilever from the seat per foot: earth pressure at H/3 (3.11.5), the
+    // live load surcharge at H/2 with heq by its own height (3.11.6.4, Table 3.11.6.4-1), and the trucks' axles in every
+    // lane on its top (with IM and the multiple presence factor, 3.6.1.1.2), eccentric to its centerline (as FHWA
+    // NHI-04-041 Step 7.9); Strength I and V (LL and LS at 1.35), Service I for crack control.
+    const MbwEH = (gEH.max * K * g * Hb ** 3) / 6; // the earth's share, Strength
+    const REHbw = 0.5 * K * g * Hb ** 2;
+    const heqBw = heqAbutment(Hb);
+    const RLSbw = K * g * heqBw * Hb;
+    const lanesBw = Math.max(1, Math.floor(i.lanes ?? 1));
+    const RLLbw = (presence(lanesBw) * lanesBw * (32 * (1 + i.IM) + 0.64 * 2)) / i.length; // kip/ft: a rear axle and 2 ft of lane in each lane
+    const eLL = i.backwallLLecc ?? i.backwallT / 2;
+    const bwMoment = (gLL: number, gEHx: number) => gLL * RLLbw * eLL + gEHx * REHbw * (Hb / 3) + gLL * RLSbw * (Hb / 2);
+    const Mbw = Math.max(bwMoment(1.75, gEH.max), bwMoment(1.35, gEH.max));
+    const MbwS = bwMoment(1.0, 1.0);
+    const Vbw = gEH.max * REHbw + 1.75 * RLSbw;
+    const fb = flexure({ ...common, Mu: Mbw, Ms: MbwS, h: i.backwallT * 12, cover: 2, bars: i.backwallBars });
+    if (i.type !== "semi-integral") {
+      add({ id: "backwall", name: `Backwall: flexure at the seat (earth, LS with heq ${heqBw.toFixed(2)} ft, the axles on its top)`, demand: Mbw, capacity: fb.MR, unit: "kip·ft/ft", ref: "AASHTO 5.6.3.2, 3.11.5, 3.11.6.4" });
+      add({ id: "backwall-min", name: "Backwall: minimum reinforcement", demand: fb.minRequired, capacity: fb.MR, unit: "kip·ft/ft", ref: "AASHTO 5.6.3.3" });
+      add({ id: "backwall-crack", name: "Backwall: crack control (spacing)", demand: i.backwallBars.spacing, capacity: fb.sMax, unit: "in", ref: "AASHTO 5.6.7" });
+      const dvB = Math.max(0.9 * fb.de, 0.72 * i.backwallT * 12);
+      add({ id: "backwall-shear", name: "Backwall: shear at the seat", demand: Vbw, capacity: 0.9 * 0.0316 * 2 * Math.sqrt(i.fc) * 12 * dvB, unit: "kip/ft", ref: "AASHTO 5.7.3.3" });
+      const hb = i.backwallHorizBars ?? { bar: 5, spacing: 12 };
+      const bT = i.backwallT * 12;
+      const hT = Hb * 12;
+      const AsT = Math.min(0.6, Math.max(0.11, (1.3 * bT * hT) / (2 * (bT + hT) * i.fy)));
+      add({ id: "backwall-horiz", name: `Backwall: horizontal bars #${hb.bar} @ ${hb.spacing} in each face, shrinkage and temperature`, demand: AsT, capacity: (BARS[hb.bar].area * 12) / hb.spacing, unit: "in²/ft", ref: "AASHTO 5.10.6" });
+    }
     // The end diaphragm of a semi-integral abutment (BDM 11.3.2, Figure 11-3) rides on the bearings with the
     // superstructure: not a backwall fixed to the seat, but a beam between the girders. Its horizontal bars carry the
     // passive pressure as the bridge expands (3.11.5.4, spanning between girders like an integral diaphragm); for the
@@ -748,7 +778,7 @@ export function designAbutment(i: AbutmentInputs) {
     }
     if (micropiles) {
       micropiles.onRows = footingOnRows(micropiles);
-      return { H, B, K, EH, BR, rows, footing, piles, micropiles, Mstem, Vstem, Mbw, Mtoe: 0, Mheel: 0, items, semi: semiOut };
+      return { H, B, K, EH, BR, rows, footing, piles, micropiles, Mstem, Vstem, Mbw, MbwEH, REHbw, RLSbw, RLLbw, heqBw, eLL, Vbw, Mtoe: 0, Mheel: 0, items, semi: semiOut };
     }
     // The footing (or pile cap) as cantilevers from the stem: the toe under the bearing pressure.
     const r0 = strength[0];
@@ -763,7 +793,7 @@ export function designAbutment(i: AbutmentInputs) {
     const Mheel = 1.35 * g * (Hs + Hb) * i.heel ** 2 / 2 + 1.25 * i.gammaC * i.footT * i.heel ** 2 / 2;
     const fh = flexure({ ...common, Mu: Mheel, Ms: Mheel / 1.3, h: i.footT * 12, cover: 2, bars: i.heelBars });
     add({ id: "heel", name: "Footing heel: flexure at the stem (soil and footing, no pressure under it)", demand: Mheel, capacity: fh.MR, unit: "kip·ft/ft", ref: "AASHTO 5.6.3.2" });
-    return { H, B, K, EH, BR, rows, footing, piles, micropiles, Mstem, Vstem, Mbw, Mtoe, Mheel, items, semi: semiOut };
+    return { H, B, K, EH, BR, rows, footing, piles, micropiles, Mstem, Vstem, Mbw, MbwEH, REHbw, RLSbw, RLLbw, heqBw, eLL, Vbw, Mtoe, Mheel, items, semi: semiOut };
 
     /**
      * The footing across its width as a beam on the rows of micropiles (per foot of abutment): each row's reaction its

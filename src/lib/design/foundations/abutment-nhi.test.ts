@@ -21,8 +21,8 @@ import { ABUTMENT_DEFAULTS, abutmentLiveLoad, designAbutment, type AbutmentInput
 // - the stem's and backwall's flexure section (de, a, φMn) and the service steel stress, by the shared flexure();
 // - the toe's moment from the front row of piles (the same 1.5 ft lever as the example).
 // Real discrepancies the benchmark shows (reported, not changed):
-// 1. No live load surcharge LS (AASHTO 3.11.6.4) on the stem, backwall or footing, and no live load on the
-//    backwall. The example's stem moment is 156.6 kip·ft/ft; the tool's 98.8 (LS is 30.4 of the difference).
+// 1. No live load surcharge LS (AASHTO 3.11.6.4) on the stem or footing. (The backwall has had LS and the axles on
+//    its top since 2026-11-20: compared above, its live load with the multiple presence factor the example omits.) The example's stem moment is 156.6 kip·ft/ft; the tool's 98.8 (LS is 30.4 of the difference).
 //    AASHTO 3.11.6.5 permits a reduction where an approach slab carries the traffic, which may be the intent.
 // 2. The girders' reactions sit on the stem's centerline; the example's bearings are 1.13 ft toward the span,
 //    adding 27.4 kip·ft/ft at the stem's base (Strength I) and moving load toward the front piles.
@@ -113,11 +113,26 @@ describe("Abutment against FHWA NHI-04-041 Design Step 7", () => {
 
   it("backwall and stem earth-pressure effects match the example's Strength III terms (p. 7-30, 7-36)", () => {
     // Backwall: 1.5 × REHbw × 7/3 (the example's Strength III, no live load).
-    near(s.Mbw, 3.08, 0.003);
+    near(s.MbwEH, 3.08, 0.003);
     // Stem: 1.5 × REHstem × 7.33 + 0.5 × Hufall × 15 (the earth and temperature terms of the 156.61 Strength I).
     near(s.Mstem, 1.5 * 8.71 * 7.33 + 0.5 * 0.39 * 15, 0.002);
     // Stem shear: VustemstrIII = 1.5 REHstem + 0.5 Hufall.
     near(s.Vstem, 13.26, 0.001);
+  });
+
+  it("the backwall at Strength I (p. 7-28, 7-29): REHbw 0.88, RLSbw 0.91 (heq 3.6 ft), the axles 1.17 ft off its centerline; MubwstrI 14.38", () => {
+    const i: AbutmentInputs = { ...NHI, backwallLLecc: 1.17 };
+    const t = designAbutment(i).seat!;
+    near(t.REHbw, 0.88, 0.003);
+    near(t.heqBw, 3.6, 1e-9);
+    near(t.RLSbw, 0.91, 0.004);
+    // The example's 2.81 kip/ft = (6 × 16 × 1.33 + 3 × 0.64 × 2) / 46.875 leaves out the multiple presence factor; the
+    // tool applies m = 0.85 for three lanes (AASHTO 3.6.1.1.2).
+    near(t.RLLbw, 0.85 * 2.81, 0.003);
+    // MubwstrI = 1.75 RLL × 1.17 + 1.5 REH × 7/3 + 1.75 RLS × 7/2: the earth and surcharge terms as the example's,
+    // the axles' term × 0.85.
+    near(t.Mbw, 1.75 * 0.85 * 2.81 * 1.17 + 1.5 * 0.882 * (7 / 3) + 1.75 * 0.907 * 3.5, 0.004);
+    near(t.Vbw, 1.5 * 0.882 + 1.75 * 0.907, 0.004); // VubwstrI 2.91
   });
 
   it("Strength I at the footing's base: vertical force and the longitudinal force without LS (p. 7-42, 7-46)", () => {

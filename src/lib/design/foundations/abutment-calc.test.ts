@@ -277,3 +277,17 @@ describe("a semi-integral abutment's end diaphragm (CDOT BDM 11.3.2, Figure 11-3
     });
   }
 });
+
+describe("a seat abutment's backwall (earth, live load surcharge, the axles on its top)", () => {
+  const i = abutmentInputs({ type: "seat", foundation: "footing" });
+  const r = designAbutment(i);
+  it("its worked calc: no errors, the engine's values, every line on the page", () => {
+    const c = workOut("abutment", i);
+    expect(c.errors).toEqual([]);
+    expect(c.wide).toEqual([]);
+    expect(c.ng.length).toBe(r.checks.filter((x) => !x.ok && !x.advisory).length);
+    const get = (id: string) => r.checks.find((x) => x.id === id)!;
+    close(c.value(String.raw`M_{ubw}\coloneq`, "kip*ft/ft"), get("backwall").demand);
+    close(c.value(String.raw`V_{ubw}\coloneq`, "kip/ft"), get("backwall-shear").demand);
+  });
+});

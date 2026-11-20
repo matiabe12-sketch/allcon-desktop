@@ -145,6 +145,18 @@ diaphragm (BDM 11.3.1, Figure 11-1 note 3).
 - **Take-off:** the through bars and the dowels are in the abutment's schedule. The studs are paid with the
   structural steel (509).
 
+Seat abutment's backwall (BDM 11.3.3): a cantilever from the seat, per foot.
+
+- **Loads** (as FHWA NHI-04-041 Step 7.9, to the 10th Edition):
+  - earth pressure at H/3 (3.11.5);
+  - the live load surcharge at H/2, heq from Table 3.11.6.4-1 for the backwall's own height;
+  - a rear axle plus 2 ft of lane in every lane on its top, with IM and the multiple presence factor
+    (3.6.1.1.2), eccentric to its centerline by `backwallLLecc` (default half its thickness).
+- **Checks:** Strength I and V, minimum steel (5.6.3.3), crack control at Service I (5.6.7), shear (5.7.3.3), and
+  the horizontal bars' shrinkage and temperature minimum (5.10.6, `backwallHorizBars`).
+- **Benchmark:** NHI's earth pressure (0.88) and surcharge (0.91 kip/ft) exactly, and its Strength I moment with the
+  axles' term × 0.85. The example leaves out m; its own result is MubwstrI = 14.38 kip·ft/ft.
+
 Semi-integral end diaphragm (`semi`, BDM 11.3.2 Figure 11-3): it rides on the bearings with the superstructure, so
 it's a beam between the girders, not a backwall fixed to the seat. The old cantilever check is dropped for this
 type.

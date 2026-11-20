@@ -281,6 +281,46 @@ Article 6.10, and its details (phase 2).
 - Each part is worked out as math on the quantity sheet. The plan weight is the pay weight unless the design
   changes or it is off by more than 2% (509.32(b)).
 
+## Bolted field splices (steel-splice.ts)
+
+- **Where:** at each change of section, unless it's marked as welded in the shop (`splice.shopWelded`). Saved
+  designs from before keep splices off.
+- **Bolts and holes:**
+  - slip-critical bolts in standard holes (Table 6.13.2.4.2-1: d + 1/16 in, from 1 in d + 1/8 in), whose
+    nominal diameter is the hole's width in the net area (6.8.3);
+  - at least two rows each side (6.13.6.1.3a).
+- **Flanges (6.13.6.1.3b):**
+  - an outer plate as wide as the narrower flange, and two inner plates flush with its edges, 1/2 in or more
+    off the web;
+  - designed for Pfy = Fyf Ae of the thinner flange (Eqs. 6.13.6.1.3b-1, -2);
+  - a filler on the thinner side; at 1/4 in or more, the bolts reduced by R (Eq. 6.13.6.1.4-1).
+- **Rows and plates are sized until they pass:** bolt shear (with the 0.83 factor past 38 in), bearing
+  (6.13.2.9), block shear of the flange and both plates (6.13.4), and the plates' gross yielding and net
+  fracture (6.13.5.2, An ≤ 0.85 Ag). The plates are balanced within 10%, so Pfy splits equally.
+- **Moment:** the flanges' moment resistance against Strength I:
+  - composite positive: the bottom Pfy × the arm to the deck's mid-thickness;
+  - otherwise: the smaller Pfy × the arm between the flanges.
+
+  The rest goes to the web as Hw, at the deck's arm or D/4.
+- **Web (6.13.6.1.3c):**
+  - two plates, D − 2 × (the inner plate + 2.5 in) deep;
+  - bolts for √(Vr² + Hw²), where Vr is the smaller φv Vn either side;
+  - bearing at the web holes by the clear edge distance (C6.13.6.1.3c);
+  - slip under the Service II or deck-casting shear, with Hw for slip;
+  - the plates in shear (6.13.5.3) and, with Hw, in tension;
+  - the vertical pitch within the sealing limit (6.13.2.6.2).
+- **Slip:** at Service II and while the deck is cast (1.4 DC on the steel, or the pour envelope).
+- **Also checked:** the tension flange's net section (Eq. 6.10.1.8-1), and the base metal at the gross section
+  for Category B fatigue.
+- **Benchmark:** Caltrans BDP 6.2 (2022), its splice at 0.7 of span 2, with its plates (steel-splice.test.ts):
+  - An, Ae, Pfy (1,365 and 780 kip), the filler factors (0.889, 0.667) and the bolts needed (23.8, 18.1);
+  - the plates' gross, net and block-shear resistances.
+
+  Its web splice follows Caltrans's own amendments (a plastic web moment and bolt-group eccentricity), which
+  AASHTO 10th doesn't use, so it isn't compared.
+- **Drawing:** the plan sheets and the calc package show each splice in elevation (flange and web bolts, fillers
+  shaded) and both flange splices in plan. The take-off adds the splice plates, fillers and bolts.
+
 ## AASHTO 10th Edition load factors (checked 2026-11-20)
 
 - **Construction (3.4.2.1):** the larger of:

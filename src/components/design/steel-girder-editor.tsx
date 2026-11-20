@@ -12,7 +12,7 @@ import { DesignError } from "@/lib/design/walls/cip";
 import { TakeoffPanel } from "./takeoff-panel";
 import { ChecksBanner, ChecksTable, Choice, DesignErrorCard, DesignHeader, Field, fmt, KeyValues, Section, Toggle } from "./design-kit";
 import { SteelGirderSketch } from "./steel-girder-sketch";
-import { SteelCamberDiagram, SteelCamberTable, SteelCrossFrameDetail, SteelGirderElevationSheet, SteelPlateSchedule } from "./steel-girder-sheet";
+import { SteelCamberDiagram, SteelCamberTable, SteelCrossFrameDetail, SteelGirderElevationSheet, SteelPlateSchedule, SteelSpliceDetail } from "./steel-girder-sheet";
 
 // Checking a steel I-girder line: the spans, deck and girder's sections along it on the left, the
 // envelopes, checks and properties on the right, worked out as the inputs change and saved as you go.
@@ -38,6 +38,8 @@ const groupOf = (id: string) =>
                     ? "Moment redistribution (Appendix B6)"
                     : id.startsWith("cw")
                     ? "Wind during construction"
+                    : id.startsWith("splice")
+                    ? "Field splices"
                     : id.startsWith("cfc")
                       ? "Cross-frame connections"
                       : id.startsWith("cf")
@@ -89,6 +91,8 @@ export function SteelGirderEditor({ design, projects }: { design: { id: string; 
   const setWind = <K extends keyof SteelGirderInputs["wind"]>(key: K) => (v: SteelGirderInputs["wind"][K]) => setInputs((s) => ({ ...s, wind: { ...s.wind, [key]: v } }));
   const setCn = <K extends keyof CfConnection>(key: K) => (v: CfConnection[K]) => setInputs((s) => ({ ...s, crossFrame: { ...s.crossFrame, connection: { ...s.crossFrame.connection, [key]: v } } }));
   const cn = inputs.crossFrame.connection;
+  const setSp = <K extends keyof SteelGirderInputs["splice"]>(key: K) => (v: SteelGirderInputs["splice"][K]) => setInputs((s) => ({ ...s, splice: { ...s.splice, [key]: v } }));
+  const sp = inputs.splice;
   const [spansText, setSpansText] = useState(inputs.spans.join(", "));
   const [bracesText, setBracesText] = useState(inputs.braces.join(", "));
   const angles = L_SHAPE_NAMES.map((n) => ({ value: n, label: n }));
@@ -388,6 +392,64 @@ export function SteelGirderEditor({ design, projects }: { design: { id: string; 
               )}
             </Section>
 
+            <Section title="Field splices">
+              <Toggle label="Design bolted field splices at the section changes (6.13.6.1.3)" value={sp.check} onChange={setSp("check")} />
+              {sp.check && (
+                <>
+                  {(outcome.result?.segmentStarts.slice(1) ?? []).map((X) => {
+                    const shop = sp.shopWelded.some((w) => Math.abs(w - X) < 0.05);
+                    return <Toggle key={X} label={`At ${fmt(X, 1)} ft: bolted field splice`} value={!shop} onChange={(v) => setSp("shopWelded")(v ? sp.shopWelded.filter((w) => Math.abs(w - X) >= 0.05) : [...sp.shopWelded, X])} />;
+                  })}
+                  <Choice label="Bolt diameter" value={sp.d} options={BOLT_DIAMETERS.map((d) => ({ value: d, label: `${d} in` }))} onChange={setSp("d")} />
+                  <Choice
+                    label="Grade (ASTM F3125)"
+                    value={sp.grade}
+                    options={[
+                      { value: "A325", label: "A325" },
+                      { value: "A490", label: "A490" },
+                    ]}
+                    onChange={setSp("grade")}
+                  />
+                  <Choice
+                    label="Threads, flange splices"
+                    value={sp.threadsFlange}
+                    options={[
+                      { value: "excluded", label: "Excluded" },
+                      { value: "included", label: "In the shear planes" },
+                    ]}
+                    onChange={setSp("threadsFlange")}
+                  />
+                  <Choice
+                    label="Threads, web splice"
+                    value={sp.threadsWeb}
+                    options={[
+                      { value: "included", label: "In the shear planes" },
+                      { value: "excluded", label: "Excluded" },
+                    ]}
+                    onChange={setSp("threadsWeb")}
+                  />
+                  <Choice
+                    label="Faying surfaces (Table 6.13.2.8-3)"
+                    value={sp.surface}
+                    options={[
+                      { value: "A", label: "Class A" },
+                      { value: "B", label: "Class B" },
+                      { value: "C", label: "Class C" },
+                    ]}
+                    onChange={setSp("surface")}
+                  />
+                  <Field label="Bolt pitch along the girder" unit="in" value={sp.pitch} onChange={setSp("pitch")} step={0.25} />
+                  <Field label="Flange bolt gage" unit="in" value={sp.gage} onChange={setSp("gage")} step={0.25} hint="Between the lines each side of the web; at least 3d" />
+                  <Field label="Edge distance on the plates" unit="in" value={sp.edge} onChange={setSp("edge")} step={0.125} />
+                  <Field label="Girder end to the first bolt" unit="in" value={sp.endGirder} onChange={setSp("endGirder")} step={0.125} />
+                  <Field label="Gap between the girders" unit="in" value={sp.gap} onChange={setSp("gap")} step={0.125} />
+                  <Field label="Splice plates Fy" unit="ksi" value={sp.Fy} onChange={setSp("Fy")} />
+                  <Field label="Splice plates Fu" unit="ksi" value={sp.Fu} onChange={setSp("Fu")} />
+                  <p className="pt-1 text-[11px] text-muted-foreground">The plates and rows are designed: flanges for the smaller flange&apos;s design yield resistance, the web for its shear resistance (and any moment the flanges can&apos;t carry), slip at Service II and the deck&apos;s casting. Turn a change off where it&apos;s welded in the shop.</p>
+                </>
+              )}
+            </Section>
+
             <Section title="Shear connectors and fatigue">
               <Toggle label="Shear connectors along the whole girder" value={inputs.studsThroughout} onChange={set("studsThroughout")} />
               <Toggle label="Check the shear connectors (6.10.10)" value={inputs.studs.check} onChange={setStud("check")} />
@@ -568,6 +630,23 @@ export function SteelGirderEditor({ design, projects }: { design: { id: string; 
                     </CardContent>
                   </Card>
                 )}
+                {r.splices.map((s) => (
+                  <Card key={s.X}>
+                    <CardContent className="space-y-2 py-3">
+                      <div className="text-sm font-medium">
+                        Field splice at {fmt(s.X, 1)} ft <span className="font-normal text-muted-foreground">· sections {s.left + 1} to {s.right + 1}, bolted, slip-critical</span>
+                      </div>
+                      <div className="overflow-x-auto">
+                        <div className="min-w-[640px]">
+                          <SteelSpliceDetail inputs={inputs} splice={s} />
+                        </div>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground">
+                        Strength I {fmt(s.forces.MuPos, 0)} / {fmt(s.forces.MuNeg, 0)} kip·ft against the flanges&apos; {fmt(s.Mflange.pos, 0)} / {fmt(s.Mflange.neg, 0)}; Service II {fmt(s.forces.MsPos, 0)} / {fmt(s.forces.MsNeg, 0)} and the deck&apos;s casting {fmt(s.forces.Mdeck, 0)} against the flange bolts&apos; slip {fmt(s.Mslip.pos, 0)} / {fmt(s.Mslip.neg, 0)}; web shear resistance Vr {fmt(s.forces.Vr, 0)} kip.
+                      </p>
+                    </CardContent>
+                  </Card>
+                ))}
                 {r.b6.piers.length > 0 && (inputs.appendixA6 || inputs.redistribution) && (
                   <KeyValues
                     title={`Pier sections (Appendices A6${inputs.redistribution ? ", B6" : ""}): kip·ft`}

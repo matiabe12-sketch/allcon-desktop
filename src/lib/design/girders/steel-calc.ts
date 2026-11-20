@@ -5,6 +5,7 @@ import { checksSummary } from "../checks-summary";
 import { designSteelGirder, hybridRh, type SteelGirderInputs, type SteelGirderResult } from "./steel";
 import { FATIGUE_CATEGORIES, fatigueResistance, studResistance } from "./steel-details";
 import { plates } from "./steel-section";
+import { fuOf } from "./steel-splice";
 
 // A steel girder check as a Calcs worksheet: the bridge, the girder's sections and the loads; the girder
 // line's governing effects as given values (from the analysis with the girder's own stiffness and HL-93 by
@@ -17,7 +18,7 @@ const unitTex = (u: string) => ({ kip: "\\mathrm{kip}", ksi: "\\mathrm{ksi}", "k
 
 const ok = (demand: string, capacity: string) => `\\operatorname{if}\\left(${demand}\\le ${capacity},\\text{OK},\\text{NG}\\right)=`;
 
-export function steelCalcLines(i: SteelGirderInputs, title: string, result?: SteelGirderResult, figures?: { elevation?: Figure; camber?: Figure; screed?: Figure; crossFrame?: Figure }): Line[] {
+export function steelCalcLines(i: SteelGirderInputs, title: string, result?: SteelGirderResult, figures?: { elevation?: Figure; camber?: Figure; screed?: Figure; crossFrame?: Figure; splices?: Figure[] }): Line[] {
   const r = result ?? designSteelGirder(i);
   const lines: Line[] = [];
   const text = (t: string, style?: "heading" | "subheading" | "note", extra?: { newPage?: boolean; keepWithNext?: boolean }) => lines.push({ text: t, ...(style ? { style } : {}), ...(extra ?? {}) });
@@ -610,8 +611,9 @@ export function steelCalcLines(i: SteelGirderInputs, title: string, result?: Ste
         m(ok("P_{uc}", "0.80\\cdot n_{bt}\\cdot R_{ns}"), "φs = 0.80, AASHTO 6.5.4.2");
         worked.add(idx("bolts in shear"));
         m(`t_{pc}\\coloneq\\min\\left(t_{ac},${num(cn.plateT, 3)}\\mathrm{in}\\right)=`, "The thinner ply", "in");
-        m(`L_{ce}\\coloneq ${num(cn.edge, 3)}\\mathrm{in}-\\frac{d_{b}+\\frac{1}{16}\\mathrm{in}}{2}=`, "Clear end distance", "in");
-        m(`L_{cs}\\coloneq ${num(cn.spacing, 3)}\\mathrm{in}-\\left(d_{b}+\\frac{1}{16}\\mathrm{in}\\right)=`, "Clear spacing", "in");
+        m(`d_{hc}\\coloneq ${num(cn.d + (cn.d >= 1 ? 0.125 : 0.0625), 4)}\\mathrm{in}`, "Standard hole, AASHTO Table 6.13.2.4.2-1");
+        m(`L_{ce}\\coloneq ${num(cn.edge, 3)}\\mathrm{in}-\\frac{d_{hc}}{2}=`, "Clear end distance", "in");
+        m(`L_{cs}\\coloneq ${num(cn.spacing, 3)}\\mathrm{in}-d_{hc}=`, "Clear spacing", "in");
         m(
           "R_{nb}\\coloneq\\min\\left(1.2\\cdot L_{ce}\\cdot t_{pc}\\cdot F_{uc},2.4\\cdot d_{b}\\cdot t_{pc}\\cdot F_{uc}\\right)+\\left(n_{bt}-1\\right)\\cdot\\min\\left(1.2\\cdot L_{cs}\\cdot t_{pc}\\cdot F_{uc},2.4\\cdot d_{b}\\cdot t_{pc}\\cdot F_{uc}\\right)=",
           "AASHTO Eqs. 6.13.2.9-1, -2",
@@ -623,7 +625,7 @@ export function steelCalcLines(i: SteelGirderInputs, title: string, result?: Ste
         m(`R_{sl}\\coloneq n_{bt}\\cdot ${num({ A: 0.3, B: 0.5, C: 0.3 }[cn.surface], 2)}\\cdot${num(g.Pt)}\\mathrm{kip}=`, `Kh 1.0, Ks for a Class ${cn.surface} surface, Pt, AASHTO Eq. 6.13.2.8-1, Tables 6.13.2.8-1, -3`, "kip");
         m(ok("P_{sc}", "R_{sl}"), "AASHTO Eq. 6.13.2.2-1");
         worked.add(idx("slip at Service II"));
-        m("A_{nc}\\coloneq A_{gc}-\\left(d_{b}+\\frac{1}{8}\\mathrm{in}\\right)\\cdot t_{ac}=", "The hole and 1/16 in, AASHTO 6.8.3", "in^2");
+        m("A_{nc}\\coloneq A_{gc}-d_{hc}\\cdot t_{ac}=", "The hole's nominal diameter, AASHTO 6.8.3", "in^2");
       } else {
         m(`w_{c}\\coloneq ${num(cn.weld, 3)}\\mathrm{in}`, "Fillet size");
         m(`L_{w}\\coloneq ${num(cn.weldLength, 3)}\\mathrm{in}`, "Each of the two welds");
@@ -717,6 +719,74 @@ export function steelCalcLines(i: SteelGirderInputs, title: string, result?: Ste
     }
     flat(ids, "Checks with flange lateral bending", "w", false);
   }
+
+  // --- Bolted field splices (6.13.6.1.3) ---
+  r.splices.forEach((sp, q) => {
+    const si = i.splice;
+    const t = `${q + 1}`;
+    const Fub = si.grade === "A490" ? 150 : 120;
+    const Ks = ({ A: 0.3, B: 0.5, C: 0.3 } as const)[si.surface];
+    const fullRn = (threads: "excluded" | "included") => (threads === "excluded" ? 0.56 : 0.45) * ((Math.PI * si.d ** 2) / 4) * Fub * 2;
+    text(`Field splice at ${num(sp.X, 2)} ft (AASHTO 6.13.6.1.3)`, "subheading", { newPage: true, keepWithNext: true });
+    text(
+      `Method:- Slip-critical bolted splice, ${num(si.d, 3)} in ASTM F3125 ${si.grade} bolts in standard holes, Class ${si.surface} surfaces; each flange by an outer plate and two inner plates (double shear), the web by a plate each side. The flanges designed for the smaller design yield resistance of the flanges either side, Pfy = Fyf Ae; the web for the smaller factored shear resistance of the web, with any moment the flanges can't carry; slip checked at Service II and while the deck is cast.`,
+      undefined,
+      { keepWithNext: true },
+    );
+    if (figures?.splices?.[q]) lines.push({ region: figures.splices[q] });
+    m(`d_{b${t}}\\coloneq ${num(si.d, 3)}\\mathrm{in}`, "Bolt diameter");
+    m(`d_{h${t}}\\coloneq ${num(si.d + (si.d >= 1 ? 0.125 : 0.0625), 4)}\\mathrm{in}`, "Standard hole, AASHTO Table 6.13.2.4.2-1; its width in the net area, AASHTO 6.8.3");
+    m(`F_{ub${t}}\\coloneq ${Fub}\\mathrm{ksi}`, "AASHTO Table 6.4.3.1.1-1");
+    m(`A_{b${t}}\\coloneq\\frac{\\pi\\cdot d_{b${t}}^{2}}{4}=`, undefined, "in^2");
+    for (const fl of [sp.bottom, sp.top]) {
+      const g = `${fl.which === "top" ? "t" : "b"}${t}`;
+      text(`${fl.which === "top" ? "Top" : "Bottom"} flange:- ${num(fl.b)} in wide, ${num(fl.t1, 3)} in thick on the thinner side${fl.t2 !== fl.t1 ? ` (${num(fl.t2, 3)} in on the other)` : ""}; ${fl.nAcross} bolts across, ${fl.rows} rows each side.`, undefined, { keepWithNext: true });
+      m(`b_{f${g}}\\coloneq ${num(fl.b)}\\mathrm{in}`);
+      m(`t_{f${g}}\\coloneq ${num(fl.t1, 4)}\\mathrm{in}`);
+      m(`F_{uf${g}}\\coloneq ${num(fuOf(i.Fyf))}\\mathrm{ksi}`, "AASHTO Table 6.4.1-1");
+      m(`A_{g${g}}\\coloneq b_{f${g}}\\cdot t_{f${g}}=`, undefined, "in^2");
+      m(`A_{n${g}}\\coloneq\\left(b_{f${g}}-${fl.nAcross}\\cdot d_{h${t}}\\right)\\cdot t_{f${g}}=`, "AASHTO 6.8.3", "in^2");
+      m(`A_{e${g}}\\coloneq\\min\\left(\\frac{0.80\\cdot F_{uf${g}}}{0.95\\cdot F_{yf}}\\cdot A_{n${g}},A_{g${g}}\\right)=`, "AASHTO Eq. 6.13.6.1.3b-2", "in^2");
+      m(`P_{fy${g}}\\coloneq F_{yf}\\cdot A_{e${g}}=`, "AASHTO Eq. 6.13.6.1.3b-1", "kip");
+      m(`R_{n${g}}\\coloneq${fl.Rn < fullRn(si.threadsFlange) - 1e-6 ? "0.83\\cdot " : ""}${si.threadsFlange === "excluded" ? "0.56" : "0.45"}\\cdot A_{b${t}}\\cdot F_{ub${t}}\\cdot 2=`, `One bolt, two shear planes, threads ${si.threadsFlange}, AASHTO Eqs. 6.13.2.7-1, -2`, "kip");
+      if (fl.R < 1) {
+        m(`\\gamma_{${g}}\\coloneq\\frac{${num(fl.filler, 4)}\\mathrm{in}\\cdot b_{f${g}}}{\\min\\left(A_{g${g}},${num(fl.outer.b * fl.outer.t + 2 * fl.inner.b * fl.inner.t, 4)}\\mathrm{in}^{2}\\right)}=`, `The ${num(fl.filler, 4)} in filler against the smaller of the flange and the splice plates`);
+        m(`R_{${g}}\\coloneq\\frac{1+\\gamma_{${g}}}{1+2\\cdot\\gamma_{${g}}}=`, "Undeveloped fillers, AASHTO Eq. 6.13.6.1.4-1");
+      } else m(`R_{${g}}\\coloneq1`, fl.filler ? "Filler under 1/4 in, AASHTO 6.13.6.1.4" : "No filler");
+      m(`N_{${g}}\\coloneq ${fl.n}`, `Bolts each side: ${fl.rows} rows of ${fl.nAcross}`);
+      m(ok(`P_{fy${g}}`, `0.80\\cdot R_{${g}}\\cdot R_{n${g}}\\cdot N_{${g}}`), "Bolts in shear, AASHTO 6.13.6.1.3b");
+      m(`A_{sp${g}}\\coloneq ${num(fl.outer.b)}\\mathrm{in}\\cdot ${num(fl.outer.t, 4)}\\mathrm{in}+2\\cdot ${num(fl.inner.b)}\\mathrm{in}\\cdot ${num(fl.inner.t, 4)}\\mathrm{in}=`, "The outer and two inner splice plates", "in^2");
+      m(ok(`P_{fy${g}}`, `0.95\\cdot ${num(si.Fy)}\\mathrm{ksi}\\cdot A_{sp${g}}`), "Splice plates, gross yielding, AASHTO 6.13.5.2");
+    }
+    text(`Flanges' moment resistance:- composite in positive flexure, Pfy of the bottom flange × ${num(sp.arms.pos, 2)} in to the deck's mid-thickness; otherwise the smaller Pfy × ${num(sp.arms.neg, 2)} in between the flanges' mid-thicknesses (AASHTO 6.13.6.1.3b).`, undefined, { keepWithNext: true });
+    given(`M_{up${t}}\\coloneq ${num(sp.forces.MuPos)}\\mathrm{kip}\\cdot\\mathrm{ft}`, "Strength I, positive, at the splice");
+    given(`M_{un${t}}\\coloneq ${num(Math.abs(sp.forces.MuNeg))}\\mathrm{kip}\\cdot\\mathrm{ft}`, "Strength I, negative");
+    m(`M_{fp${t}}\\coloneq P_{fyb${t}}\\cdot ${num(sp.arms.pos, 3)}\\mathrm{in}=`, undefined, "kip*ft");
+    m(`M_{fn${t}}\\coloneq\\min\\left(P_{fyt${t}},P_{fyb${t}}\\right)\\cdot ${num(sp.arms.neg, 3)}\\mathrm{in}=`, undefined, "kip*ft");
+    m(`H_{w${t}}\\coloneq\\max\\left(\\frac{\\max\\left(0\\mathrm{kip}\\cdot\\mathrm{ft},M_{up${t}}-M_{fp${t}}\\right)}{${num(sp.arms.webPos, 3)}\\mathrm{in}},\\frac{\\max\\left(0\\mathrm{kip}\\cdot\\mathrm{ft},M_{un${t}}-M_{fn${t}}\\right)}{${num(sp.arms.webNeg, 3)}\\mathrm{in}}\\right)=`, "The web's horizontal force, AASHTO 6.13.6.1.3c (arm to the deck, or D/4)", "kip");
+    text("Slip:- the flange bolts' nominal slip resistance times the same arms gives the moment for slip; the rest goes to the web (AASHTO 6.13.6.1.3b, c).", undefined, { keepWithNext: true });
+    m(`P_{t${t}}\\coloneq ${num(sp.bottom.Rslip / (2 * Ks))}\\mathrm{kip}`, "Minimum bolt tension, AASHTO Table 6.13.2.8-1");
+    m(`R_{s${t}}\\coloneq1.0\\cdot ${Ks}\\cdot 2\\cdot P_{t${t}}=`, "One bolt, two slip planes, Kh 1, AASHTO Eq. 6.13.2.8-1", "kip");
+    given(`M_{sp${t}}\\coloneq ${num(sp.forces.MsPos)}\\mathrm{kip}\\cdot\\mathrm{ft}`, "Service II, positive");
+    given(`M_{sn${t}}\\coloneq ${num(Math.max(Math.abs(sp.forces.MsNeg), Math.abs(sp.forces.Mdeck)))}\\mathrm{kip}\\cdot\\mathrm{ft}`, "Service II negative, or the deck's casting (1.4 DC on the steel), the larger");
+    m(`H_{ws${t}}\\coloneq\\max\\left(\\frac{\\max\\left(0\\mathrm{kip}\\cdot\\mathrm{ft},M_{sp${t}}-N_{b${t}}\\cdot R_{s${t}}\\cdot ${num(sp.arms.pos, 3)}\\mathrm{in}\\right)}{${num(sp.arms.webPos, 3)}\\mathrm{in}},\\frac{\\max\\left(0\\mathrm{kip}\\cdot\\mathrm{ft},M_{sn${t}}-\\min\\left(N_{t${t}},N_{b${t}}\\right)\\cdot R_{s${t}}\\cdot ${num(sp.arms.neg, 3)}\\mathrm{in}\\right)}{${num(sp.arms.webNeg, 3)}\\mathrm{in}}\\right)=`, "The web's horizontal force for slip", "kip");
+    text(`Web:- 2 plates ${num(sp.web.plate.t, 4)} × ${num(sp.web.plate.h)} in, ${sp.web.cols} lines of ${sp.web.perCol} bolts each side.`, undefined, { keepWithNext: true });
+    given(`V_{r${t}}\\coloneq ${num(sp.forces.Vr)}\\mathrm{kip}`, "The smaller factored shear resistance of the web either side, AASHTO 6.10.9");
+    given(`V_{s${t}}\\coloneq ${num(Math.max(sp.forces.Vs, Math.abs(sp.forces.Vdeck)))}\\mathrm{kip}`, "Service II, or the deck's casting, the larger");
+    m(`N_{w${t}}\\coloneq ${sp.web.n}`, "Web bolts each side");
+    m(`R_{nw${t}}\\coloneq${sp.web.Rn < fullRn(si.threadsWeb) - 1e-6 ? "0.83\\cdot " : ""}${si.threadsWeb === "excluded" ? "0.56" : "0.45"}\\cdot A_{b${t}}\\cdot F_{ub${t}}\\cdot 2=`, `Threads ${si.threadsWeb}, AASHTO Eqs. 6.13.2.7-1, -2`, "kip");
+    m(ok(`\\sqrt{V_{r${t}}^{2}+H_{w${t}}^{2}}`, `0.80\\cdot ${sp.web.R < 1 ? `${num(sp.web.R, 3)}\\cdot ` : ""}R_{nw${t}}\\cdot N_{w${t}}`), "Web bolts in shear, AASHTO 6.13.6.1.3c");
+    m(ok(`\\sqrt{V_{s${t}}^{2}+H_{ws${t}}^{2}}`, `R_{s${t}}\\cdot N_{w${t}}`), "Web bolts against slip, AASHTO 6.13.6.1.3c");
+    const rest = sp.checks.filter((c) => !/bolts in shear|gross yielding|against slip/.test(c.name));
+    text("The splice's other checks:", "note", { keepWithNext: true });
+    rest.forEach((c, k) => {
+      const tag = `x${t}${k + 1}`;
+      text(`${c.name.replace(/^Field splice at [\d.]+ ft: /, "")}:-`, undefined, { keepWithNext: true });
+      given(`f_{${tag}}\\coloneq ${num(c.demand, 3)}${unitTex(c.unit)}`);
+      given(`F_{${tag}}\\coloneq ${num(c.capacity, 3)}${unitTex(c.unit)}`);
+      m(ok(`f_{${tag}}`, `F_{${tag}}`), c.ref);
+    });
+  });
 
   // --- Fatigue: the governing flange detail ---
   const fats = (["fat-bot", "fat-top"] as const).map((id) => ({ id, c: check(id), s: stationOf(id) })).filter((x) => x.c && x.s);

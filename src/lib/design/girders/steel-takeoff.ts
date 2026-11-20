@@ -115,7 +115,23 @@ export function steelQuantities(i: SteelGirderInputs, r: SteelGirderResult = des
     notes.push("Studs are counted as structural steel (CDOT 509.12 specifies them under Section 509, which pays the structural steel by the pound); each at its shank's area over its height.");
   }
 
-  if (r.segmentStarts.length > 1) notes.push(`Field splices at ${r.segmentStarts.slice(1).map((x) => `${fit(x)} ft`).join(", ")} aren't designed here: add their splice plates and bolts (Table 509-4) once detailed.`);
+  // Bolted field splices as designed: flange and web splice plates, fillers, and their bolts (both sides of each joint).
+  for (const sp of r.splices) {
+    const at = `Splice at ${fit(sp.X)} ft`;
+    for (const fl of [sp.top, sp.bottom]) {
+      const nm = fl.which === "top" ? "top" : "bottom";
+      plate(`${at}, ${nm} outer plate`, N, fl.outer.b, fl.outer.t, fl.plateL, "in");
+      plate(`${at}, ${nm} inner plates`, 2 * N, fl.inner.b, fl.inner.t, fl.plateL, "in");
+      if (fl.filler > 0) plate(`${at}, ${nm} filler`, N, fl.b, fl.filler, (fl.plateL - i.splice.gap) / 2, "in");
+    }
+    plate(`${at}, web plates`, 2 * N, sp.web.plate.b, sp.web.plate.t, sp.web.plate.h, "in");
+    if (sp.web.filler > 0) plate(`${at}, web filler`, N, sp.web.plate.h, sp.web.filler, (sp.web.plate.b - i.splice.gap) / 2, "in");
+    const bolts = 2 * N * (sp.top.n + sp.bottom.n + sp.web.n);
+    const per100 = BOLT_LB_PER_100[String(i.splice.d)] ?? 81;
+    rows.push({ part: `${at}, high-strength bolts`, count: bolts, desc: `${fit(i.splice.d)} in, ${per100} lb per 100 (CDOT Table 509-4)`, lb: (bolts * per100) / 100, term: `${bolts}\\cdot\\frac{${num(per100)}\\mathrm{lb}}{100}` });
+  }
+  const undesigned = r.segmentStarts.slice(1).filter((x) => !r.splices.some((sp) => Math.abs(sp.X - x) < 0.05));
+  if (undesigned.length) notes.push(`Section changes at ${undesigned.map((x) => `${fit(x)} ft`).join(", ")} are ${i.splice.check ? "welded in the shop" : "not designed as field splices here"}: ${i.splice.check ? "no splice plates" : "add their splice plates and bolts (Table 509-4) once detailed"}.`);
   notes.push("Not here: the bearings (Section 512), the deck and its bars (the deck tools), and the erection bolts, paint and shipping supports (CDOT 509.32(a)11). The weight shown on the plans is the pay weight unless the design changes or it is off by more than 2% (CDOT 509.32(b)).");
   return { rows, notes };
 }

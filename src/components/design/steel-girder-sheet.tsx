@@ -504,3 +504,144 @@ function angleLeg(name: string) {
   const m = /^L(\d+(?:\.\d+)?)X/.exec(name);
   return m ? Number(m[1]) : 4;
 }
+
+/**
+ * A bolted field splice's detail: the joint in elevation, each girder's flanges at their own thicknesses, the
+ * flange splice plates edge-on with their bolts through them, fillers shaded, and the web splice plate with its bolt
+ * grid; each flange splice in plan with its bolt rows either side of the joint; the plates, bolts, pitches and
+ * distances noted. To scale (the elevation and plans each at their own scale).
+ */
+export function SteelSpliceDetail({ inputs: i, splice: s }: { inputs: SteelGirderInputs; splice: SteelGirderResult["splices"][number] }) {
+  const sp = i.splice;
+  const [L, R] = s.sides;
+  const D = s.D;
+  const tMax = (k: "top" | "bottom") => Math.max(L[k].t, R[k].t);
+  const Lmax = Math.max(s.top.plateL, s.bottom.plateL, s.web.plate.b);
+  const elW = 440; // the elevation's width, from x = 40
+  const sc = Math.min((elW - 80) / Lmax, 330 / (D + tMax("top") + tMax("bottom") + s.top.outer.t + s.bottom.outer.t));
+  const x0 = 40 + elW / 2; // the joint
+  const yWebTop = 60 + (tMax("top") + s.top.outer.t) * sc;
+  const yWebBot = yWebTop + D * sc;
+  const gapH = (sp.gap / 2) * sc;
+  const FILL = "#f59e0b";
+  const PLATE = "#9aa5b1";
+  const rowsX = (f: typeof s.top, scale: number, xc: number) => [-1, 1].flatMap((dir) => Array.from({ length: f.rows }, (_, r) => xc + dir * (sp.gap / 2 + sp.endGirder + r * sp.pitch) * scale));
+  // Each girder: its flanges (top down from the web's top, bottom down from the web's bottom) and its web.
+  const girder = (sec: typeof L, dir: -1 | 1) => {
+    const xa = dir < 0 ? 40 : x0 + gapH;
+    const w = dir < 0 ? x0 - gapH - 40 : 40 + elW - x0 - gapH;
+    const tf = sec.top.t * sc;
+    const bf = sec.bottom.t * sc;
+    return (
+      <g key={dir}>
+        <rect x={xa} y={yWebTop - tf} width={w} height={tf} fill={STEEL} stroke={LINE} strokeWidth="0.6" />
+        <rect x={xa} y={yWebTop} width={w} height={D * sc} fill="#f4f6f8" stroke={LINE} strokeWidth="0.4" />
+        <rect x={xa} y={yWebBot} width={w} height={bf} fill={STEEL} stroke={LINE} strokeWidth="0.6" />
+        {/* fillers on the thinner flange, out to the thicker one's face */}
+        {sec.top.t < tMax("top") - 1e-6 && <rect x={dir < 0 ? x0 - gapH - (s.top.plateL / 2) * sc : xa} y={yWebTop - tMax("top") * sc} width={(s.top.plateL / 2) * sc - gapH} height={(tMax("top") - sec.top.t) * sc} fill={FILL} opacity={0.8} stroke={LINE} strokeWidth="0.4" />}
+        {sec.bottom.t < tMax("bottom") - 1e-6 && <rect x={dir < 0 ? x0 - gapH - (s.bottom.plateL / 2) * sc : xa} y={yWebBot + sec.bottom.t * sc} width={(s.bottom.plateL / 2) * sc - gapH} height={(tMax("bottom") - sec.bottom.t) * sc} fill={FILL} opacity={0.8} stroke={LINE} strokeWidth="0.4" />}
+      </g>
+    );
+  };
+  const plate = (Lp: number, y: number, t: number) => <rect x={x0 - (Lp / 2) * sc} y={y} width={Lp * sc} height={Math.max(1.5, t * sc)} fill={PLATE} stroke={LINE} strokeWidth="0.7" />;
+  const yTopOuter = yWebTop - tMax("top") * sc - s.top.outer.t * sc;
+  const yBotOuter = yWebBot + tMax("bottom") * sc;
+  // Flange bolts in elevation: through the outer plate, flange (and filler) and inner plate.
+  const flangeBolts = (f: typeof s.top, y0: number, y1: number) =>
+    rowsX(f, sc, x0).map((x, k) => <line key={k} x1={x} x2={x} y1={y0 - 2} y2={y1 + 2} stroke={LINE} strokeWidth={Math.max(1.2, sp.d * sc * 0.7)} />);
+  // Web bolts: cols lines each side from the joint, perCol down the plate, centered on the web.
+  const webY0 = (yWebTop + yWebBot) / 2 - ((s.web.perCol - 1) * s.web.pitch * sc) / 2;
+  const webBolts: [number, number][] = [];
+  for (const dir of [-1, 1])
+    for (let c = 0; c < s.web.cols; c++) for (let q = 0; q < s.web.perCol; q++) webBolts.push([x0 + dir * (sp.gap / 2 + sp.endGirder + c * sp.pitch) * sc, webY0 + q * s.web.pitch * sc]);
+  const f1 = (v: number) => fracIn(v);
+  // Plans: each flange's outer plate, the web's line, the bolt lines across and the rows along.
+  const plan = (f: typeof s.top, y: number, label: string) => {
+    const scP = Math.min(420 / f.plateL, 150 / f.b);
+    const xc = 520 + 220;
+    const lines: number[] = [];
+    for (let k = 0; k < f.nAcross / 2; k++) lines.push(-f.b / 2 + sp.edge + k * f.gage, f.b / 2 - sp.edge - k * f.gage);
+    const xs = rowsX(f, scP, xc);
+    const top = y;
+    const bot = y + f.b * scP;
+    return (
+      <g>
+        <text x={xc} y={top - 12} fontSize="10.5" fontWeight="600" textAnchor="middle" fill={LINE}>
+          {label}
+        </text>
+        <rect x={xc - (f.plateL / 2) * scP} y={top} width={f.plateL * scP} height={f.b * scP} fill="#e7ecf1" stroke={LINE} strokeWidth="0.8" />
+        <line x1={xc - (f.plateL / 2) * scP - 10} x2={xc + (f.plateL / 2) * scP + 10} y1={(top + bot) / 2} y2={(top + bot) / 2} stroke={MUTED} strokeWidth="0.6" strokeDasharray="8 3 2 3" />
+        <line x1={xc} x2={xc} y1={top - 6} y2={bot + 6} stroke={SPLICE} strokeWidth="1" strokeDasharray="4 2" />
+        {xs.flatMap((x, a) => lines.map((yy, b) => <circle key={`${a}-${b}`} cx={x} cy={top + (f.b / 2 + yy) * scP} r={Math.max(1.6, (sp.d / 2) * scP)} fill="#ffffff" stroke={LINE} strokeWidth="0.8" />))}
+        {/* the pitch and end distances along the bottom edge, the gage and edge across the right end */}
+        <text x={xc} y={bot + 15} fontSize="9.5" textAnchor="middle" fill={DIM}>
+          {`${f.rows} rows × ${f.nAcross} each side = ${f.n} bolts; pitch ${f1(sp.pitch)}, ${f1(sp.endGirder)} from each girder end, ${f1(sp.edge)} to the plate's ends`}
+        </text>
+        <text x={xc + (f.plateL / 2) * scP + 8} y={top + sp.edge * scP + 3} fontSize="9" fill={DIM}>
+          {`edge ${f1(sp.edge)}`}
+        </text>
+        {f.nAcross > 2 && (
+          <text x={xc + (f.plateL / 2) * scP + 8} y={top + (sp.edge + f.gage / 2) * scP + 6} fontSize="9" fill={DIM}>
+            {`gage ${f1(f.gage)}`}
+          </text>
+        )}
+        <text x={xc - (f.plateL / 2) * scP} y={bot + 29} fontSize="9.5" fill={LINE}>
+          {`Outer PL ${f1(f.outer.b)} × ${f1(f.outer.t)} × ${ftIn(f.plateL / 12)}; 2 inner PL ${f1(f.inner.b)} × ${f1(f.inner.t)} × ${ftIn(f.plateL / 12)}${f.filler ? `; filler ${f1(f.filler)}` : ""}`}
+        </text>
+      </g>
+    );
+  };
+  const notes = [
+    `Bolts: ${f1(sp.d)} in dia ASTM F3125 ${sp.grade}, pretensioned, slip-critical, Class ${sp.surface} faying surfaces, standard holes (no oversize or slots, 6.13.6.1.3a); threads ${sp.threadsFlange} at the flanges, ${sp.threadsWeb} at the web.`,
+    s.top.filler || s.bottom.filler || s.web.filler
+      ? `Fillers (shaded) on the thinner plates${[s.top, s.bottom].some((f) => f.R < 1) ? `; flange bolts reduced by R = ${[s.top, s.bottom].filter((f) => f.R < 1).map((f) => f.R.toFixed(3)).join(", ")} for undeveloped fillers (Eq. 6.13.6.1.4-1)` : ""}. Fillers 1/4 in and over: not more than two plates, Fy at least 0.7 of the flange's and 36 ksi (6.13.6.1.4).`
+      : "No fillers: the flanges and webs match in thickness.",
+    `Web: 2 PL ${f1(s.web.plate.b)} × ${f1(s.web.plate.t)} × ${f1(s.web.plate.h)} in, ${s.web.cols} lines of ${s.web.perCol} bolts each side (${s.web.n} each side) at ${f1(s.web.pitch)} in vertical, ${f1(sp.pitch)} in between lines.`,
+    `Splice plates ASTM A709 Grade ${sp.Fy}${sp.Fy === 50 ? "W where the girders are weathering steel" : ""}; ${f1(sp.gap)} in gap between the girders' ends.`,
+    `Design: flanges for Pfy = ${s.top.Pfy.toFixed(0)} kip (top) and ${s.bottom.Pfy.toFixed(0)} kip (bottom); web for ${s.web.Ruw.toFixed(0)} kip${s.web.HwStrength > 0 ? ` with Hw ${s.web.HwStrength.toFixed(0)} kip` : " (its shear resistance)"}; no slip at Service II or while the deck is cast (AASHTO 6.13.6.1.3).`,
+  ];
+  const scTop = Math.min(420 / s.top.plateL, 150 / s.top.b);
+  const scBot = Math.min(420 / s.bottom.plateL, 150 / s.bottom.b);
+  const yPlanBot = 64 + scTop * s.top.b + 90;
+  const yNotes = Math.max(yBotOuter + s.bottom.outer.t * sc + 52, yPlanBot + scBot * s.bottom.b + 52);
+  const H = yNotes + notes.length * 15 + 8;
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label={`Field splice at ${s.X.toFixed(1)} ft`}>
+      <text x={x0} y={22} fontSize="10.5" fontWeight="600" textAnchor="middle" fill={LINE}>
+        {`Elevation, field splice at ${ftIn(s.X)} (sections ${s.left + 1} and ${s.right + 1})`}
+      </text>
+      {girder(L, -1)}
+      {girder(R, 1)}
+      {plate(s.top.plateL, yTopOuter, s.top.outer.t)}
+      {plate(s.top.plateL, yWebTop, s.top.inner.t)}
+      {plate(s.bottom.plateL, yBotOuter, s.bottom.outer.t)}
+      {plate(s.bottom.plateL, yWebBot - s.bottom.inner.t * sc, s.bottom.inner.t)}
+      {flangeBolts(s.top, yTopOuter, yWebTop + s.top.inner.t * sc)}
+      {flangeBolts(s.bottom, yWebBot - s.bottom.inner.t * sc, yBotOuter + s.bottom.outer.t * sc)}
+      <rect x={x0 - (s.web.plate.b / 2) * sc} y={(yWebTop + yWebBot) / 2 - (s.web.plate.h / 2) * sc} width={s.web.plate.b * sc} height={s.web.plate.h * sc} fill="#dfe5eb" stroke={LINE} strokeWidth="0.8" />
+      {webBolts.map(([x, y], k) => (
+        <circle key={k} cx={x} cy={y} r={Math.max(1.6, (sp.d / 2) * sc)} fill="#ffffff" stroke={LINE} strokeWidth="0.8" />
+      ))}
+      <line x1={x0} x2={x0} y1={yTopOuter - 12} y2={yBotOuter + s.bottom.outer.t * sc + 14} stroke={SPLICE} strokeWidth="1" strokeDasharray="5 3" />
+      <text x={x0} y={yBotOuter + s.bottom.outer.t * sc + 27} fontSize="9.5" textAnchor="middle" fill={SPLICE}>
+        ℄ splice
+      </text>
+      <text x={44} y={yWebTop + 14} fontSize="9" fill={MUTED}>
+        {`Section ${s.left + 1}: top ${f1(L.top.b)} × ${f1(L.top.t)}, web ${f1(D)} × ${f1(L.tw)}, bottom ${f1(L.bottom.b)} × ${f1(L.bottom.t)}`}
+      </text>
+      <text x={36 + elW} y={yWebBot - 8} fontSize="9" textAnchor="end" fill={MUTED}>
+        {`Section ${s.right + 1}: top ${f1(R.top.b)} × ${f1(R.top.t)}, web ${f1(R.D)} × ${f1(R.tw)}, bottom ${f1(R.bottom.b)} × ${f1(R.bottom.t)}`}
+      </text>
+      <text x={x0 + (s.web.plate.b / 2) * sc + 6} y={(yWebTop + yWebBot) / 2} fontSize="9" fill={DIM}>
+        {`2 PL ${f1(s.web.plate.t)} × ${f1(s.web.plate.h)}`}
+      </text>
+      {plan(s.top, 64, "Top flange splice, plan (outer plate)")}
+      {plan(s.bottom, yPlanBot, "Bottom flange splice, plan (outer plate)")}
+      {notes.map((t, n) => (
+        <text key={n} x={40} y={yNotes + n * 15} fontSize="9.5" fill={LINE}>
+          {n + 1}. {t}
+        </text>
+      ))}
+    </svg>
+  );
+}

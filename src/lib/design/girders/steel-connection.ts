@@ -52,8 +52,8 @@ const FUB = { A325: 120, A490: 150 }; // ksi, Table 6.4.3.1.1-1
 /** Minimum bolt tension, kip (Table 6.13.2.8-1). */
 const PT: Record<string, { A325: number; A490: number }> = { "0.625": { A325: 19, A490: 24 }, "0.75": { A325: 28, A490: 35 }, "0.875": { A325: 39, A490: 49 }, "1": { A325: 51, A490: 64 }, "1.125": { A325: 56, A490: 80 }, "1.25": { A325: 71, A490: 102 } };
 const KS = { A: 0.3, B: 0.5, C: 0.3 }; // Table 6.13.2.8-3
-/** Minimum edge distance, sheared edges (Table 6.13.2.6.6-1), in. */
-const EDGE_MIN: Record<string, number> = { "0.625": 1.125, "0.75": 1.25, "0.875": 1.5, "1": 1.75, "1.125": 2, "1.25": 2.25 };
+/** Minimum edge distance (Table 6.13.2.6.6-1, 10th Edition), in. */
+const EDGE_MIN: Record<string, number> = { "0.625": 0.875, "0.75": 1, "0.875": 1.125, "1": 1.25, "1.125": 1.5, "1.25": 1.625 };
 export const BOLT_DIAMETERS = [0.625, 0.75, 0.875, 1, 1.125, 1.25];
 
 const PHI_S = 0.8; // bolts in shear (6.5.4.2)
@@ -77,7 +77,7 @@ export function cfConnection(c: CfConnection, member: string, Pu: number, Ps: nu
   const Rp = c.holes === "drilled" ? 1 : 0.9;
   if (c.kind === "bolted") {
     const n = Math.max(1, Math.round(c.bolts));
-    const dh = c.d + 1 / 16; // standard hole (Table 6.13.2.4.2-1)
+    const dh = c.d + (c.d >= 1 - 1e-9 ? 1 / 8 : 1 / 16); // standard hole (Table 6.13.2.4.2-1)
     const Ab = (Math.PI * c.d ** 2) / 4;
     // Shear: one plane per bolt (the angle on the plate).
     const Rn = (c.threads === "excluded" ? 0.56 : 0.45) * Ab * FUB[c.grade]; // Eqs. 6.13.2.7-1, -2
@@ -98,12 +98,12 @@ export function cfConnection(c: CfConnection, member: string, Pu: number, Ps: nu
     const case2 = L > 0 ? 1 - a.x / L : 0;
     const case8 = n >= 4 ? 0.8 : n >= 2 ? 0.6 : 0;
     out.U = Math.max(0, case2, case8);
-    out.An = a.A - (dh + 1 / 16) * a.t; // 6.8.3: the hole's width plus 1/16 in
+    out.An = a.A - dh * a.t; // 6.8.3: the hole's nominal diameter
     out.Ptension = Math.min(PHI_Y * Fy * a.A, PHI_U * c.Fu * out.An * Rp * out.U);
     // Block shear on the angle: shear along the bolt line to the end, tension from the line to the leg's toe.
     const Avg = (c.edge + (n - 1) * c.spacing) * a.t;
-    const Avn = Avg - (n - 0.5) * (dh + 1 / 16) * a.t;
-    const Atn = Math.max(0, a.b - c.gage - 0.5 * (dh + 1 / 16)) * a.t;
+    const Avn = Avg - (n - 0.5) * dh * a.t;
+    const Atn = Math.max(0, a.b - c.gage - 0.5 * dh) * a.t;
     out.Rblock = PHI_BS * Rp * Math.min(0.58 * c.Fu * Avn + c.Fu * Atn, 0.58 * Fy * Avg + c.Fu * Atn);
     // Geometry (6.13.2.6): at least two bolts, spacing 3d, the end distance.
     checks.push({ name: "at least two bolts per connection", demand: 2, capacity: n, unit: "bolts", ref: "AASHTO 6.13.1" });

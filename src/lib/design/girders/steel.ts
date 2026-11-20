@@ -2,6 +2,7 @@ import { DesignError, type Check } from "../walls/cip";
 import { modulus, distributionFactors, type DistFactors, type GirderInputs } from "./prestressed";
 import { appendixA6, effectivePlasticMoment, negativeYieldMoments, redistributionMoment, refinedRedistribution, rotationalStiffness, thetaRL } from "./steel-appendix";
 import { CF_CONNECTION_DEFAULTS, BOLT_DIAMETERS, cfConnection, type CfConnection } from "./steel-connection";
+import { designSplice, SPLICE_DEFAULTS, type SpliceInputs, type SpliceResult } from "./steel-splice";
 import { nonprismaticBeam } from "./steel-beam";
 import { angle, L_SHAPE_NAMES, singleAngle, stabilityBracing, type CrossFrame } from "./steel-crossframe";
 import { deadEffects, gridGeometry, gridModel, leverStrip, leverWeights, liveExtremes, type GridInput, type Sparse } from "./steel-grid";
@@ -99,6 +100,7 @@ export type SteelGirderInputs = {
   studs: Studs & { check: boolean; zones: { from: number; to: number; pitch: number }[] }; // stud shear connectors: diameter, studs across, pitch (in), height (in), Fu (ksi); zones of other pitches along the girder (ft, in)
   stiffener: StiffenerPlate; // the intermediate transverse stiffeners in the stiffened zones
   bearing: BearingStiffeners & { use: boolean; N: number; weld: number };
+  splice: SpliceInputs; // bolted field splices at the sections' changes (6.13.6.1.3), designed; shopWelded: the changes made in the shop
   crossFrame: CrossFrame & { check: boolean; connection: CfConnection }; // intermediate cross-frames: stability bracing (6.7.4.2.2), wind (4.6.2.7.1), curvature; the members' end connections (6.13)
   wind: { V: number; exposure: "B" | "C" | "D"; Z: number; lateral: boolean; construction: number }; // construction: the wind speed while the deck is placed (mph, 0: not checked) // lateral: the wind's lateral bending of the bottom flange at Strength III and V (C4.6.2.7.1, exterior girder) // Strength III design wind speed (mph, 0: none), exposure, height (ft); Strength V uses 80 mph // plate bearing stiffeners at the supports; without them the web at the bearing (D6.5): bearing length N, flange-to-web weld or fillet (in)
 };
@@ -152,6 +154,7 @@ export const STEEL_DEFAULTS: SteelGirderInputs = {
   studs: { check: true, d: 0.875, perRow: 3, pitch: 10, height: 6, Fu: 60, zones: [] },
   stiffener: { bt: 5.5, tp: 0.5, Fys: 50, pair: false },
   bearing: { use: true, bt: 6, tp: 0.625, Fys: 50, clip: 1.5, pairsEnd: 1, pairsPier: 2, gap: 8, N: 10, weld: 0.3125 },
+  splice: SPLICE_DEFAULTS,
   crossFrame: { check: true, type: "X", diagonal: "L5X5X1/2", strut: "L5X5X1/2", hb: 36, Fy: 50, fullDepthPlates: true, plateWidth: 10, plateThickness: 0.5, connection: CF_CONNECTION_DEFAULTS },
   wind: { V: 0, exposure: "C", Z: 33, lateral: true, construction: 0 },
 };
@@ -210,6 +213,12 @@ export function steelGirderInputs(saved: unknown): SteelGirderInputs {
       const k = raw && typeof raw === "object" ? o(raw, CF_CONNECTION_DEFAULTS) : { ...CF_CONNECTION_DEFAULTS, check: false };
       const connection: CfConnection = { ...k, kind: k.kind === "welded" ? "welded" : "bolted", d: BOLT_DIAMETERS.includes(k.d) ? k.d : 0.875, grade: k.grade === "A490" ? "A490" : "A325", threads: k.threads === "excluded" ? "excluded" : "included", holes: k.holes === "drilled" ? "drilled" : "punched", surface: k.surface === "A" || k.surface === "C" ? k.surface : "B" };
       return { ...c, type: c.type === "K" ? "K" : "X", diagonal: L_SHAPE_NAMES.includes(c.diagonal) ? c.diagonal : d.crossFrame.diagonal, strut: L_SHAPE_NAMES.includes(c.strut) ? c.strut : d.crossFrame.strut, connection } as SteelGirderInputs["crossFrame"];
+    })(),
+    splice: (() => {
+      // Designs saved before the splices were designed keep them off.
+      const raw = s.splice && typeof s.splice === "object" ? (s.splice as Record<string, unknown>) : null;
+      const k = raw ? o(raw, SPLICE_DEFAULTS) : { ...SPLICE_DEFAULTS, check: false };
+      return { ...k, shopWelded: Array.isArray(raw?.shopWelded) ? (raw!.shopWelded as unknown[]).map((x) => num(x, -1)).filter((x) => x > 0).slice(0, 50) : [], d: BOLT_DIAMETERS.includes(k.d) ? k.d : 0.875, grade: k.grade === "A490" ? "A490" : "A325", threadsFlange: k.threadsFlange === "included" ? "included" : "excluded", threadsWeb: k.threadsWeb === "excluded" ? "excluded" : "included", surface: k.surface === "A" || k.surface === "C" ? k.surface : "B" } as SpliceInputs;
     })(),
     wind: (() => {
       const w = o(s.wind, d.wind);
@@ -1324,6 +1333,7 @@ export function designSteelGirder(i: SteelGirderInputs) {
   };
   // --- The deck's pour sequence: the flanges and the hardened deck at each stage ---
   const pourResults: { stage: number; X: number; top: number; bot: number; deck: number }[] = [];
+  const pourM = new Map<number, number>(); // kip·ft, each station's largest factored moment during the pours (for the splices' slip)
   if (pours.length) {
     const fr = 0.24 * Math.sqrt(i.fcDeck); // 5.4.2.6
     const gamma = GAMMA_ERECT; // the deck placed on the erected steelwork: 1.4 DC (3.4.2.1)
@@ -1346,6 +1356,7 @@ export function designSteelGirder(i: SteelGirderInputs) {
         bot -= (M * 12) / sec.Sbot;
         if (sg.hardened(st.X)) deckT += (-M * 12) / (sN.Sdeck * n); // at the deck's top
         Mtot += M;
+        if (Math.abs(Mtot) > Math.abs(pourM.get(st.X) ?? 0)) pourM.set(st.X, Mtot);
         pourResults.push({ stage: sg.n + 1, X: st.X, top, bot, deck: deckT });
         // Constructibility of the noncomposite flanges at this stage (6.10.3.4.1): the steel section's resistance.
         const wet = !sg.hardened(st.X); // the top flange still bare or under wet concrete
@@ -1735,6 +1746,63 @@ export function designSteelGirder(i: SteelGirderInputs) {
       if (m.slenderLeg) checks.push({ id: `cf-leg-${label}`, name: `Cross-frames: ${label}'s legs b/t ≤ 0.45√(E/Fy) (else reduce for local buckling)`, demand: m.b / m.t, capacity: 0.45 * Math.sqrt(ES / i.crossFrame.Fy), unit: "", ok: false, ref: "AASHTO Table 6.9.4.2.1-1" });
   }
 
+  // --- Bolted field splices (6.13.6.1.3): at each change of section not welded in the shop ---
+  const splices: SpliceResult[] = [];
+  if (i.splice.check)
+    segStart.slice(1).forEach((X, q) => {
+      if (i.splice.shopWelded.some((w) => Math.abs(w - X) < 0.05)) return;
+      const near = (x: number) => stations.reduce((b, s) => (Math.abs(s.X - x) < Math.abs(b.X - x) ? s : b), stations[0]);
+      const sL = near(X - 0.01);
+      const sR = near(X + 0.01);
+      const side = [sL, sR];
+      const Ms = (s: SteelStation, ll: number) => s.M.dc1 + s.M.dc2 + s.M.dw + 1.3 * ll;
+      const Vs = (s: SteelStation) => Math.abs(s.V.dc1 + s.V.dc2 + s.V.dw) + 1.3 * Math.abs(s.V.ll);
+      // The tension flange's Strength I stress on the gross section, each sign, the larger of the two sides.
+      const ft = (s: SteelStation, sign: 1 | -1) => {
+        const neg = sign < 0;
+        const comp: Stage = neg ? (i.studsThroughout ? "bars" : "bars") : "3n";
+        const sh: Stage = neg ? "bars" : "n";
+        const fs = stress(s.seg, [
+          { M: eta * 1.25 * s.M.dc1, stage: "steel" },
+          { M: eta * (1.25 * s.M.dc2 + 1.5 * s.M.dw), stage: comp },
+          { M: eta * 1.75 * (neg ? s.M.llNeg : s.M.llPos), stage: sh },
+        ]);
+        return neg ? Math.max(0, -fs.top) : Math.max(0, -fs.bot);
+      };
+      // The live load's stress range at each flange's outer fiber, the gross section (the deck in negative flexure as for fatigue).
+      const negStage: Stage = i.studsThroughout && i.bars.pct >= 1 ? "n" : "bars";
+      const range = (s: SteelStation, face: "top" | "bot") => {
+        if (!s.fatigue) return 0;
+        const f = (M: number) => {
+          const sp = prop(s.seg, M >= 0 ? "n" : negStage);
+          return (M * 12) / (face === "top" ? sp.Stop : sp.Sbot);
+        };
+        return Math.abs(f(s.fatigue.Mmax) - f(s.fatigue.Mmin));
+      };
+      const pM = pours.length ? side.map((s) => pourM.get(s.X) ?? GAMMA_ERECT * s.M.dc1).reduce((a, b) => (Math.abs(b) > Math.abs(a) ? b : a), 0) : GAMMA_ERECT * (Math.abs(sL.M.dc1) > Math.abs(sR.M.dc1) ? sL.M.dc1 : sR.M.dc1);
+      const pL = plates(i.segments[sL.seg]);
+      const pR = plates(i.segments[sR.seg]);
+      const sec = (p: ReturnType<typeof plates>) => ({ D: p.D, tw: p.tw, top: p.top, bottom: p.bottom });
+      const res = designSplice(i.splice, X, sL.seg, sR.seg, sec(pL), sec(pR), i.Fyf, i.Fyw, { ts, above: i.haunchTo === "web" ? i.haunch : Math.min(pL.top.t, pR.top.t) + i.haunch }, {
+        MuPos: Math.max(0, sL.Mpos, sR.Mpos),
+        MuNeg: Math.min(0, sL.Mneg, sR.Mneg),
+        Vr: PHI_V * Math.min(...side.map((s) => s.shear?.Vn ?? Infinity)),
+        MsPos: Math.max(0, Ms(sL, sL.M.llPos), Ms(sR, sR.M.llPos)),
+        MsNeg: Math.min(0, Ms(sL, sL.M.llNeg), Ms(sR, sR.M.llNeg)),
+        Vs: Math.max(Vs(sL), Vs(sR)),
+        Mdeck: eta * pM,
+        Vdeck: eta * GAMMA_ERECT * Math.max(Math.abs(sL.V.dc1), Math.abs(sR.V.dc1)),
+        ftPos: Math.max(ft(sL, 1), ft(sR, 1)),
+        ftNeg: Math.max(ft(sL, -1), ft(sR, -1)),
+        fatigue: i.fatigue.check ? { top: Math.max(range(sL, "top"), range(sR, "top")), bot: Math.max(range(sL, "bot"), range(sR, "bot")) } : { top: 0, bot: 0 },
+        adttSL: i.fatigue.adttSL,
+        life: i.fatigue.life,
+        cycles: sL.fatigue?.cycles ?? 1,
+      });
+      splices.push(res);
+      res.checks.forEach((c, k) => checks.push({ id: `splice-${q}-${k}`, name: c.name, demand: c.demand, capacity: c.capacity, unit: c.unit, ok: c.demand <= c.capacity * (1 + 1e-9), ref: c.ref }));
+    });
+
   // Every check reads demand ≤ capacity: the governing ratio is the largest demand/capacity.
   const governing = checks.reduce((m, c) => (c.advisory ? m : Math.max(m, c.capacity > 0 ? c.demand / c.capacity : 0)), 0);
   return {
@@ -1756,6 +1824,7 @@ export function designSteelGirder(i: SteelGirderInputs) {
     segmentStarts: segStart,
     camber,
     crossFrames,
+    splices,
     pourResults,
     b6: { active: b6Active, refined, piers: piersB6 },
     combos,

@@ -26,10 +26,10 @@ describe("cross-frame connections (AASHTO 6.13)", () => {
   it("slip: Kh Ks Ns Pt per bolt, Class B 0.50, Pt 39 kip", () => within(c.Rslip, 2 * 0.5 * 39));
   it("the angle in tension: U = 0.60 for two bolts (larger than 1 − x̄/L), holes punched (Rp 0.9)", () => {
     expect(c.U).toBeCloseTo(0.6, 9);
-    within(c.Ptension, Math.min(0.95 * 50 * a.A, 0.8 * 65 * (a.A - a.t) * 0.9 * 0.6));
+    within(c.Ptension, Math.min(0.95 * 50 * a.A, 0.8 * 65 * (a.A - 0.9375 * a.t) * 0.9 * 0.6));
   });
   it("block shear: shear along the bolt line, tension to the leg's toe", () => {
-    const h = 1;
+    const h = 0.9375; // the 15/16 in hole (6.8.3, 10th Edition: no extra 1/16 in)
     const Avg = (1.5 + 3) * a.t;
     const Avn = Avg - 1.5 * h * a.t;
     const Atn = (a.b - 3 - 0.5 * h) * a.t;

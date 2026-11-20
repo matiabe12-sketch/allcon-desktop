@@ -281,6 +281,27 @@ Article 6.10, and its details (phase 2).
 - Each part is worked out as math on the quantity sheet. The plan weight is the pay weight unless the design
   changes or it is off by more than 2% (509.32(b)).
 
+## End cross-frames at the abutments (`endFrame`)
+
+- **What they are:** X- or K-frames of single angles on the bearing stiffeners at both abutments. Saved designs
+  from before keep them off.
+- **Depth:** at least 0.75 of the girder's depth (6.7.4.2.1). The default is 0.8 of it, to the inch, so the
+  frame counts as full depth in 6.7.4.2.2.
+- **Stability bracing (6.7.4.2.2):** the stiffness and strength for the end span's deck placement, at 1.4 DC1
+  (3.4.2.1).
+- **Lateral loads to the bearings (6.7.4.2.1):** half the end span's wind reaction, entering at the fascia and
+  shared by the bearings, so the first bay takes (Nb − 1)/Nb of it.
+  - **Integral or semi-integral (CDOT BDM 11.3):** the construction wind only. The concrete end diaphragm, cast
+    within 2 hours of the deck, then carries the deck's edge, the lateral loads and the jacking (BDM 11.3,
+    14.5.6). Its bars and the girders' anchorage belong to the abutment's design.
+  - **Seat abutment:** also the design wind on the superstructure (girder, haunch, deck and a 42 in barrier) at
+    Strength III and V. Its deck-edge beam and jacking aren't designed here.
+- **Members:** each against the smaller of its compression and tension resistance (6.9.4.4, 6.8.2.1), with
+  slenderness of 140, or 120 on a curved bridge. The end connections use the intermediate cross-frames'
+  connection settings (6.13).
+- **Outputs:** the drawing (the cross-frame detail on the bearing stiffeners), a calc section, and the
+  take-off, where the abutment lines take the end frame's angles and bolts.
+
 ## Bolted field splices (steel-splice.ts)
 
 - **Where:** at each change of section, unless it's marked as welded in the shop (`splice.shopWelded`). Saved

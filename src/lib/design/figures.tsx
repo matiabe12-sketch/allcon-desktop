@@ -173,6 +173,7 @@ export function steelGirderFigures(i: SteelGirderInputs) {
     camber: figure(<SteelCamberDiagram result={r} />),
     screed: figure(<SteelCamberDiagram result={r} kind="screed" />),
     ...(r.crossFrames ? { crossFrame: figure(<SteelCrossFrameDetail inputs={i} result={r} />) } : {}),
+    ...(r.endFrames ? { endFrame: figure(<SteelCrossFrameDetail inputs={i} result={r} end={r.endFrames.ends[0]} />) } : {}),
     splices: r.splices.map((s) => figure(<SteelSpliceDetail inputs={i} splice={s} />)),
   };
 }

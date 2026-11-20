@@ -100,6 +100,7 @@ export type SteelGirderInputs = {
   studs: Studs & { check: boolean; zones: { from: number; to: number; pitch: number }[] }; // stud shear connectors: diameter, studs across, pitch (in), height (in), Fu (ksi); zones of other pitches along the girder (ft, in)
   stiffener: StiffenerPlate; // the intermediate transverse stiffeners in the stiffened zones
   bearing: BearingStiffeners & { use: boolean; N: number; weld: number };
+  endFrame: { check: boolean; abutment: "integral" | "semi-integral" | "seat"; type: "X" | "K"; diagonal: string; strut: string; hb: number }; // hb 0: 0.8 of the girder's depth, to the inch; // the cross-frames at the abutments, on the bearing stiffeners (6.7.4.2.1)
   splice: SpliceInputs; // bolted field splices at the sections' changes (6.13.6.1.3), designed; shopWelded: the changes made in the shop
   crossFrame: CrossFrame & { check: boolean; connection: CfConnection }; // intermediate cross-frames: stability bracing (6.7.4.2.2), wind (4.6.2.7.1), curvature; the members' end connections (6.13)
   wind: { V: number; exposure: "B" | "C" | "D"; Z: number; lateral: boolean; construction: number }; // construction: the wind speed while the deck is placed (mph, 0: not checked) // lateral: the wind's lateral bending of the bottom flange at Strength III and V (C4.6.2.7.1, exterior girder) // Strength III design wind speed (mph, 0: none), exposure, height (ft); Strength V uses 80 mph // plate bearing stiffeners at the supports; without them the web at the bearing (D6.5): bearing length N, flange-to-web weld or fillet (in)
@@ -155,6 +156,7 @@ export const STEEL_DEFAULTS: SteelGirderInputs = {
   stiffener: { bt: 5.5, tp: 0.5, Fys: 50, pair: false },
   bearing: { use: true, bt: 6, tp: 0.625, Fys: 50, clip: 1.5, pairsEnd: 1, pairsPier: 2, gap: 8, N: 10, weld: 0.3125 },
   splice: SPLICE_DEFAULTS,
+  endFrame: { check: true, abutment: "semi-integral", type: "X", diagonal: "L5X5X1/2", strut: "L5X5X1/2", hb: 0 },
   crossFrame: { check: true, type: "X", diagonal: "L5X5X1/2", strut: "L5X5X1/2", hb: 36, Fy: 50, fullDepthPlates: true, plateWidth: 10, plateThickness: 0.5, connection: CF_CONNECTION_DEFAULTS },
   wind: { V: 0, exposure: "C", Z: 33, lateral: true, construction: 0 },
 };
@@ -213,6 +215,12 @@ export function steelGirderInputs(saved: unknown): SteelGirderInputs {
       const k = raw && typeof raw === "object" ? o(raw, CF_CONNECTION_DEFAULTS) : { ...CF_CONNECTION_DEFAULTS, check: false };
       const connection: CfConnection = { ...k, kind: k.kind === "welded" ? "welded" : "bolted", d: BOLT_DIAMETERS.includes(k.d) ? k.d : 0.875, grade: k.grade === "A490" ? "A490" : "A325", threads: k.threads === "excluded" ? "excluded" : "included", holes: k.holes === "drilled" ? "drilled" : "punched", surface: k.surface === "A" || k.surface === "C" ? k.surface : "B" };
       return { ...c, type: c.type === "K" ? "K" : "X", diagonal: L_SHAPE_NAMES.includes(c.diagonal) ? c.diagonal : d.crossFrame.diagonal, strut: L_SHAPE_NAMES.includes(c.strut) ? c.strut : d.crossFrame.strut, connection } as SteelGirderInputs["crossFrame"];
+    })(),
+    endFrame: (() => {
+      // Designs saved before the end cross-frames were designed keep them off.
+      const raw = s.endFrame && typeof s.endFrame === "object" ? (s.endFrame as Record<string, unknown>) : null;
+      const k = raw ? o(raw, d.endFrame) : { ...d.endFrame, check: false };
+      return { ...k, abutment: k.abutment === "integral" || k.abutment === "seat" ? k.abutment : "semi-integral", type: k.type === "K" ? "K" : "X", diagonal: L_SHAPE_NAMES.includes(k.diagonal) ? k.diagonal : d.endFrame.diagonal, strut: L_SHAPE_NAMES.includes(k.strut) ? k.strut : d.endFrame.strut } as SteelGirderInputs["endFrame"];
     })(),
     splice: (() => {
       // Designs saved before the splices were designed keep them off.
@@ -1599,6 +1607,66 @@ export function designSteelGirder(i: SteelGirderInputs) {
     return { cases, winds, Fwind, strutForce, diagForce, strut, diag, depthFt, LbMax, curve, connections, cycles };
   })();
 
+  // --- End cross-frames at the abutments (6.7.4.2.1, 6.7.4.2.2): framed into the bearing stiffeners, they brace the
+  // girders' ends while the deck is placed (the stability bracing's stiffness and strength, for the end span) and
+  // carry the lateral loads to the bearings. At an integral or semi-integral abutment the concrete end diaphragm,
+  // cast with the deck, then takes over (CDOT BDM 11.3): the steel frame sees the construction stage's wind only;
+  // on a seat abutment it also carries the design wind to the bearings at Strength III and V. ---
+  const endFrames = (() => {
+    const ef = i.endFrame;
+    if (!ef.check) return null;
+    const Sin = i.S * 12;
+    // Its depth between the struts: as given, or 0.8 of the deeper end section's depth to the inch (full depth in 6.7.4.2.2).
+    const endDepth = Math.max(...[0, total].map((X) => prop(segAt(Math.min(Math.max(X, 1e-6), total - 1e-6)), "steel").depth));
+    const hb = ef.hb > 0 ? ef.hb : Math.ceil(0.8 * endDepth);
+    const frame: CrossFrame = { ...i.crossFrame, type: ef.type, diagonal: ef.diagonal, strut: ef.strut, hb, fullDepthPlates: true, plateWidth: 2 * i.bearing.bt, plateThickness: i.bearing.tp };
+    const inner = (a: number, b: number) => bracesU.filter((x) => x > a + 1e-6 && x < b - 1e-6);
+    const bays = (a: number, b: number) => {
+      const pts = [a, ...inner(a, b), b];
+      return Math.max(...pts.slice(1).map((x, q) => x - pts[q]));
+    };
+    const ng = i.nGirders;
+    const superDepth = (Math.max(...i.segments.map((x) => plates(x).D + plates(x).top.t + plates(x).bottom.t)) + Math.max(0, i.haunch) + i.deckT) / 12 + 42 / 12; // ft, girder, haunch, deck and a 42 in barrier
+    const ends = [
+      { label: "start abutment", X: 0, j: 0 },
+      { label: "end abutment", X: total, j: spans.length - 1 },
+    ].map(({ label, X, j }) => {
+      const k = segAt(Math.min(Math.max(X, 1e-6), total - 1e-6));
+      const p = plates(i.segments[k]);
+      const sp = prop(k, "steel");
+      const ho = sp.depth - (p.top.t + p.bottom.t) / 2;
+      const Iyt = (p.top.t * p.top.b ** 3) / 12;
+      const Iyb = (p.bottom.t * p.bottom.b ** 3) / 12;
+      const cTop = sp.depth - p.top.t / 2 - sp.yNA;
+      const cBot = sp.yNA - p.bottom.t / 2;
+      const Iyeff = Iyt + (cBot / cTop) * Iyb; // Eq. 6.7.4.2.2-4, the top flange in compression in the end span
+      const inSpan = stations.filter((s) => s.span === j);
+      const best = inSpan.reduce((b, s) => (s.M.dc1 > b.M.dc1 ? s : b), inSpan[0]);
+      const Mu = GAMMA_ERECT * eta * Math.max(0, best.M.dc1); // kip·ft, the deck's placement on the steel (3.4.2.1)
+      const Ls = spans[j];
+      const sb = stabilityBracing({ cf: frame, S: Sin, ng, L: Ls * 12, n: inner(starts[j], starts[j] + Ls).length, Mu: Mu * 12, Iyeff, Ix: sp.I, Cb: 1, Lb: bays(starts[j], starts[j] + Ls) * 12, ho, D: p.D, tw: p.tw, girderDepth: sp.depth });
+      // The lateral reaction at this bearing line from half the end span, entering at the fascia girder and shared by
+      // the bearings: the first bay carries (ng − 1)/ng of it.
+      const share = (ng - 1) / ng;
+      const Hc = windConstruction ? ((windConstruction.Wtop + windConstruction.Wbot) * Ls) / 2 : 0; // kip, Strength III with the deck wet
+      const finals = ef.abutment === "seat" ? (["Strength III", "Strength V"] as const).filter((c) => c === "Strength V" || i.wind.V > 0).map((c) => ({ c: c as string, H: (eta * windPressure(c, i.wind).PZ * superDepth * Ls) / 2 })) : [];
+      const Hf = Math.max(0, ...finals.map((x) => x.H));
+      const Ld = sb.Ld;
+      const diagOf = (Hbay: number) => (ef.type === "X" ? (Hbay / 2) * (Ld / Sin) : (Hbay / 2) * (Ld / (Sin / 2)));
+      // The stability bracing at 1.4 DC1; with the construction wind on 1.25 DC1 (Strength III); the design wind alone.
+      const strutForce = Math.max(sb.Fstrut, (sb.Fstrut * 1.25) / GAMMA_ERECT + share * Hc, share * Hf);
+      const diagForce = Math.max(sb.Fdiag, (sb.Fdiag * 1.25) / GAMMA_ERECT + diagOf(share * Hc), diagOf(share * Hf));
+      const strut = singleAngle(ef.strut, ef.type === "K" ? Sin / 2 : Sin, i.crossFrame.Fy);
+      const diag = singleAngle(ef.diagonal, Ld, i.crossFrame.Fy);
+      const cn = i.crossFrame.connection;
+      const connections = cn.check
+        ? ([["strut", strut, strutForce], ["diagonal", diag, diagForce]] as const).map(([m, a, F]) => ({ label: m, Pu: F, ...cfConnection({ ...cn, fatigueRange: 0, serviceForce: 0 }, a.name, -F, F / GAMMA_ERECT, i.crossFrame.Fy, i.fatigue.adttSL, i.fatigue.life, 1) }))
+        : [];
+      return { label, X, span: j, seg: k, depth: sp.depth, Mu, ...sb, Iyeff, Hc, Hf, finals, share, strutForce, diagForce, strut, diag, connections };
+    });
+    return { frame, ends, abutment: ef.abutment };
+  })();
+
   // --- Checks ---
   const checks: Check[] = [];
   const at = (s: SteelStation | null) => (s ? ` at ${s.X.toFixed(1)} ft (span ${s.span + 1}, ${(s.x / spans[s.span]).toFixed(2)}L)` : "");
@@ -1746,6 +1814,24 @@ export function designSteelGirder(i: SteelGirderInputs) {
       if (m.slenderLeg) checks.push({ id: `cf-leg-${label}`, name: `Cross-frames: ${label}'s legs b/t ≤ 0.45√(E/Fy) (else reduce for local buckling)`, demand: m.b / m.t, capacity: 0.45 * Math.sqrt(ES / i.crossFrame.Fy), unit: "", ok: false, ref: "AASHTO Table 6.9.4.2.1-1" });
   }
 
+  if (endFrames) {
+    const slim = curved ? 120 : 140;
+    for (const e of endFrames.ends) {
+      const at = `End cross-frame, ${e.label}`;
+      const rolled = i.segments[e.seg].kind === "rolled";
+      const minDepth = (rolled ? 0.5 : 0.75) * e.depth;
+      checks.push({ id: `ef-depth-${e.X}`, name: `${at}: depth at least ${rolled ? "0.5" : "0.75"} of the girder's (between the struts)`, demand: minDepth, capacity: endFrames.frame.hb, unit: "in", ok: endFrames.frame.hb >= minDepth - 1e-9, ref: "AASHTO 6.7.4.2.1" });
+      checks.push({ id: `ef-stiff-${e.X}`, name: `${at}: stability bracing stiffness (βT)act ≥ (βT)req for the deck's placement (Mu ${e.Mu.toFixed(0)} kip·ft, span ${e.span + 1})`, demand: e.req, capacity: e.act, unit: "kip·in/rad", ok: e.act >= e.req, ref: "AASHTO Eqs. 6.7.4.2.2-2, -6" });
+      const windNote = [e.Hc > 0 ? `construction wind ${e.Hc.toFixed(1)} kip` : "", ...e.finals.map((f) => `${f.c} wind ${f.H.toFixed(1)} kip`)].filter(Boolean).join(", ");
+      checks.push({ id: `ef-strut-${e.X}`, name: `${at}: strut ${e.strut.name} (stability ${e.Fstrut.toFixed(1)} kip${windNote ? `; the lateral reaction ${windNote}, ${(e.share * 100).toFixed(0)}% through the first bay` : ""})`, demand: e.strutForce, capacity: Math.min(e.strut.Pr, e.strut.Pt), unit: "kip", ok: e.strutForce <= Math.min(e.strut.Pr, e.strut.Pt), ref: "AASHTO 6.7.4.2.1, 6.9.4.4, 6.8.2.1" });
+      checks.push({ id: `ef-diag-${e.X}`, name: `${at}: diagonal ${e.diag.name} (stability ${e.Fdiag.toFixed(1)} kip${windNote ? ", with the lateral reaction" : ""})`, demand: e.diagForce, capacity: Math.min(e.diag.Pr, e.diag.Pt), unit: "kip", ok: e.diagForce <= Math.min(e.diag.Pr, e.diag.Pt), ref: "AASHTO 6.7.4.2.1, 6.9.4.4, 6.8.2.1" });
+      checks.push({ id: `ef-sl-strut-${e.X}`, name: `${at}: strut slenderness ℓ/rz ≤ ${slim}`, demand: e.strut.slenderness, capacity: slim, unit: "", ok: e.strut.slenderness <= slim, ref: "AASHTO 6.9.3" });
+      checks.push({ id: `ef-sl-diag-${e.X}`, name: `${at}: diagonal slenderness ℓ/rz ≤ ${slim}`, demand: e.diag.slenderness, capacity: slim, unit: "", ok: e.diag.slenderness <= slim, ref: "AASHTO 6.9.3" });
+      for (const c of e.connections)
+        c.checks.forEach((x, q) => checks.push({ id: `efc-${e.X}-${c.label}-${q}`, name: `${at}, ${c.label}'s connection (Pu ${c.Pu.toFixed(1)} kip): ${x.name}`, demand: x.demand, capacity: x.capacity, unit: x.unit, ok: x.demand <= x.capacity + 1e-9, ref: x.ref }));
+    }
+  }
+
   // --- Bolted field splices (6.13.6.1.3): at each change of section not welded in the shop ---
   const splices: SpliceResult[] = [];
   if (i.splice.check)
@@ -1824,6 +1910,7 @@ export function designSteelGirder(i: SteelGirderInputs) {
     segmentStarts: segStart,
     camber,
     crossFrames,
+    endFrames,
     splices,
     pourResults,
     b6: { active: b6Active, refined, piers: piersB6 },

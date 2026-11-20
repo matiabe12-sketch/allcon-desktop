@@ -5,6 +5,7 @@ import { layout } from "@/lib/calcs/library/templates";
 import { readingOrder } from "@/lib/calcs/types";
 import { designSteelGirder, STEEL_DEFAULTS, type SteelGirderInputs } from "./steel";
 import { steelCalcLines } from "./steel-calc";
+import { fitsAcross } from "@/lib/calcs/library/fit";
 
 // The calc package, worked out by Calcs, agrees with the design engine: no errors, its worked values are
 // the engine's, and a worked check fails only where the engine's check fails.
@@ -154,5 +155,15 @@ describe("steel girder calc package", { timeout: 60000 }, () => {
     // The pier's deck worked out as cracked without B6 (1.106 ksi > 2fr).
     const plain = workOut({ ...STEEL_DEFAULTS, appendixA6: false, redistribution: false });
     expect(plain.checks.some((x) => x.latex.includes("f_{dk") && x.result.includes("cracked"))).toBe(true);
+  });
+
+  it("every line of math fits on the page, beside its note or across it", () => {
+    const cases: SteelGirderInputs[] = [
+      { ...STEEL_DEFAULTS, appendixA6: false, redistribution: false },
+      STEEL_DEFAULTS,
+      { ...STEEL_DEFAULTS, redistributionMethod: "refined", wind: { ...STEEL_DEFAULTS.wind, V: 115, construction: 70 }, endFrame: { ...STEEL_DEFAULTS.endFrame, abutment: "seat" } },
+      { ...STEEL_DEFAULTS, radius: 2000, pours: [{ from: 0, to: 60, order: 1 }, { from: 60, to: 120, order: 3 }, { from: 120, to: 180, order: 2 }] },
+    ];
+    for (const c of cases) expect(steelCalcLines(c, "T").flatMap((l) => ("math" in l && !fitsAcross(l.math) ? [l.math.slice(0, 60)] : []))).toEqual([]);
   });
 });

@@ -209,3 +209,32 @@ describe("AASHTO 10th Edition load factors: construction (3.4.2.1) and cross-fra
     if (c) expect(c.demand).toBeGreaterThanOrEqual(r.checks.find((x) => x.id === "con-yield")!.demand + 3 - 1e-9);
   });
 });
+
+describe("end cross-frames at the abutments (6.7.4.2)", () => {
+  const wind = { ...STEEL_DEFAULTS.wind, V: 115, construction: 70 };
+  const semi = designSteelGirder({ ...STEEL_DEFAULTS, wind });
+  const seat = designSteelGirder({ ...STEEL_DEFAULTS, wind, endFrame: { ...STEEL_DEFAULTS.endFrame, abutment: "seat" } });
+  it("depth by default 0.8 of the girder's, at least 0.75 (6.7.4.2.1); both abutments", () => {
+    const e = semi.endFrames!;
+    expect(e.ends.length).toBe(2);
+    expect(e.frame.hb).toBe(Math.ceil(0.8 * e.ends[0].depth));
+    expect(semi.checks.find((c) => c.id === "ef-depth-0")!.ok).toBe(true);
+  });
+  it("integral or semi-integral: the construction wind only; a seat abutment adds the design wind at Strength III and V", () => {
+    const a = semi.endFrames!.ends[0];
+    const b = seat.endFrames!.ends[0];
+    expect(a.Hc).toBeGreaterThan(0);
+    expect(a.finals.length).toBe(0);
+    expect(b.finals.map((f) => f.c)).toEqual(["Strength III", "Strength V"]);
+    expect(b.strutForce).toBeGreaterThan(a.strutForce);
+  });
+  it("the stability bracing at 1.4 DC1 for the end span; every check passes on Example 2A", () => {
+    const a = semi.endFrames!.ends[0];
+    const best = semi.stations.filter((s) => s.span === 0).reduce((m, s) => Math.max(m, s.M.dc1), 0);
+    expect(a.Mu).toBeCloseTo(1.4 * best, 6);
+    expect(semi.checks.filter((c) => c.id.startsWith("ef") && !c.ok).map((c) => c.name)).toEqual([]);
+  });
+  it("saved designs without end cross-frames keep them off", () => {
+    expect(steelGirderInputs({ spans: [90, 90] }).endFrame.check).toBe(false);
+  });
+});

@@ -38,6 +38,8 @@ const groupOf = (id: string) =>
                     ? "Moment redistribution (Appendix B6)"
                     : id.startsWith("cw")
                     ? "Wind during construction"
+                    : id.startsWith("ef")
+                    ? "End cross-frames (abutments)"
                     : id.startsWith("splice")
                     ? "Field splices"
                     : id.startsWith("cfc")
@@ -392,6 +394,41 @@ export function SteelGirderEditor({ design, projects }: { design: { id: string; 
               )}
             </Section>
 
+            <Section title="End cross-frames (abutments)">
+              <Toggle label="Design the end cross-frames on the bearing stiffeners (6.7.4.2.1)" value={inputs.endFrame.check} onChange={(v) => setInputs((s) => ({ ...s, endFrame: { ...s.endFrame, check: v } }))} />
+              {inputs.endFrame.check && (
+                <>
+                  <Choice
+                    label="Abutment"
+                    value={inputs.endFrame.abutment}
+                    options={[
+                      { value: "integral", label: "Integral (girder ends cast in)" },
+                      { value: "semi-integral", label: "Semi-integral (end diaphragm on bearings)" },
+                      { value: "seat", label: "Seat, with a joint" },
+                    ]}
+                    onChange={(v) => setInputs((s) => ({ ...s, endFrame: { ...s.endFrame, abutment: v } }))}
+                  />
+                  <Choice
+                    label="Type"
+                    value={inputs.endFrame.type}
+                    options={[
+                      { value: "X", label: "X-frame" },
+                      { value: "K", label: "K-frame" },
+                    ]}
+                    onChange={(v) => setInputs((s) => ({ ...s, endFrame: { ...s.endFrame, type: v } }))}
+                  />
+                  <Choice label="Diagonals" value={inputs.endFrame.diagonal} options={angles} onChange={(v) => setInputs((s) => ({ ...s, endFrame: { ...s.endFrame, diagonal: v } }))} />
+                  <Choice label="Struts" value={inputs.endFrame.strut} options={angles} onChange={(v) => setInputs((s) => ({ ...s, endFrame: { ...s.endFrame, strut: v } }))} />
+                  <Field label="Working points apart" unit="in" value={inputs.endFrame.hb} onChange={(v) => setInputs((s) => ({ ...s, endFrame: { ...s.endFrame, hb: v } }))} hint="0: 0.8 of the girder's depth. At least 0.75 of it (6.7.4.2.1)" />
+                  <p className="pt-1 text-[11px] text-muted-foreground">
+                    {inputs.endFrame.abutment === "seat"
+                      ? "Seat abutment: the frame braces the girders' ends while the deck is placed and carries the wind to the bearings at Strength III and V. The deck's edge and jacking for bearing replacement need an end diaphragm beam: not designed here."
+                      : "Integral and semi-integral: the frame braces the girders' ends while the deck is placed and carries the construction wind; the concrete end diaphragm, cast within 2 hours of the deck, then takes the deck's edge, the lateral loads and (semi-integral) the jacking (CDOT BDM 11.3, 14.5.6)."}
+                  </p>
+                </>
+              )}
+            </Section>
+
             <Section title="Field splices">
               <Toggle label="Design bolted field splices at the section changes (6.13.6.1.3)" value={sp.check} onChange={setSp("check")} />
               {sp.check && (
@@ -625,6 +662,20 @@ export function SteelGirderEditor({ design, projects }: { design: { id: string; 
                       <div className="overflow-x-auto">
                         <div className="min-w-[640px]">
                           <SteelCrossFrameDetail inputs={inputs} result={r} />
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+                {r.endFrames && (
+                  <Card>
+                    <CardContent className="space-y-2 py-3">
+                      <div className="text-sm font-medium">
+                        End cross-frame <span className="font-normal text-muted-foreground">· at the {r.endFrames.abutment} abutments, on the bearing stiffeners</span>
+                      </div>
+                      <div className="overflow-x-auto">
+                        <div className="min-w-[640px]">
+                          <SteelCrossFrameDetail inputs={inputs} result={r} end={r.endFrames.ends[0]} />
                         </div>
                       </div>
                     </CardContent>

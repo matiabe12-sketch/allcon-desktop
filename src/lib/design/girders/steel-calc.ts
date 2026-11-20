@@ -18,7 +18,7 @@ const unitTex = (u: string) => ({ kip: "\\mathrm{kip}", ksi: "\\mathrm{ksi}", "k
 
 const ok = (demand: string, capacity: string) => `\\operatorname{if}\\left(${demand}\\le ${capacity},\\text{OK},\\text{NG}\\right)=`;
 
-export function steelCalcLines(i: SteelGirderInputs, title: string, result?: SteelGirderResult, figures?: { elevation?: Figure; camber?: Figure; screed?: Figure; crossFrame?: Figure; splices?: Figure[] }): Line[] {
+export function steelCalcLines(i: SteelGirderInputs, title: string, result?: SteelGirderResult, figures?: { elevation?: Figure; camber?: Figure; screed?: Figure; crossFrame?: Figure; endFrame?: Figure; splices?: Figure[] }): Line[] {
   const r = result ?? designSteelGirder(i);
   const lines: Line[] = [];
   const text = (t: string, style?: "heading" | "subheading" | "note", extra?: { newPage?: boolean; keepWithNext?: boolean }) => lines.push({ text: t, ...(style ? { style } : {}), ...(extra ?? {}) });
@@ -124,17 +124,17 @@ export function steelCalcLines(i: SteelGirderInputs, title: string, result?: Ste
     m("\\lambda_{pf}\\coloneq0.38\\cdot\\sqrt{\\frac{E_s}{F_{yf}}}=", "AASHTO Eq. 6.10.8.2.2-4");
     m("F_{yr}\\coloneq\\max\\left(0.5\\cdot F_{yf},\\min\\left(0.7\\cdot F_{yf},F_{yw}\\right)\\right)=", "AASHTO 6.10.8.2.2", "ksi");
     m("\\lambda_{rf}\\coloneq0.56\\cdot\\sqrt{\\frac{E_s}{F_{yr}}}=", "AASHTO Eq. 6.10.8.2.2-5");
-    m("F_{FLB}\\coloneq\\operatorname{if}\\left(\\lambda_{f}\\le\\lambda_{pf},R_{b}\\cdot R_{h}\\cdot F_{yf},\\left(1-\\left(1-\\frac{F_{yr}}{R_{h}\\cdot F_{yf}}\\right)\\cdot\\frac{\\lambda_{f}-\\lambda_{pf}}{\\lambda_{rf}-\\lambda_{pf}}\\right)\\cdot R_{b}\\cdot R_{h}\\cdot F_{yf}\\right)=", "AASHTO Eqs. 6.10.8.2.2-1, -2", "ksi");
+    m("F_{yc}\\coloneq R_{b}\\cdot R_{h}\\cdot F_{yf}=", "The flange's yield limit", "ksi");
+    m("F_{FLBi}\\coloneq\\left(1-\\left(1-\\frac{F_{yr}}{R_{h}\\cdot F_{yf}}\\right)\\cdot\\frac{\\lambda_{f}-\\lambda_{pf}}{\\lambda_{rf}-\\lambda_{pf}}\\right)\\cdot F_{yc}=", "Noncompact flange, AASHTO Eq. 6.10.8.2.2-2", "ksi");
+    m("F_{FLB}\\coloneq\\operatorname{if}\\left(\\lambda_{f}\\le\\lambda_{pf},F_{yc},F_{FLBi}\\right)=", "AASHTO Eqs. 6.10.8.2.2-1, -2", "ksi");
     m("r_{t}\\coloneq\\frac{b_{fc}}{\\sqrt{12\\cdot\\left(1+\\frac{D_{c}\\cdot t_{w}}{3\\cdot b_{fc}\\cdot t_{fc}}\\right)}}=", "AASHTO Eq. 6.10.8.2.3b-3", "in");
     m("L_{p}\\coloneq1.1\\cdot r_{t}\\cdot\\sqrt{\\frac{E_s}{F_{yf}}}=", "AASHTO Eq. 6.10.8.2.3a-4", "ft");
     m("F_{yrL}\\coloneq0.5\\cdot F_{yf}=", "Webs without longitudinal stiffeners, AASHTO 6.10.8.2.3a", "ksi");
     m("L_{r}\\coloneq\\pi\\cdot r_{t}\\cdot\\sqrt{\\frac{E_s}{F_{yrL}}}=", "AASHTO Eq. 6.10.8.2.3a-5", "ft");
     m("F_{e}\\coloneq\\frac{C_{b}\\cdot\\pi^{2}\\cdot E_s}{\\left(\\frac{L_{b}}{r_{t}}\\right)^{2}}=", "AASHTO Eq. 6.10.8.2.3b-2", "ksi");
-    m(
-      "F_{LTB}\\coloneq\\operatorname{if}\\left(L_{b}\\le L_{p},R_{b}\\cdot R_{h}\\cdot F_{yf},\\operatorname{if}\\left(L_{b}\\le L_{r},\\min\\left(C_{b}\\cdot\\left(1-\\left(1-\\frac{F_{yrL}}{R_{h}\\cdot F_{yf}}\\right)\\cdot\\frac{L_{b}-L_{p}}{L_{r}-L_{p}}\\right)\\cdot R_{b}\\cdot R_{h}\\cdot F_{yf},R_{b}\\cdot R_{h}\\cdot F_{yf}\\right),\\min\\left(R_{b}\\cdot F_{e},R_{b}\\cdot R_{h}\\cdot F_{yf}\\right)\\right)\\right)=",
-      "AASHTO Eqs. 6.10.8.2.3a-1 to -3",
-      "ksi",
-    );
+    m("F_{LTBi}\\coloneq\\min\\left(C_{b}\\cdot\\left(1-\\left(1-\\frac{F_{yrL}}{R_{h}\\cdot F_{yf}}\\right)\\cdot\\frac{L_{b}-L_{p}}{L_{r}-L_{p}}\\right)\\cdot F_{yc},F_{yc}\\right)=", "Inelastic, AASHTO Eq. 6.10.8.2.3a-2", "ksi");
+    m("F_{LTBe}\\coloneq\\min\\left(R_{b}\\cdot F_{e},F_{yc}\\right)=", "Elastic, AASHTO Eq. 6.10.8.2.3a-3", "ksi");
+    m("F_{LTB}\\coloneq\\operatorname{if}\\left(L_{b}\\le L_{p},F_{yc},\\operatorname{if}\\left(L_{b}\\le L_{r},F_{LTBi},F_{LTBe}\\right)\\right)=", "AASHTO Eqs. 6.10.8.2.3a-1 to -3", "ksi");
     m("F_{nc}\\coloneq\\min\\left(F_{FLB},F_{LTB}\\right)=", "AASHTO 6.10.8.2.1", "ksi");
     m(ok(flN > 0 ? "f_{bu}+\\frac{f_{ln}}{3}" : "f_{bu}", "\\phi_f\\cdot F_{nc}"), "AASHTO Eq. 6.10.8.1.1-1");
     const t = check("flex-neg-t");
@@ -162,7 +162,10 @@ export function steelCalcLines(i: SteelGirderInputs, title: string, result?: Ste
       m("k_{v}\\coloneq5+\\frac{5}{\\left(\\frac{d_{o}}{D_{v}}\\right)^{2}}=", "AASHTO Eq. 6.10.9.3.2-7");
     } else m("k_{v}\\coloneq5", "Unstiffened web, AASHTO 6.10.9.2");
     m("a_{v}\\coloneq\\sqrt{\\frac{E_s\\cdot k_{v}}{F_{yw}}}=");
-    m("C\\coloneq\\operatorname{if}\\left(\\frac{D_{v}}{t_{v}}\\le1.12\\cdot a_{v},1,\\operatorname{if}\\left(\\frac{D_{v}}{t_{v}}\\le1.40\\cdot a_{v},\\frac{1.12\\cdot a_{v}}{\\frac{D_{v}}{t_{v}}},\\frac{1.57\\cdot a_{v}^{2}}{\\left(\\frac{D_{v}}{t_{v}}\\right)^{2}}\\right)\\right)=", "AASHTO Eqs. 6.10.9.3.2-4 to -6");
+    m("\\lambda_{v}\\coloneq\\frac{D_{v}}{t_{v}}=", "The web's slenderness");
+    m("C_{i}\\coloneq\\frac{1.12\\cdot a_{v}}{\\lambda_{v}}=", "Inelastic buckling, AASHTO Eq. 6.10.9.3.2-5");
+    m("C_{e}\\coloneq\\frac{1.57\\cdot a_{v}^{2}}{\\lambda_{v}^{2}}=", "Elastic buckling, AASHTO Eq. 6.10.9.3.2-6");
+    m("C\\coloneq\\operatorname{if}\\left(\\lambda_{v}\\le1.12\\cdot a_{v},1,\\operatorname{if}\\left(\\lambda_{v}\\le1.40\\cdot a_{v},C_{i},C_{e}\\right)\\right)=", "AASHTO Eqs. 6.10.9.3.2-4 to -6");
     m("V_{p}\\coloneq0.58\\cdot F_{yw}\\cdot D_{v}\\cdot t_{v}=", "AASHTO Eq. 6.10.9.2-2", "kip");
     if (stiff && !end) {
       const pp = p;
@@ -214,17 +217,17 @@ export function steelCalcLines(i: SteelGirderInputs, title: string, result?: Ste
     m(`\\lambda_{pf${t}}\\coloneq0.38\\cdot\\sqrt{\\frac{E_s}{F_{yf}}}=`, "AASHTO Eq. 6.10.8.2.2-4");
     m(`F_{yr${t}}\\coloneq\\max\\left(0.5\\cdot F_{yf},\\min\\left(0.7\\cdot F_{yf},F_{yw}\\right)\\right)=`, "AASHTO 6.10.8.2.2", "ksi");
     m(`\\lambda_{rf${t}}\\coloneq0.56\\cdot\\sqrt{\\frac{E_s}{F_{yr${t}}}}=`, "AASHTO Eq. 6.10.8.2.2-5");
-    m(`F_{FLB${t}}\\coloneq\\operatorname{if}\\left(\\lambda_{f${t}}\\le\\lambda_{pf${t}},R_{h${t}}\\cdot F_{yf},\\left(1-\\left(1-\\frac{F_{yr${t}}}{R_{h${t}}\\cdot F_{yf}}\\right)\\cdot\\frac{\\lambda_{f${t}}-\\lambda_{pf${t}}}{\\lambda_{rf${t}}-\\lambda_{pf${t}}}\\right)\\cdot R_{h${t}}\\cdot F_{yf}\\right)=`, "AASHTO Eqs. 6.10.8.2.2-1, -2 (Rb = 1)", "ksi");
+    m(`F_{yc${t}}\\coloneq R_{h${t}}\\cdot F_{yf}=`, "The flange's yield limit (Rb = 1)", "ksi");
+    m(`F_{FLBi${t}}\\coloneq\\left(1-\\left(1-\\frac{F_{yr${t}}}{F_{yc${t}}}\\right)\\cdot\\frac{\\lambda_{f${t}}-\\lambda_{pf${t}}}{\\lambda_{rf${t}}-\\lambda_{pf${t}}}\\right)\\cdot F_{yc${t}}=`, "Noncompact flange, AASHTO Eq. 6.10.8.2.2-2", "ksi");
+    m(`F_{FLB${t}}\\coloneq\\operatorname{if}\\left(\\lambda_{f${t}}\\le\\lambda_{pf${t}},F_{yc${t}},F_{FLBi${t}}\\right)=`, "AASHTO Eqs. 6.10.8.2.2-1, -2", "ksi");
     m(`r_{t${t}}\\coloneq\\frac{b_{fc${t}}}{\\sqrt{12\\cdot\\left(1+\\frac{D_{c${t}}\\cdot t_{w${t}}}{3\\cdot b_{fc${t}}\\cdot t_{fc${t}}}\\right)}}=`, "AASHTO Eq. 6.10.8.2.3b-3", "in");
     m(`L_{p${t}}\\coloneq1.1\\cdot r_{t${t}}\\cdot\\sqrt{\\frac{E_s}{F_{yf}}}=`, "AASHTO Eq. 6.10.8.2.3a-4", "ft");
     m(`F_{yrL${t}}\\coloneq0.5\\cdot F_{yf}=`, "Webs without longitudinal stiffeners, AASHTO 6.10.8.2.3a", "ksi");
     m(`L_{r${t}}\\coloneq\\pi\\cdot r_{t${t}}\\cdot\\sqrt{\\frac{E_s}{F_{yrL${t}}}}=`, "AASHTO Eq. 6.10.8.2.3a-5", "ft");
     m(`F_{e${t}}\\coloneq\\frac{C_{b${t}}\\cdot\\pi^{2}\\cdot E_s}{\\left(\\frac{L_{b${t}}}{r_{t${t}}}\\right)^{2}}=`, "AASHTO Eq. 6.10.8.2.3b-2", "ksi");
-    m(
-      `F_{LTB${t}}\\coloneq\\operatorname{if}\\left(L_{b${t}}\\le L_{p${t}},R_{h${t}}\\cdot F_{yf},\\operatorname{if}\\left(L_{b${t}}\\le L_{r${t}},\\min\\left(C_{b${t}}\\cdot\\left(1-\\left(1-\\frac{F_{yrL${t}}}{R_{h${t}}\\cdot F_{yf}}\\right)\\cdot\\frac{L_{b${t}}-L_{p${t}}}{L_{r${t}}-L_{p${t}}}\\right)\\cdot R_{h${t}}\\cdot F_{yf},R_{h${t}}\\cdot F_{yf}\\right),\\min\\left(F_{e${t}},R_{h${t}}\\cdot F_{yf}\\right)\\right)\\right)=`,
-      "AASHTO Eqs. 6.10.8.2.3a-1 to -3 (Rb = 1)",
-      "ksi",
-    );
+    m(`F_{LTBi${t}}\\coloneq\\min\\left(C_{b${t}}\\cdot\\left(1-\\left(1-\\frac{F_{yrL${t}}}{F_{yc${t}}}\\right)\\cdot\\frac{L_{b${t}}-L_{p${t}}}{L_{r${t}}-L_{p${t}}}\\right)\\cdot F_{yc${t}},F_{yc${t}}\\right)=`, "Inelastic, AASHTO Eq. 6.10.8.2.3a-2", "ksi");
+    m(`F_{LTBe${t}}\\coloneq\\min\\left(F_{e${t}},F_{yc${t}}\\right)=`, "Elastic, AASHTO Eq. 6.10.8.2.3a-3", "ksi");
+    m(`F_{LTB${t}}\\coloneq\\operatorname{if}\\left(L_{b${t}}\\le L_{p${t}},F_{yc${t}},\\operatorname{if}\\left(L_{b${t}}\\le L_{r${t}},F_{LTBi${t}},F_{LTBe${t}}\\right)\\right)=`, "AASHTO Eqs. 6.10.8.2.3a-1 to -3 (Rb = 1)", "ksi");
     m(`F_{nc${t}}\\coloneq\\min\\left(F_{FLB${t}},F_{LTB${t}}\\right)=`, "AASHTO 6.10.8.2.1", "ksi");
   };
 
@@ -498,11 +501,9 @@ export function steelCalcLines(i: SteelGirderInputs, title: string, result?: Ste
         m(`t_{fc${t}}\\coloneq ${num(q.tfc, 3)}\\mathrm{in}`);
         m(`D_{w${t}}\\coloneq ${num(q.D)}\\mathrm{in}`);
         const c0 = q.enhanced ? "2.78" : "2.63";
-        m(
-          `M_{pe${t}}\\coloneq\\min\\left(M_{n${t}},\\left(${c0}-2.3\\cdot\\frac{b_{fc${t}}}{t_{fc${t}}}\\cdot\\sqrt{\\frac{F_{yf}}{E_s}}-0.35\\cdot\\frac{D_{w${t}}}{b_{fc${t}}}+0.39\\cdot\\frac{b_{fc${t}}}{t_{fc${t}}}\\cdot\\sqrt{\\frac{F_{yf}}{E_s}}\\cdot\\frac{D_{w${t}}}{b_{fc${t}}}\\right)\\cdot M_{n${t}}\\right)=`,
-          q.enhanced ? "Enhanced moment-rotation, AASHTO Eq. B6.5.1-3" : "AASHTO Eq. B6.5.2-2",
-          "kip*ft",
-        );
+        m(`\\lambda_{e${t}}\\coloneq\\frac{b_{fc${t}}}{t_{fc${t}}}\\cdot\\sqrt{\\frac{F_{yf}}{E_s}}=`, "The flange's slenderness term");
+        m(`\\rho_{e${t}}\\coloneq${c0}-2.3\\cdot\\lambda_{e${t}}-0.35\\cdot\\frac{D_{w${t}}}{b_{fc${t}}}+0.39\\cdot\\lambda_{e${t}}\\cdot\\frac{D_{w${t}}}{b_{fc${t}}}=`, q.enhanced ? "Enhanced moment-rotation, AASHTO Eq. B6.5.1-3" : "AASHTO Eq. B6.5.2-2");
+        m(`M_{pe${t}}\\coloneq\\min\\left(M_{n${t}},\\rho_{e${t}}\\cdot M_{n${t}}\\right)=`, q.enhanced ? "AASHTO Eq. B6.5.1-3" : "AASHTO Eq. B6.5.2-2", "kip*ft");
         m(`M_{rd${t}}\\coloneq\\max\\left(M_{e${t}}-\\phi_f\\cdot M_{pe${t}},0\\mathrm{kip}\\cdot\\mathrm{ft}\\right)=`, "AASHTO Eq. B6.4.2.1-1 (no flange lateral bending)", "kip*ft");
         m(ok(`M_{rd${t}}`, `0.2\\cdot M_{e${t}}`), "AASHTO Eq. B6.4.2.1-3");
         for (const c of r.combos.filter((x) => x !== "I")) {
@@ -614,11 +615,9 @@ export function steelCalcLines(i: SteelGirderInputs, title: string, result?: Ste
         m(`d_{hc}\\coloneq ${num(cn.d + (cn.d >= 1 ? 0.125 : 0.0625), 4)}\\mathrm{in}`, "Standard hole, AASHTO Table 6.13.2.4.2-1");
         m(`L_{ce}\\coloneq ${num(cn.edge, 3)}\\mathrm{in}-\\frac{d_{hc}}{2}=`, "Clear end distance", "in");
         m(`L_{cs}\\coloneq ${num(cn.spacing, 3)}\\mathrm{in}-d_{hc}=`, "Clear spacing", "in");
-        m(
-          "R_{nb}\\coloneq\\min\\left(1.2\\cdot L_{ce}\\cdot t_{pc}\\cdot F_{uc},2.4\\cdot d_{b}\\cdot t_{pc}\\cdot F_{uc}\\right)+\\left(n_{bt}-1\\right)\\cdot\\min\\left(1.2\\cdot L_{cs}\\cdot t_{pc}\\cdot F_{uc},2.4\\cdot d_{b}\\cdot t_{pc}\\cdot F_{uc}\\right)=",
-          "AASHTO Eqs. 6.13.2.9-1, -2",
-          "kip",
-        );
+        m("R_{nbe}\\coloneq\\min\\left(1.2\\cdot L_{ce}\\cdot t_{pc}\\cdot F_{uc},2.4\\cdot d_{b}\\cdot t_{pc}\\cdot F_{uc}\\right)=", "The end bolt, AASHTO Eqs. 6.13.2.9-1, -2", "kip");
+        m("R_{nbi}\\coloneq\\min\\left(1.2\\cdot L_{cs}\\cdot t_{pc}\\cdot F_{uc},2.4\\cdot d_{b}\\cdot t_{pc}\\cdot F_{uc}\\right)=", "Each other bolt", "kip");
+        m("R_{nb}\\coloneq R_{nbe}+\\left(n_{bt}-1\\right)\\cdot R_{nbi}=", "AASHTO 6.13.2.9", "kip");
         m(ok("P_{uc}", "0.80\\cdot R_{nb}"), "φbb = 0.80, AASHTO 6.5.4.2");
         worked.add(idx("bearing at the bolt holes"));
         given(`P_{sc}\\coloneq ${num(g.Ps, 3)}\\mathrm{kip}`, cn.serviceForce > 0 ? "Service II force, as given from a refined analysis" : "Service II: the deck placement's unfactored force (the line girder gives the cross-frames no live load force)");
@@ -720,6 +719,49 @@ export function steelCalcLines(i: SteelGirderInputs, title: string, result?: Ste
     flat(ids, "Checks with flange lateral bending", "w", false);
   }
 
+  // --- End cross-frames at the abutments (6.7.4.2) ---
+  if (r.endFrames) {
+    const efr = r.endFrames;
+    const ef = i.endFrame;
+    text("End cross-frames at the abutments (AASHTO 6.7.4.2)", "subheading", { newPage: true, keepWithNext: true });
+    text(
+      `Method:- ${ef.type}-type frames of single angles on the bearing stiffeners, at both abutments. They brace the girders' ends while the deck is placed (the stability bracing's stiffness and strength of AASHTO 6.7.4.2.2 for the end span, 1.4 DC1 by AASHTO 3.4.2.1) and carry the lateral loads to the bearings (AASHTO 6.7.4.2.1): ${efr.abutment === "seat" ? "on this seat abutment, the construction wind and the design wind at Strength III and V" : `at this ${efr.abutment} abutment, the construction wind only, as the concrete end diaphragm cast with the deck then carries the deck's edge and the lateral loads (CDOT BDM 11.3)`}. The lateral reaction enters at the fascia girder and is shared by the bearings: the first bay takes (Nb − 1)/Nb of it.`,
+      undefined,
+      { keepWithNext: true },
+    );
+    if (figures?.endFrame) lines.push({ region: figures.endFrame });
+    efr.ends.forEach((e, q) => {
+      const t = `e${q + 1}`;
+      text(`${e.label[0].toUpperCase()}${e.label.slice(1)}:- span ${e.span + 1}'s deck placement.`, undefined, { keepWithNext: true });
+      m(`h_{b${t}}\\coloneq ${num((r.endFrames?.frame.hb ?? ef.hb))}\\mathrm{in}`, "Between the struts' working points");
+      given(`d_{g${t}}\\coloneq ${num(e.depth, 3)}\\mathrm{in}`, "The girder's depth at the abutment");
+      m(ok(`${i.segments[e.seg].kind === "rolled" ? "0.5" : "0.75"}\\cdot d_{g${t}}`, `h_{b${t}}`), "AASHTO 6.7.4.2.1");
+      given(`M_{u${t}}\\coloneq ${num(e.Mu)}\\mathrm{kip}\\cdot\\mathrm{ft}`, "1.4 DC1 on the steel, the end span's largest, AASHTO 3.4.2.1");
+      given(`\\beta_{Treq${t}}\\coloneq ${num(e.req, 0)}\\mathrm{kip}\\cdot\\mathrm{in}`, `Required stiffness, AASHTO Eq. 6.7.4.2.2-2 (${e.full ? "2.4" : "3.6"}), per radian`);
+      given(`\\beta_{Tact${t}}\\coloneq ${num(e.act, 0)}\\mathrm{kip}\\cdot\\mathrm{in}`, "The brace system's stiffness, AASHTO Eqs. 6.7.4.2.2-6 to -13, per radian");
+      m(ok(`\\beta_{Treq${t}}`, `\\beta_{Tact${t}}`), "AASHTO 6.7.4.2.2");
+      if (e.Hc > 0) given(`H_{c${t}}\\coloneq ${num(e.Hc, 3)}\\mathrm{kip}`, "The construction wind's reaction at the bearing line, half the end span, Strength III with the deck wet");
+      e.finals.forEach((f, n) => given(`H_{f${n}${t}}\\coloneq ${num(f.H, 3)}\\mathrm{kip}`, `${f.c}: the design wind on the superstructure's depth, half the end span`));
+      given(`P_{us${t}}\\coloneq ${num(e.strutForce, 3)}\\mathrm{kip}`, `Strut: the stability bracing's force (${num(e.Fstrut, 2)} kip), with ${num(e.share, 3)} of the lateral reaction`);
+      given(`P_{rs${t}}\\coloneq ${num(Math.min(e.strut.Pr, e.strut.Pt), 3)}\\mathrm{kip}`, `${e.strut.name}, single angle, AASHTO 6.9.4.4 (compression) and 6.8.2.1 (tension), the smaller`);
+      m(ok(`P_{us${t}}`, `P_{rs${t}}`), "AASHTO 6.7.4.2.1");
+      given(`P_{ud${t}}\\coloneq ${num(e.diagForce, 3)}\\mathrm{kip}`, `Diagonal: the stability bracing's force (${num(e.Fdiag, 2)} kip), with the lateral reaction's share`);
+      given(`P_{rd${t}}\\coloneq ${num(Math.min(e.diag.Pr, e.diag.Pt), 3)}\\mathrm{kip}`, `${e.diag.name}, ${num(e.diag.l, 2)} in long`);
+      m(ok(`P_{ud${t}}`, `P_{rd${t}}`), "AASHTO 6.7.4.2.1");
+    });
+    const others = r.checks.filter((c) => /^ef(c|-sl)/.test(c.id));
+    if (others.length) {
+      text("Slenderness and the members' end connections (AASHTO 6.9.3, 6.13):", "note", { keepWithNext: true });
+      others.forEach((c, k) => {
+        const tag = `ye${k + 1}`;
+        text(`${c.name}:-`, undefined, { keepWithNext: true });
+        given(`f_{${tag}}\\coloneq ${num(c.demand, 3)}${unitTex(c.unit)}`);
+        given(`F_{${tag}}\\coloneq ${num(c.capacity, 3)}${unitTex(c.unit)}`);
+        m(ok(`f_{${tag}}`, `F_{${tag}}`), c.ref);
+      });
+    }
+  }
+
   // --- Bolted field splices (6.13.6.1.3) ---
   r.splices.forEach((sp, q) => {
     const si = i.splice;
@@ -763,13 +805,19 @@ export function steelCalcLines(i: SteelGirderInputs, title: string, result?: Ste
     given(`M_{un${t}}\\coloneq ${num(Math.abs(sp.forces.MuNeg))}\\mathrm{kip}\\cdot\\mathrm{ft}`, "Strength I, negative");
     m(`M_{fp${t}}\\coloneq P_{fyb${t}}\\cdot ${num(sp.arms.pos, 3)}\\mathrm{in}=`, undefined, "kip*ft");
     m(`M_{fn${t}}\\coloneq\\min\\left(P_{fyt${t}},P_{fyb${t}}\\right)\\cdot ${num(sp.arms.neg, 3)}\\mathrm{in}=`, undefined, "kip*ft");
-    m(`H_{w${t}}\\coloneq\\max\\left(\\frac{\\max\\left(0\\mathrm{kip}\\cdot\\mathrm{ft},M_{up${t}}-M_{fp${t}}\\right)}{${num(sp.arms.webPos, 3)}\\mathrm{in}},\\frac{\\max\\left(0\\mathrm{kip}\\cdot\\mathrm{ft},M_{un${t}}-M_{fn${t}}\\right)}{${num(sp.arms.webNeg, 3)}\\mathrm{in}}\\right)=`, "The web's horizontal force, AASHTO 6.13.6.1.3c (arm to the deck, or D/4)", "kip");
+    m(`H_{wp${t}}\\coloneq\\frac{\\max\\left(0\\mathrm{kip}\\cdot\\mathrm{ft},M_{up${t}}-M_{fp${t}}\\right)}{${num(sp.arms.webPos, 3)}\\mathrm{in}}=`, "Positive: the arm from the web's mid-depth to the deck's, AASHTO 6.13.6.1.3c", "kip");
+    m(`H_{wn${t}}\\coloneq\\frac{\\max\\left(0\\mathrm{kip}\\cdot\\mathrm{ft},M_{un${t}}-M_{fn${t}}\\right)}{${num(sp.arms.webNeg, 3)}\\mathrm{in}}=`, "Negative: the arm D/4, AASHTO 6.13.6.1.3c", "kip");
+    m(`H_{w${t}}\\coloneq\\max\\left(H_{wp${t}},H_{wn${t}}\\right)=`, "The web's horizontal force", "kip");
     text("Slip:- the flange bolts' nominal slip resistance times the same arms gives the moment for slip; the rest goes to the web (AASHTO 6.13.6.1.3b, c).", undefined, { keepWithNext: true });
     m(`P_{t${t}}\\coloneq ${num(sp.bottom.Rslip / (2 * Ks))}\\mathrm{kip}`, "Minimum bolt tension, AASHTO Table 6.13.2.8-1");
     m(`R_{s${t}}\\coloneq1.0\\cdot ${Ks}\\cdot 2\\cdot P_{t${t}}=`, "One bolt, two slip planes, Kh 1, AASHTO Eq. 6.13.2.8-1", "kip");
     given(`M_{sp${t}}\\coloneq ${num(sp.forces.MsPos)}\\mathrm{kip}\\cdot\\mathrm{ft}`, "Service II, positive");
     given(`M_{sn${t}}\\coloneq ${num(Math.max(Math.abs(sp.forces.MsNeg), Math.abs(sp.forces.Mdeck)))}\\mathrm{kip}\\cdot\\mathrm{ft}`, "Service II negative, or the deck's casting (1.4 DC on the steel), the larger");
-    m(`H_{ws${t}}\\coloneq\\max\\left(\\frac{\\max\\left(0\\mathrm{kip}\\cdot\\mathrm{ft},M_{sp${t}}-N_{b${t}}\\cdot R_{s${t}}\\cdot ${num(sp.arms.pos, 3)}\\mathrm{in}\\right)}{${num(sp.arms.webPos, 3)}\\mathrm{in}},\\frac{\\max\\left(0\\mathrm{kip}\\cdot\\mathrm{ft},M_{sn${t}}-\\min\\left(N_{t${t}},N_{b${t}}\\right)\\cdot R_{s${t}}\\cdot ${num(sp.arms.neg, 3)}\\mathrm{in}\\right)}{${num(sp.arms.webNeg, 3)}\\mathrm{in}}\\right)=`, "The web's horizontal force for slip", "kip");
+    m(`M_{slp${t}}\\coloneq N_{b${t}}\\cdot R_{s${t}}\\cdot ${num(sp.arms.pos, 3)}\\mathrm{in}=`, "The flange bolts' slip resistance, positive", "kip*ft");
+    m(`M_{sln${t}}\\coloneq\\min\\left(N_{t${t}},N_{b${t}}\\right)\\cdot R_{s${t}}\\cdot ${num(sp.arms.neg, 3)}\\mathrm{in}=`, "Negative, and the deck's casting", "kip*ft");
+    m(`H_{wsp${t}}\\coloneq\\frac{\\max\\left(0\\mathrm{kip}\\cdot\\mathrm{ft},M_{sp${t}}-M_{slp${t}}\\right)}{${num(sp.arms.webPos, 3)}\\mathrm{in}}=`, undefined, "kip");
+    m(`H_{wsn${t}}\\coloneq\\frac{\\max\\left(0\\mathrm{kip}\\cdot\\mathrm{ft},M_{sn${t}}-M_{sln${t}}\\right)}{${num(sp.arms.webNeg, 3)}\\mathrm{in}}=`, undefined, "kip");
+    m(`H_{ws${t}}\\coloneq\\max\\left(H_{wsp${t}},H_{wsn${t}}\\right)=`, "The web's horizontal force for slip", "kip");
     text(`Web:- 2 plates ${num(sp.web.plate.t, 4)} × ${num(sp.web.plate.h)} in, ${sp.web.cols} lines of ${sp.web.perCol} bolts each side.`, undefined, { keepWithNext: true });
     given(`V_{r${t}}\\coloneq ${num(sp.forces.Vr)}\\mathrm{kip}`, "The smaller factored shear resistance of the web either side, AASHTO 6.10.9");
     given(`V_{s${t}}\\coloneq ${num(Math.max(sp.forces.Vs, Math.abs(sp.forces.Vdeck)))}\\mathrm{kip}`, "Service II, or the deck's casting, the larger");

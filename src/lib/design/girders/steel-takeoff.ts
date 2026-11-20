@@ -85,7 +85,24 @@ export function steelQuantities(i: SteelGirderInputs, r: SteelGirderResult = des
     for (const x of inner) byD.set(Dat(x), (byD.get(Dat(x)) ?? 0) + 1);
     for (const [D, n] of byD) plate(`Connection plates, ${fit(D)} in web`, 2 * frames * n, cf.plateWidth, cf.plateThickness, cf.fullDepthPlates ? D : cf.hb + 6, "in", i.bearing.clip);
   }
-  if (frames > 0 && lines > 0) {
+  // At the abutments, the end cross-frames' members where they're designed (the intermediate frames' elsewhere).
+  const ends = r.endFrames ? 2 : 0;
+  if (frames > 0 && ends > 0) {
+    const ef = i.endFrame;
+    const tw = fieldSections(i, r)[0].tw;
+    const clear = i.S * 12 - tw - 2 * cf.connection.plateT;
+    const diag = ef.type === "X" ? Math.hypot(clear, (r.endFrames?.frame.hb ?? ef.hb)) : Math.hypot(clear / 2, (r.endFrames?.frame.hb ?? ef.hb));
+    const w = (name: string) => L_SHAPES.find((x) => x[0] === name)?.[1] ?? 0;
+    const n = frames * ends;
+    rows.push({ part: "End cross-frame struts (abutments)", count: 2 * n, desc: `${ef.strut} at ${w(ef.strut)} lb/ft × ${fit(clear)} in`, lb: (2 * n * w(ef.strut) * clear) / 12, term: `${2 * n}\\cdot ${num(w(ef.strut))}\\frac{\\mathrm{lb}}{\\mathrm{ft}}\\cdot ${inT(fit(clear))}` });
+    rows.push({ part: `End cross-frame diagonals (${ef.type})`, count: 2 * n, desc: `${ef.diagonal} at ${w(ef.diagonal)} lb/ft × ${fit(diag)} in`, lb: (2 * n * w(ef.diagonal) * diag) / 12, term: `${2 * n}\\cdot ${num(w(ef.diagonal))}\\frac{\\mathrm{lb}}{\\mathrm{ft}}\\cdot ${inT(fit(diag))}` });
+    if (cf.connection.kind === "bolted") {
+      const bolts = 8 * Math.max(1, Math.round(cf.connection.bolts)) * n;
+      const per100 = BOLT_LB_PER_100[String(cf.connection.d)] ?? 81;
+      rows.push({ part: "High-strength bolts, end cross-frames", count: bolts, desc: `${fit(cf.connection.d)} in, ${per100} lb per 100 (CDOT Table 509-4)`, lb: (bolts * per100) / 100, term: `${bolts}\\cdot\\frac{${num(per100)}\\mathrm{lb}}{100}` });
+    }
+  }
+  if (frames > 0 && lines - ends > 0) {
     const tw = fieldSections(i, r)[0].tw;
     const clear = i.S * 12 - tw - 2 * cf.connection.plateT; // in, between the connection plates' faces
     const diag = cf.type === "X" ? Math.hypot(clear, cf.hb) : Math.hypot(clear / 2, cf.hb);
@@ -94,7 +111,7 @@ export function steelQuantities(i: SteelGirderInputs, r: SteelGirderResult = des
       if (!(w > 0)) return;
       rows.push({ part, count: n, desc: `${name} at ${w} lb/ft × ${fit(L)} in`, lb: (n * w * L) / 12, term: `${n}\\cdot ${num(w)}\\frac{\\mathrm{lb}}{\\mathrm{ft}}\\cdot ${inT(fit(L))}` });
     };
-    const count = frames * lines;
+    const count = frames * (lines - ends);
     member("Cross-frame struts (top and bottom)", cf.strut, 2 * count, clear);
     member(`Cross-frame diagonals (${cf.type})`, cf.diagonal, 2 * count, diag);
     if (cf.connection.kind === "bolted") {
@@ -102,7 +119,7 @@ export function steelQuantities(i: SteelGirderInputs, r: SteelGirderResult = des
       const per100 = BOLT_LB_PER_100[String(cf.connection.d)] ?? 81;
       rows.push({ part: "High-strength bolts, cross-frames", count: bolts, desc: `${fit(cf.connection.d)} in, ${per100} lb per 100 (CDOT Table 509-4)`, lb: (bolts * per100) / 100, term: `${bolts}\\cdot\\frac{${num(per100)}\\mathrm{lb}}{100}` });
     }
-    notes.push(`Cross-frames: ${count} (${frames} per line at ${lines} lines, the supports included), ${cf.type}-type, the members' lengths between the connection plates' faces at the working points${cf.type === "K" ? "; the K-frames' middle gusset plates aren't included" : ""}. At the supports the frames connect to the bearing stiffeners.`);
+    notes.push(`Cross-frames: ${count} (${frames} per line at ${lines - ends} lines, ${ends ? "the piers included; the abutments' end cross-frames listed apart" : "the supports included"}), ${cf.type}-type, the members' lengths between the connection plates' faces at the working points${cf.type === "K" ? "; the K-frames' middle gusset plates aren't included" : ""}. At the supports the frames connect to the bearing stiffeners.`);
   }
 
   // Studs: shank area × height, across the girder at each zone's pitch, bearing to bearing.

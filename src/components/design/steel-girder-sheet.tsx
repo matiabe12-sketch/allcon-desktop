@@ -385,11 +385,12 @@ export function SteelCamberTable({ result: r }: { result: SteelGirderResult }) {
  * welds), the working points' depth and the girder spacing, and a note of the members, fasteners, plates, the fit
  * and the members' forces against their resistances.
  */
-export function SteelCrossFrameDetail({ inputs: i, result: r }: { inputs: SteelGirderInputs; result: SteelGirderResult }) {
-  const cf = i.crossFrame;
+export function SteelCrossFrameDetail({ inputs: i, result: r, end }: { inputs: SteelGirderInputs; result: SteelGirderResult; end?: NonNullable<SteelGirderResult["endFrames"]>["ends"][number] }) {
+  // An end cross-frame: the end frame's members on the bearing stiffeners (full depth, both flanges), at the abutment.
+  const cf = end && r.endFrames ? { ...i.crossFrame, ...r.endFrames.frame } : i.crossFrame;
   const cn = cf.connection;
-  const cfr = r.crossFrames;
-  const braceX = connectionPlates(r)[0] ?? r.total / 2;
+  const cfr = end ? { strutForce: end.strutForce, strut: end.strut, diagForce: end.diagForce, diag: end.diag } : r.crossFrames;
+  const braceX = end ? Math.min(Math.max(end.X, 1e-3), r.total - 1e-3) : (connectionPlates(r)[0] ?? r.total / 2);
   const k = Math.max(0, r.segmentStarts.filter((x) => x <= braceX + 1e-9).length - 1);
   const seg = fieldSections(i, r)[k];
   const depth = seg.D + seg.top.t + seg.bottom.t;
@@ -437,7 +438,9 @@ export function SteelCrossFrameDetail({ inputs: i, result: r }: { inputs: SteelG
       ? `Bolts: ${Math.round(cn.bolts)} – ${fracIn(cn.d)} in dia ${cn.grade} (ASTM F3125) at each member end, threads ${cn.threads}, holes ${cn.holes} full size; slip-critical, Class ${cn.surface} faying surfaces.`
       : `Welds: 2 – ${fracIn(cn.weld)} in fillets × ${fracIn(cn.weldLength)} in along the leg at each member end (E70).`,
     cn.kind === "bolted" ? `Bolt spacing ${fracIn(cn.spacing)} in, end distance ${fracIn(cn.edge)} in, gage ${fracIn(cn.gage)} in from the angle's heel.` : "",
-    `Connection plates ${fracIn(cf.plateWidth)} × ${fracIn(cf.plateThickness)} in${cf.fullDepthPlates ? ", full depth, attached to both flanges" : ""}; the members connect to ${fracIn(cn.plateT)} in plates.`,
+    end
+      ? `On the bearing stiffeners, ${fracIn(i.bearing.bt)} × ${fracIn(i.bearing.tp)} in each side of the web, full depth; the members connect to ${fracIn(cn.plateT)} in plates. ${r.endFrames?.abutment === "seat" ? "Seat abutment: the frame carries the wind to the bearings in service too." : `${r.endFrames?.abutment === "integral" ? "Integral" : "Semi-integral"} abutment: the frame is cast into the concrete end diaphragm, which then takes the deck's edge and the lateral loads (CDOT BDM 11.3).`}`
+      : `Connection plates ${fracIn(cf.plateWidth)} × ${fracIn(cf.plateThickness)} in${cf.fullDepthPlates ? ", full depth, attached to both flanges" : ""}; the members connect to ${fracIn(cn.plateT)} in plates.`,
     `Working points ${fracIn(cf.hb)} in apart, centered on the girder's mid-depth. Detailed for ${fit}.`,
     cfr ? `Forces (kip): strut ${f1(cfr.strutForce)} of ${f1(cfr.strut.Pr)} in compression; diagonal ${f1(cfr.diagForce)} of ${f1(cfr.diag.Pr)}.` : "",
   ].filter(Boolean);

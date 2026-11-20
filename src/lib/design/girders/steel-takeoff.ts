@@ -1,4 +1,5 @@
 import { num } from "../calc-style";
+import { unitWeight } from "../rebar/bars";
 import { schedule } from "../rebar/schedule";
 import { ftT, inT } from "../takeoff/tex";
 import type { Takeoff } from "../takeoff/types";
@@ -153,6 +154,19 @@ export function steelQuantities(i: SteelGirderInputs, r: SteelGirderResult = des
   return { rows, notes };
 }
 
+/** The pier bolts' hairpins: reinforcing steel in the pier caps (602), listed for the cap's quantities. */
+function hairpinNotes(r: SteelGirderResult, N: number) {
+  return (r.soles?.supports ?? [])
+    .filter((s) => s.hairpin)
+    .map((s) => {
+      const h = s.hairpin!;
+      const count = N * s.n * h.per * 2; // each bolt, toward both faces
+      const each = (2 * h.legs + Math.PI * (s.d + 0.5)) / 12; // ft: two legs and the bend around the bolt
+      const lb = count * each * unitWeight(h.size);
+      return `Hairpins at ${s.label}: ${count} #${h.size} × ${each.toFixed(2)} ft (${Math.round(lb)} lb, epoxy coated): reinforcing steel in the pier cap, item 602-00020, to add to the cap's quantities.`;
+    });
+}
+
 /** The steel girders' take-off: their structural steel by the pound (CDOT 509). */
 export function steelTakeoff(i: SteelGirderInputs, nGirders?: number): Takeoff {
   const r = designSteelGirder(i);
@@ -182,7 +196,7 @@ export function steelTakeoff(i: SteelGirderInputs, nGirders?: number): Takeoff {
         : {}),
     },
     views: [],
-    notes: r.soles && r.soles.supports.length ? [...notes, "Sole plates and their anchor bolts (ASTM A449, CDOT 512.02) are part of the Type I bearing devices, paid each (512.19), not in the structural steel's weight."] : notes,
+    notes: r.soles && r.soles.supports.length ? [...notes, "Sole plates and their anchor bolts (ASTM A449, CDOT 512.02) are part of the Type I bearing devices, paid each (512.19), not in the structural steel's weight.", ...hairpinNotes(r, N)] : notes,
     length: { label: "Girders", value: N, unit: "EA" },
   };
 }

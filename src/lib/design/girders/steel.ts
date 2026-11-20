@@ -230,7 +230,8 @@ export function steelGirderInputs(saved: unknown): SteelGirderInputs {
       const raw = s.sole && typeof s.sole === "object" ? (s.sole as Record<string, unknown>) : null;
       const k = raw ? o(raw, d.sole) : { ...d.sole, check: false };
       const an = o(raw?.anchors, d.sole.anchors);
-      return { ...k, fixed: k.fixed === "abutments" || k.fixed === "all" ? k.fixed : "piers", anchors: { ...an, grade: an.grade === "A449" || (typeof an.grade === "number" && an.grade in F1554_FU) ? an.grade : "A449" } } as SoleInputs;
+      const hp = o(raw?.hairpins, d.sole.hairpins);
+      return { ...k, fixed: k.fixed === "abutments" || k.fixed === "all" ? k.fixed : "piers", hairpins: { ...hp, bar: [3, 4, 5, 6, 7, 8].includes(hp.bar) ? hp.bar : 5 }, anchors: { ...an, grade: an.grade === "A449" || (typeof an.grade === "number" && an.grade in F1554_FU) ? an.grade : "A449" } } as SoleInputs;
     })(),
     splice: (() => {
       // Designs saved before the splices were designed keep them off.
@@ -1722,6 +1723,7 @@ export function designSteelGirder(i: SteelGirderInputs) {
       const Ru = eta * (1.25 * rc.dc + 1.5 * rc.dw + 1.75 * (rc.truck + rc.lane));
       return designSole(so, {
         label: rc.support === 0 ? "start abutment" : rc.support === spans.length ? "end abutment" : `pier ${rc.support}`,
+        pier: isPier(rc.support),
         X,
         fixed,
         bf: p.bottom.b,

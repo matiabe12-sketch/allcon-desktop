@@ -685,8 +685,9 @@ export function SteelSoleDetail({ inputs: i, sole: s }: { inputs: SteelGirderInp
     `Sole plate ${fr(s.L)} × ${fr(s.W)} in, ASTM A709 Grade ${so.Fy}, ${s.tapered ? `beveled ${fr(s.tThin)} to ${fr(s.tThick)} in to level the girder's ${s.slope.toFixed(4)} rad slope (14.8.2)` : `${fr(s.tThin)} in (the girder's slope ${s.slope.toFixed(4)} rad is within 0.01, 14.8.2)`}; 2 in longer than the bearing (CDOT BDM 14.5.7).`,
     `Welded to the flange: ${fr(so.weld)} in fillets along both edges, ${fr(s.L)} in long.`,
     s.n > 0 ? `Anchor bolts: ${s.n} – ${fr(s.d)} in ${a.grade === "A449" ? "ASTM A449, zinc plated (CDOT 512.02)" : `ASTM F1554 Grade ${a.grade}`}, ${fr(s.gauge)} in apart across, embedded ${fr(a.hef)} in; holes ${slot ? "slotted along the girder (expansion bearing)" : "round (fixed bearing)"}.` : "No anchor bolts: the plate 2 in wider than the bearing and flange (CDOT BDM 14.5.7); transverse restraint by shear blocks.",
+    s.hairpin ? `Anchor reinforcement (orange, in the cap): ${s.n * s.hairpin.per} #${s.hairpin.size} hairpins toward each face, epoxy coated, Grade ${so.hairpins.fy}, wrapped tight around the bolts, legs ${s.hairpin.legs} in (ld ${s.hairpin.ld.toFixed(1)} in + 0.5 ca1); φ As fy ${s.hairpin.R.toFixed(0)} kip each way (ACI 318-19 17.5.2.1).` : "",
     `Horizontal force at the strength and extreme event limit states: ${s.H.toFixed(1)} kip (across ${s.across.toFixed(1)}, along ${s.along.toFixed(1)}); ${s.fixed ? "fixed" : "expansion"} bearing.`,
-  ];
+  ].filter(Boolean);
   const yNotes = Math.max(py + s.W * sc + 56, 360);
   const H = yNotes + notes.length * 15 + 10;
   return (
@@ -703,6 +704,14 @@ export function SteelSoleDetail({ inputs: i, sole: s }: { inputs: SteelGirderInp
         const r = ((s.d + 0.1875) / 2) * sc;
         return slot ? <rect key={k} x={x - r - 0.5 * sc} y={y - r} width={2 * r + 1 * sc} height={2 * r} rx={r} fill="#ffffff" stroke={LINE} strokeWidth="0.8" /> : <circle key={k} cx={x} cy={y} r={r} fill="#ffffff" stroke={LINE} strokeWidth="0.8" />;
       })}
+      {/* Hairpins around each bolt toward both cap faces (dashed: in the concrete below), legs drawn short */}
+      {s.hairpin &&
+        holes.flatMap((k) => {
+          const [x, y] = rodAt(k);
+          const r = ((s.d + 0.1875) / 2) * sc + 3;
+          const leg = Math.min(70, px - 8);
+          return [-1, 1].map((dir) => <path key={`h${k}${dir}`} d={`M ${x + dir * leg} ${y - r} L ${x} ${y - r} A ${r} ${r} 0 0 ${dir > 0 ? 0 : 1} ${x} ${y + r} L ${x + dir * leg} ${y + r}`} fill="none" stroke="#b45309" strokeWidth="1.4" strokeDasharray="5 2" />);
+        })}
       <text x={px + s.L * sc + 8} y={cy - (s.bf / 2) * sc - 4} fontSize="9" fill={MUTED}>
         flange {fr(s.bf)}
       </text>
@@ -736,7 +745,7 @@ export function SteelSoleDetail({ inputs: i, sole: s }: { inputs: SteelGirderInp
       <text x={ex0 + 382} y={ySeat + 18} fontSize="9" textAnchor="end" fill={MUTED}>
         seat
       </text>
-      <text x={exC - (so.padW / 2) * scS - 6} y={yPad + padH - 2} fontSize="9" textAnchor="end" fill={MUTED}>
+      <text x={exC} y={yPad + padH / 2 + 3} fontSize="9" textAnchor="middle" fill="#ffffff">
         bearing
       </text>
       {notes.map((t, n) => (

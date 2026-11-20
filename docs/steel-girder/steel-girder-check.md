@@ -327,6 +327,14 @@ Article 6.10, and its details (phase 2).
   - The concrete's shear breakout toward the seat's edge and pryout are by ACI 318-19 Chapter 17 (AASHTO 5.13):
     cracked concrete, no supplementary bars, φ 0.70.
   - The number and diameter step up (2, 4 or 6 bolts; up to 2 in) until the bolts and the concrete pass.
+- **Hairpins at the pier bolts (anchor reinforcement, on by default):** per ACI 318-19 17.5.2.1 and
+  17.7.2.5.1 (AASHTO 5.13).
+  - They take the shear toward the cap's face in place of the concrete's breakout: φ 0.75 × the legs' As fy.
+  - Each leg is developed past the bolt (AASHTO 5.10.8.2.1, epoxy coated), and the leg is ld + 0.5 ca1 long.
+  - A set goes toward each face, since braking and the earthquake reverse.
+  - The bars step up from the given size, or to two a bolt, as needed. The take-off notes list them as the cap's
+    602 bars.
+  - With them, 2A's fixed pier passes Zone 1 at AS 0.165 with four 1 in bolts.
 - **Not here:** the bearing and the concrete under it, which are designed in the elastomeric bearing tool.
 - **Pay items:** the sole plate and bolts are part of the Type I bearing device (CDOT 512.03), paid each.
   The take-off counts the bearings under 512-00101.

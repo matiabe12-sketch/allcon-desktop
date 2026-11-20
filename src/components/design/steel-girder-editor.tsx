@@ -470,6 +470,14 @@ export function SteelGirderEditor({ design, projects }: { design: { id: string; 
                       <Field label="Embedment" unit="in" value={inputs.sole.anchors.hef} onChange={(v) => setInputs((s) => ({ ...s, sole: { ...s.sole, anchors: { ...s.sole.anchors, hef: v } } }))} />
                       <Field label="To the seat's edge" unit="in" value={inputs.sole.anchors.edge} onChange={(v) => setInputs((s) => ({ ...s, sole: { ...s.sole, anchors: { ...s.sole.anchors, edge: v } } }))} hint="For the concrete's breakout in shear" />
                       <Field label="Substructure f'c" unit="ksi" value={inputs.sole.anchors.fc} onChange={(v) => setInputs((s) => ({ ...s, sole: { ...s.sole, anchors: { ...s.sole.anchors, fc: v } } }))} />
+                      <Toggle label="Hairpins around the pier bolts (anchor reinforcement)" value={inputs.sole.hairpins.use} onChange={(v) => setInputs((s) => ({ ...s, sole: { ...s.sole, hairpins: { ...s.sole.hairpins, use: v } } }))} />
+                      {inputs.sole.hairpins.use && (
+                        <>
+                          <Choice label="Hairpin bars, at least" value={inputs.sole.hairpins.bar} options={[3, 4, 5, 6, 7, 8].map((b) => ({ value: b, label: `#${b}` }))} onChange={(v) => setInputs((s) => ({ ...s, sole: { ...s.sole, hairpins: { ...s.sole.hairpins, bar: v } } }))} />
+                          <Field label="Hairpin fy" unit="ksi" value={inputs.sole.hairpins.fy} onChange={(v) => setInputs((s) => ({ ...s, sole: { ...s.sole, hairpins: { ...s.sole.hairpins, fy: v } } }))} />
+                          <p className="text-[11px] text-muted-foreground">They take the shear toward the cap&apos;s faces in place of the concrete&apos;s breakout (ACI 318-19 17.5.2.1, by AASHTO 5.13), a set toward each face; larger bars or two a bolt as needed.</p>
+                        </>
+                      )}
                     </>
                   )}
                   <p className="pt-1 text-[11px] text-muted-foreground">Not at integral abutments, whose girders are cast into the abutment. The bearing pad and the concrete under it are designed in the elastomeric bearing tool.</p>

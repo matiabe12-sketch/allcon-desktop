@@ -12,7 +12,7 @@ import type { WingwallInputs } from "./wingwall";
 
 const ok = (demand: string, capacity: string) => `\\operatorname{if}\\left(${demand}\\le ${capacity},\\text{OK},\\text{NG}\\right)=`;
 
-export function wingwallCalcLines(i: WingwallInputs, title: string, figures?: { section?: Figure }): Line[] {
+export function wingwallCalcLines(i: WingwallInputs, title: string, figures?: { section?: Figure; plan?: Figure }): Line[] {
   const lines: Line[] = [];
   const text = (t: string, style?: "heading" | "subheading" | "note") => lines.push({ text: t, ...(style ? { style } : {}) });
   const m = (math: string, ref?: string, unit?: string) => lines.push({ math, ...(ref ? { ref } : {}), ...(unit ? { unit } : {}), ...(math.length > 110 && ref ? { wide: true } : {}), ...(isInput(math) ? { color: INPUT_COLOR } : {}) });
@@ -158,7 +158,8 @@ export function wingwallCalcLines(i: WingwallInputs, title: string, figures?: { 
   const cn = r.connection;
   const ab = BARS[cn.abutBars.bar];
   text("The connection to the abutment", "subheading");
-  text("The wingwall's root moment turns the corner: the tension in its retained face carries on into the abutment's back face. Corner bars, L-bars round the inside corner, take it there over the abutment's thickness, per foot of height; the abutment's own horizontal bars are not counted. One leg runs along the abutment past the wingwall's inside face by its development length, the other laps the retained face's bars in the wingwall by a Class B splice. The vertical joint carries the earth's thrust and the wall's weight together by shear friction; only the front face's bars clamp it, the retained face's being in flexural tension.", "note");
+  if (figures?.plan) lines.push({ region: figures.plan });
+  text("The wingwall's root moment turns the corner: the tension in its retained face carries on into the abutment's back face. Corner bars take it there over the abutment's thickness, per foot of height; the abutment's own horizontal bars are not counted. The critical section is the wingwall's inside face: each bar runs along the abutment's back face from its development length past that section, back across the wingwall's root, and bends at the wingwall's front face into the wingwall, so it is developed on both sides. The vertical joint carries the earth's thrust and the wall's weight together by shear friction; only the front face's bars clamp it, the retained face's being in flexural tension.", "note");
   m(`h_{ab}\\coloneq ${num(cn.hAb)}\\mathrm{in}`, "The abutment's thickness");
   m(`s_{ab}\\coloneq ${num(cn.abutBars.spacing)}\\mathrm{in}`, `#${cn.abutBars.bar} corner bars along the abutment's back face`);
   m(`d_{ab}\\coloneq h_{ab}-c_c-\\frac{${num(ab.dia)}\\mathrm{in}}{2}=`, "Effective depth", "in");
@@ -170,8 +171,8 @@ export function wingwallCalcLines(i: WingwallInputs, title: string, figures?: { 
   m(`s_{mab}\\coloneq ${num(cn.flex.sMax, 3)}\\mathrm{in}`, "Crack control, AASHTO Eq. 5.6.7-1");
   m(ok("s_{ab}", "s_{mab}"), "Spacing");
   m(`\l_{dab}\\coloneq ${num(cn.dev.required, 3)}\\mathrm{in}`, `Straight development, AASHTO 5.10.8.2.1 (${coated ? "epoxy coated" : "uncoated"}, top bars)`);
-  m(`\l_{lap}\\coloneq ${num(cn.lap, 3)}\\mathrm{in}`, "Class B lap with the retained face's bars, 1.3 ℓd of the larger bar, AASHTO 5.10.8.4.3a");
-  text(`The legs:- along the abutment, ${cn.legAb} in past the wingwall's inside face (ℓd and the cover); into the wingwall, ${cn.legWing} in from the abutment's front face (through the abutment along the skew, then the lap).`, "note");
+  m(`r_{w}\\coloneq ${num(cn.root, 3)}\\mathrm{in}`, "The wingwall's root along the abutment, t / cos θ less the cover");
+  text(`The legs:- along the abutment's back face, ℓd + r_w = ${cn.legAb} in; bent at the wingwall's front face into the wingwall, at least 12 db and ℓd − r_w: ${cn.legWing} in.`, "note");
   text(cn.joint === "monolithic" ? "The joint is cast monolithically: c = 0.40 ksi, μ = 1.4, K1 = 0.25, K2 = 1.5 ksi (AASHTO 5.7.4.4)." : "A construction joint roughened to 0.25 in: c = 0.24 ksi, μ = 1.0, K1 = 0.25, K2 = 1.5 ksi (AASHTO 5.7.4.4).", "note");
   m("A_{cv}\\coloneq t\\cdot H=", "The joint's area", "in^2");
   m("A_{vf}\\coloneq A_{sf}\\cdot H=", "The front face's bars crossing it", "in^2");

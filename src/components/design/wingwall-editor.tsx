@@ -6,7 +6,7 @@ import { DesignError } from "@/lib/design/walls/cip";
 import { designWingwall, wingwallBarSets, type WingwallInputs } from "@/lib/design/walls/wingwall";
 import { BarsField, ChecksBanner, ChecksTable, DesignErrorCard, DesignHeader, Field, fmt, KeyValues, Section, Toggle } from "./design-kit";
 import { TakeoffPanel } from "./takeoff-panel";
-import { WingwallSketch } from "./wingwall-sketch";
+import { WingwallPlanDetail, WingwallSketch } from "./wingwall-sketch";
 
 // Designing a cantilever wingwall: the inputs on the left, worked out as they change (sketch,
 // checks, and the forces at Sections A and B) on the right, saved as you go.
@@ -77,9 +77,10 @@ export function WingwallEditor({ design, projects }: { design: { id: string; nam
                 <Card>
                   <CardContent className="py-3">
                     <WingwallSketch inputs={inputs} result={r} />
+                    <WingwallPlanDetail inputs={inputs} result={r} />
                   </CardContent>
                 </Card>
-                <ChecksTable checks={r.checks} groupOf={(id) => (id.startsWith("temp-") ? "Shrinkage and temperature steel" : id.startsWith("dev-") ? "Bars into the abutment" : id.startsWith("w-") ? "Self weight in the wall's plane" : "Section A: horizontal bars")} />
+                <ChecksTable checks={r.checks} groupOf={(id) => (id.startsWith("temp-") ? "Shrinkage and temperature steel" : id.startsWith("dev-") ? "Bars into the abutment" : id.startsWith("w-") ? "Self weight in the wall's plane" : id.startsWith("conn-") ? "The connection to the abutment" : "Section A: horizontal bars")} />
                 <TakeoffPanel kind="cantilever-wingwall" design={design} inputs={inputs} ok={r.checks.every((c) => c.advisory || c.ok)} onSettings={(t) => setInputs((s) => ({ ...s, takeoff: t }))} />
                 <div className="grid gap-4 xl:grid-cols-2">
                   <KeyValues

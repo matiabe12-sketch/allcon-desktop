@@ -38,7 +38,7 @@ export type WingwallInputs = {
   epoxy?: boolean;
   cover: number; // in
   exposure: 1 | 2;
-  /** Corner bars: L-bars round the inside corner, one leg along the abutment's back face, the other lapped with the retained face's bars in the wingwall. Default: the retained face's bar and spacing. */
+  /** Corner bars: L-bars along the abutment's back face across the wingwall's root, bent at its front face into the wingwall. Default: the retained face's bar and spacing. */
   cornerBars?: Bars;
   /** The vertical joint between the wingwall and the abutment: a construction joint roughened to 0.25 in (the default), or cast monolithically. */
   joint?: "construction" | "monolithic";
@@ -171,10 +171,11 @@ export function designWingwall(i: WingwallInputs) {
 
   // --- the connection to the abutment ---------------------------------------------------------------
   // The wingwall's root moment turns the corner: the tension in its retained face carries on into the abutment's back
-  // face. Corner bars (L-bars round the inside corner) take it there, over the abutment's thickness, per foot of height
-  // (5.6.3.2, crack control 5.6.7); the abutment's own horizontal bars are not counted. One leg runs along the abutment
-  // past the wingwall's inside face by its development length (5.10.8.2.1), the other laps the retained face's bars in
-  // the wingwall by a Class B splice, 1.3 ℓd (5.10.8.4.3a).
+  // face. Corner bars take it there, over the abutment's thickness, per foot of height (5.6.3.2, crack control 5.6.7);
+  // the abutment's own horizontal bars are not counted. The critical section is the wingwall's inside face. Each bar runs
+  // along the abutment's back face from ℓd past that section (5.10.8.2.1) back across the wingwall's root to its front
+  // face, bends there and runs into the wingwall along its front face, so the length past the section on that side (the
+  // root, along the skew, and the bent leg) is at least ℓd too, the leg at least 12 db.
   // The vertical joint carries the earth's thrust and the wall's weight together by shear friction (5.7.4.3): only the
   // front face's bars clamp it (the retained face's are already in flexural tension), with no axial load across it.
   const abutBars = i.cornerBars ?? i.bars;
@@ -183,8 +184,9 @@ export function designWingwall(i: WingwallInputs) {
   add({ id: "conn-abut-flex", name: `Corner bars #${abutBars.bar} @ ${abutBars.spacing} in, the abutment's back face: the wingwall's moment round the corner`, demand: Mu, capacity: abFlex.MR, unit: "kip·ft/ft", ref: "AASHTO 5.6.3.2" });
   add({ id: "conn-abut-crack", name: "Corner bars: crack control (spacing)", demand: abutBars.spacing, capacity: abFlex.sMax, unit: "in", ref: "AASHTO 5.6.7" });
   const abDev = development({ barSize: abutBars.bar, fy: i.fy, fc: i.fc, clearCover: i.cover, clearSpacing: Math.max(0.1, abutBars.spacing - BARS[abutBars.bar].dia), horizontal: true, concreteBelow: i.H * 12, coating, kind: "straight" });
-  const devW = development({ barSize: Math.max(abutBars.bar, i.bars.bar), fy: i.fy, fc: i.fc, clearCover: i.cover, clearSpacing: Math.max(0.1, Math.min(abutBars.spacing, i.bars.spacing) - BARS[Math.max(abutBars.bar, i.bars.bar)].dia), horizontal: true, concreteBelow: i.H * 12, coating, kind: "straight" });
-  const lap = 1.3 * devW.required; // in, Class B (5.10.8.4.3a), the larger bar's ℓd
+  const root = i.t / Math.cos((i.skew * Math.PI) / 180) - i.cover; // in, the wingwall's root along the abutment, to its front face's bars
+  const legAb = Math.ceil(abDev.required + root); // in, along the abutment's back face
+  const legWing = Math.ceil(Math.max(12 * BARS[abutBars.bar].dia, abDev.required - root)); // in, along the wingwall's front face
   const joint = i.joint ?? "construction";
   const sf = joint === "monolithic" ? { c: 0.4, mu: 1.4, K1: 0.25, K2: 1.5 } : { c: 0.24, mu: 1.0, K1: 0.25, K2: 1.5 }; // ksi, Table 5.7.4.4
   const Acv = i.t * i.H * 12; // in², the joint's area
@@ -210,7 +212,7 @@ export function designWingwall(i: WingwallInputs) {
     wall,
     sectionA: { Mu, Ms, Vu, flex, dv, VR, bar: BARS[i.bars.bar] },
     anchorage: { coating, available, hook, hookInside, straight },
-    connection: { abutBars, hAb, flex: abFlex, dev: abDev, lap, legAb: Math.ceil(abDev.required + i.cover), legWing: Math.ceil(hAb / Math.cos((i.skew * Math.PI) / 180) - i.cover + lap), joint, sf, Acv, Avf, Vui, Vni, AvfMin, waived },
+    connection: { abutBars, hAb, flex: abFlex, dev: abDev, root, legAb, legWing, joint, sf, Acv, Avf, Vui, Vni, AvfMin, waived },
     temperature: { bT, AsTemp, sTempMax, front, vert },
     inPlane: { share, AsW, dW, aW, MrW, dvW, VrW },
     Askew,

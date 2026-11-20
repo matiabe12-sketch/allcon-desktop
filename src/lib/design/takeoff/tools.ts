@@ -528,8 +528,8 @@ export function wingwallTakeoff(i: WingwallInputs): Takeoff {
   const nv = countAt(L - 2 * c, vert.spacing);
   const verts = Array.from({ length: nv }, (_, k) => Math.max(12, H - ((H - h) * (c + ((L - 2 * c) * k) / Math.max(1, nv - 1))) / L - 2 * c));
   series(vert.bar, 2 * nv, verts, 0, "Vertical, each face", `#${vert.bar} @ ${ftIn(vert.spacing)} each face (vert.)`);
-  // Corner bars round the inside corner (the design's connection): L-bars, one leg along the abutment's back face past
-  // the wingwall, the other through the abutment and lapped with the retained face's bars (walls/wingwall.ts).
+  // Corner bars (the design's connection): L-bars along the abutment's back face across the wingwall's root, bent
+  // at its front face into the wingwall (walls/wingwall.ts).
   let conn: ReturnType<typeof designWingwall>["connection"] | null = null;
   try {
     conn = designWingwall(i).connection;
@@ -539,7 +539,7 @@ export function wingwallTakeoff(i: WingwallInputs): Takeoff {
   if (conn) {
     const cb = conn.abutBars;
     pre.push({ size: cb.bar, count: countAt(H - 2 * c, cb.spacing), shape: { kind: "bent", dims: [conn.legAb, conn.legWing].map(roundDown), hooks: 0 }, length: roundDown(conn.legAb + conn.legWing), use: "Corner bars (the abutment's back face)", callout: `#${cb.bar} @ ${ftIn(cb.spacing)} corner bars` });
-    notes.push(`Corner bars at the abutment: L-bars round the inside corner, ${ftIn(conn.legAb)} along the abutment's back face past the wingwall and ${ftIn(conn.legWing)} into the wingwall from the abutment's front face, lapped (Class B) with the retained face's bars (AASHTO 5.10.8.2.1, 5.10.8.4.3a).`);
+    notes.push(`Corner bars at the abutment: L-bars ${ftIn(conn.legAb)} along the abutment's back face (ℓd past the wingwall's inside face and across its root), bent at the wingwall's front face and ${ftIn(conn.legWing)} into the wingwall along it (AASHTO 5.10.8.2.1).`);
   }
   notes.push(`Both faces' horizontal bars run along the wall through the abutment to ${ftIn(c)} short of its far face (${ftIn(embed)} into it): the retained face's end in a standard 90° hook, the front face's straight, as the design develops them (AASHTO 5.10.8.2.4 and 5.10.8.2.1). The front face's horizontals and the vertical bars are the shrinkage and temperature bars (AASHTO 5.10.6).`);
   notes.push(i.epoxy === false ? "The bars are uncoated, as the design takes them." : "All reinforcing steel is epoxy coated (CDOT BDM 5.4.5).");

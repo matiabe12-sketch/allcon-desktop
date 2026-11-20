@@ -359,7 +359,7 @@ export type WingwallBarInputs = { H: number; h: number; L: number; t: number; A:
  * and hooked; the front face's horizontal bars and the vertical bars each face (shrinkage and temperature, 5.10.6),
  * as the design enters them (#4 at 12 in typically). `inward` says which way z runs: toward the fill (+1) or away (−1).
  */
-export function wingwallBars(host: number, i: WingwallBarInputs, inward: 1 | -1): BarSet3D[] {
+export function wingwallBars(host: number, i: WingwallBarInputs, inward: 1 | -1, corner?: { bars: Bars; legAb: number; legWing: number } | null): BarSet3D[] {
   const out: BarSet3D[] = [];
   const [H, h, L, T] = [i.H, i.h, i.L, ft(i.t)];
   const c = ft(i.cover);
@@ -380,6 +380,17 @@ export function wingwallBars(host: number, i: WingwallBarInputs, inward: 1 | -1)
   for (const y of stations(c, H - c, ft(o.spacing))) out.push(local(host, o.bar, "main", `#${o.bar} @ ${o.spacing} in, front face`, [p3(-embed, y, zOut), p3(Math.max(0, reach(y)), y, zOut)], [p3(0, 0, 0)]));
   for (const x of stations(c, L - c, ft(v.spacing)))
     for (const z of [zIn, zOut]) out.push(local(host, v.bar, "stirrup", `#${v.bar} @ ${v.spacing} in vertical, each face`, [p3(x, bottom(x) + c, z), p3(x, H - c, z)], [p3(0, 0, 0)]));
+  // Corner bars (walls/wingwall.ts, the connection): along the abutment's back face from ℓd past the wingwall's inside face
+  // back across its root, bent just inside the front face's bars and run into the wingwall along it (no further than the
+  // wall reaches at that height, above its sloping bottom).
+  if (corner) {
+    const cb = corner.bars;
+    const dc = ft(barDiameter(cb.bar));
+    const xc = -c - dc / 2;
+    const zc = zOut - toward * (d4 / 2 + dc / 2);
+    for (const y of stations(c, H - c, ft(cb.spacing)))
+      out.push(local(host, cb.bar, "main", `#${cb.bar} @ ${cb.spacing} in corner bars`, [p3(xc, y, zc - toward * ft(corner.legAb)), p3(xc, y, zc), p3(xc + Math.min(ft(corner.legWing), Math.max(0, reach(y)) - xc), y, zc)], [p3(0, 0, 0)]));
+  }
   return out;
 }
 

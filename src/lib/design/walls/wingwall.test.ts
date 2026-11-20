@@ -121,9 +121,11 @@ describe("wingwall: the connection to the abutment", () => {
     near(c.demand, r.sectionA.Mu, 1e-9);
     expect(c.ok).toBe(true);
     expect(r.checks.find((x) => x.id === "conn-abut-crack")!.ok).toBe(true);
-    // The legs: ℓd and the cover along the abutment; through the abutment along the skew, then 1.3 ℓd.
-    expect(cn.legAb).toBe(Math.ceil(cn.dev.required + 2));
-    expect(cn.legWing).toBe(Math.ceil(36 / Math.cos(Math.PI / 6) - 2 + cn.lap));
+    // The legs: along the abutment ℓd past the wingwall's inside face plus its root (12 in / cos 30° less the cover);
+    // into the wingwall at least 12 db and the rest of ℓd.
+    near(cn.root, 12 / Math.cos(Math.PI / 6) - 2, 1e-9);
+    expect(cn.legAb).toBe(Math.ceil(cn.dev.required + cn.root));
+    expect(cn.legWing).toBe(Math.ceil(Math.max(12 * 1.0, cn.dev.required - cn.root)));
   });
   it("the abutment's own #5 @ 12 in alone would crack: why the corner bars are there", () => {
     const thin = designWingwall({ ...WINGWALL_DEFAULTS, cornerBars: { bar: 5, spacing: 12 } });

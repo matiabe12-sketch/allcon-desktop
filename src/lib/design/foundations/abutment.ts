@@ -7,6 +7,7 @@ import { pMultiplier, toLayers, type SoilLayer } from "./piles";
 import { designMicropile, MICROPILE_DEFAULTS, type MicropileInputs } from "./micropile";
 import { gridPiles, groupForces, type GroupPile } from "./micropile-group";
 import { development } from "../stm/anchorage";
+import { designWingwall, WINGWALL_DEFAULTS } from "../walls/wingwall";
 
 // A bridge abutment, CDOT BDM 11.3 with AASHTO LRFD (10th Edition) 3.11, 3.12, 4.7.4.4, 5, 6.15, 10
 // and 11.6.
@@ -100,6 +101,12 @@ export type AbutmentInputs = {
   backwallHorizBars?: Bars; // horizontal, each face (5.10.6), CDOT's usual #5 @ 12 in where not given
   /** No live load surcharge (AASHTO 3.11.6.5; CDOT BDM 11.3: ignored where an approach slab is provided). Default: omitted when an approach slab is given (approachDC > 0), applied by AASHTO Table 3.11.6.4.1-1 otherwise. */
   lsOmit?: boolean;
+  /**
+   * The wingwalls cantilevered off the abutment's ends (the Cantilever Wingwall tool; the Bridge sets them from its
+   * wingwall): their length, height at the tip and thickness, ft, ft, in; how many (1 or 2, default 2); their surcharge
+   * height heq (default the wingwall tool's 2 ft). Their Section B forces are applied to the abutment's ends. None by default.
+   */
+  wing?: { L: number; h: number; t: number; count?: number; heq?: number; bars?: Bars; cornerBars?: Bars } | null;
   /** ft, the bearings from the stem's centerline toward the span (seat, semi-integral). Default: the seat's middle (half the backwall's thickness) for a seat abutment, 0 for semi-integral. */
   bearingEcc?: number;
   backwallLLecc?: number; // ft, the axles on the backwall's top from its centerline (default half its thickness)
@@ -391,6 +398,69 @@ export function designAbutment(i: AbutmentInputs) {
   const move = Math.max(expansion, contraction);
   const totalGirderR = { DC: i.nGirders * i.RDC, DW: i.nGirders * i.RDW, LL: abutmentLiveLoad(i) };
 
+  // --- the wingwalls (walls/wingwall.ts, its Section B): designed with the abutment's height, width, skew and backfill ---
+  const wingIn = i.wing && i.wing.L > 0 ? i.wing : null;
+  const wingH = integral ? i.totalDepth : i.stemH + i.backwallH;
+  const wing = wingIn
+    ? designWingwall({ ...WINGWALL_DEFAULTS, H: wingH, h: Math.min(Math.max(0, wingIn.h ?? 3), wingH), L: wingIn.L, t: wingIn.t || 12, A: integral ? i.capWidth : i.stemT, skew: Math.min(89, Math.abs(i.skew)), phi: i.backfillPhi, gammaS: i.backfillGamma / 1000, fc: i.fc, fy: i.fy, gammaC: i.gammaC, heq: wingIn.heq ?? WINGWALL_DEFAULTS.heq, ...(wingIn.bars ? { bars: wingIn.bars } : {}), ...(wingIn.cornerBars ? { cornerBars: wingIn.cornerBars } : {}) })
+    : null;
+  const nWing = wingIn ? Math.max(1, Math.min(2, Math.round(wingIn.count ?? 2))) : 0;
+  /**
+   * The abutment's end section under the wingwall's Section B (Strength I): the thrust P as tension along the abutment
+   * (the whole of it, conservatively, whatever the skew), its moments about the section's vertical axis (My) and
+   * horizontal axis (Mx, plus mx0 from the abutment's own loads; its top or bottom bars), by a linear interaction (5.6.2:
+   * the tension and both moments on the same bars, φ 0.9). My is the corner's moment: its tension face is the
+   * abutment's back face, where the wingwall's corner bars run with the abutment's own face bars, over the height.
+   * Integral: the cap is a beam along the abutment on one row of piles, so the wingwall's weight's moment about its axis
+   * is torsion along it, against the threshold 0.25 φ Tcr (5.7.2.1), above which its closed stirrups take it with the
+   * shear (5.7.3.6.2, θ 45°). A seat abutment's stem stands on its footing all along: that moment goes down into the
+   * footing at the end (in its statics), not along the stem as torsion.
+   */
+  const wingEnd = (o: { name: string; b: number; h: number; AsFace: number; dFace: number; MrX: number | null; AsLong: number; mx0: number; Vu: number; Vc: number; dv: number; stirrup: { bar: number; legs: number; spacing: number } | null; torsion: boolean }) => {
+    if (!wing) return null;
+    const B = wing.sectionB.strength;
+    const Nu = B.P;
+    const Myu = Math.abs(B.My);
+    const Mxu = Math.abs(B.Mx) + Math.abs(o.mx0);
+    const cb = wing.connection.abutBars;
+    const AsCorner = ((BARS[cb.bar].area * 12) / cb.spacing) * (wingH - 2 * WINGWALL_DEFAULTS.cover / 12); // in², over the wingwall's height
+    const AsT = o.AsFace + AsCorner; // the back face: its own bars and the corner bars
+    const aY = (AsT * i.fy) / (0.85 * i.fc * o.h);
+    const MrY = (0.9 * AsT * i.fy * (o.dFace - aY / 2)) / 12;
+    const Pr = 0.9 * (o.AsLong + AsCorner) * i.fy;
+    const value = Nu / Pr + Myu / MrY + (o.MrX ? Mxu / o.MrX : 0);
+    add({ id: "wing-end", name: `${o.name}: the wingwall's tension ${Nu.toFixed(1)} kip with its moments (My ${Myu.toFixed(0)}${o.MrX ? `, Mx ${Mxu.toFixed(0)}` : ""} kip·ft), the corner bars #${cb.bar} @ ${cb.spacing} in with its own`, demand: value, capacity: 1, unit: "", ref: "AASHTO 5.6.2, 5.6.3.2 (linear interaction)" });
+    const Tu = Math.abs(B.Tz); // kip·ft
+    if (!o.torsion) return { Nu, Myu, Mxu, AsCorner, AsT, aY, MrY, Pr, value, Tu, Acp: 0, pc: 0, Tcr: 0, neglect: true, tors: null, ...o };
+    const Acp = o.b * o.h;
+    const pc = 2 * (o.b + o.h);
+    const Tcr = (0.126 * Math.sqrt(i.fc) * Acp ** 2) / pc / 12; // kip·ft, K = 1 (Eq. 5.7.2.1-4)
+    const neglect = Tu <= 0.25 * 0.9 * Tcr;
+    add({ id: "wing-torsion", name: `${o.name}: the wingwall's weight's torsion ${neglect ? "below the threshold, neglected" : o.stirrup ? "over the threshold: designed for (the closed stirrups and the bars round the perimeter)" : "over the threshold: torsion reinforcement needed"}`, demand: Tu, capacity: 0.25 * 0.9 * Tcr, unit: "kip·ft", ref: "AASHTO 5.7.2.1", ...(neglect ? {} : { ok: !!o.stirrup }) });
+    let tors: { x0: number; y0: number; Aoh: number; Ao: number; At: number; Av: number; need: number; have: number; ph: number; Al: number } | null = null;
+    if (!neglect) {
+      if (!o.stirrup) add({ id: "wing-torsion-steel", name: `${o.name}: no closed stirrups to take the torsion`, demand: Tu, capacity: 0.25 * 0.9 * Tcr, unit: "kip·ft", ref: "AASHTO 5.7.3.6.2" });
+      else {
+        const st = o.stirrup;
+        const db = BARS[st.bar].dia;
+        const x0 = o.b - 2 * i.cover - db;
+        const y0 = o.h - 2 * i.cover - db;
+        const Aoh = x0 * y0;
+        const Ao = 0.85 * Aoh;
+        const At = (Tu * 12) / (0.9 * 2 * Ao * i.fy); // in²/in, one leg (θ 45°)
+        const Av = Math.max(0, (o.Vu / 0.9 - o.Vc) / (i.fy * o.dv)); // in²/in, all legs
+        const need = Av + 2 * At;
+        const have = (st.legs * BARS[st.bar].area) / st.spacing;
+        add({ id: "wing-torsion-steel", name: `${o.name}: closed stirrups #${st.bar} @ ${st.spacing} in for the torsion with the shear`, demand: need, capacity: have, unit: "in²/in", ref: "AASHTO 5.7.3.6.2 (θ 45°)" });
+        const ph = 2 * (x0 + y0);
+        const Al = (Tu * 12 * ph) / (0.9 * 2 * Ao * i.fy);
+        add({ id: "wing-torsion-long", name: `${o.name}: longitudinal bars round the perimeter for the torsion`, demand: Al, capacity: 2 * o.AsFace, unit: "in²", ref: "AASHTO 5.7.3.6.3 (the face bars, θ 45°)" });
+        tors = { x0, y0, Aoh, Ao, At, Av, need, have, ph, Al };
+      }
+    }
+    return { Nu, Myu, Mxu, AsCorner, AsT, aY, MrY, Pr, value, Tu, Acp, pc, Tcr, neglect, tors, ...o };
+  };
+
   /** The micropiles' own design (an integral abutment's or a footing's), for its notes and bond lengths. */
   let micropileResult: ReturnType<typeof designMicropile> | null = null;
   let integralOut: ReturnType<typeof integralDesign> | null = null;
@@ -499,7 +569,9 @@ export function designAbutment(i: AbutmentInputs) {
     // The cap: a continuous beam over the piles, the girders with IM.
     const Pg = 1.25 * i.RDC + 1.5 * i.RDW + 1.75 * i.RLL * (1 + i.IM);
     const wCap = 1.25 * (capW + apr);
-    const beam = continuousBeam(i.length, supports, girders.map((x) => ({ x, P: Pg })), wCap);
+    const Pw = wing ? wing.sectionB.strength.V : 0; // kip, each wingwall's weight × γDC at the cap's end
+    const wingLoads = wing ? (nWing === 2 ? [{ x: 0, P: Pw }, { x: i.length, P: Pw }] : [{ x: 0, P: Pw }]) : [];
+    const beam = continuousBeam(i.length, supports, [...girders.map((x) => ({ x, P: Pg })), ...wingLoads], wCap);
     const b = i.capWidth * 12;
     const h = i.totalDepth * 12; // the cap and diaphragm act together once cast
     const asTop = i.capTop.count * BARS[i.capTop.bar].area;
@@ -563,7 +635,23 @@ export function designAbutment(i: AbutmentInputs) {
       steelEnds = { ...se, piles, brake, pull, perGirder, Qr, Vend, Dnet, Vui, pushCap, Acv, Avf, Pc, Vri, ld, Hjoint };
     }
     add({ id: "diaphragm", name: "End diaphragm: horizontal bars under passive pressure between girders", demand: Mdia, capacity: dia.MR, unit: "kip·ft/ft", ref: "AASHTO 3.11.5.4, 11.6.1.3, 5.6.3.2" });
-    return { capW, apr, n, Pu, Ps, supports, girders, beam, foundation, delta, Kp, pBottom, Mdia, Pg, factoredStrength, service, wCap, dCap, asTop, asBot, dv, rowsMP, steelEnds };
+    // The wingwalls on the cap's ends: the end pile (or shaft) takes the wingwall's weight on the overhang with the
+    // average load (the cap rigid between the end supports), and the end section its Section B forces.
+    let wingOut: { Pw: number; PuEnd: number; lever: number; end: ReturnType<typeof wingEnd> } | null = null;
+    if (wing) {
+      const lever = n > 1 ? supports[0] / sp : 0; // the overhang over the span to the next support
+      const PuEnd = Pu + Pw * (1 + lever);
+      if (i.type === "integral-piles") {
+        const s = HP_SECTIONS[i.section];
+        add({ id: "wing-pile-axial", name: "End pile with the wingwall's weight: structural axial", demand: PuEnd, capacity: PHI_PILE.axialGood * axialResistance(s, i.Fy, 0).Pn, unit: "kip", ref: "AASHTO 6.15.3.1" });
+        add({ id: "wing-pile-geo", name: "End pile with the wingwall's weight: geotechnical axial", demand: PuEnd, capacity: i.phiDyn * (n <= 3 ? 0.8 : 1) * i.Rn, unit: "kip", ref: "AASHTO 10.5.5.2.3" });
+      } else if (i.type === "integral-shafts") add({ id: "wing-shaft-geo", name: "End shaft with the wingwall's weight: axial resistance", demand: PuEnd, capacity: i.phiDyn * i.Rn, unit: "kip", ref: "AASHTO 10.8.3.5" });
+      const AsFace = ((BARS[i.diaphragmBars.bar].area * 12) / i.diaphragmBars.spacing) * i.totalDepth;
+      const endIdx = beam.xs.indexOf(supports[0]);
+      const end = wingEnd({ name: "Cap and diaphragm at the wingwall", b, h, AsFace, dFace: b - 2 - BARS[i.diaphragmBars.bar].dia / 2, MrX: Math.min(Mr(asTop), Mr(asBot)), AsLong: asTop + asBot + 2 * AsFace, mx0: endIdx >= 0 ? beam.M[endIdx] : 0, Vu: beam.Vmax, Vc, dv, stirrup: i.stirrup, torsion: true });
+      wingOut = { Pw, PuEnd, lever, end };
+    }
+    return { capW, apr, n, Pu, Ps, supports, girders, beam, foundation, delta, Kp, pBottom, Mdia, Pg, factoredStrength, service, wCap, dCap, asTop, asBot, dv, rowsMP, steelEnds, wing: wingOut };
   }
 
   function seatDesign() {
@@ -592,6 +680,8 @@ export function designAbutment(i: AbutmentInputs) {
       DC: { V: perFt(totalGirderR.DC) + 0.5 * i.approachDC, x: (perFt(totalGirderR.DC) * xBear + 0.5 * i.approachDC * (i.type === "seat" ? xBack : xBear)) / Math.max(1e-9, perFt(totalGirderR.DC) + 0.5 * i.approachDC) },
       DW: { V: perFt(totalGirderR.DW), x: xBear },
       LL: { V: perFt(totalGirderR.LL), x: xBear },
+      // The wingwalls' weight, spread along the abutment, at their middle behind the stem (DC).
+      wings: { V: wing ? perFt(nWing * wing.wall.Vs) : 0, x: i.toe + i.stemT + (wingIn ? (wingIn.L / 2) * Math.cos(rad(Math.abs(i.skew))) : 0) },
     };
     const EH = 0.5 * K * g * H * H; // kip/ft at H/3
     // Live load surcharge (3.11.6.4.1): Δp = K γs heq, heq for the abutment's height from the backfill's surface to the
@@ -612,8 +702,8 @@ export function designAbutment(i: AbutmentInputs) {
       { name: "Service I", dc: 1, dw: 1, ev: 1, eh: 1, ll: 1, tu: 1, ls: 1, lsv: 1 },
     ];
     const rows = combos.map((c) => {
-      const V = c.dc * (items.stem.V + items.backwall.V + items.footing.V + items.DC.V) + c.dw * items.DW.V + c.ev * items.soil.V + c.ll * items.LL.V + c.lsv * LSv;
-      const Mr = c.dc * (items.stem.V * items.stem.x + items.backwall.V * items.backwall.x + items.footing.V * items.footing.x + items.DC.V * items.DC.x) + c.dw * items.DW.V * items.DW.x + c.ev * items.soil.V * items.soil.x + c.ll * items.LL.V * items.LL.x + c.lsv * LSv * items.soil.x;
+      const V = c.dc * (items.stem.V + items.backwall.V + items.footing.V + items.DC.V + items.wings.V) + c.dw * items.DW.V + c.ev * items.soil.V + c.ll * items.LL.V + c.lsv * LSv;
+      const Mr = c.dc * (items.stem.V * items.stem.x + items.backwall.V * items.backwall.x + items.footing.V * items.footing.x + items.DC.V * items.DC.x + items.wings.V * items.wings.x) + c.dw * items.DW.V * items.DW.x + c.ev * items.soil.V * items.soil.x + c.ll * items.LL.V * items.LL.x + c.lsv * LSv * items.soil.x;
       const Hh = c.eh * EH + (c.ll > 0 ? 1.75 : 0) * BR + c.tu * TU + c.ls * LSh;
       const Mo = c.eh * EH * (H / 3) + (c.ll > 0 ? 1.75 : 0) * BR * yBR + c.tu * TU * yBR + c.ls * LSh * (H / 2);
       const xR = (Mr - Mo) / V;
@@ -722,6 +812,12 @@ export function designAbutment(i: AbutmentInputs) {
     add({ id: "stem-crack", name: "Stem: crack control (spacing)", demand: i.stemBars.spacing, capacity: fs.sMax, unit: "in", ref: "AASHTO 5.6.7" });
     const dvS = dvOf(fs, i.stemT * 12);
     add({ id: "stem-shear", name: "Stem: shear at the footing", demand: Vstem, capacity: 0.9 * 0.0316 * 2 * Math.sqrt(i.fc) * 12 * dvS, unit: "kip/ft", ref: "AASHTO 5.7.3.3" });
+    // The wingwalls on the stem's ends (their Section B): the stem's end section, its horizontal bars each face over its
+    // height taking the tension and My; Mx is in the wall's own plane (as deep as the wall), not checked; the wingwall's
+    // weight's torsion against the threshold (a wall has no closed stirrups to take more).
+    const sh = i.stemHorizBars ?? { bar: 5, spacing: 12 };
+    const AsFaceS = ((BARS[sh.bar].area * 12) / sh.spacing) * Hs;
+    const wingStem = wingEnd({ name: "Stem at the wingwall", b: i.stemT * 12, h: Hs * 12, AsFace: AsFaceS, dFace: i.stemT * 12 - wallCover - BARS[sh.bar].dia / 2, MrX: null, AsLong: 2 * AsFaceS, mx0: 0, Vu: 0, Vc: 0, dv: 1, stirrup: null, torsion: false });
     // The backwall (seat type, BDM 11.3.3), a cantilever from the seat per foot: earth pressure at H/3 (3.11.5), the
     // live load surcharge at H/2 with heq by its own height (3.11.6.4, Table 3.11.6.4-1), and the trucks' axles in every
     // lane on its top (with IM and the multiple presence factor, 3.6.1.1.2), eccentric to its centerline (as FHWA
@@ -814,7 +910,7 @@ export function designAbutment(i: AbutmentInputs) {
     }
     if (micropiles) {
       micropiles.onRows = footingOnRows(micropiles);
-      return { H, B, K, EH, BR, rows, footing, piles, micropiles, Mstem, Vstem, Mbw, MbwEH, REHbw, RLSbw, RLLbw, heqBw, eLL, Vbw, heqW, dpLS, LSh, LSv, ecc, MstemV, MstemVs, Mtoe: 0, Mheel: 0, items, semi: semiOut };
+      return { H, B, K, EH, BR, rows, footing, piles, micropiles, Mstem, Vstem, Mbw, MbwEH, REHbw, RLSbw, RLLbw, heqBw, eLL, Vbw, heqW, dpLS, LSh, LSv, ecc, MstemV, MstemVs, Mtoe: 0, Mheel: 0, items, semi: semiOut, wingStem };
     }
     // The footing (or pile cap) as cantilevers from the stem: the toe under the bearing pressure.
     const r0 = strength[0];
@@ -829,7 +925,7 @@ export function designAbutment(i: AbutmentInputs) {
     const Mheel = 1.35 * g * (Hs + Hb) * i.heel ** 2 / 2 + 1.25 * i.gammaC * i.footT * i.heel ** 2 / 2 + (1.75 * g * heqW * i.heel ** 2) / 2; // with the surcharge on it (3.11.6.4.1)
     const fh = flexure({ ...common, Mu: Mheel, Ms: Mheel / 1.3, h: i.footT * 12, cover: 2, bars: i.heelBars });
     add({ id: "heel", name: "Footing heel: flexure at the stem (soil, footing and the live load surcharge, no pressure under it)", demand: Mheel, capacity: fh.MR, unit: "kip·ft/ft", ref: "AASHTO 5.6.3.2" });
-    return { H, B, K, EH, BR, rows, footing, piles, micropiles, Mstem, Vstem, Mbw, MbwEH, REHbw, RLSbw, RLLbw, heqBw, eLL, Vbw, heqW, dpLS, LSh, LSv, ecc, MstemV, MstemVs, Mtoe, Mheel, items, semi: semiOut };
+    return { H, B, K, EH, BR, rows, footing, piles, micropiles, Mstem, Vstem, Mbw, MbwEH, REHbw, RLSbw, RLLbw, heqBw, eLL, Vbw, heqW, dpLS, LSh, LSv, ecc, MstemV, MstemVs, Mtoe, Mheel, items, semi: semiOut, wingStem };
 
     /**
      * The footing across its width as a beam on the rows of micropiles (per foot of abutment): each row's reaction its

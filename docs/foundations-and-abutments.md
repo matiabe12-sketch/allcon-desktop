@@ -176,6 +176,25 @@ Live load surcharge, seat and semi-integral (AASHTO 3.11.6.4.1):
   - The backwall's heq is 2.0 at the whole 24.5 ft, against the example's 3.6 at the backwall's 7 ft (its 2nd
     Edition).
 
+The wingwalls on its ends (`wing`: length, height at the tip, thickness, one or two, heq and their bars; none by
+default; the Bridge sets them from its wingwall, 2026-11-20). The abutment runs the Cantilever Wingwall's design with
+its own height, width, skew and backfill and applies that design's Section B (Strength I) to its ends:
+
+- **Integral:** each wingwall's weight × 1.25 is a point load on the cap beam's end. The end pile (or shaft) takes it
+  over the overhang, P (1 + a/s), with the average load, structural and geotechnical. The end section (cap and
+  diaphragm) takes the thrust as tension along the abutment (all of it, whatever the skew), with My and Mx (Mx plus
+  the end support's own moment), by a linear interaction (5.6.2). My's tension face is the back face, where the
+  wingwall's corner bars run with the diaphragm's face bars over the height. The wingwall's weight's moment about the
+  abutment's axis is torsion along the cap (one row of piles), checked against 0.25 φ Tcr (5.7.2.1). Over it, the
+  closed stirrups take it with the shear (5.7.3.6.2, θ 45°), and the face bars give the longitudinal steel round
+  the perimeter (5.7.3.6.3).
+- **Seat:** the wingwalls' weight, spread along the abutment at their middle behind the stem, is in the footing's
+  statics (DC). The stem's end takes the tension and My the same way, with its horizontal bars and the corner bars.
+  Mx is in the wall's own plane, and the weight's moment about the abutment's axis goes down into the footing at the
+  end (the stem stands on it all along), not as torsion: neither is checked.
+- **Not applied:** the thrust's component square to the abutment, and the end region's footing pressure from the
+  weight's moment (it's averaged along the abutment).
+
 Seat abutment's backwall (BDM 11.3.3): a cantilever from the seat, per foot.
 
 - **Loads** (as FHWA NHI-04-041 Step 7.9, to the 10th Edition):
@@ -227,21 +246,25 @@ and the rest were a fixed "other bars", read now as both the front and the verti
   full area and the retained face's at the share the earth moment leaves them (1 − Mu/Mr); flexure 5.6.3.2 and
   shear 5.7.3.3 (β = 2). This is our choice of model; AASHTO has no wingwall-specific rule.
 - **The connection to the abutment** (2026-11-20):
-  - **Corner bars** (`cornerBars`, default the retained face's bar and spacing): L-bars round the inside corner.
-    The root moment's tension turns from the wingwall's retained face into the abutment's back face, so they take
-    Mu per foot of height over the abutment's thickness (5.6.3.2) with crack control at Service I (5.6.7). The
-    abutment's own horizontal bars are not counted: CDOT's usual #5 @ 12 in fail crack control under the default
-    wing's moment.
-  - **Their legs:** along the abutment, ℓd plus the cover past the wingwall's inside face (5.10.8.2.1); into the
-    wingwall, through the abutment along the skew plus a Class B lap (1.3 ℓd of the larger bar, 5.10.8.4.3a) with
-    the retained face's bars. They're scheduled with the wingwall (602-00020).
+  - **Corner bars** (`cornerBars`, default the retained face's bar and spacing): L-bars at the corner. The root
+    moment's tension turns from the wingwall's retained face into the abutment's back face, so they take Mu per foot
+    of height over the abutment's thickness (5.6.3.2) with crack control at Service I (5.6.7). The abutment's own
+    horizontal bars are not counted: CDOT's usual #5 @ 12 in fail crack control under the default wing's moment.
+  - **Their legs:** the critical section is the wingwall's inside face. Each bar runs along the abutment's back face
+    from ℓd past it (5.10.8.2.1), back across the wingwall's root (t / cos θ less the cover), and bends at the
+    wingwall's front face into the wingwall along it: at least 12 db, and the rest of ℓd, so it's developed both
+    sides. They're scheduled with the wingwall (602-00020), drawn in its plan detail and in the Bridge's 3D rebar view
+    (there, clipped where the wall's sloping bottom ends it).
   - **Shear friction across the vertical joint** (5.7.4.3, 5.7.4.4): √(Pu² + Vwu²), the thrust and weight
     together. Acv = t H. Only the front face's bars clamp it; the retained face's are in flexural tension, and no
     axial load is counted. `joint` is a construction joint roughened to 0.25 in (c 0.24 ksi, μ 1.0; the default) or
     monolithic (c 0.40, μ 1.4), with K1 0.25 and K2 1.5 ksi. The 5.7.4.2 minimum is waived below 0.210 ksi.
-  - **Not checked:** the abutment taking Section B's forces (torsion and the moments into its end piles or
-    footing), and the corner's opening-joint efficiency (AASHTO has no rule).
-- **Section B:** the tension, shear, moments and torsion handed to the abutment.
+  - **Not checked:** the corner's opening-joint efficiency (AASHTO has no rule).
+- **Section B:** the tension, shear, moments and torsion handed to the abutment, which applies them (the
+  abutment's `wing`, below).
+- **Plan detail** (the editor and the calc package): the bars at the abutment, drawn square to it. The retained
+  face's run through it and are hooked; the front face's run straight; the corner bars and their legs, and the
+  vertical bars, are shown too.
 - **Take-off and detail:** both faces' horizontals drawn and scheduled to the far face of the abutment along the
   skew (retained face hooked; a series along the sloping bottom; lapped Class B when longer than stock), verticals
   each face as a series, epoxy coated (602-00020). The bridge's 3D rebar view draws the front and vertical bars

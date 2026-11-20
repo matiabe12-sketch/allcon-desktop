@@ -18,6 +18,8 @@ export type SectionSpec = { title: string; open?: boolean; fields: FieldSpec[] }
 
 const limit: Column = { key: "limit", label: "Limit", kind: "choice", options: [{ value: "strength", label: "Strength" }, { value: "service", label: "Service" }, { value: "extreme", label: "Extreme" }], width: "5.5rem" };
 const name: Column = { key: "name", label: "Case", kind: "text", width: "7rem" };
+/** An abutment with wingwalls entered on its ends. */
+const wingOn = (i: Record<string, unknown>) => Number((i.wing as { L?: number } | null | undefined)?.L ?? 0) > 0;
 const soilKinds = [
   { value: "sand", label: "Sand (API)" },
   { value: "soft-clay", label: "Soft clay (Matlock)" },
@@ -372,6 +374,15 @@ export const FOUNDATION_SPECS: Record<FoundationKind, SectionSpec[]> = {
         { type: "number", key: "groupMomentAlong", label: "Factored moment on the group along the abutment", unit: "kip·ft", hint: "the live load placed toward one curb", show: (i) => i.type === "integral-micropiles" },
         { type: "number", key: "Rn", label: "Nominal axial resistance per pile or shaft", unit: "kip" },
         { type: "number", key: "phiDyn", label: "Its resistance factor", step: 0.05 },
+      ],
+    },
+    {
+      title: "Wingwalls on its ends",
+      fields: [
+        { type: "number", key: "wing.L", label: "Wingwall length from the abutment (0: none)", unit: "ft", step: 0.5, hint: "Their Section B forces (the Cantilever Wingwall's) on the abutment's ends; the Bridge fills these in from its wingwall" },
+        { type: "number", key: "wing.h", label: "Wingwall height at its tip", unit: "ft", step: 0.5, hint: "Default 3 ft", show: (i) => wingOn(i) },
+        { type: "number", key: "wing.t", label: "Wingwall thickness", unit: "in", hint: "Default 12 in", show: (i) => wingOn(i) },
+        { type: "choice", key: "wing.count", label: "Wingwalls", options: [{ value: 2, label: "One at each end" }, { value: 1, label: "One end only" }], show: (i) => wingOn(i) },
       ],
     },
     {

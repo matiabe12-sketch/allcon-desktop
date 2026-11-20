@@ -307,3 +307,74 @@ describe("the live load surcharge on a seat abutment without an approach slab (A
     expect(designAbutment(abutmentInputs({ type: "seat", foundation: "footing", lsOmit: false })).seat!.heqW).toBeGreaterThan(0);
   });
 });
+
+describe("the wingwalls' Section B forces on the abutment's ends", () => {
+  const wing = { L: 20, h: 3, t: 12 };
+  const integral = abutmentInputs({ type: "integral-piles", wing });
+  const seat = abutmentInputs({ type: "seat", wing });
+  const r = designAbutment(integral);
+  const g = r.integral!;
+  const check = (res: ReturnType<typeof designAbutment>, id: string) => res.checks.find((c) => c.id === id)!;
+
+  it("integral: each wingwall's weight × 1.25 on the cap's ends, and on the end pile through the overhang", () => {
+    // The wingwall: 12 in × H (the abutment's total depth) × 20 ft, 0.150 kcf.
+    const Vw = 1 * integral.totalDepth * 20 * integral.gammaC;
+    close(g.wing!.Pw, 1.25 * Vw, 1e-9);
+    const lever = g.supports[0] / (g.supports[1] - g.supports[0]);
+    close(g.wing!.PuEnd, g.Pu + 1.25 * Vw * (1 + lever), 1e-9);
+    close(check(r, "wing-pile-axial").demand, g.wing!.PuEnd, 1e-9);
+    // The cap's beam carries the wingwalls on its overhangs: more negative moment over the end support.
+    const bare = designAbutment(abutmentInputs({ type: "integral-piles" })).integral!;
+    const at = (x: typeof g) => x.beam.M[x.beam.xs.indexOf(x.supports[0])];
+    expect(at(g)).toBeLessThan(at(bare));
+  });
+
+  it("integral: the end section's tension and moments by a linear interaction, the corner bars on the back face", () => {
+    const e = g.wing!.end!;
+    // The wingwall's default corner bars, its retained face's #8 @ 6 in, over its height less the covers.
+    close(e.AsCorner, ((0.79 * 12) / 6) * (integral.totalDepth - 4 / 12), 1e-9);
+    const c = check(r, "wing-end");
+    close(c.demand, e.Nu / e.Pr + e.Myu / e.MrY + e.Mxu / e.MrX!, 1e-9);
+    expect(c.ok).toBe(true);
+  });
+
+  it("integral: the wingwall's weight's torsion against 0.25 φ Tcr, then the closed stirrups with the shear (5.7.2.1, 5.7.3.6.2)", () => {
+    const e = g.wing!.end!;
+    const b = integral.capWidth * 12;
+    const h = integral.totalDepth * 12;
+    close(e.Tcr, (0.126 * Math.sqrt(integral.fc) * (b * h) ** 2) / (2 * (b + h)) / 12, 1e-9);
+    const t = check(r, "wing-torsion");
+    close(t.capacity, 0.25 * 0.9 * e.Tcr, 1e-9);
+    if (!e.neglect) {
+      const st = check(r, "wing-torsion-steel");
+      close(st.demand, e.tors!.Av + 2 * e.tors!.At, 1e-9);
+      expect(t.ok).toBe(st.ok); // over the threshold, designed for by the stirrups
+    }
+  });
+
+  it("seat: the wingwalls' weight in the footing's statics, the stem's end in tension and My, no torsion along it", () => {
+    const s = designAbutment(seat).seat!;
+    const H = seat.stemH + seat.backwallH;
+    close(s.items.wings.V, (2 * (1 * H * 20 * seat.gammaC)) / seat.length, 1e-9);
+    close(s.items.wings.x, seat.toe + seat.stemT + 10 * Math.cos((seat.skew * Math.PI) / 180), 1e-9);
+    const res = designAbutment(seat);
+    expect(res.checks.some((c) => c.id === "wing-torsion")).toBe(false);
+    expect(check(res, "wing-end").ok).toBe(true);
+  });
+
+  for (const [name, inputs] of [["integral", integral], ["seat", seat]] as const)
+    it(`works the ${name} abutment with wingwalls out: no errors, every line on the page, its checks as the engine's`, () => {
+      const c = workOut("abutment", inputs);
+      expect(c.errors).toEqual([]);
+      expect(c.wide).toEqual([]);
+      const res = designAbutment(inputs);
+      const fails = res.checks.filter((x) => !x.ok && !x.advisory).length;
+      expect(c.ng.length > 0).toBe(fails > 0);
+    });
+
+  it("no wingwalls: nothing changes", () => {
+    const a = designAbutment(abutmentInputs({ type: "seat" }));
+    const b = designAbutment(abutmentInputs({ type: "seat", wing: { L: 0, h: 3, t: 12 } }));
+    expect(b.checks.map((c) => [c.id, c.demand])).toEqual(a.checks.map((c) => [c.id, c.demand]));
+  });
+});

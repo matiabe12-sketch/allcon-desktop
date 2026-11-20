@@ -132,6 +132,12 @@ export async function runLoadPath(o: {
     const abut = s.type.endsWith("abutment") ? await load(c.abutmentId, "abutment") : null;
     const abutBefore = abut ? abutmentInputs(abut.inputs) : abutmentInputs({});
     const abutNext = s.type.endsWith("abutment") ? abutmentFromBridge(b, run, k, abutBefore) : null;
+    // Its wingwalls, where the Bridge has them: their geometry and bars, so their Section B forces reach the abutment.
+    const wdPre = abutNext ? await load(c.wingwallId, "cantilever-wingwall") : null;
+    if (abutNext && wdPre) {
+      const wi = wingwallInputs(wdPre.inputs);
+      abutNext.wing = { L: wi.L, h: wi.h, t: wi.t, count: abutBefore.wing?.count ?? 2, heq: wi.heq, bars: wi.bars, ...(wi.cornerBars ? { cornerBars: wi.cornerBars } : {}) };
+    }
     const bNext = bearingFromBridge(b, run, k, bBefore, abutNext);
     c.bearingId = await upsert(`bearing-${k}`, `${s.name}, bearings`, "elastomeric-bearing", bd, bBefore, bNext, verdictTry(() => designBearing(bNext).checks), `${prefix}, ${s.name} bearings`);
     if (s.type.endsWith("abutment") && abutNext) {

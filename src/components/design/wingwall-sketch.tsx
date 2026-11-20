@@ -59,3 +59,91 @@ export function WingwallSketch({ inputs, result }: { inputs: WingwallInputs; res
     </svg>
   );
 }
+
+// The bars where the wingwall meets the abutment, in plan (drawn square to the abutment; the skew lengthens the bars
+// through it as the design takes them): the retained face's bars through the abutment, hooked at its far face; the
+// front face's straight; the corner bars along the abutment's back face across the wingwall's root, bent into the
+// wingwall along its front face; the vertical bars as dots.
+const STEEL = "#b91c1c";
+const CORNER = "#2563eb";
+const barDia = (bar: number) => bar / 8;
+const ftIn = (inches: number) => {
+  const r = Math.round(inches);
+  const f = Math.floor(r / 12);
+  return f > 0 ? `${f}'-${r - 12 * f}"` : `${r}"`;
+};
+
+export function WingwallPlanDetail({ inputs, result }: { inputs: WingwallInputs; result: WingwallResult }) {
+  const W = 520;
+  const Hh = 340;
+  const c = inputs.cover;
+  const t = inputs.t;
+  const A = inputs.A * 12;
+  const cn = result.connection;
+  const front = result.temperature.front;
+  const vert = result.temperature.vert;
+  const dR = barDia(inputs.bars.bar);
+  const dF = barDia(front.bar);
+  const dC = barDia(cn.abutBars.bar);
+  const hookLeg = 12 * dR;
+  // The extent drawn: the abutment from the wingwall's end past the corner bars' leg; the wingwall to past their other leg.
+  const Yab = Math.max(t + 24, c + cn.legAb + 12);
+  const Xw = Math.max(36, cn.legWing + 18, 2 * t);
+  const s = Math.min((W - 120) / (A + Xw), (Hh - 80) / Yab);
+  const ox = 60 + A * s; // the abutment's back face (x = 0)
+  const oy = 46; // the wingwall's front face (y = 0)
+  const X = (x: number) => ox + x * s;
+  const Y = (y: number) => oy + y * s;
+  const yR = t - c - dR / 2;
+  const yF = c + dF / 2;
+  const xC = -c - dC / 2; // the corner bars along the abutment's back face
+  const yC = yF + dF / 2 + dC / 2; // their bent leg, just inside the front face's bars
+  const verts = [] as number[];
+  for (let x = c + 3; x < Xw - 2; x += vert.spacing) verts.push(x);
+  return (
+    <svg viewBox={`0 0 ${W} ${Hh}`} className="w-full" role="img" aria-label="Wingwall bars at the abutment, plan">
+      <text x={W / 2} y={18} textAnchor="middle" fontSize="12" fontWeight="600" fill={LINE}>
+        Plan at the abutment (bars)
+      </text>
+      <rect x={X(-A)} y={Y(0)} width={A * s} height={Yab * s} fill={ABUTMENT} fillOpacity={0.35} stroke={LINE} strokeWidth="1" />
+      <rect x={X(0)} y={Y(0)} width={Xw * s} height={t * s} fill={CONCRETE} stroke={LINE} strokeWidth="1" />
+      <line x1={X(Xw)} y1={Y(-4)} x2={X(Xw)} y2={Y(t + 4)} stroke={LINE} strokeWidth="0.8" strokeDasharray="4 3" />
+      <text x={X(-A / 2)} y={Y(Yab) - 8} textAnchor="middle" fontSize="11" fill={LINE}>
+        Abutment
+      </text>
+      <text x={X(Xw / 2)} y={Y(t) + 44} textAnchor="middle" fontSize="11" fill={LINE}>
+        Backfill (retained side)
+      </text>
+      <text x={X(Xw) - 4} y={Y(t / 2) + 4} textAnchor="end" fontSize="10" fill={LINE}>
+        Wingwall
+      </text>
+      {/* Retained face: through the abutment, 90° hook at its far face. */}
+      <polyline points={`${X(Xw)},${Y(yR)} ${X(-A + c + dR / 2)},${Y(yR)} ${X(-A + c + dR / 2)},${Y(Math.max(yF + dF / 2 + dR, yR - hookLeg))}`} fill="none" stroke={STEEL} strokeWidth="2" />
+      {/* Front face: straight through it. */}
+      <line x1={X(Xw)} y1={Y(yF)} x2={X(-A + c)} y2={Y(yF)} stroke={STEEL} strokeWidth="1.4" />
+      {/* Corner bars. */}
+      <polyline points={`${X(xC)},${Y(c + cn.legAb)} ${X(xC)},${Y(yC)} ${X(xC + cn.legWing)},${Y(yC)}`} fill="none" stroke={CORNER} strokeWidth="2" />
+      {verts.flatMap((x) => [
+        <circle key={`a${x}`} cx={X(x)} cy={Y(t - c - dR - barDia(vert.bar) / 2)} r={2} fill={LINE} />,
+        <circle key={`b${x}`} cx={X(x)} cy={Y(c + dF + barDia(vert.bar) / 2)} r={2} fill={LINE} />,
+      ])}
+      {/* The critical section: the wingwall's inside face. */}
+      <line x1={X(-A - 6)} y1={Y(t)} x2={X(0)} y2={Y(t)} stroke={LINE} strokeWidth="0.8" strokeDasharray="2 3" />
+      <text x={X(-A) - 4} y={Y(t) + 4} textAnchor="end" fontSize="9" fill={LINE}>
+        crit.
+      </text>
+      <text x={X(xC) + 6} y={Y(c + cn.legAb) - 4} fontSize="10" fill={CORNER}>
+        #{cn.abutBars.bar} @ {cn.abutBars.spacing}&quot; corner bars: {ftIn(cn.legAb)} × {ftIn(cn.legWing)}
+      </text>
+      <text x={X(Xw) - 4} y={Y(t) + 14} textAnchor="end" fontSize="10" fill={STEEL}>
+        #{inputs.bars.bar} @ {inputs.bars.spacing}&quot; retained face, hooked
+      </text>
+      <text x={X(Xw) - 4} y={Y(0) - 5} textAnchor="end" fontSize="10" fill={STEEL}>
+        #{front.bar} @ {front.spacing}&quot; front face
+      </text>
+      <text x={14} y={Hh - 10} fontSize="10" fill={LINE}>
+        ● #{vert.bar} @ {vert.spacing}&quot; vertical, each face · drawn square to the abutment{inputs.skew ? ` (skew ${inputs.skew}°)` : ""}
+      </text>
+    </svg>
+  );
+}

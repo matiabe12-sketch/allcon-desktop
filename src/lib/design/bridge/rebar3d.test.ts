@@ -218,7 +218,9 @@ describe("F-18-Y's bars in 3D", async () => {
         }
         if (cat === "wingwall")
           for (const s of setsOn(k))
-            for (const [, , z] of local(s)) {
+            for (const [x, , z] of local(s)) {
+              // The corner bars' leg along the abutment's back face runs on into the abutment (x < 0).
+              if (/corner/.test(s.label) && x < 0) continue;
               expect(z).toBeGreaterThanOrEqual(-1e-3);
               expect(z).toBeLessThanOrEqual(e.depth + 1e-3);
             }

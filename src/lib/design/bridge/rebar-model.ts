@@ -9,6 +9,18 @@ import { abutmentBars, approachBars, deckBars, footingBars, railBars, wingwallBa
 import { railDef } from "../decks/rails";
 import { columnShaftConnection } from "../piers/column-shaft";
 import { shaftCageOf } from "./loadpath";
+import { designWingwall } from "../walls/wingwall";
+import { wingwallInputs } from "../kinds";
+
+/** A wingwall's corner bars and their legs (in), as its design gives them; none where it can't be designed. */
+function wingCorner(w: Parameters<typeof wingwallInputs>[0]) {
+  try {
+    const cn = designWingwall(wingwallInputs(w)).connection;
+    return { bars: cn.abutBars, legAb: cn.legAb, legWing: cn.legWing };
+  } catch {
+    return null;
+  }
+}
 import type { FootingInputs } from "../foundations/footing";
 import type { PileInputs } from "../foundations/piles";
 
@@ -125,7 +137,7 @@ export function rebarModel(b: BridgeInputs, els: IfcElement[], d: { girders: (Gi
           else missing.add(`${b.supports[k].name} approach slab`);
         } else if (category === "wingwall") {
           const w = d.comps.wingwalls?.[k]?.inputs;
-          if (w && e.wing) placed = wingwallBars(host, w, e.wing.inward);
+          if (w && e.wing) placed = wingwallBars(host, w, e.wing.inward, wingCorner(w));
         } else {
           const a = d.comps.abutments?.[k]?.inputs;
           const which = /pile cap/.test(n) ? "cap" : /diaphragm/.test(n) ? "diaphragm" : /stem/.test(n) ? "stem" : /backwall/.test(n) ? "backwall" : /footing/.test(n) ? "footing" : null;

@@ -51,6 +51,16 @@ describe("design figures", () => {
     expect(section.svg).not.toMatch(/className|class=|strokeWidth/);
   });
 
+  it("draws the wingwall's bars at the abutment in plan: retained hooked, front straight, corner bars, verticals", () => {
+    const { plan } = wingwallFigures(WINGWALL_DEFAULTS);
+    expect(plan.width).toBe(520);
+    expect(plan.svg).toContain("Plan at the abutment (bars)");
+    expect(plan.svg).toContain("#8 @ 6&quot; corner bars");
+    expect(plan.svg).toContain("retained face, hooked");
+    expect(plan.svg).toContain("#4 @ 12&quot; front face");
+    expect(plan.svg).not.toMatch(/className|class=|strokeWidth|NaN/);
+  });
+
   it("draws a deck's cross-section with its girders and design sections", () => {
     const { section } = deckFigures(DECK_DEFAULTS);
     expect(section.height).toBe(300);

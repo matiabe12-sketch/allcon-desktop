@@ -71,6 +71,12 @@ export type AbutmentInputs = {
   backwallH: number; // ft, seat to the top of deck
   backwallT: number; // ft
   seatWidth: number; // in
+  /** ft, H in Eq. 4.7.4.4-1: at an abutment, the average height of the columns supporting the deck to the next expansion joint (0 for a single span). Default 0. */
+  seatH?: number;
+  /** %, Table 4.7.4.4-1 by seismic zone: 50 (Zone 1, As < 0.05), 100 (Zone 1, As ≥ 0.05), 150 (Zones 2–4). Default 100. */
+  seatPct?: number;
+  /** in, clear cover to the stem's and backwall's bars (AASHTO Table 5.10.1-1: 2 in for exterior faces other than cast against earth). Default 2. */
+  wallCover?: number;
   toe: number; // ft
   heel: number; // ft
   footT: number; // ft
@@ -94,6 +100,8 @@ export type AbutmentInputs = {
   backwallHorizBars?: Bars; // horizontal, each face (5.10.6), CDOT's usual #5 @ 12 in where not given
   /** No live load surcharge (AASHTO 3.11.6.5; CDOT BDM 11.3: ignored where an approach slab is provided). Default: omitted when an approach slab is given (approachDC > 0), applied by AASHTO Table 3.11.6.4.1-1 otherwise. */
   lsOmit?: boolean;
+  /** ft, the bearings from the stem's centerline toward the span (seat, semi-integral). Default: the seat's middle (half the backwall's thickness) for a seat abutment, 0 for semi-integral. */
+  bearingEcc?: number;
   backwallLLecc?: number; // ft, the axles on the backwall's top from its centerline (default half its thickness)
   toeBars: Bars; // footing bottom, across it
   heelBars: Bars; // footing top, across it
@@ -372,6 +380,9 @@ export function designAbutment(i: AbutmentInputs) {
   const ec = 120000 * i.gammaC ** 2 * i.fc ** 0.33;
   const beta1 = Math.min(0.85, Math.max(0.65, 0.85 - (i.fc - 4) * 0.05));
   const common = { fc: i.fc, fy: i.fy, Es: 29000, phiF: 0.9, exposure: i.exposure, n: 29000 / ec, beta1 };
+  // dv (5.7.2.8): the flexural lever arm de − a/2, not less than 0.9 de or 0.72 h.
+  const dvOf = (f: { de: number; a: number }, h: number) => Math.max(f.de - f.a / 2, 0.9 * f.de, 0.72 * h);
+  const wallCover = i.wallCover ?? 2;
 
   // --- movement toward the abutment from the unit's middle ----------------------------------------------------------
   const half = (i.unitLength / 2) * 12;
@@ -569,14 +580,18 @@ export function designAbutment(i: AbutmentInputs) {
     // Forces per foot, moments about the toe (x from the toe).
     const xStem = i.toe + i.stemT / 2;
     const xBack = i.toe + i.stemT - i.backwallT / 2;
+    // The bearings toward the span from the stem's centerline; the approach slab on the backwall (seat) or the
+    // end diaphragm (semi-integral, on the bearings).
+    const ecc = i.bearingEcc ?? (i.type === "seat" ? i.backwallT / 2 : 0);
+    const xBear = xStem - ecc;
     const items = {
       stem: { V: i.gammaC * i.stemT * Hs, x: xStem },
       backwall: { V: i.gammaC * i.backwallT * Hb, x: xBack },
       footing: { V: i.gammaC * B * i.footT, x: B / 2 },
       soil: { V: g * i.heel * (Hs + Hb), x: i.toe + i.stemT + i.heel / 2 },
-      DC: { V: perFt(totalGirderR.DC) + 0.5 * i.approachDC, x: xStem },
-      DW: { V: perFt(totalGirderR.DW), x: xStem },
-      LL: { V: perFt(totalGirderR.LL), x: xStem },
+      DC: { V: perFt(totalGirderR.DC) + 0.5 * i.approachDC, x: (perFt(totalGirderR.DC) * xBear + 0.5 * i.approachDC * (i.type === "seat" ? xBack : xBear)) / Math.max(1e-9, perFt(totalGirderR.DC) + 0.5 * i.approachDC) },
+      DW: { V: perFt(totalGirderR.DW), x: xBear },
+      LL: { V: perFt(totalGirderR.LL), x: xBear },
     };
     const EH = 0.5 * K * g * H * H; // kip/ft at H/3
     // Live load surcharge (3.11.6.4.1): Δp = K γs heq, heq for the abutment's height from the backfill's surface to the
@@ -688,14 +703,24 @@ export function designAbutment(i: AbutmentInputs) {
     }
     // The stem at the footing's top: earth over Hs + Hb, braking and the bearings' shear at the seat.
     const Hst = Hs + Hb;
-    const Mstem = gEH.max * K * g * Hst ** 3 / 6 + 1.75 * BR * (yBR - i.footT) + 0.5 * TU * (yBR - i.footT) + (1.75 * dpLS * Hst ** 2) / 2;
-    const Mstem_s = K * g * Hst ** 3 / 6 + BR * (yBR - i.footT) + TU * (yBR - i.footT) + (dpLS * Hst ** 2) / 2;
+    // The vertical loads' moment about the stem's base (+ toward the span, adding to the earth's): the girders' reactions at
+    // the bearings (the LL with IM, the stem being above ground, AASHTO 3.6.2.1), the approach slab and the backwall
+    // where they sit; a load behind the centerline relieves and takes the minimum factor (0.9).
+    const arm = (x: number) => xStem - x;
+    const vertM = (gDC: number, gDW: number, gLL: number) => {
+      const dc = (gx: number, V: number, x: number) => (arm(x) >= 0 ? gx : Math.min(gx, 0.9)) * V * arm(x);
+      return dc(gDC, perFt(totalGirderR.DC), xBear) + dc(gDC, 0.5 * i.approachDC, i.type === "seat" ? xBack : xBear) + dc(gDC, items.backwall.V, xBack) + gDW * perFt(totalGirderR.DW) * arm(xBear) + gLL * perFt(totalGirderR.LL) * (1 + i.IM) * arm(xBear);
+    };
+    const MstemV = vertM(1.25, 1.5, 1.75);
+    const MstemVs = vertM(1, 1, 1);
+    const Mstem = gEH.max * K * g * Hst ** 3 / 6 + 1.75 * BR * (yBR - i.footT) + 0.5 * TU * (yBR - i.footT) + (1.75 * dpLS * Hst ** 2) / 2 + MstemV;
+    const Mstem_s = K * g * Hst ** 3 / 6 + BR * (yBR - i.footT) + TU * (yBR - i.footT) + (dpLS * Hst ** 2) / 2 + MstemVs;
     const Vstem = gEH.max * 0.5 * K * g * Hst ** 2 + 1.75 * BR + 0.5 * TU + 1.75 * dpLS * Hst;
-    const fs = flexure({ ...common, Mu: Mstem, Ms: Mstem_s, h: i.stemT * 12, cover: 2, bars: i.stemBars });
+    const fs = flexure({ ...common, Mu: Mstem, Ms: Mstem_s, h: i.stemT * 12, cover: wallCover, bars: i.stemBars });
     add({ id: "stem-flex", name: "Stem: flexure at the footing", demand: Mstem, capacity: fs.MR, unit: "kip·ft/ft", ref: "AASHTO 5.6.3.2" });
     add({ id: "stem-min", name: "Stem: minimum reinforcement", demand: fs.minRequired, capacity: fs.MR, unit: "kip·ft/ft", ref: "AASHTO 5.6.3.3" });
     add({ id: "stem-crack", name: "Stem: crack control (spacing)", demand: i.stemBars.spacing, capacity: fs.sMax, unit: "in", ref: "AASHTO 5.6.7" });
-    const dvS = Math.max(0.9 * fs.de, 0.72 * i.stemT * 12);
+    const dvS = dvOf(fs, i.stemT * 12);
     add({ id: "stem-shear", name: "Stem: shear at the footing", demand: Vstem, capacity: 0.9 * 0.0316 * 2 * Math.sqrt(i.fc) * 12 * dvS, unit: "kip/ft", ref: "AASHTO 5.7.3.3" });
     // The backwall (seat type, BDM 11.3.3), a cantilever from the seat per foot: earth pressure at H/3 (3.11.5), the
     // live load surcharge at H/2 with heq by its own height (3.11.6.4, Table 3.11.6.4-1), and the trucks' axles in every
@@ -712,12 +737,12 @@ export function designAbutment(i: AbutmentInputs) {
     const Mbw = Math.max(bwMoment(1.75, gEH.max), bwMoment(1.35, gEH.max));
     const MbwS = bwMoment(1.0, 1.0);
     const Vbw = gEH.max * REHbw + 1.75 * RLSbw;
-    const fb = flexure({ ...common, Mu: Mbw, Ms: MbwS, h: i.backwallT * 12, cover: 2, bars: i.backwallBars });
+    const fb = flexure({ ...common, Mu: Mbw, Ms: MbwS, h: i.backwallT * 12, cover: wallCover, bars: i.backwallBars });
     if (i.type !== "semi-integral") {
       add({ id: "backwall", name: `Backwall: flexure at the seat (earth, LS with heq ${heqBw.toFixed(2)} ft, the axles on its top)`, demand: Mbw, capacity: fb.MR, unit: "kip·ft/ft", ref: "AASHTO 5.6.3.2, 3.11.5, 3.11.6.4" });
       add({ id: "backwall-min", name: "Backwall: minimum reinforcement", demand: fb.minRequired, capacity: fb.MR, unit: "kip·ft/ft", ref: "AASHTO 5.6.3.3" });
       add({ id: "backwall-crack", name: "Backwall: crack control (spacing)", demand: i.backwallBars.spacing, capacity: fb.sMax, unit: "in", ref: "AASHTO 5.6.7" });
-      const dvB = Math.max(0.9 * fb.de, 0.72 * i.backwallT * 12);
+      const dvB = dvOf(fb, i.backwallT * 12);
       add({ id: "backwall-shear", name: "Backwall: shear at the seat", demand: Vbw, capacity: 0.9 * 0.0316 * 2 * Math.sqrt(i.fc) * 12 * dvB, unit: "kip/ft", ref: "AASHTO 5.7.3.3" });
       const hb = i.backwallHorizBars ?? { bar: 5, spacing: 12 };
       const bT = i.backwallT * 12;
@@ -738,7 +763,7 @@ export function designAbutment(i: AbutmentInputs) {
       const Kp = Math.tan(rad(45 + i.backfillPhi / 2)) ** 2;
       const pBot = Kp * g * Hb; // ksf at the diaphragm's bottom
       const Mpass = (1.35 * pBot * i.girderSpacing ** 2) / 10; // kip·ft per ft of height
-      const fh = flexure({ ...common, Mu: Mpass, Ms: Mpass / 1.35, h: i.backwallT * 12, cover: 2, bars: sd.horiz });
+      const fh = flexure({ ...common, Mu: Mpass, Ms: Mpass / 1.35, h: i.backwallT * 12, cover: wallCover, bars: sd.horiz });
       add({ id: "semi-pass", name: "End diaphragm: horizontal bars under passive pressure between girders", demand: Mpass, capacity: fh.MR, unit: "kip·ft/ft", ref: "AASHTO 3.11.5.4, 5.6.3.2; CDOT BDM 11.3.2" });
       // Jacking: each girder's permanent reaction × 1.3 to two jacks at ±a from it; the diaphragm a beam between them.
       const Rj = 1.3 * (i.RDC + i.RDW);
@@ -781,14 +806,15 @@ export function designAbutment(i: AbutmentInputs) {
       semiOut = { ...sd, Kp, pBot, Mpass, Rj, P, Mj, MRj, d, dv, Vc, Vs, jackD, jackH, Ast };
     }
 
-    // The seat width (4.7.4.4): N = (8 + 0.02 L + 0.08 H)(1 + 0.000125 S²), H = 0 at an abutment.
+    // The seat width (4.7.4.4): N = (8 + 0.02 L + 0.08 H)(1 + 0.000125 S²) × the percentage of Table 4.7.4.4-1, H at an
+    // abutment the average height of the columns to the next expansion joint (0 for a single span).
     if (i.type === "seat") {
-      const N = (8 + 0.02 * i.unitLength) * (1 + 0.000125 * i.skew ** 2);
-      add({ id: "seat", name: "Bearing seat width", demand: N, capacity: i.seatWidth, unit: "in", ref: "AASHTO 4.7.4.4" });
+      const N = (8 + 0.02 * i.unitLength + 0.08 * (i.seatH ?? 0)) * (1 + 0.000125 * i.skew ** 2) * ((i.seatPct ?? 100) / 100);
+      add({ id: "seat", name: `Bearing seat width (H ${i.seatH ?? 0} ft, ${i.seatPct ?? 100}%)`, demand: N, capacity: i.seatWidth, unit: "in", ref: "AASHTO 4.7.4.4, Table 4.7.4.4-1" });
     }
     if (micropiles) {
       micropiles.onRows = footingOnRows(micropiles);
-      return { H, B, K, EH, BR, rows, footing, piles, micropiles, Mstem, Vstem, Mbw, MbwEH, REHbw, RLSbw, RLLbw, heqBw, eLL, Vbw, heqW, dpLS, LSh, LSv, Mtoe: 0, Mheel: 0, items, semi: semiOut };
+      return { H, B, K, EH, BR, rows, footing, piles, micropiles, Mstem, Vstem, Mbw, MbwEH, REHbw, RLSbw, RLLbw, heqBw, eLL, Vbw, heqW, dpLS, LSh, LSv, ecc, MstemV, MstemVs, Mtoe: 0, Mheel: 0, items, semi: semiOut };
     }
     // The footing (or pile cap) as cantilevers from the stem: the toe under the bearing pressure.
     const r0 = strength[0];
@@ -803,7 +829,7 @@ export function designAbutment(i: AbutmentInputs) {
     const Mheel = 1.35 * g * (Hs + Hb) * i.heel ** 2 / 2 + 1.25 * i.gammaC * i.footT * i.heel ** 2 / 2 + (1.75 * g * heqW * i.heel ** 2) / 2; // with the surcharge on it (3.11.6.4.1)
     const fh = flexure({ ...common, Mu: Mheel, Ms: Mheel / 1.3, h: i.footT * 12, cover: 2, bars: i.heelBars });
     add({ id: "heel", name: "Footing heel: flexure at the stem (soil, footing and the live load surcharge, no pressure under it)", demand: Mheel, capacity: fh.MR, unit: "kip·ft/ft", ref: "AASHTO 5.6.3.2" });
-    return { H, B, K, EH, BR, rows, footing, piles, micropiles, Mstem, Vstem, Mbw, MbwEH, REHbw, RLSbw, RLLbw, heqBw, eLL, Vbw, heqW, dpLS, LSh, LSv, Mtoe, Mheel, items, semi: semiOut };
+    return { H, B, K, EH, BR, rows, footing, piles, micropiles, Mstem, Vstem, Mbw, MbwEH, REHbw, RLSbw, RLLbw, heqBw, eLL, Vbw, heqW, dpLS, LSh, LSv, ecc, MstemV, MstemVs, Mtoe, Mheel, items, semi: semiOut };
 
     /**
      * The footing across its width as a beam on the rows of micropiles (per foot of abutment): each row's reaction its
@@ -854,7 +880,7 @@ export function designAbutment(i: AbutmentInputs) {
       if (top.a.Mneg >= 1) add({ id: "foot-top-min", name: "Footing, top bars: minimum reinforcement", demand: ftp.minRequired, capacity: ftp.MR, unit: "kip·ft/ft", ref: "AASHTO 5.6.3.3" });
       if (MsTop >= 1) add({ id: "foot-top-crack", name: "Footing, top bars: crack control (spacing)", demand: i.heelBars.spacing, capacity: ftp.sMax, unit: "in", ref: "AASHTO 5.6.7" });
       // One-way shear at dv from the stem's faces, the reactions beyond the section (5.12.8.6.1), β = 2.
-      const dv = Math.max(0.9 * fb.de, 0.72 * i.footT * 12) / 12;
+      const dv = dvOf(fb, i.footT * 12) / 12;
       const Vu = Math.max(...st.map((q) => Math.max(Math.abs(q.a.Vleft(Math.max(0, x1 - dv))), Math.abs(q.a.Vright(Math.min(B, x2 + dv))))));
       add({ id: "foot-shear", name: "Footing: one-way shear at dv from the stem's faces", demand: Vu, capacity: 0.9 * 0.0316 * 2 * Math.sqrt(i.fc) * 12 * dv * 12, unit: "kip/ft", ref: "AASHTO 5.12.8.6.1, 5.7.3.3" });
       // Punching at the most loaded micropile (5.12.8.6.3): dv the concrete over the pile's head (its embedment out).
@@ -884,7 +910,7 @@ export function designAbutment(i: AbutmentInputs) {
       add({ id: "foot-long-top", name: "Footing, top bars along the abutment: over the micropiles (w s²/10)", demand: perFt((wU * sp * sp) / 10), capacity: fLt.MR, unit: "kip·ft/ft", ref: "AASHTO 5.12.8.4, 5.6.3.2", note: `w = ${wU.toFixed(1)} kip/ft of abutment, piles ${sp.toFixed(2)} ft apart along it, over the footing's ${(B).toFixed(2)} ft width` });
       add({ id: "foot-long-bot", name: "Footing, bottom bars along the abutment: between the micropiles (w s²/14)", demand: perFt((wU * sp * sp) / 14), capacity: fLb.MR, unit: "kip·ft/ft", ref: "AASHTO 5.12.8.4, 5.6.3.2" });
       add({ id: "foot-long-crack", name: "Footing, top bars along the abutment: crack control (spacing)", demand: lt.spacing, capacity: fLt.sMax, unit: "in", ref: "AASHTO 5.6.7" });
-      const dvL = Math.max(0.9 * fLt.de, 0.72 * i.footT * 12) / 12;
+      const dvL = dvOf(fLt, i.footT * 12) / 12;
       add({ id: "foot-long-shear", name: "Footing along the abutment: shear at the micropiles (1.15 w s/2)", demand: perFt((1.15 * wU * sp) / 2), capacity: 0.9 * 0.0316 * 2 * Math.sqrt(i.fc) * 12 * dvL * 12, unit: "kip/ft", ref: "AASHTO 5.7.3.3" });
       const shearAt = st.map((q) => ({ q, L: q.a.Vleft(Math.max(0, x1 - dv)), Rt: q.a.Vright(Math.min(B, x2 + dv)) })).reduce((p, c) => (Math.max(Math.abs(c.L), Math.abs(c.Rt)) > Math.max(Math.abs(p.L), Math.abs(p.Rt)) ? c : p));
       return { x1, x2, hs, bot, top, MsBot, MsTop, dv, Vu, shear: { r: shearAt.q.r, toe: Math.abs(shearAt.L) >= Math.abs(shearAt.Rt), x: Math.abs(shearAt.L) >= Math.abs(shearAt.Rt) ? Math.max(0, x1 - dv) : Math.min(B, x2 + dv) }, punch: { k: worst.k, P: worst.P, dvp, side, edge, bo, cut: edge < side / 2 }, long: { wU, wS, sp, lt, lb, coverT, coverB, dvL } };

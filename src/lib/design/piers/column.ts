@@ -81,6 +81,8 @@ export type ColumnInputs = {
   shaftCage?: ShaftCage | null;
   fixity: number; // ft, below the top of the shaft to its point of fixity
   K: { T: number; L: number }; // effective length factors (4.6.2.5), unbraced
+  /** ft, the unbraced length ℓu (5.6.4.3). Default: a single column (a cantilever) to its bearings on the cap's top, where the bridge's lateral loads act; a bent's columns their clear height, to the cap's soffit. */
+  lu?: number;
   wc: number; // kcf
   loads: "stm" | "entered";
   link: ColumnLink | null;
@@ -361,7 +363,9 @@ export function designColumn(i: ColumnInputs) {
   }
 
   // --- slenderness (5.6.4.3) and moment magnification (4.5.3.2.2b) -------------------------------------------------------
-  const lu = h * 12; // the column's clear height (a shaft's depth to fixity is in K)
+  // ℓu: a free-standing column sways with its cap, the loads at the bearings: to the cap's top; a bent's columns, the cap
+  // restraining their tops, the clear height (a shaft's depth to fixity is in K).
+  const lu = (i.lu ?? (n === 1 ? yb : h)) * 12;
   const r = {
     T: i.shape === "round" ? 0.25 * i.T : i.shape === "rectangular" ? 0.3 * i.T : Math.sqrt(sec.IgT / sec.Ag),
     L: i.shape === "round" ? 0.25 * i.T : i.shape === "rectangular" ? 0.3 * W : Math.sqrt(sec.IgL / sec.Ag),
@@ -428,7 +432,11 @@ export function designColumn(i: ColumnInputs) {
       de = i.T / 2 + Dr / Math.PI; // Eq. C5.7.2.8-2
     } else {
       bv = ax === "T" ? W : i.shape === "oblong" ? i.T - (1 - Math.PI / 4) * W : i.T;
-      de = hdim - co;
+      // de to the centroid of the bars in the tension half (5.7.2.8), not the outermost row: the bars along the faces
+      // parallel to the shear count at their own depths.
+      const k = ax === "T" ? 0 : 1;
+      const far = sec.bars.map((b) => b[k]).filter((x) => x > 1e-6);
+      de = far.length ? hdim / 2 + far.reduce((p, x) => p + x, 0) / far.length : hdim - co;
     }
     const dv = Math.max(0.9 * de, 0.72 * hdim);
     const legs = i.shape === "round" || i.transverse === "spiral" ? 2 : ax === "T" ? i.legsT : i.legsL;
@@ -446,7 +454,10 @@ export function designColumn(i: ColumnInputs) {
     const vu = Vu / (0.9 * s.bv * s.dv);
     const sMax = vu < 0.125 * i.fc ? Math.min(0.8 * s.dv, 24) : Math.min(0.4 * s.dv, 12); // 5.7.2.6
     add({ id: `shear-${ax}`, name: `Shear ${ax === "T" ? "across" : "along"} the bridge`, demand: Vu, capacity: 0.9 * s.Vn, unit: "kip", ref: "AASHTO 5.7.3.3" });
-    add({ id: `shear-min-${ax}`, name: `Minimum transverse reinforcement (${ax === "T" ? "across" : "along"})`, demand: s.AvMin, capacity: s.Av, unit: "in²", ref: "AASHTO 5.7.2.5" });
+    // 5.7.2.3: transverse reinforcement is required where Vu > 0.5 φ Vc; below that the minimum is not (β = 2 then
+    // conservative for a column's distributed bars, 5.7.3.4.2 with sx their spacing and εs ≈ 0 under compression).
+    const needed = Vu > 0.5 * 0.9 * s.Vc;
+    add({ id: `shear-min-${ax}`, name: `Minimum transverse reinforcement (${ax === "T" ? "across" : "along"})${needed ? "" : ": not required, Vu ≤ 0.5 φ Vc"}`, demand: s.AvMin, capacity: s.Av, unit: "in²", ref: "AASHTO 5.7.2.3, 5.7.2.5", ...(needed ? {} : { ok: true }) });
     add({ id: `shear-s-${ax}`, name: `Transverse reinforcement spacing (${ax === "T" ? "across" : "along"})`, demand: i.tieSpacing, capacity: sMax, unit: "in", ref: "AASHTO 5.7.2.6" });
   }
 
@@ -457,6 +468,17 @@ export function designColumn(i: ColumnInputs) {
   const permP = link && deadOnly ? Math.max(...deadOnly.map((c) => c.base.P)) / 1.5 + selfWeight(0, 1) : i.collision.PDC;
   const rhoMinBase = (0.135 * i.fc) / i.fy;
   const rhoMin = permP <= 0.4 * secTop.Ag * i.fc ? Math.min(rhoMinBase, 0.015) : rhoMinBase;
+  // Shear friction across the construction joint at the base (5.7.4.3, 5.7.4.4): the section's area, its bars crossing
+  // it, the permanent axial load clamping it; the joint intentionally roughened to 0.25 in (c 0.24 ksi, μ 1.0,
+  // K1 0.25, K2 1.5 ksi, normal-weight concrete).
+  let friction = { Acv: 0, Avf: 0, Pc: 0, Vni: 0 };
+  {
+    const VuB = Math.max(...results.filter((x) => x.where === "base").map((x) => Math.hypot(x.VT, x.VL)));
+    const Acv = sec.Ag;
+    const Vni = Math.min(0.24 * Acv + 1.0 * (sec.Ast * i.fy + Math.max(0, permP)), 0.25 * i.fc * Acv, 1.5 * Acv);
+    friction = { Acv, Avf: sec.Ast, Pc: Math.max(0, permP), Vni };
+    add({ id: "base-friction", name: "Shear friction at the base's construction joint (roughened 0.25 in)", demand: VuB, capacity: 0.9 * Vni, unit: "kip", ref: "AASHTO 5.7.4.3, 5.7.4.4" });
+  }
   add({ id: "rho-max", name: "Longitudinal reinforcement, As/Ag", demand: rho, capacity: 0.08, unit: "", ref: "AASHTO Eq. 5.6.4.2-1" });
   add({ id: "rho-min", name: `Minimum longitudinal reinforcement, As/Ag${flared ? " (under the cap, the largest section)" : ""}`, demand: rhoMin, capacity: rhoTop, unit: "", ref: `AASHTO Eq. 5.6.4.2-${rhoMin < rhoMinBase ? 4 : 3}` });
   const minBars = i.shape === "round" ? 6 : 4;
@@ -601,6 +623,7 @@ export function designColumn(i: ColumnInputs) {
     restrained,
     hinge,
     section: sec,
+    friction,
     Ec,
     n,
     rows: results,

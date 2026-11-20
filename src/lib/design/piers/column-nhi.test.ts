@@ -16,16 +16,13 @@ import { columnSection, concreteE } from "./column-section";
 //   with de to the outermost bars, and adds the hoops' Vs.
 // Compared: the section's gross properties and steel, the uniaxial φMn at zero axial load (the example's values
 // come from commercial software), the slenderness ratios and the moment magnifier δs, the reinforcement ratios.
-// Discrepancies (reported, not changed):
-// 1. The tool's unbraced length is the column's clear height (15 ft, to the cap's soffit); the example takes the
-//    pier's full height (26 ft, to the top of the cap) for a free-standing cantilever. With 15 ft the tool's δs is
-//    1.012 against the example's 1.04; with 26 ft it is 1.038.
-// 2. "Minimum transverse reinforcement" (5.7.2.5) fails for the example's #4 hoops at 12 in although
-//    Vu < 0.5 φ Vc, where 5.7.2.3 requires no transverse reinforcement. (The β = 2 the tool uses assumes the
-//    minimum, 5.7.3.4.1, so the check is not simply wrong; a judgment call on how to treat it.)
-// 3. de to the outermost bar row for a column with bars along its faces overstates dv (164 in against the
-//    example's 134 in), so Vc is 23% higher. AASHTO gives no rectangular rule like C5.7.2.8's for round columns.
-// 4. No shear-friction check at the column's base (5.7.4); the example's is 6,116 kip against 109 kip.
+// Discrepancies found, all resolved 2026-11-20:
+// 1. ℓu: a single column (a cantilever) now runs to its bearings on the cap's top, as the example's 26 ft (an input,
+//    ℓu, overrides it); a bent's columns keep their clear height.
+// 2. Minimum transverse reinforcement (5.7.2.5) is required only where Vu > 0.5 φ Vc (5.7.2.3).
+// 3. de is to the centroid of the bars in the tension half (5.7.2.8), not the outermost row: dv = 0.72 h here, as
+//    the example's 134 in.
+// 4. Shear friction at the base (5.7.4) is checked.
 // Also: the tool flags the example's hoops for laterally restraining only the corner bars (5.10.4.3, at most 24 in
 // clear from a restrained bar); the example does not check this, and AASHTO requires it.
 
@@ -112,9 +109,10 @@ describe("Pier column against FHWA NHI-04-041 Design Step 8.9", () => {
     expect(d.T).toBe(1);
   });
 
-  it("the discrepancy: with the tool's clear height (15 ft) δs is 1.012", () => {
-    const d = run(15).delta.find((x) => x.name === "Strength I")!;
-    near(d.L, 1.012, 0.001);
+  it("ℓu: the column's 15 ft with ℓu = 26 ft gives the example's δs; a 15 ft clear height alone 1.012", () => {
+    const at15 = (lu?: number) => designColumn({ ...NHI, height: 15, lu, cases: [{ name: "Strength I", P: 2435 - 1.25 * 0.15 * (10044 / 144) * 15, MT: 9061, ML: 1928, HT: 0, HL: 0 }] }).delta.find((x) => x.name === "Strength I")!;
+    near(at15(26).L, 1.038, 0.001);
+    near(at15().L, 1.012, 0.001); // entered loads carry no cap: the bearings at the column's top
   });
 
   it("base forces: the axial load and the magnified longitudinal moment (p. 8-55)", () => {
@@ -127,17 +125,30 @@ describe("Pier column against FHWA NHI-04-041 Design Step 8.9", () => {
     expect(pm.demand / pm.capacity).toBeLessThan(0.44); // the example's linear check gives 0.44
   });
 
-  it("shear: the example's Vc = 914 kip (0.72 h); the tool's dv to the outer bars gives 23% more", () => {
+  it("shear: the example's Vc = 914 kip with dv = 0.72 h; de to the tension bars' centroid (5.7.2.8)", () => {
     const r = run(26);
     const shearT = r.checks.find((c) => c.id === "shear-T")!;
-    const dv = Math.max(0.9 * (186 - 2.5 - 0.5 - 1.27 / 2), 0.72 * 186);
-    const Vc = 0.0316 * 2 * 2 * 54 * dv;
-    near(0.0316 * 2 * 2 * 54 * 0.72 * 186, 914.08, 0.001);
-    near(Vc / 914.08, 1.226, 0.002);
-    near(shearT.capacity, 0.9 * (Vc + (2 * 0.2 * 60 * dv) / 12), 1e-6);
-    // Minimum transverse reinforcement is flagged though Vu < 0.5 φ Vc (5.7.2.3): the reported discrepancy.
+    // The tension half's bars: 15 on each long face and the 7 on the far short face, their centroid 0.71 h deep.
+    const far = sec.bars.map((b) => b[0]).filter((x) => x > 1e-6);
+    const de = 93 + far.reduce((p, x) => p + x, 0) / far.length;
+    expect(0.9 * de).toBeLessThan(0.72 * 186);
+    const dv = 0.72 * 186;
+    near(0.0316 * 2 * 2 * 54 * dv, 914.08, 0.001);
+    near(shearT.capacity, 0.9 * (914.08 + (2 * 0.2 * 60 * dv) / 12), 0.001);
+    // Vu < 0.5 φ Vc: no transverse reinforcement required (5.7.2.3), so the minimum is not.
     expect(92.28).toBeLessThan(0.5 * 0.9 * 914.08);
-    expect(r.checks.find((c) => c.id === "shear-min-T")!.ok).toBe(false);
+    const m = r.checks.find((c) => c.id === "shear-min-T")!;
+    expect(m.ok).toBe(true);
+    expect(m.name).toContain("not required");
+  });
+
+  it("shear friction at the base (p. 8-60): the 10th Edition's c = 0.24 ksi against the example's 0.1 ksi (6,116 kip)", () => {
+    const r = run(26);
+    const sf = r.checks.find((c) => c.id === "base-friction")!;
+    near(sf.demand, 109.09, 1e-6);
+    const Pc = Math.max(0, NHI.collision.PDC);
+    near(sf.capacity, 0.9 * (0.24 * 10044 + 96.52 * 60 + Pc), 1e-6);
+    near(0.9 * (0.1 * 10044 + 96.52 * 60), 6116, 0.001);
   });
 
   it("reinforcement limits: 0.0096 between 0.135 f'c/fy = 0.009 and 0.08 (p. 8-52)", () => {

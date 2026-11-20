@@ -23,13 +23,10 @@ import { ABUTMENT_DEFAULTS, abutmentLiveLoad, designAbutment, type AbutmentInput
 // Real discrepancies the benchmark shows (reported, not changed):
 // 1. (Resolved 2026-11-20: the live load surcharge on the stem, footing and backwall, per the 10th Edition's heq height.)
 //    AASHTO 3.11.6.5 permits a reduction where an approach slab carries the traffic, which may be the intent.
-// 2. The girders' reactions sit on the stem's centerline; the example's bearings are 1.13 ft toward the span,
-//    adding 27.4 kip·ft/ft at the stem's base (Strength I) and moving load toward the front piles.
-// 3. The seat width N takes H = 0 for every abutment (12.8 in here); AASHTO 4.7.4.4 takes H as the average
-//    height of the columns to the next expansion joint (0 only for a single span). Unconservative for
-//    multi-span bridges; needs an input.
-// 4. The stem's and backwall's cover is fixed at 2 in (the example has 2.5 in), and dv is the lesser
-//    bound max(0.9 de, 0.72 h) without de − a/2 (conservative, 7% on the stem's Vc here).
+// 2. (Resolved 2026-11-20: the bearings' eccentricity, an input, by default half the backwall toward the span.)
+// 3. (Resolved 2026-11-20: the seat width's H and Table 4.7.4.4-1's percentage are inputs, default 0 and 100%.)
+// 4. (Resolved 2026-11-20: the stem's and backwall's cover is an input, default 2 in; dv = de − a/2, not less than
+//    0.9 de or 0.72 h, AASHTO 5.7.2.8.)
 
 const kaPhi = 90 - 2 * (Math.atan(Math.sqrt(0.3)) * 180) / Math.PI; // the backfill φ whose Rankine ka is the example's 0.30
 
@@ -115,9 +112,9 @@ describe("Abutment against FHWA NHI-04-041 Design Step 7", () => {
     near(s.MbwEH, 3.08, 0.003);
     near(s.heqW, 2.0, 1e-9);
     near(s.dpLS, 0.072, 0.001);
-    // Stem: 1.5 × REHstem × 7.33 + 0.5 × Hufall × 15 + 1.75 × RLSstem (1.58) × 11 (the example's terms of its 156.61,
-    // without the bearings' eccentricity, which the tool leaves out).
-    near(s.Mstem, 1.5 * 8.71 * 7.33 + 0.5 * 0.39 * 15 + 1.75 * 1.58 * 11.0, 0.003);
+    // Stem: 1.5 × REHstem × 7.33 + 0.5 × Hufall × 15 + 1.75 × RLSstem (1.58) × 11 (the example's terms of its 156.61),
+    // plus the vertical loads' moment about the stem's centerline (the bearings' eccentricity, next test).
+    near(s.Mstem - s.MstemV, 1.5 * 8.71 * 7.33 + 0.5 * 0.39 * 15 + 1.75 * 1.58 * 11.0, 0.003);
     // Stem shear: 1.5 REHstem + 0.5 Hufall + 1.75 RLSstem.
     near(s.Vstem, 13.26 + 1.75 * 1.58, 0.002);
   });
@@ -147,10 +144,19 @@ describe("Abutment against FHWA NHI-04-041 Design Step 7", () => {
     near(max.Hh, 16.4 + 1.75 * 1.764, 0.002);
   });
 
-  it("the remaining discrepancy: no bearing eccentricity on the stem (p. 7-35)", () => {
-    // The example's Strength I stem moment and the part the tool leaves out (the bearings 1.13 ft toward the span).
-    const eccPart = 1.25 * 1.71 * 0.8 + (1.25 * 7.66 + 1.5 * 1.2 + 1.75 * 6.5) * 1.13;
-    near(s.Mstem + eccPart, 156.61, 0.004);
+  it("the bearings' eccentricity on the stem (p. 7-35): 1.13 ft toward the span, Strength I 154.7 vs the example's 156.61", () => {
+    const e = designAbutment({ ...NHI, bearingEcc: 1.13 }).seat!;
+    // Statics about the stem's centerline: the girders' DC, DW and LL + IM at 1.13 ft toward the span; the backwall's
+    // weight 0.92 ft behind it, on the relieving side, so γ = 0.9 (AASHTO 3.4.1, Table 3.4.1-2 minimum).
+    const LLim = e.items.LL.V * (1 + NHI.IM);
+    near(e.MstemV, (1.25 * e.items.DC.V + 1.5 * e.items.DW.V + 1.75 * LLim) * 1.13 - 0.9 * 1.75 * (5.4167 - 4.5), 0.001);
+    // The example's 27.42 adds the backwall (1.25 × 1.71 × 0.8, on the same side as the bearings in its sketch) and
+    // takes 6.5 kip/ft of live load (the tool: 5.34 × 1.33 = 7.10): the 1.97 difference, 1.2% of the total.
+    const exampleEcc = 1.25 * 1.71 * 0.8 + (1.25 * 7.66 + 1.5 * 1.2 + 1.75 * 6.5) * 1.13;
+    near(e.Mstem - e.MstemV + exampleEcc, 156.61, 0.004);
+    near(e.Mstem, 156.61, 0.013);
+    // The default for a seat abutment: half the backwall's thickness (the bearings on the seat's centerline).
+    near(s.ecc, NHI.backwallT / 2, 1e-12);
   });
 
   it("stem section: #9 @ 9 in, 42 in thick (p. 7-65, 7-67)", () => {
@@ -163,9 +169,11 @@ describe("Abutment against FHWA NHI-04-041 Design Step 7", () => {
     near(f.MR, (0.9 * 80 * (38.936 - 0.98)) / 12, 0.001);
     // The tool's stem check uses a 2 in cover: de = 39.44 in.
     near(check("stem-flex").capacity, (0.9 * 80 * (39.436 - 0.98)) / 12, 0.001);
-    // Shear: the example's Vr = 52.15 with dv = 38.2 in; the tool takes dv = 0.9 de (35.49 in), 7% lower.
-    near(check("stem-shear").capacity, 0.9 * 0.0316 * 2 * 2 * 12 * 0.9 * 39.436, 0.001);
-    near(check("stem-shear").capacity / 52.15, 35.49 / 38.2, 0.002);
+    // Shear: the example's Vr = 52.15 with dv = 38.2 in; the tool takes dv = de − a/2 (5.7.2.8): 38.46 in with its
+    // default 2 in cover, 37.96 in with the example's 2.5 in.
+    near(check("stem-shear").capacity, 0.9 * 0.0316 * 2 * 2 * 12 * (39.436 - 0.98), 0.001);
+    const c25 = designAbutment({ ...NHI, wallCover: 2.5 }).checks.find((c) => c.id === "stem-shear")!.capacity;
+    near(c25, 52.15, 0.007);
   });
 
   it("backwall section: #5 @ 9 in, 20 in thick (p. 7-56, 7-60)", () => {
@@ -178,14 +186,18 @@ describe("Abutment against FHWA NHI-04-041 Design Step 7", () => {
   it("toe: the front row's piles on a 1.5 ft lever (p. 7-74)", () => {
     // The same lever as the example: the toe's face is 1.5 ft from the front row.
     near(s.Mtoe, (s.piles!.Pfront / NHI.pileSpacing) * 1.5, 1e-9);
-    // The tool's front pile (rigid cap, with the surcharge, bearings on the stem's centerline, no batter): 331 kip,
-    // within the example's 315 to 340 kip from its pile–soil analysis (294 before the surcharge).
+    // The tool's front pile (rigid cap, with the surcharge, the bearings 0.83 ft toward the span, no batter): 347 kip,
+    // 2% over the example's 315 to 340 kip from its pile–soil analysis (294 before the surcharge, 331 before the
+    // eccentricity). A rigid cap without batter puts more on the front row than the example's soil springs.
     expect(s.piles!.Pfront).toBeGreaterThan(315);
-    expect(s.piles!.Pfront).toBeLessThan(340);
+    expect(s.piles!.Pfront).toBeLessThan(350);
   });
 
-  it("support length: Eq. 4.7.4.4-1 with H = 0 (the example's 14.56 in uses H = 22 ft)", () => {
+  it("support length: Eq. 4.7.4.4-1, 14.56 in with the example's H = 22 ft; 0 by default (a single span)", () => {
     near(check("seat").demand, 8 + 0.02 * 240, 1e-9);
-    near((8 + 0.02 * 240 + 0.08 * 22) * 1, 14.56, 0.001);
+    const n = (o: Partial<AbutmentInputs>) => designAbutment({ ...NHI, ...o }).checks.find((c) => c.id === "seat")!.demand;
+    near(n({ seatH: 22 }), 14.56, 0.001);
+    near(n({ seatH: 22, seatPct: 150 }), 1.5 * 14.56, 0.001); // Table 4.7.4.4-1, Zones 2 to 4
+    near(n({ seatH: 22, skew: 30 }), 14.56 * (1 + 0.000125 * 900), 0.001);
   });
 });

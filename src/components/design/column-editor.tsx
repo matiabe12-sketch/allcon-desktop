@@ -188,6 +188,7 @@ export function ColumnEditor({ design, projects }: { design: { id: string; name:
               )}
               <Field label="K across the bridge (4.6.2.5)" value={inputs.K.T} onChange={(v) => set("K")({ ...inputs.K, T: v })} step={0.05} hint={linked && inputs.link!.kind !== "hammerhead" ? "A bent with a stiff cap, fixed bases: 1.2" : "A cantilever: 2.1"} />
               <Field label="K along the bridge" value={inputs.K.L} onChange={(v) => set("K")({ ...inputs.K, L: v })} step={0.05} hint="A cantilever: 2.1" />
+              <Field label="Unbraced length ℓu (0: by default)" unit="ft" value={inputs.lu ?? 0} onChange={(v) => set("lu")(v > 0 ? v : undefined)} step={0.5} hint="Default: a single column to its bearings on the cap's top; a bent's columns their clear height (5.6.4.3)" />
             </Section>
             {linked && (
               <Section title="Along the bridge">

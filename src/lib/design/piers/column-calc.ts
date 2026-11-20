@@ -83,7 +83,7 @@ export function columnCalcLines(i: ColumnInputs, title: string, figures?: { sect
   }
 
   text("Slenderness (AASHTO 5.6.4.3, 4.5.3.2.2b)", "subheading", { keepWithNext: true });
-  m(`L_u\\coloneq ${num(i.height)}\\mathrm{ft}`, "The column's clear height");
+  m(`L_u\\coloneq ${num(r.slender[0].lu / 12)}\\mathrm{ft}`, i.lu != null ? "The unbraced length, as given" : r.n === 1 ? "A single column, a cantilever: to its bearings on the cap's top, where the lateral loads act" : "The column's clear height, the cap restraining its top");
   m(`E_c\\coloneq ${num(r.Ec)}\\mathrm{ksi}`, "AASHTO Eq. 5.4.2.4-1");
   for (const sl of r.slender) {
     const ax = sl.ax === "T" ? "T" : "L";
@@ -127,14 +127,29 @@ export function columnCalcLines(i: ColumnInputs, title: string, figures?: { sect
     const Vu = r.checks.find((c) => c.id === `shear-${ax}`)!.demand;
     text(`${ax === "T" ? "Across" : "Along"} the bridge:-`, undefined, { keepWithNext: true });
     m(`b_{v${ax}}\\coloneq ${num(sh.bv)}\\mathrm{in}`);
-    m(`d_{v${ax}}\\coloneq ${num(sh.dv)}\\mathrm{in}`, "max(0.9 de, 0.72 h), AASHTO 5.7.2.8");
+    m(`d_{e${ax}}\\coloneq ${num(sh.de)}\\mathrm{in}`, i.shape === "round" ? "AASHTO Eq. C5.7.2.8-2" : "To the centroid of the bars in the tension half, AASHTO 5.7.2.8");
+    m(`d_{v${ax}}\\coloneq\\max\\left(0.9\\cdot d_{e${ax}},0.72\\cdot ${num(ax === "T" ? i.T : W)}\\mathrm{in}\\right)=`, "AASHTO 5.7.2.8", "in");
     m(`A_{v${ax}}\\coloneq ${sh.legs}\\cdot ${num(tie.area)}\\mathrm{in}^{2}=`, `${sh.legs} legs`, "in^2");
     m(`V_{c${ax}}\\coloneq0.0316\\cdot2\\cdot\\sqrt{\\frac{f'_{c}}{\\mathrm{ksi}}}\\cdot\\mathrm{ksi}\\cdot b_{v${ax}}\\cdot d_{v${ax}}=`, "AASHTO Eq. 5.7.3.3-3", "kip");
     m(`V_{s${ax}}\\coloneq\\frac{A_{v${ax}}\\cdot f_y\\cdot d_{v${ax}}}{s_t}=`, "AASHTO Eq. 5.7.3.3-4", "kip");
     m(`V_{n${ax}}\\coloneq\\min\\left(V_{c${ax}}+V_{s${ax}},0.25\\cdot f'_{c}\\cdot b_{v${ax}}\\cdot d_{v${ax}}\\right)=`, "AASHTO Eqs. 5.7.3.3-1, -2", "kip");
     m(`V_{u${ax}}\\coloneq ${num(Vu)}\\mathrm{kip}`, "The largest factored shear");
     m(ok(`V_{u${ax}}`, `0.9\\cdot V_{n${ax}}`), "AASHTO 5.7.3.3");
-    m(ok(`0.0316\\cdot\\sqrt{\\frac{f'_{c}}{\\mathrm{ksi}}}\\cdot\\mathrm{ksi}\\cdot\\frac{b_{v${ax}}\\cdot s_t}{f_y}`, `A_{v${ax}}`), "Minimum transverse reinforcement, AASHTO Eq. 5.7.2.5-1");
+    if (Vu > 0.5 * 0.9 * sh.Vc) m(ok(`0.0316\\cdot\\sqrt{\\frac{f'_{c}}{\\mathrm{ksi}}}\\cdot\\mathrm{ksi}\\cdot\\frac{b_{v${ax}}\\cdot s_t}{f_y}`, `A_{v${ax}}`), "Minimum transverse reinforcement, AASHTO Eq. 5.7.2.5-1 (Vu > 0.5 φ Vc, 5.7.2.3)");
+    else m(ok(`V_{u${ax}}`, `0.5\\cdot0.9\\cdot V_{c${ax}}`), "No transverse reinforcement required, so not its minimum (AASHTO 5.7.2.3)");
+  }
+
+  {
+    const sf = r.checks.find((c) => c.id === "base-friction")!;
+    text("Shear friction at the base (AASHTO 5.7.4)", "subheading", { keepWithNext: true });
+    text("The construction joint on the footing or shaft, intentionally roughened to 0.25 in: c = 0.24 ksi, μ = 1.0, K1 = 0.25, K2 = 1.5 ksi (AASHTO 5.7.4.4); the section's area, its bars crossing the joint and the permanent axial load clamping it.", undefined, { keepWithNext: true });
+    m(`A_{cv}\\coloneq ${num(r.section.Ag)}\\mathrm{in}^{2}`);
+    m(`A_{vf}\\coloneq ${num(r.section.Ast)}\\mathrm{in}^{2}`, "The longitudinal bars");
+    m(`P_{c}\\coloneq ${num(r.friction.Pc)}\\mathrm{kip}`, "The permanent axial load");
+    m(`V_{nf}\\coloneq0.24\\mathrm{ksi}\\cdot A_{cv}+1.0\\cdot\\left(A_{vf}\\cdot f_y+P_{c}\\right)=`, "AASHTO Eq. 5.7.4.3-3", "kip");
+    m(`V_{ni}\\coloneq\\min\\left(V_{nf},0.25\\cdot f'_{c}\\cdot A_{cv},1.5\\mathrm{ksi}\\cdot A_{cv}\\right)=`, "AASHTO Eqs. 5.7.4.3-4, -5", "kip");
+    m(`V_{ub}\\coloneq ${num(sf.demand)}\\mathrm{kip}`, "The largest factored shear at the base");
+    m(ok("V_{ub}", "0.9\\cdot V_{ni}"), "AASHTO 5.7.4.3");
   }
 
   text("Transverse reinforcement", "subheading", { keepWithNext: true });

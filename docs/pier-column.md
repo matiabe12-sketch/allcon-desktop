@@ -29,10 +29,15 @@ A pier column under its cap, AASHTO LRFD 10th Edition. Kind `pier-column`; code 
   - TU at a fixed pier is the column's stiffness, 3EI/h³ with EI = 0.4 EcIg, times α ΔT x.
   - An expansion pier takes only the entered bearing force, times γTU.
 - **Slenderness:** K ℓu / r (5.6.4.3); neglected below 22, and the approximate method is limited
-  to below 100. δs = 1/(1 − ΣPu/(0.75 ΣPe)) over the bent, with EI from Eqs. 5.6.4.3-1/-2 divided
+  to below 100. ℓu for a single column (a cantilever) runs to its bearings on the cap's top, where the lateral
+  loads act; a bent's columns take their clear height. The `lu` input overrides it. δs = 1/(1 − ΣPu/(0.75 ΣPe)) over the bent, with EI from Eqs. 5.6.4.3-1/-2 divided
   by 1 + βd. It is applied to the whole moment, each direction.
 - **Other checks:**
-  - shear in each direction (5.7.3.3, β = 2), 5.7.2.5 and 5.7.2.6;
+  - shear in each direction (5.7.3.3, β = 2), de to the centroid of the bars in the tension half
+    (5.7.2.8), and 5.7.2.6. The minimum transverse steel (5.7.2.5) applies only where Vu > 0.5 φ Vc
+    (5.7.2.3);
+  - shear friction at the base's construction joint (5.7.4.3, 5.7.4.4: roughened 0.25 in, c 0.24 ksi,
+    μ 1.0), with the bars crossing it and the permanent axial load;
   - bar limits (5.6.4.2) and clear spacing (5.10.3.1.1);
   - ties (5.10.4.3) or spiral (5.6.4.6, 5.10.4.2).
 - **Spiral or tied:** a spiral short of Eq. 5.6.4.6-1's volumetric ratio is a continuously wound

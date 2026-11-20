@@ -23,8 +23,8 @@ import { designPiles, PILE_DEFAULTS, type PileInputs } from "./piles";
 // Compared: the pile loads on the rigid cap (P/n ± M x/Σx²), the punching shear load (the 14 piles outside the
 // critical perimeter), its perimeter and βc, the axial resistances, the interaction with the example's own
 // resistances, and the tool's 10th-Edition resistances.
-// Discrepancies: none in the method. The pile's web shear (6.10.7, the example's Vr = 148.6 kip against 18.2 kip)
-// is not checked by the tool (it rarely governs in a group).
+// Discrepancies: none in the method. (The pile's shear, missing before, is checked since 2026-11-20: the example's
+// Vr = 148.6 kip takes the web's full depth d; the 10th Edition's D = d − 2 tf gives 137.9 kip.)
 
 const near = (v: number, ref: number, tol: number) => expect(Math.abs(v - ref) / Math.abs(ref)).toBeLessThanOrEqual(tol);
 
@@ -121,5 +121,20 @@ describe("Pile foundation against FHWA NHI-04-041 Design Steps 8.11 and P", () =
     expect(v.eq).toBe("6.9.2.2.1-3");
     near(v.value, 288 / 542.5 + (107 * 12) / fx.Mn, 1e-9);
     near(v.value, 0.923, 0.003);
+  });
+
+  it("pile shear (p. P-88): the example's Vr = 0.58 Fy d tw = 148.6 kip; the 10th Edition's web D = d − 2 tf, 137.9 kip", () => {
+    const sh = HP_SECTIONS["HP12x53"];
+    near(0.58 * 50 * sh.d * sh.tw, 148.6, 0.003);
+    // The example's case carries no lateral load; give the group some each way (shear spread by p–y over its rows).
+    const q = designPiles({ ...PIER, cases: [{ ...PIER.cases[0], HB: 200, HL: 100 }] });
+    const web = q.checks.find((c) => c.id === "pile-shear-web")!;
+    const fl = q.checks.find((c) => c.id === "pile-shear-flange")!;
+    near(web.capacity, 0.58 * 50 * (11.8 - 2 * 0.435) * 0.435, 1e-9);
+    // Along the flanges: both flanges, bf/2tf = 13.8 under 1.12 √(29000 × 1.2 / 50) = 29.5, so C = 1.
+    near(fl.capacity, 0.58 * 50 * 2 * 12 * 0.435, 1e-9);
+    expect(web.demand).toBeGreaterThan(0);
+    expect(fl.demand).toBeGreaterThan(0);
+    for (const c of q.checks.filter((x) => x.id.startsWith("pile-shear"))) expect(c.ok).toBe(true);
   });
 });

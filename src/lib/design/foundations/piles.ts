@@ -304,6 +304,24 @@ export function designPiles(i: PileInputs) {
   if (combined.length) {
     const g = pick(combined, (x) => x.inter.value);
     add({ id: "interaction", name: `Axial with flexure, the lead row's pile (${g.c.lc.name})`, demand: g.inter.value, capacity: 1, unit: "", ref: `AASHTO 6.15.3.2, Eq. ${g.inter.eq}` });
+    // Shear (6.12.1.2.3, φv 1.0): along the web, Vn = C 0.58 Fy D tw with D = d − 2 tf (Eq. 6.10.9.3.3-1, k = 5);
+    // along the flanges, the two flanges, 0.58 Fy 2 bf tf, b/t = bf/2tf with k = 1.2. C = 1 while b/t ≤ 1.12 √(E k / Fy),
+    // else 1.12 √(E k / Fy) / (b/t) (Eq. 6.10.9.3.2-5; HP shapes never reach the elastic range).
+    const Cof = (bt: number, k: number) => Math.min(1, (1.12 * Math.sqrt((29000 * k) / i.Fy)) / bt);
+    const D = s.d - 2 * s.tf;
+    const VrWeb = Cof(D / s.tw, 5) * 0.58 * i.Fy * D * s.tw;
+    const VrFl = Cof(s.bf / (2 * s.tf), 1.2) * 0.58 * i.Fy * 2 * s.bf * s.tf;
+    const shears = combined.map(({ c }) => {
+      const vB = c.latB ? Math.max(...c.latB.byRow.map((x) => x.Vmax)) : 0;
+      const vL = c.latL ? Math.max(...c.latL.byRow.map((x) => x.Vmax)) : 0;
+      // Loads along the weak direction bend about the weak axis: their shear runs along the flanges.
+      const Vfl = i.weakAlong === "B" ? vB : vL;
+      const Vweb = i.weakAlong === "B" ? vL : vB;
+      return { c, Vweb, Vfl, ratio: Math.max(Vweb / VrWeb, Vfl / VrFl) };
+    });
+    const sv = pick(shears, (x) => x.ratio);
+    if (sv.Vweb > 0) add({ id: "pile-shear-web", name: `Pile shear along its web (${sv.c.lc.name})`, demand: sv.Vweb, capacity: VrWeb, unit: "kip", ref: "AASHTO 6.12.1.2.3, Eq. 6.10.9.3.3-1" });
+    if (sv.Vfl > 0) add({ id: "pile-shear-flange", name: `Pile shear along its flanges (${sv.c.lc.name})`, demand: sv.Vfl, capacity: VrFl, unit: "kip", ref: "AASHTO 6.12.1.2.3" });
   }
   if (service.length && !micro) {
     const sv = pick(service, (c) => Math.max(c.latB?.group.y0 ?? 0, c.latL?.group.y0 ?? 0));

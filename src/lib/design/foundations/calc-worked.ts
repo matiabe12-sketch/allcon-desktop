@@ -209,10 +209,10 @@ function member(w: Writer, k: string, name: string, o: { Mu: string; Ms?: string
   }
 }
 
-/** One-way shear per foot, β = 2 (AASHTO 5.7.3.4.1), dv the larger of 0.9 de and 0.72 h (5.7.2.8). */
-function shear(w: Writer, k: string, Vu: string, de: string, h: string, ref: string) {
+/** One-way shear per foot, β = 2 (AASHTO 5.7.3.4.1), dv = de − a/2, not less than 0.9 de or 0.72 h (5.7.2.8), on member mk's bars. */
+function shear(w: Writer, k: string, Vu: string, mk: string, ref: string) {
   w.m(`V_{u${k}}\\coloneq ${Vu}`, "Factored shear", Vu.endsWith("=") ? "kip/ft" : undefined);
-  w.m(`d_{v${k}}\\coloneq\\max\\left(0.9\\cdot ${de},0.72\\cdot ${h}\\right)=`, "AASHTO 5.7.2.8", "in");
+  w.m(`d_{v${k}}\\coloneq\\max\\left(d_{e${mk}}-\\frac{a_{${mk}}}{2},0.9\\cdot d_{e${mk}},0.72\\cdot h_{${mk}}\\right)=`, "AASHTO 5.7.2.8", "in");
   w.m(`V_{r${k}}\\coloneq\\phi_{v}\\cdot0.0316\\cdot2\\cdot\\sqrt{\\frac{f'_{c}}{\\mathrm{ksi}}}\\cdot\\mathrm{ksi}\\cdot d_{v${k}}=`, "AASHTO Eq. 5.7.3.3-3, β 2", "kip/ft");
   w.m(ok(`V_{u${k}}`, `V_{r${k}}`), ref);
 }
@@ -417,7 +417,10 @@ function seatWorked(w: Writer, i: AbutmentInputs, r: AbutmentResult, s: NonNulla
   m(`DC_{g}\\coloneq\\frac{n_{g}\\cdot R_{DC}}{L_{a}}+0.5\\cdot${num(i.approachDC)}\\frac{\\mathrm{kip}}{\\mathrm{ft}}=`, "The girders' DC and half the approach slab", "kip/ft");
   m("DW_{g}\\coloneq\\frac{n_{g}\\cdot R_{DW}}{L_{a}}=", undefined, "kip/ft");
   m("LL_{g}\\coloneq\\frac{LL_{t}}{L_{a}}=", "No IM below ground", "kip/ft");
-  m("x_{st}\\coloneq T_{t}+\\frac{T_{s}}{2}=", "The stem's and the bearings' arm", "ft");
+  m("x_{st}\\coloneq T_{t}+\\frac{T_{s}}{2}=", "The stem's arm", "ft");
+  m(`e_{b}\\coloneq ${num(s.ecc, 3)}\\mathrm{ft}`, "The bearings from the stem's centerline, toward the span");
+  m("x_{br}\\coloneq x_{st}-e_{b}=", "The bearings' arm", "ft");
+  m(`x_{dg}\\coloneq ${num(s.items.DC.x, 3)}\\mathrm{ft}`, "DC_g's arm: the girders at the bearings, the approach slab where it sits");
   m("x_{bw}\\coloneq T_{t}+T_{s}-\\frac{T_{b}}{2}=", undefined, "ft");
   m("x_{ft}\\coloneq\\frac{B}{2}=", undefined, "ft");
   m("x_{h}\\coloneq T_{t}+T_{s}+\\frac{T_{h}}{2}=", undefined, "ft");
@@ -440,7 +443,7 @@ function seatWorked(w: Writer, i: AbutmentInputs, r: AbutmentResult, s: NonNulla
     { k: "c", name: "Service I", dc: 1, dw: 1, ev: 1, ll: 1, tu: 1, eh: 1, lsh: 1, lsv: 1 },
   ];
   m("DC_{t}\\coloneq DC_{st}+DC_{bw}+DC_{ft}+DC_{g}=", "All DC", "kip/ft");
-  m("M_{DC}\\coloneq DC_{st}\\cdot x_{st}+DC_{bw}\\cdot x_{bw}+DC_{ft}\\cdot x_{ft}+DC_{g}\\cdot x_{st}=", "Its moment about the toe", "kip*ft/ft");
+  m("M_{DC}\\coloneq DC_{st}\\cdot x_{st}+DC_{bw}\\cdot x_{bw}+DC_{ft}\\cdot x_{ft}+DC_{g}\\cdot x_{dg}=", "Its moment about the toe", "kip*ft/ft");
   for (const c of combos) {
     const f = (v: number) => (v === 1 ? "" : `${v}\\cdot `);
     const llV = c.ll > 0 ? `+${f(c.ll)}LL_{g}` : "";
@@ -450,7 +453,7 @@ function seatWorked(w: Writer, i: AbutmentInputs, r: AbutmentResult, s: NonNulla
     const lsvV = ls && c.lsv > 0 ? `+W_{l${c.k}}` : "";
     m(`V_{${c.k}}\\coloneq ${f(c.dc)}DC_{t}+${f(c.dw)}DW_{g}+${f(c.ev)}EV_{h}${llV}${lsvV}=`, c.name, "kip/ft");
     m(`P_{s${c.k}}\\coloneq ${f(c.dw)}DW_{g}${llV}=`, "DW and LL at the bearings", "kip/ft");
-    m(`M_{R${c.k}}\\coloneq ${f(c.dc)}M_{DC}+P_{s${c.k}}\\cdot x_{st}+\\left(${f(c.ev)}EV_{h}${lsvV}\\right)\\cdot x_{h}=`, "Resisting", "kip*ft/ft");
+    m(`M_{R${c.k}}\\coloneq ${f(c.dc)}M_{DC}+P_{s${c.k}}\\cdot x_{br}+\\left(${f(c.ev)}EV_{h}${lsvV}\\right)\\cdot x_{h}=`, "Resisting", "kip*ft/ft");
     const br = c.ll > 0 ? "+1.75\\cdot BR" : "";
     const lsH = ls ? `+H_{l${c.k}}` : "";
     m(`F_{h${c.k}}\\coloneq ${f(c.eh)}EH${br}+${f(c.tu)}TU${lsH}=`, "Horizontal", "kip/ft");
@@ -509,18 +512,24 @@ function seatWorked(w: Writer, i: AbutmentInputs, r: AbutmentResult, s: NonNulla
   text("Stem at the footing", "subheading", { keepWithNext: true });
   m("H_{st}\\coloneq H_{s}+H_{b}=", undefined, "ft");
   m("y_{s}\\coloneq y_{BR}-t_{f}=", "The seat's (or deck's) height above the footing", "ft");
+  if (ls) m("M_{ls}\\coloneq\\Delta_{p}\\cdot\\frac{H_{st}^{2}}{2}=", "The surcharge's moment, unfactored", "kip*ft/ft");
+  m(`M_{vu}\\coloneq ${num(s.MstemV, 3)}\\frac{\\mathrm{kip}\\cdot\\mathrm{ft}}{\\mathrm{ft}}`, "The vertical loads about the stem's base, Strength I: the girders' DC, DW and LL with IM at e_b (the stem above ground, AASHTO 3.6.2.1), the approach slab and backwall where they sit, any behind the centerline at 0.9");
+  m(`M_{vs}\\coloneq ${num(s.MstemVs, 3)}\\frac{\\mathrm{kip}\\cdot\\mathrm{ft}}{\\mathrm{ft}}`, "The same, Service I");
+  m("M_{eh}\\coloneq K\\cdot\\gamma_{s}\\cdot\\frac{H_{st}^{3}}{6}=", "The earth pressure's moment, unfactored", "kip*ft/ft");
+  m("M_{hu}\\coloneq\\left(1.75\\cdot BR+0.5\\cdot TU\\right)\\cdot y_{s}=", "Braking and the bearings' temperature force, Strength I", "kip*ft/ft");
+  m("M_{hs}\\coloneq\\left(BR+TU\\right)\\cdot y_{s}=", "The same, Service I", "kip*ft/ft");
   member(w, "st", "Stem", {
-    Mu: `\\gamma_{EH}\\cdot K\\cdot\\gamma_{s}\\cdot\\frac{H_{st}^{3}}{6}+1.75\\cdot BR\\cdot y_{s}+0.5\\cdot TU\\cdot y_{s}${ls ? "+1.75\\cdot\\Delta_{p}\\cdot\\frac{H_{st}^{2}}{2}" : ""}=`,
-    Ms: `K\\cdot\\gamma_{s}\\cdot\\frac{H_{st}^{3}}{6}+BR\\cdot y_{s}+TU\\cdot y_{s}${ls ? "+\\Delta_{p}\\cdot\\frac{H_{st}^{2}}{2}" : ""}=`,
+    Mu: `\\gamma_{EH}\\cdot M_{eh}+M_{hu}${ls ? "+1.75\\cdot M_{ls}" : ""}+M_{vu}=`,
+    Ms: `M_{eh}+M_{hs}${ls ? "+M_{ls}" : ""}+M_{vs}=`,
     h: i.stemT * 12,
-    cover: 2,
+    cover: i.wallCover ?? 2,
     bars: i.stemBars,
     min: true,
     crack: true,
     exposure: i.exposure,
   });
   if (ls) m("V_{lst}\\coloneq1.75\\cdot\\Delta_{p}\\cdot H_{st}=", "The surcharge's shear on the stem", "kip/ft");
-  shear(w, "st", `\\gamma_{EH}\\cdot0.5\\cdot K\\cdot\\gamma_{s}\\cdot H_{st}^{2}+1.75\\cdot BR+0.5\\cdot TU${ls ? "+V_{lst}" : ""}=`, "d_{est}", "h_{st}", "Stem shear, AASHTO 5.7.3.3");
+  shear(w, "st", `\\gamma_{EH}\\cdot0.5\\cdot K\\cdot\\gamma_{s}\\cdot H_{st}^{2}+1.75\\cdot BR+0.5\\cdot TU${ls ? "+V_{lst}" : ""}=`, "st", "Stem shear, AASHTO 5.7.3.3");
 
   if (!semi) {
     text("Backwall at the seat", "subheading", { keepWithNext: true });
@@ -534,13 +543,13 @@ function seatWorked(w: Writer, i: AbutmentInputs, r: AbutmentResult, s: NonNulla
       Mu: "1.75\\cdot R_{LLb}\\cdot e_{LLb}+\\gamma_{EH}\\cdot R_{EHb}\\cdot\\frac{H_{b}}{3}+1.75\\cdot R_{LSb}\\cdot\\frac{H_{b}}{2}=",
       Ms: "R_{LLb}\\cdot e_{LLb}+R_{EHb}\\cdot\\frac{H_{b}}{3}+R_{LSb}\\cdot\\frac{H_{b}}{2}=",
       h: i.backwallT * 12,
-      cover: 2,
+      cover: i.wallCover ?? 2,
       bars: i.backwallBars,
       min: true,
       crack: true,
       exposure: i.exposure,
     });
-    m(`V_{ubw}\\coloneq\\gamma_{EH}\\cdot R_{EHb}+1.75\\cdot R_{LSb}=`, "Shear at the seat", "kip/ft");
+    shear(w, "bw", "\\gamma_{EH}\\cdot R_{EHb}+1.75\\cdot R_{LSb}=", "bw", "Backwall shear at the seat, AASHTO 5.7.3.3");
   }
   const sd = s.semi;
   if (semi && sd) {
@@ -549,7 +558,7 @@ function seatWorked(w: Writer, i: AbutmentInputs, r: AbutmentResult, s: NonNulla
     m("K_{pd}\\coloneq\\tan\\left(45\\mathrm{deg}+\\frac{\\phi_{bf}}{2}\\right)^{2}=", "Passive, Rankine");
     m("p_{bd}\\coloneq K_{pd}\\cdot\\gamma_{s}\\cdot H_{b}=", "At its bottom", "ksf");
     m(`S_{gd}\\coloneq ${num(i.girderSpacing)}\\mathrm{ft}`, "Girder spacing: the diaphragm spans between girders");
-    member(w, "dh", "End diaphragm, horizontal bars", { Mu: "\\frac{1.35\\cdot p_{bd}\\cdot S_{gd}^{2}}{10}=", h: i.backwallT * 12, cover: 2, bars: sd.horiz, exposure: i.exposure });
+    member(w, "dh", "End diaphragm, horizontal bars", { Mu: "\\frac{1.35\\cdot p_{bd}\\cdot S_{gd}^{2}}{10}=", h: i.backwallT * 12, cover: i.wallCover ?? 2, bars: sd.horiz, exposure: i.exposure });
     m(`R_{j}\\coloneq1.3\\cdot\\left(${num(i.RDC)}\\mathrm{kip}+${num(i.RDW)}\\mathrm{kip}\\right)=`, "Each girder's permanent reaction, jacking, AASHTO 3.4.3.1", "kip");
     m("P_{j}\\coloneq\\frac{R_{j}}{2}=", "Each of the two jacks", "kip");
     m(`a_{j}\\coloneq ${num(sd.jackOffset)}\\mathrm{ft}`, "Each jack from its girder");
@@ -568,7 +577,9 @@ function seatWorked(w: Writer, i: AbutmentInputs, r: AbutmentResult, s: NonNulla
   if (i.type === "seat") {
     text("Bearing seat width (AASHTO 4.7.4.4)", "subheading", { keepWithNext: true });
     m(`S_{k}\\coloneq ${num(i.skew)}`, "Skew, degrees");
-    m("N_{s}\\coloneq\\left(8+0.02\\cdot\\frac{L_{u}}{\\mathrm{ft}}\\right)\\cdot\\left(1+0.000125\\cdot S_{k}^{2}\\right)\\cdot\\mathrm{in}=", "AASHTO Eq. 4.7.4.4-1, H = 0 at an abutment", "in");
+    m(`H_{N}\\coloneq ${num(i.seatH ?? 0)}\\mathrm{ft}`, "The columns' average height to the next expansion joint (0 for a single span)");
+    m(`P_{N}\\coloneq ${num((i.seatPct ?? 100) / 100)}`, "Table 4.7.4.4-1, by seismic zone");
+    m("N_{s}\\coloneq\\left(8+0.02\\cdot\\frac{L_{u}}{\\mathrm{ft}}+0.08\\cdot\\frac{H_{N}}{\\mathrm{ft}}\\right)\\cdot\\left(1+0.000125\\cdot S_{k}^{2}\\right)\\cdot P_{N}\\cdot\\mathrm{in}=", "AASHTO Eq. 4.7.4.4-1", "in");
     m(ok("N_{s}", `${num(i.seatWidth)}\\mathrm{in}`), "Seat width provided");
   }
 
@@ -614,7 +625,7 @@ function seatWorked(w: Writer, i: AbutmentInputs, r: AbutmentResult, s: NonNulla
     const ks = strengthKey(o.shear.r.c.name);
     text(`One-way shear at dv from the stem's ${o.shear.toe ? "front" : "back"} face (${o.shear.r.c.name})`, "subheading", { keepWithNext: true });
     reactions(ks, o.shear.r.c.dc, o.shear.r.c.ev, "v");
-    m("d_{vf}\\coloneq\\max\\left(0.9\\cdot d_{efb},0.72\\cdot h_{fb}\\right)=", "AASHTO 5.7.2.8, on the bottom bars", "in");
+    m("d_{vf}\\coloneq\\max\\left(d_{efb}-\\frac{a_{fb}}{2},0.9\\cdot d_{efb},0.72\\cdot h_{fb}\\right)=", "AASHTO 5.7.2.8, on the bottom bars", "in");
     m(o.shear.toe ? "x_{vs}\\coloneq\\max\\left(0\\mathrm{ft},x_{s1}-d_{vf}\\right)=" : "x_{vs}\\coloneq\\min\\left(B,x_{s2}+d_{vf}\\right)=", "The section", "ft");
     const vr = mp.rows.map((row, k) => ({ row, k })).filter(({ row }) => (o.shear.toe ? row.x < o.shear.x : row.x > o.shear.x));
     const vsum = vr.length ? vr.map(({ k }) => `R_{v${k + 1}}`).join("+") : "0\\frac{\\mathrm{kip}}{\\mathrm{ft}}";
@@ -643,7 +654,7 @@ function seatWorked(w: Writer, i: AbutmentInputs, r: AbutmentResult, s: NonNulla
     m("w_{LS}\\coloneq V_{c}=", "Service I", "kip/ft");
     member(w, "lt", "Footing, top bars along the abutment", { Mu: "\\frac{w_{L}\\cdot s_{p}^{2}}{10\\cdot B}=", Ms: "\\frac{w_{LS}\\cdot s_{p}^{2}}{10\\cdot B}=", h: i.footT * 12, cover: l.coverT, bars: l.lt, crack: true, exposure: i.exposure });
     member(w, "lb", "Footing, bottom bars along the abutment", { Mu: "\\frac{w_{L}\\cdot s_{p}^{2}}{14\\cdot B}=", h: i.footT * 12, cover: l.coverB, bars: l.lb, exposure: i.exposure });
-    shear(w, "L", "\\frac{1.15\\cdot w_{L}\\cdot s_{p}}{2\\cdot B}=", "d_{elt}", "h_{lt}", "Shear along the abutment");
+    shear(w, "L", "\\frac{1.15\\cdot w_{L}\\cdot s_{p}}{2\\cdot B}=", "lt", "Shear along the abutment");
     void B;
   } else {
     text("Footing toe and heel: cantilevers from the stem", "subheading", { keepWithNext: true });
@@ -879,6 +890,22 @@ export function hPileWorked(w: Writer, i: PileInputs, r: PileRes) {
     const flexTerm = "\\frac{M_{ux}}{M_{rx}}+\\frac{M_{uy}}{M_{ry}}";
     const expr = e.endsWith("-1") ? `\\frac{P_{lu}}{2\\cdot P_{rh}}+${flexTerm}` : e.endsWith("-2") ? `\\frac{P_{lu}}{P_{rh}}+\\frac{8}{9}\\cdot\\left(${flexTerm}\\right)` : `\\frac{P_{lu}}{P_{rh}}+${flexTerm}`;
     m(ok(expr, "1"), `AASHTO Eq. ${e}`);
+  }
+  const sw = r.checks.find((c) => c.id === "pile-shear-web");
+  const sf = r.checks.find((c) => c.id === "pile-shear-flange");
+  if (sw || sf) {
+    const s = r.section;
+    text("Pile shear (AASHTO 6.12.1.2.3, φv 1.0)", "subheading", { keepWithNext: true });
+    text("The largest shear from the p–y analyses of the rows. Along the web, Vp = 0.58 Fy D tw (Eq. 6.10.9.3.3-1, k = 5); along the flanges, both flanges, b/t = bf/2tf with k = 1.2; C = 1 while b/t ≤ 1.12 √(E k / Fy) (Eq. 6.10.9.3.2-4).", undefined, { keepWithNext: true });
+    if (sw) {
+      m(`D_{wp}\\coloneq ${num(s.d)}\\mathrm{in}-2\\cdot${num(s.tf)}\\mathrm{in}=`, "The web between the flanges", "in");
+      m(ok(`\\frac{D_{wp}}{${num(s.tw)}\\mathrm{in}}`, `1.12\\cdot\\sqrt{\\frac{29000\\mathrm{ksi}\\cdot5}{${num(i.Fy)}\\mathrm{ksi}}}`), "C = 1");
+      m(ok(`${num(sw.demand)}\\mathrm{kip}`, `0.58\\cdot${num(i.Fy)}\\mathrm{ksi}\\cdot D_{wp}\\cdot${num(s.tw)}\\mathrm{in}`), sw.name);
+    }
+    if (sf) {
+      m(ok(`\\frac{${num(s.bf)}}{2\\cdot${num(s.tf)}}`, `1.12\\cdot\\sqrt{\\frac{29000\\cdot1.2}{${num(i.Fy)}}}`), "C = 1");
+      m(ok(`${num(sf.demand)}\\mathrm{kip}`, `0.58\\cdot${num(i.Fy)}\\mathrm{ksi}\\cdot2\\cdot${num(s.bf)}\\mathrm{in}\\cdot${num(s.tf)}\\mathrm{in}`), sf.name);
+    }
   }
   const d = r.checks.find((c) => c.id === "deflection");
   if (d) m(ok(`${num(d.demand)}\\mathrm{in}`, `${num(i.tolerable)}\\mathrm{in}`), "The group's deflection at Service, p–y (AASHTO 10.7.2.4)");

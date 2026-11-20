@@ -79,7 +79,8 @@ pile reactions on a rigid cap (P/n ± M·x/Σx²), geotechnical axial (φ × 0.8
 10.5.2.2), uplift, structural axial (6.15.3.1), lateral: the most loaded pile's p–y analysis with
 the row's p-multiplier and a fixed head, its deflection against a tolerable value and its moment in
 the 6.9.2.2 interaction, the depth to fixity; the cap: flexure at the column face from the pile
-reactions, one-way shear, punching at the column and at a corner pile. Quantities: 502-112xx /
+reactions, one-way shear, punching at the column and at a corner pile; the pile's shear along its web
+(0.58 Fy D tw, D = d − 2 tf) and along its flanges (both flanges), φv 1.0 (6.12.1.2.3). Quantities: 502-112xx /
 502-114xx Steel Piling by section (LF), 502-00460 Pile Tip, 601-03040, 602-00020, 206 excavation.
 
 ## Drilled Shaft
@@ -126,7 +127,15 @@ displacement, prebore with pea gravel), its 6.9.2.2 interaction, depth to fixity
 the backwall and cap under passive pressure. Semi-integral and seat: stability on its footing or
 piles (bearing, sliding, eccentricity as the footing tool), the stem and backwall in flexure and
 shear under earth pressure (3.11.5), live load surcharge (3.11.6.4) and the bridge's forces, the
-bearing seat width (4.7.4.4). Quantities: abutment concrete 601-03040, 602-00020, piles or shafts,
+bearing seat width (4.7.4.4: `seatH` the columns' average height to the next expansion joint, default 0 for
+a single span; `seatPct` Table 4.7.4.4-1's 50, 100 or 150%, default 100).
+
+- **Bearings' eccentricity (`bearingEcc`):** the bearings from the stem's centerline toward the span; by default half
+  the backwall for a seat abutment, 0 for semi-integral. The girders' DC, DW and LL + IM act there, the approach
+  slab's half and the backwall at their own places (behind the centerline at γ 0.9), in the stem's moment and the
+  footing's statics.
+- **Cover and dv:** the stem's and backwall's cover is `wallCover` (default 2 in, Table 5.10.1-1). dv = de − a/2, not
+  less than 0.9 de or 0.72 h (5.7.2.8), for the stem, backwall and footing. Quantities: abutment concrete 601-03040, 602-00020, piles or shafts,
 206 excavation and backfill.
 
 Integral with steel girders (`girderMaterial: "steel"`, `steelEnds`): the girders' ends are cast into the
@@ -158,9 +167,12 @@ Live load surcharge, seat and semi-integral (AASHTO 3.11.6.4.1):
 - **When it's left out:** CDOT BDM 11.3 ignores it where an approach slab is provided (AASHTO 3.11.6.5). `lsOmit`
   defaults to that whenever an approach slab is given (approachDC > 0), and can be set either way.
 - **NHI-04-041 (no approach slab):**
-  - the stem's Strength I moment and shear match with its LS terms, the bearings' eccentricity apart;
+  - the stem's Strength I moment and shear match with its LS terms. With the example's 1.13 ft eccentricity the
+    moment is 154.7 against 156.61 (1.2%): the example adds the backwall's weight, which statics subtract, and
+    takes 6.5 kip/ft of live load against the tool's 7.10 with IM;
   - the footing's horizontal force matches with its 1.75 × 1.76;
-  - the front pile is now 331 kip, within the example's 315–340.
+  - the front pile is 347 kip with the default eccentricity, 2% over the example's 315–340 from its soil springs
+    (331 before the eccentricity).
   - The backwall's heq is 2.0 at the whole 24.5 ft, against the example's 3.6 at the backwall's 7 ft (its 2nd
     Edition).
 

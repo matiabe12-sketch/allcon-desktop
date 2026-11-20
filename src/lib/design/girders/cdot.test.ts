@@ -163,6 +163,16 @@ describe("CDOT BDM 5.5 and sheet B-618-CBT2", () => {
     expect(hh.capacity).toBe(48);
     expect(hh.ok).toBe(false);
     expect(check(d, 1, "interior", "bed-force")!.demand).toBeCloseTo(52 * 0.217 * 202.5, 6);
+    expect(check(d, 1, "interior", "bed-force")!.advisory).toBe(true); // the bed's capacity: confirm with the fabricator
+    // A CBT 72 with its top pair at 62 in: under 72 − 6 = 66 in, so only a warning to confirm the precasting bed (60–66 in).
+    const base72 = bridge({ shape: "cbt-72" });
+    const h62 = { ...harped, yEnd: 62 - 7 };
+    const tall = designGirder({ ...base72, harped: h62, extraSpans: base72.extraSpans.map((x) => ({ ...x, harped: h62 })) });
+    const hh72 = tall.spans[1].interior.checks;
+    expect(hh72.find((c) => c.id === "harp-height")!.ok).toBe(true);
+    expect(hh72.find((c) => c.id === "harp-height")!.capacity).toBe(66);
+    const bedH = hh72.find((c) => c.id === "harp-height-bed")!;
+    expect([bedH.demand, bedH.capacity, bedH.ok, bedH.advisory]).toEqual([62, 60, false, true]);
     expect(check(d, 1, "interior", "s-max")!.capacity).toBeLessThanOrEqual(CDOT.maxStirrupSpacing);
     // A 90 ft girder with harped strands.
     const short = designGirder(bridge({ L: 90, extraSpans: [], harped: { ...harped, count: 8 }, strands: midRows }));

@@ -1,4 +1,4 @@
-import { zoneCallout, type GirderInputs } from "@/lib/design/girders/prestressed";
+import { debondSets, debondedIn, zoneCallout, type GirderInputs } from "@/lib/design/girders/prestressed";
 import type { GirderShape } from "@/lib/design/girders/sections";
 
 // The girder for its schedule, drawn as a plan sheet shows it: the elevation of the whole girder,
@@ -98,7 +98,7 @@ export function GirderScheduleSketch({ inputs: i, shape, span }: { inputs: Girde
   for (const r of rows) {
     // Debonded strands: the ones nearest the middle of the row (the outermost stay bonded).
     const order = Array.from({ length: r.count }, (_, j) => j).sort((a, b) => Math.abs(a - (r.count - 1) / 2) - Math.abs(b - (r.count - 1) / 2));
-    const deb = new Set(order.slice(0, (r.debondLength ?? 0) > 0 ? (r.debonded ?? 0) : 0));
+    const deb = new Set(order.slice(0, debondedIn(r)));
     for (let j = 0; j < r.count; j++) dots.push({ x: cx + (j - (r.count - 1) / 2) * PITCH * sk, y: SY(r.y), red: deb.has(j) });
   }
   for (const p of harped) for (let j = 0; j < p.n; j++) dots.push({ x: cx + (j - (p.n - 1) / 2) * PITCH * sk, y: SY(p.yHarp), red: false });
@@ -135,7 +135,7 @@ export function GirderScheduleSketch({ inputs: i, shape, span }: { inputs: Girde
       {rows.map((r, j) => (
         <g key={`s${j}`}>
           <line x1={X(0)} x2={X(half)} y1={Y(r.y)} y2={Y(r.y)} stroke={STRAND} strokeWidth="0.9" />
-          {(r.debonded ?? 0) > 0 && (r.debondLength ?? 0) > 0 && r.debondLength! < half && <circle cx={X(r.debondLength!)} cy={Y(r.y)} r={3} fill={DEBOND} />}
+          {debondSets(r).filter((d) => d.length < half).map((d) => <circle key={d.length} cx={X(d.length)} cy={Y(r.y)} r={3} fill={DEBOND} />)}
         </g>
       ))}
       {/* harped pairs: end to harp point, level between the harp points */}
@@ -147,7 +147,7 @@ export function GirderScheduleSketch({ inputs: i, shape, span }: { inputs: Girde
       {hp !== null && <Dim x1={X(brg[0])} x2={X(hp)} y={Y(0) + 24} label={hp - i.endDist} />}
       <Dim x1={X(brg[0])} x2={X(half)} y={Y(0) + 44} label={i.L / 2} />
       <text x={X(0)} y={Y(0) + 60} fontSize="9" fill={DIM}>
-        Half the girder shown, symmetrical about midspan: {f3(Lg)} ft long, {f3(i.L)} ft bearing to bearing, the bearing {f3(i.endDist)} ft from the end{rows.some((r) => (r.debonded ?? 0) > 0) ? "; red dots: debonding ends" : ""}
+        Half the girder shown, symmetrical about midspan: {f3(Lg)} ft long, {f3(i.L)} ft bearing to bearing, the bearing {f3(i.endDist)} ft from the end{rows.some((r) => debondedIn(r) > 0) ? "; red dots: debonding ends" : ""}
       </text>
       {legend.map((t, j) => (
         <text key={j} x={X(0)} y={Y(0) + 74 + j * 12} fontSize="9" fill={STIRRUP_TEXT}>

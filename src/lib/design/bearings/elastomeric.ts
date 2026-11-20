@@ -54,6 +54,14 @@ export type BearingInputs = {
   // PTFE sliding surface (14.7.2)
   sliding: boolean;
   muPTFE: number; // at the lowest temperature and the average pressure, Table 14.7.2.5-1
+  /**
+   * Anchor rods through the sole plate or masonry plate (14.8.3.1): `n` rods of `d` in, ASTM F1554 of `Fu` ksi, each
+   * in single shear. None: not checked (a pad with no plates, held by friction).
+   */
+  anchorRods?: { n: number; d: number; Fu: number } | null;
+  levelingPad?: boolean; // a plain leveling pad under a girder: in the girder's item (618), not paid as a bearing
+  /** The horizontal connection force as a part of the permanent load (3.10.9.2: 0.25 in Seismic Zone 1 where As ≥ 0.05, else 0.15). */
+  connectionFactor?: number;
   avgDead: number; // ksi, average contact stress limit, permanent loads (Table 14.7.2.4-1)
   avgTotal: number; // ksi, all loads
   edgeDead: number; // ksi, edge contact stress limit, permanent loads
@@ -250,6 +258,18 @@ export function designBearing(i: BearingInputs) {
   // a sliding bearing slides by design.
   const dsAllow = (i.mu * i.DL * hrt) / (G.Gmax * A); // AASHTO Eqs. 14.6.3.1-1 and -2
   if (!i.sliding) add({ id: "anchor-slip", name: "Pad doesn't slip: Δs ≤ μ DL hrt / (Gmax A)", demand: ds, capacity: dsAllow, unit: "in", ref: "AASHTO 14.8.3" });
+  // Anchor rods in shear (14.8.3.1, 6.13.2.12: Rn = 0.50 Ab Fub per plane, φs 0.75): the larger of the horizontal
+  // connection force (3.10.9.2, a part of the permanent load) and the friction a sliding surface can carry (μPTFE on
+  // the service load), or the pad's shear at its full deformation, whichever the bearing hands on.
+  if (i.anchorRods && i.anchorRods.n > 0 && i.anchorRods.d > 0) {
+    const rods = i.anchorRods;
+    const Hconn = (i.connectionFactor ?? 0.25) * i.DL;
+    const Hfric = i.sliding ? i.muPTFE * (i.DL + i.LL) : (G.Gmax * A * ds) / hrt;
+    const Hu = Math.max(Hconn, Hfric);
+    const Ab = (Math.PI / 4) * rods.d ** 2;
+    const Rr = 0.75 * rods.n * 0.5 * Ab * rods.Fu;
+    add({ id: "anchor-rods", name: "Anchor rods: shear", demand: Hu, capacity: Rr, unit: "kip", ref: "AASHTO 14.8.3.1, 6.13.2.12, 3.10.9.2", note: `${rods.n} rods of ${rods.d} in (Fu ${rods.Fu} ksi); the larger of ${Hconn.toFixed(1)} kip (${i.connectionFactor ?? 0.25} × DL, 3.10.9.2) and ${Hfric.toFixed(1)} kip (${i.sliding ? "PTFE friction" : "the pad's shear"})` });
+  }
 
   // --- PTFE contact stresses (14.7.2.4), the edge's from the moment the rotation needs (14.6.3.2) -------
   const Ec = 4.8 * G.Gmax * S ** 2; // AASHTO Eq. C14.6.3.2-1

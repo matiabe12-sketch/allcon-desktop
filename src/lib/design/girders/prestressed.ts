@@ -17,8 +17,26 @@ import { analyzeHauling, analyzeLifting, type StabilitySection } from "./stabili
 
 // --- inputs ----------------------------------------------------------------------------------------
 
-/** A row of straight strands; `debonded` of them are debonded for `debondLength` ft at each end. */
-export type StrandRow = { y: number; count: number; debonded?: number; debondLength?: number }; // y: in from the bottom of the girder
+/** A row of straight strands; `debonded` of them are debonded for `debondLength` ft at each end, and up to two more sets for their own lengths (`debonded2`/`debondLength2`, `debonded3`/`debondLength3`). */
+export type StrandRow = { y: number; count: number; debonded?: number; debondLength?: number; debonded2?: number; debondLength2?: number; debonded3?: number; debondLength3?: number }; // y: in from the bottom of the girder
+
+/** A row's debonded sets (each a count and its length at each end), shortest first, never more than the row holds. */
+export function debondSets(r: StrandRow): { count: number; length: number }[] {
+  const raw = [[r.debonded, r.debondLength], [r.debonded2, r.debondLength2], [r.debonded3, r.debondLength3]]
+    .map(([c, L]) => ({ count: Math.max(0, Math.round(c ?? 0)), length: L ?? 0 }))
+    .filter((x) => x.count > 0 && x.length > 0)
+    .sort((a, b) => a.length - b.length);
+  const out: { count: number; length: number }[] = [];
+  let left = r.count;
+  for (const x of raw) {
+    const n = Math.min(x.count, left);
+    if (n > 0) out.push({ count: n, length: x.length });
+    left -= n;
+  }
+  return out;
+}
+/** How many of a row's strands are debonded, all sets together. */
+export const debondedIn = (r: StrandRow) => debondSets(r).reduce((s, x) => s + x.count, 0);
 /** Harped strands, draped at two harp points `harpPoint` × the girder's length from each end. */
 export type HarpedStrands = { count: number; yEnd: number; yHarp: number; harpPoint: number }; // in, in, fraction
 export type StirrupZone = { length: number; bar: number; legs: number; spacing: number; bundle?: { bars: number; wire: number } }; // ft from the bearing; the last zone runs to midspan
@@ -101,6 +119,7 @@ export type GirderInputs = {
   barriersOnExterior: boolean; // each barrier on its exterior girder (else shared equally)
   otherDC2: number; // klf on each girder
   fws: number; // psf, future wearing surface (DW)
+  overlay?: number; // in, the asphalt overlay placed on the membrane (quantities only; 0 or unset for none)
   // Shear reinforcement
   stirrups: StirrupZone[];
   /** Vertical bars at each girder end besides the stirrups (CDOT's 2 #6 end bars), in the splitting resistance (5.9.4.4.1). */
@@ -308,7 +327,8 @@ export const CDOT = {
   gammaStrengthII: 1.35,
   connectionMcr: 1.2,
   harpBelowTop: 6, // in
-  maxHarpHeight: 60, // in
+  maxHarpHeight: 66, // in, the bed's highest (B-618-CBT2: 60–66 in by the precasting bed)
+  harpHeightBed: 60, // in, above it the fabricator's bed must allow it
   harpMinLength: 100, // ft
   maxBedForce: 2800, // kip
   maxStirrupSpacing: 18, // in
@@ -576,8 +596,9 @@ export function distributionFactors(i: GirderInputs, g: SectionProps, ts: number
     const lv = leverRuleAll(nGirders, S, i.overhang, i.barrierWidth, exterior);
     return { moment: lv.best, shear: lv.best, fatigue: lv.one / 1.2, Kg, eg, n, lanes, momentOne: lv.one, momentMulti: lv.multi, shearOne: lv.one, shearMulti: lv.multi, lever: lv.best, skewMoment: 1, skewShear: 1, governs: { moment: `lever rule, ${lv.lanes} lane${lv.lanes > 1 ? "s" : ""}`, shear: `lever rule, ${lv.lanes} lane${lv.lanes > 1 ? "s" : ""}` }, outOfRange: [] };
   }
-  const shape = girderShape(i);
-  if (shape.family === "Prestressed box") return adjacentBoxFactors(i, g, shape, Kg, eg, n, lanes, exterior);
+  // A steel girder (the steel girder check passes shape "steel") is never an adjacent box.
+  const shape = i.shape === "steel" ? null : girderShape(i);
+  if (shape?.family === "Prestressed box") return adjacentBoxFactors(i, g, shape, Kg, eg, n, lanes, exterior);
   const stiff = (Kg / (12 * L * ts ** 3)) ** 0.1;
   const momentOne = 0.06 + (S / 14) ** 0.4 * (S / L) ** 0.3 * stiff; // T. 4.6.2.2.2b-1
   const momentMulti = 0.075 + (S / 9.5) ** 0.6 * (S / L) ** 0.2 * stiff;
@@ -1336,26 +1357,35 @@ function designGirderLine(i: GirderInputs, exterior: boolean, ctx: SpanContext |
     }
   }
 
+  // The harped strands taken as pairs 2 in apart about their centroid: at the girder's ends the top pair must stay in
+  // the girder with the cover of 5.10.1 (1.5 in to the strand). A centroid only reached with wider rows in the top
+  // flange fails here: enter the centroid of a layout that fits (the drawing and the stresses follow the pairs).
+  if (i.harped && i.harped.count > 0) {
+    const topEnd = i.harped.yEnd + (Math.ceil(i.harped.count / 2) - 1);
+    add({ id: "harp-fit", name: "Harped strands inside the girder at its ends (pairs at 2 in, 1.5 in cover)", demand: topEnd, capacity: H - 1.5 - strand.db / 2, unit: "in", ref: "5.10.1", note: `the top pair at ${topEnd.toFixed(2)} in with the bundle's centroid at ${i.harped.yEnd} in, ${Math.ceil(i.harped.count / 2)} pairs; the girder ${H} in deep` });
+  }
+
   // Debonding, AASHTO LRFD 10th ed. 5.9.4.3.3: A (45% of a row), B (terminations at one section), C (60 db
   // between terminations), G (debonded length) and I (single-web flanged sections: the outermost strands, and
   // those within the web when bf/bw > 4 or more than 25% are debonded, stay bonded). The 25% cap on all
   // strands of earlier editions is gone; above 25% only rule I tightens.
-  const rows = i.strands.filter((r) => (r.debonded ?? 0) > 0 && (r.debondLength ?? 0) > 0);
+  const rows = i.strands.filter((r) => debondedIn(r) > 0);
   if (rows.length) {
-    const nDeb = rows.reduce((s, r) => s + Math.min(r.debonded!, r.count), 0);
-    const rowWorst = worst(rows, (r) => r.debonded! / r.count);
-    add({ id: "deb-row", name: "Debonded strands, of a row", demand: rowWorst.debonded! / rowWorst.count, capacity: 0.45, unit: "", ref: "5.9.4.3.3 A", note: `${rowWorst.debonded} of ${rowWorst.count} at y = ${rowWorst.y} in; ${nDeb} of ${N} strands in all` });
+    const nDeb = rows.reduce((s, r) => s + debondedIn(r), 0);
+    const rowWorst = worst(rows, (r) => debondedIn(r) / r.count);
+    add({ id: "deb-row", name: "Debonded strands, of a row", demand: debondedIn(rowWorst) / rowWorst.count, capacity: 0.45, unit: "", ref: "5.9.4.3.3 A", note: `${debondedIn(rowWorst)} of ${rowWorst.count} at y = ${rowWorst.y} in; ${nDeb} of ${N} strands in all` });
+    const sets = rows.flatMap(debondSets);
     const bySection = new Map<number, number>();
-    for (const r of rows) bySection.set(r.debondLength!, (bySection.get(r.debondLength!) ?? 0) + r.debonded!);
+    for (const d of sets) bySection.set(d.length, (bySection.get(d.length) ?? 0) + d.count);
     const [secL, secN] = [...bySection].reduce((a, b) => (b[1] > a[1] ? b : a));
     const secMax = nDeb <= 10 || strand.db >= 0.7 ? 4 : 6;
     add({ id: "deb-section", name: "Strands whose debonding ends at one section", demand: secN, capacity: secMax, unit: "strands", ref: "5.9.4.3.3 B", note: `at ${secL} ft from the end; ${nDeb <= 10 ? "ten or fewer debonded: 4" : strand.db >= 0.7 ? "0.7 in strand: 4" : "6"}` });
     // C: terminations (and the girder's end) at least 60 db apart.
-    const ends = [0, ...[...new Set(rows.map((r) => r.debondLength!))].sort((a, b) => a - b)];
+    const ends = [0, ...[...new Set(sets.map((d) => d.length))].sort((a, b) => a - b)];
     const gap = Math.min(...ends.slice(1).map((e, k) => e - ends[k]));
     add({ id: "deb-length", name: "Debonding terminations at least 60 db apart", demand: (60 * strand.db) / 12, capacity: gap, unit: "ft", ref: "5.9.4.3.3 C", note: `ends at ${ends.slice(1).join(", ")} ft` });
     // G: the debonded length within 0.2 L and L/2 − ℓd.
-    const longest = Math.max(...rows.map((r) => r.debondLength!));
+    const longest = Math.max(...sets.map((d) => d.length));
     const ldDeb = ldOf(2.0);
     add({ id: "deb-max", name: "Debonded length, at most min(0.2 L, L/2 − ℓd)", demand: longest, capacity: Math.min(0.2 * i.L, i.L / 2 - ldDeb), unit: "ft", ref: "5.9.4.3.3 G", note: `ℓd = ${ldDeb.toFixed(2)} ft (κ = 2.0)` });
     // I: rows on a grid at 2 in, centered on the web (an estimate where the grid is not known).
@@ -1363,8 +1393,8 @@ function designGirderLine(i: GirderInputs, exterior: boolean, ctx: SpanContext |
     const webBond = bf / shape.web > 4 || nDeb > 0.25 * N;
     const inWeb = (count: number) => Math.min(count, count % 2 ? 1 + 2 * Math.floor(shape.web / 4) : 2 * (Math.floor((shape.web / 2 - 1) / 2) + 1));
     const free = (r: StrandRow) => Math.max(0, r.count - 2 - (webBond ? inWeb(r.count) : 0));
-    const outer = worst(rows, (r) => r.debonded! - free(r));
-    add({ id: "deb-outer", name: webBond ? "Bonded: the outermost strands and those within the web" : "Bonded: the outermost strands of each row", demand: outer.debonded!, capacity: free(outer), unit: "strands", ref: "5.9.4.3.3 I", note: `row at y = ${outer.y} in: ${outer.count} strands${webBond ? `, ${inWeb(outer.count)} within the ${shape.web} in web (${bf / shape.web > 4 ? `bf/bw = ${(bf / shape.web).toFixed(1)} > 4` : `${nDeb} of ${N} debonded, over 25%`})` : ""}` });
+    const outer = worst(rows, (r) => debondedIn(r) - free(r));
+    add({ id: "deb-outer", name: webBond ? "Bonded: the outermost strands and those within the web" : "Bonded: the outermost strands of each row", demand: debondedIn(outer), capacity: free(outer), unit: "strands", ref: "5.9.4.3.3 I", note: `row at y = ${outer.y} in: ${outer.count} strands${webBond ? `, ${inWeb(outer.count)} within the ${shape.web} in web (${bf / shape.web > 4 ? `bf/bw = ${(bf / shape.web).toFixed(1)} > 4` : `${nDeb} of ${N} debonded, over 25%`})` : ""}` });
   }
 
   // Strand layout limits of the CDOT BDM (5.5.1.5) and its CBT standard sheet B-618-CBT2.
@@ -1373,12 +1403,18 @@ function designGirderLine(i: GirderInputs, exterior: boolean, ctx: SpanContext |
     if (h && h.count > 0) {
       // Harped strands in pairs at 2 in: the top pair rises (pairs − 1) in above the bundle's centroid.
       const topEnd = h.yEnd + (Math.ceil(h.count / 2) - 1);
-      add({ id: "harp-height", name: "Top harped strand at the girder's end", demand: topEnd, capacity: Math.min(H - CDOT.harpBelowTop, CDOT.maxHarpHeight), unit: "in", ref: "CDOT BDM 5.5.1.5; B-618-CBT2", note: `at most ${CDOT.harpBelowTop} in below the top (${H - CDOT.harpBelowTop} in), and ${CDOT.maxHarpHeight} in (60–66 in by the precasting bed)` });
+      // B-618-CBT2: the lower of 6 in below the top and 60–66 in by the precasting bed. Past the lower of 6 in below the
+      // top and 66 in it fails; between 60 in and that, a warning: the fabricator's bed must allow it (BDM 5.5.1.5).
+      const hardTop = Math.min(H - CDOT.harpBelowTop, CDOT.maxHarpHeight);
+      add({ id: "harp-height", name: "Top harped strand at the girder's end", demand: topEnd, capacity: hardTop, unit: "in", ref: "CDOT BDM 5.5.1.5; B-618-CBT2", note: `at most ${CDOT.harpBelowTop} in below the top (${H - CDOT.harpBelowTop} in) and ${CDOT.maxHarpHeight} in, the highest any precasting bed allows` });
+      const bedTop = Math.min(hardTop, CDOT.harpHeightBed);
+      if (topEnd > bedTop && topEnd <= hardTop) add({ id: "harp-height-bed", name: "Top harped strand above 60 in: confirm with the fabricator's precasting bed", demand: topEnd, capacity: bedTop, unit: "in", ref: "CDOT BDM 5.5.1.5; B-618-CBT2", note: "60 to 66 in depending on the girder's length and the bed's configuration", advisory: true });
       add({ id: "harp-span", name: "Harped strands in a girder under 100 ft", demand: Lg < CDOT.harpMinLength ? h.count : 0, capacity: 0, unit: "strands", ref: "CDOT BDM 5.5.1.5", note: `girder ${Lg.toFixed(1)} ft; straight debonded strands are preferred` });
       add({ id: "harp-point", name: "Harp point, 0.35 to 0.45 of the girder's length (guidance)", demand: Math.abs(h.harpPoint - 0.4), capacity: 0.05, unit: "", ref: "CDOT BDM 5.5.1.5", note: `at ${h.harpPoint.toFixed(3)} of the girder's length; the BDM says harping locations "should" be in this range, 0.4 a good default`, advisory: true });
     }
     const Pj = N * strand.area * fpj;
-    add({ id: "bed-force", name: "Jacking force of all strands (precasting bed)", demand: Pj, capacity: CDOT.maxBedForce, unit: "kip", ref: "B-618-CBT2", note: `${N} strands at ${(strand.area * fpj).toFixed(1)} kip` });
+    // A fabrication limit of the standard sheet (the bed's capacity), not a design one: a warning to confirm with the fabricator.
+    add({ id: "bed-force", name: "Jacking force of all strands, the precasting bed's 2,800 kip: confirm with the fabricator", demand: Pj, capacity: CDOT.maxBedForce, unit: "kip", ref: "B-618-CBT2", note: `${N} strands at ${(strand.area * fpj).toFixed(1)} kip`, advisory: true });
 
     // Camber and haunch (BDM 5.5.2.1 B and G).
     add({ id: "no-sag", name: "No sag: under-cambered girder after the dead load", demand: haunch.tolerance - camber.dTotal, capacity: camber.cLow, unit: "in", ref: "CDOT BDM 5.5.2.1 G", note: `camber ${camber.cLow.toFixed(2)} in at ${camber.age} days (the lower of ${camber.cDeck.toFixed(2)} by creep and ${camber.cPci.toFixed(2)} by the PCI multipliers), less ${haunch.tolerance.toFixed(2)} in under-camber and ${(-camber.dTotal).toFixed(2)} in dead load deflection` });
@@ -2046,9 +2082,9 @@ export function strandGroups(i: GirderInputs, H: number, Lg: number): StrandGrou
   const out: StrandGroup[] = [];
   for (const r of i.strands) {
     if (r.count <= 0) continue;
-    const deb = r.debondLength && r.debondLength > 0 ? Math.min(r.debonded ?? 0, r.count) : 0;
+    const deb = debondedIn(r);
     if (r.count - deb > 0) out.push({ kind: "straight", n: r.count - deb, A: (r.count - deb) * a, bondFrom: 0, kappa: kb, yAt: () => r.y, slope: () => 0 });
-    if (deb > 0) out.push({ kind: "debonded", n: deb, A: deb * a, bondFrom: r.debondLength!, kappa: 2.0, yAt: () => r.y, slope: () => 0 });
+    for (const d of debondSets(r)) out.push({ kind: "debonded", n: d.count, A: d.count * a, bondFrom: d.length, kappa: 2.0, yAt: () => r.y, slope: () => 0 });
   }
   const h = i.harped;
   if (h && h.count > 0) {
@@ -2298,7 +2334,7 @@ function shearAt(i: GirderInputs, shape: GirderShape, comp: Composite, flex: Fle
 /** Checks of an input against a fixed limit (jacking at 0.75 fpu, CDOT's f′ci and f′c caps, the confinement
  * and debonding rules, whole stirrup spaces). They sit at 1.00 whenever the input is at its limit, so they
  * decide which span or girder governs only when they fail. */
-const PRESCRIPTIVE = new Set(["fpj", "cdot-fci", "cdot-fc", "conf-bar", "conf-spacing", "conf-length", "stirrup-zones", "deb-row", "deb-section", "deb-length", "deb-max", "deb-outer", "harp-height", "harp-span", "harp-point", "bed-force", "ship-length", "ship-weight", "haunch-support", "haunch-mid"]);
+const PRESCRIPTIVE = new Set(["fpj", "harp-fit", "cdot-fci", "cdot-fc", "conf-bar", "conf-spacing", "conf-length", "stirrup-zones", "deb-row", "deb-section", "deb-length", "deb-max", "deb-outer", "harp-height", "harp-height-bed", "harp-span", "harp-point", "bed-force", "ship-length", "ship-weight", "haunch-support", "haunch-mid"]);
 /** Lifting, hauling and shipping happen before the deck: the same for every girder, so they don't choose one. */
 const HANDLING = /^(lift|haul|ship)-/;
 /** The highest demand-to-capacity ratio that decides what governs (a failed check always counts; an

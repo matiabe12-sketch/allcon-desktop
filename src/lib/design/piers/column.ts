@@ -94,9 +94,18 @@ export type ColumnInputs = {
     gammaTU: number; // 0.50 for force effects (Table 3.4.1-1)
   };
   collision: { enabled: boolean; CT: number; impact: number; traffic: "T" | "L"; PDC: number }; // impact: kept from saved designs (both 2 and 5 ft are checked)
-  /** Seismic Zone 1 with SD1 ≥ 0.10 (5.11.2): the potential plastic hinge regions' transverse reinforcement at this spacing. */
-  seismic: { hinge: boolean; spacing: number };
+  /**
+   * Seismic Zone 1 with SD1 ≥ 0.10 (5.11.2): the potential plastic hinge regions' transverse reinforcement at this
+   * spacing, with their own tie legs each way (ties; never fewer than the column's legsT/legsL, which hold between them).
+   */
+  seismic: { hinge: boolean; spacing: number; legsT?: number; legsL?: number };
 };
+
+/** The tie legs each way in the hinge regions: their own where given, never fewer than the column's; the column's otherwise. */
+export function hingeLegs(i: Pick<ColumnInputs, "legsT" | "legsL" | "seismic">) {
+  const own = (v: number | undefined, base: number) => (i.seismic.hinge && v !== undefined && Number.isFinite(v) ? Math.max(base, Math.round(v)) : base);
+  return { T: own(i.seismic.legsT, i.legsT), L: own(i.seismic.legsL, i.legsL) };
+}
 
 export const COLUMN_DEFAULTS: ColumnInputs = {
   shape: "round",
@@ -506,7 +515,8 @@ export function designColumn(i: ColumnInputs) {
       need.push({ label: "Volumetric ratio ρs in the hinge regions", demand: (0.12 * i.fc) / fyh, capacity: rhoS, ref: "AASHTO Eq. 5.11.4.1.4-1" });
     } else {
       const Ac = (i.T - 2 * i.cover) * (W - 2 * i.cover);
-      for (const [legs, hc, dir] of [[i.legsT, W - 2 * i.cover, "across"], [i.legsL, i.T - 2 * i.cover, "along"]] as const) {
+      const hl = hingeLegs(i);
+      for (const [legs, hc, dir] of [[hl.T, W - 2 * i.cover, "across"], [hl.L, i.T - 2 * i.cover, "along"]] as const) {
         const Ash = legs * tie.area;
         const req = Math.max(0.3 * sz.spacing * hc * (i.fc / fyh) * (sec.Ag / Ac - 1), 0.12 * sz.spacing * hc * (i.fc / fyh));
         need.push({ label: `Tie and cross-tie area Ash, legs ${dir} the bridge`, demand: req, capacity: Ash, ref: "AASHTO Eqs. 5.11.4.1.4-2, -3" });
@@ -515,7 +525,7 @@ export function designColumn(i: ColumnInputs) {
     hinge = { length, spacing: sz.spacing, sMax, need };
     add({ id: "seis-spacing", name: "Hinge regions and lap splices: spacing, a quarter of the least dimension or 4 in", demand: sz.spacing, capacity: sMax, unit: "in", ref: "AASHTO 5.11.4.1.5, 5.11.2" });
     for (const [k, x] of need.entries()) add({ id: `seis-conf-${k}`, name: x.label, demand: x.demand, capacity: x.capacity, unit: x.label.startsWith("Volumetric") ? "" : "in²", ref: x.ref });
-    notes.push(`Seismic Zone 1 with SD1 ≥ 0.10 (AASHTO 5.11.2): #${i.tieBar} ${i.transverse === "spiral" ? "spiral" : "ties"} at ${sz.spacing} in over ${Math.ceil(length)} in from the column's top and bottom (the larger of its largest dimension, a sixth of its clear height and 18 in, 5.11.4.1.3) and over the lap splices at its base; ${i.transverse === "spiral" ? "spiral splices there full-welded or mechanical" : "seismic hooks (135°, 6 db or 3 in) and cross-ties as 5.11.4.1.4 details them"}. The connection force of 3.10.9.2 is the Seismic Zone 1 tool's.`);
+    notes.push(`Seismic Zone 1 with SD1 ≥ 0.10 (AASHTO 5.11.2): #${i.tieBar} ${i.transverse === "spiral" ? "spiral" : "ties"} at ${sz.spacing} in over ${Math.ceil(length)} in from the column's top and bottom (the larger of its largest dimension, a sixth of its clear height and 18 in, 5.11.4.1.3) and over the lap splices at its base; ${i.transverse === "spiral" ? "spiral splices there full-welded or mechanical" : `seismic hooks (135°, 6 db or 3 in) and cross-ties as 5.11.4.1.4 details them; ${hingeLegs(i).T} legs across and ${hingeLegs(i).L} along there, ${i.legsT} and ${i.legsL} between`}. The connection force of 3.10.9.2 is the Seismic Zone 1 tool's.`);
   }
 
   // --- vehicle collision, Extreme Event II (3.6.5.1) -------------------------------------------------------------------

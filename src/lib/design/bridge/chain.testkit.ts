@@ -20,6 +20,7 @@ import { columnInputs, designColumn, type ColumnInputs } from "../piers/column";
 import { columnCalcLines } from "../piers/column-calc";
 import { columnLinkFrom } from "../piers/column-link";
 import { roundFor, type PayLine } from "../rebar/pay-lines";
+import type { QuantityRole } from "../rebar/cdot-items";
 import { nodeLpSolver } from "../stm/lp-node";
 import { capDetailOrNull, stmPackageLines, stmPayLines } from "../stm/package";
 import { designStm, stmInputs } from "../stm/strut-tie";
@@ -40,7 +41,8 @@ export type ChainSpec = {
   title: string;
   b: BridgeInputs;
   girder: GirderInputs;
-  pad: Partial<BearingInputs>;
+  /** The bearings, the same at every support or by support index. */
+  pad: Partial<BearingInputs> | ((support: number) => Partial<BearingInputs>);
   deck?: Partial<DeckInputs>;
   /** Each abutment's details (support index → its inputs over the Bridge's). */
   abutment: (support: number) => Partial<AbutmentInputs>;
@@ -52,7 +54,7 @@ export type ChainSpec = {
 
 const pays = (kind: string, inputs: unknown, settings?: { length?: number }) => {
   const t = takeoffFor(kind, inputs, settings);
-  return t ? takeoffPayLines(kind, t, {}, inputs) : [];
+  return t ? takeoffPayLines(kind, t, (inputs as { takeoff?: { items?: Partial<Record<QuantityRole, string>> } }).takeoff?.items ?? {}, inputs, { split: true }) : [];
 };
 const scaled = (lines: PayLine[], k: number) => lines.map((l) => ({ ...l, quantity: roundFor(l.unit, l.quantity * k) }));
 export const verdict = (g: SummaryGroup[]) => {
@@ -88,7 +90,8 @@ export async function buildChain(spec: ChainSpec) {
     const s = b.supports[k];
     const parts: CalcPart[] = [];
     const sPay: PayLine[] = [];
-    const br = { ...bearingFromBridge(b, run, k, bearingInputs({})), ...spec.pad };
+    const abutHere = s.type.endsWith("abutment") ? ({ ...abutmentFromBridge(b, run, k, abutmentInputs({})), ...spec.abutment(k) } as AbutmentInputs) : null;
+    const br = { ...bearingFromBridge(b, run, k, bearingInputs({}), abutHere), ...(typeof spec.pad === "function" ? spec.pad(k) : spec.pad) };
     parts.push({ label: "Bearings", name: `${s.name} bearings`, lines: bearingCalcLines(br, `${s.name} bearings`), checks: [{ checks: designBearing(br).checks }] });
     sPay.push(...pays("elastomeric-bearing", br, { length: b.nGirders * (k === 0 || k === last ? 1 : 2) }));
     if (s.type.endsWith("abutment")) {

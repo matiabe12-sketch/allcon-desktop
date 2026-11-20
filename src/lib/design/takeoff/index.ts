@@ -1,5 +1,7 @@
 import { payItem, TOOL_PAY_ITEMS, type QuantityRole } from "../rebar/cdot-items";
+import { unitWeight } from "../rebar/bars";
 import { roundFor, type PayLine } from "../rebar/pay-lines";
+import type { PaidWith } from "../rebar/schedule";
 import type { CbcInputs } from "../culverts/cbc";
 import type { DeckInputs } from "../decks/deck";
 import { railDef } from "../decks/rails";
@@ -47,7 +49,7 @@ export function takeoffFor(kind: string, inputs: unknown, s?: TakeoffSettings): 
       return girderTakeoff(inputs as GirderInputs, L);
     case "elastomeric-bearing":
     case "ptfe-bearing":
-      return bearingTakeoff(Math.max(1, Math.round(L ?? 1)));
+      return bearingTakeoff(Math.max(1, Math.round(L ?? 1)), !!(inputs as { levelingPad?: boolean } | null)?.levelingPad);
     case "approach-slab":
       return approachSlabTakeoff(inputs as ApproachSlabInputs, L ?? 2);
     case "spread-footing":
@@ -80,11 +82,15 @@ function defaultFor(kind: string, role: QuantityRole, inputs: unknown): string |
     const code = `503-000${Math.round(kind === "abutment" ? (inputs as AbutmentInputs).shaftD : (inputs as ShaftInputs).D)}`;
     return payItem(code) ? code : undefined;
   }
-  if (kind === "micropile" && role === "micropile") {
-    const d = Math.round((inputs as MicropileInputs).casingOD);
-    const code = d >= 10 ? "503-01100" : `503-010${Math.min(8, Math.max(6, d))}0`;
+  if ((kind === "micropile" || kind === "abutment" || kind === "pile-foundation") && role === "micropile") {
+    // By the casing's nominal diameter: 6, 7, 8, 10 or 12 in.
+    const od = kind === "micropile" ? (inputs as MicropileInputs).casingOD : ((inputs as { micropile?: Partial<MicropileInputs> | null }).micropile?.casingOD ?? 7);
+    const d = Math.round(od);
+    const code = d >= 12 ? "503-01120" : d >= 10 ? "503-01100" : `503-010${Math.min(8, Math.max(6, d))}0`;
     return payItem(code) ? code : undefined;
   }
+  // A bearing with a PTFE sliding surface: Bearing Device (Type II); a pad alone, Type I.
+  if (kind === "elastomeric-bearing" && role === "bearing") return (inputs as { sliding?: boolean }).sliding ? "512-00102" : "512-00101";
   if ((kind === "deck-slab" || kind === "lrfd-girder-check") && role === "rail") {
     const r = railDef((inputs as DeckInputs | GirderInputs).rail?.type ?? "custom");
     return r?.payItem;
@@ -102,19 +108,63 @@ function defaultFor(kind: string, role: QuantityRole, inputs: unknown): string |
 }
 
 /** A take-off's quantities as pay lines: each role with a quantity, under the chosen (or default) pay item. */
-export function takeoffPayLines(kind: string, t: Takeoff, chosen: Partial<Record<QuantityRole, string>> = {}, inputs?: unknown): PayLine[] {
+/**
+ * `split`: concrete and bars another part of the bridge pays for (`paidWith`) as lines of their own, for a bridge's
+ * summary of quantities; without it they stay in the design's own lines.
+ */
+export function takeoffPayLines(kind: string, t: Takeoff, chosen: Partial<Record<QuantityRole, string>> = {}, inputs?: unknown, opts: { split?: boolean } = {}): PayLine[] {
   const allowed = TOOL_PAY_ITEMS[kind] ?? {};
+  const itemFor = (role: QuantityRole) => {
+    const list = allowed[role];
+    if (!list?.length) return undefined;
+    return chosen[role] && list.includes(chosen[role]!) ? chosen[role] : (defaultFor(kind, role, inputs) ?? list[0]);
+  };
+  // Paid with another part of the bridge: kept apart, under the item it would have had here.
+  const elsewhere = new Map<string, { role: QuantityRole; value: number; paidWith: PaidWith }>();
+  const addElsewhere = (code: string | undefined, role: QuantityRole, v: number, paidWith: PaidWith) => {
+    if (!code) return;
+    const key = `${code}|${paidWith}`;
+    elsewhere.set(key, { role, paidWith, value: (elsewhere.get(key)?.value ?? 0) + v });
+  };
   const values: Partial<Record<QuantityRole, number>> = {};
-  if (t.schedule.concreteTotal > 0) values.concrete = t.schedule.concreteTotal;
-  if (t.schedule.total > 0) values.rebar = t.schedule.total;
+  // Concrete and bars that name their own pay item go to it; the rest to the role's item.
+  const own = new Map<string, { role: QuantityRole; value: number }>();
+  const addOwn = (code: string, role: QuantityRole, v: number) => own.set(code, { role, value: (own.get(code)?.value ?? 0) + v });
+  let concrete = 0;
+  for (const c of t.schedule.concrete) if (opts.split && c.paidWith) addElsewhere(c.item && payItem(c.item) ? c.item : itemFor("concrete"), "concrete", c.cy, c.paidWith);
+  else if (c.item && payItem(c.item)) addOwn(c.item, "concrete", c.cy);
+  else concrete += c.cy;
+  let rebar = t.schedule.total;
+  for (const g of t.schedule.groups) {
+    if (g.paid) continue;
+    const w = ((g.count * g.length) / 12) * unitWeight(g.size);
+    if (opts.split && g.paidWith) {
+      addElsewhere(g.payAs && payItem(g.payAs) ? g.payAs : itemFor("rebar"), "rebar", w, g.paidWith);
+      rebar -= w;
+    } else if (g.payAs && payItem(g.payAs)) {
+      addOwn(g.payAs, "rebar", w);
+      rebar -= w;
+    }
+  }
+  if (concrete > 0) values.concrete = concrete;
+  if (rebar > 0.5) values.rebar = rebar;
   for (const [role, q] of Object.entries(t.quantities)) if (q && q.value > 0) values[role as QuantityRole] = q.value;
   const lines: PayLine[] = [];
   for (const [role, value] of Object.entries(values) as [QuantityRole, number][]) {
     const list = allowed[role];
     if (!list?.length) continue;
-    const want = chosen[role] && list.includes(chosen[role]!) ? chosen[role] : (defaultFor(kind, role, inputs) ?? list[0]);
-    const p = payItem(want!);
+    const p = payItem(itemFor(role)!);
     if (p) lines.push({ ...p, quantity: roundFor(p.unit, value), role });
+  }
+  for (const [code, o] of own) {
+    const p = payItem(code);
+    const same = lines.find((l) => l.code === code);
+    if (same) same.quantity = roundFor(same.unit, same.quantity + o.value);
+    else if (p && o.value > 0) lines.push({ ...p, quantity: roundFor(p.unit, o.value), role: o.role });
+  }
+  for (const [key, o] of elsewhere) {
+    const p = payItem(key.split("|")[0]);
+    if (p && o.value > 0) lines.push({ ...p, quantity: roundFor(p.unit, o.value), role: o.role, paidWith: o.paidWith });
   }
   return lines;
 }

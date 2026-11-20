@@ -12,3 +12,6 @@ export const avgT = (a: string, b: string) => (a === b ? a : `\\frac{${a}+${b}}{
 export const plus18T = (x: string, sides = 2) => `\\left(${x}+${sides === 1 ? "" : `${sides}\\cdot `}18\\mathrm{in}\\right)`;
 /** A sum in brackets when it has more than one term. */
 export const sumT = (terms: string[]) => (terms.length > 1 ? `\\left(${terms.join("+")}\\right)` : terms[0]);
+
+/** Asphalt by weight: 110 lb per square yard per inch (0.055 ton). */
+export const ASPHALT_TON_PER_SY_IN = 0.055;

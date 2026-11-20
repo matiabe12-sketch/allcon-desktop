@@ -157,16 +157,29 @@ export function columnFromBridge(b: BridgeInputs, run: BridgeRun, support: numbe
 }
 
 /**
+ * The station the bridge expands from: where its girders slide on bearings at every support but the fixed ones (no
+ * integral abutment), the fixed supports (their middle, when more than one); otherwise, or with none fixed, the bridge's
+ * middle (an integral bridge moves about its center of stiffness, taken as its middle).
+ */
+export function fixedPoint(b: BridgeInputs) {
+  const st = b.supports;
+  const middle = (st[0].station + st[st.length - 1].station) / 2;
+  if (st.some((s) => s.type === "integral-abutment")) return middle;
+  const fixed = st.filter((s) => s.bearing === "fixed");
+  return fixed.length ? fixed.reduce((t, s) => t + s.station, 0) / fixed.length : middle;
+}
+
+/**
  * An abutment's expansion device: the length that moves toward it and the skew of the line it runs along.
- * The length runs from the bridge's middle (its fixed point, as the bearings take it). At a seat abutment the
- * device is at the backwall; at an integral abutment the bridge pushes the approach slab, tied to the abutment,
- * so the device is at the slab's far end and the slab's own length is added (the conservative choice).
+ * The length runs from the bridge's fixed point (fixedPoint, as the bearings take it). At a seat abutment the
+ * device is at the backwall; at an integral or semi-integral abutment the bridge pushes the approach slab, tied to
+ * its end diaphragm, so the device is at the slab's far end (the sleeper slab, CDOT BDM 11.3.1, 11.3.2) and the slab's
+ * own length is added (the conservative choice).
  */
 export function jointFromBridge(b: BridgeInputs, support: number, approachL: number, current: StripSealInputs): StripSealInputs {
   const s = b.supports[support];
-  const middle = (b.supports[0].station + b.supports[b.supports.length - 1].station) / 2;
-  const integral = s.type === "integral-abutment";
-  const L = Math.abs(s.station - middle) + (integral ? approachL : 0);
+  const atSlabEnd = s.type === "integral-abutment" || s.type === "semi-integral-abutment";
+  const L = Math.abs(s.station - fixedPoint(b)) + (atSlabEnd ? approachL : 0);
   return { ...current, L: Math.round(L * 100) / 100, skew: Math.abs(s.skew) };
 }
 
@@ -191,7 +204,10 @@ export function wingwallFromBridge(b: BridgeInputs, support: number, abutment: A
 
 /** Load cases at a column's base for its foundation: each factored case's largest column (P, the moments and shears both ways). */
 export function baseCases(col: ColumnResult) {
-  const base = col.rows.filter((r) => r.where === "base");
+  // With the column's collision check on, its Extreme Event II cases go to the foundation too (AASHTO 3.6.5.1), unless
+  // the column is deemed adequate without it (at least 3.0 ft thick with more than 30 ft² of section).
+  const ct = col.collision && !col.collision.exempt ? col.collision.rows : [];
+  const base = [...col.rows, ...ct].filter((r) => r.where === "base");
   const byCase = new Map<string, (typeof base)[number]>();
   for (const r of base) {
     const prev = byCase.get(r.case);
@@ -270,6 +286,7 @@ export function deckFromBridge(b: BridgeInputs, run: BridgeRun, current: DeckInp
     barrierWidth: b.barrierWidth * 12,
     wearing: Math.round(((b.fws / 1000 / current.gammaWS) * 12) * 1000) / 1000,
     ...(b.rail ? { rail: b.rail } : {}),
+    panels: !!run.groups[0]?.inputs.deckPanels,
     fromGirder: girder,
   };
 }
@@ -280,22 +297,27 @@ export function deckFromBridge(b: BridgeInputs, run: BridgeRun, current: DeckInp
  *   pads: they carry the girder, deck and diaphragms until the diaphragm is cast (DC1), then the diaphragm
  *   carries the bridge; no live load, and no movement (the girder moves with the abutment or pier).
  * - Elsewhere the pad carries DC + DW and the live load without IM (14.4.1), and moves with the distance to the
- *   unit's fixed point (the bridge's middle); a deck joint at a seat abutment or a simple pier.
+ *   bridge's fixed point (fixedPoint); a deck joint at a seat abutment or a simple pier.
  */
-export function bearingFromBridge(b: BridgeInputs, run: BridgeRun, support: number, current: BearingInputs): BearingInputs {
+/**
+ * A support's bearings from the bridge. At a semi-integral abutment the end diaphragm sits on the girders' ends and
+ * rides on the bearings (CDOT BDM 11.3.2): its weight, from the abutment design's diaphragm (backwallH × backwallT along
+ * its length), shared by the girders, is added to their dead load (the girders' ends inside it not deducted).
+ */
+export function bearingFromBridge(b: BridgeInputs, run: BridgeRun, support: number, current: BearingInputs, abutment?: Pick<AbutmentInputs, "type" | "backwallH" | "backwallT" | "length" | "gammaC"> | null): BearingInputs {
   const r = run.reactions[support];
   const s = b.supports[support];
-  const first = b.supports[0].station;
-  const last = b.supports[b.supports.length - 1].station;
   const leveling = s.type === "integral-abutment" || s.type === "continuous-pier";
   // Each line of bearings carries its own span's end: at a pier with a line each side, the heavier side.
   const own = (key: "DC1" | "DC" | "DW" | "LL") => (r.sides.length > 1 && s.bearingOffset > 0 ? Math.max(...r.sides.map((x) => Math.max(x.interior[key], x.exterior[key]))) : r[key]);
+  const diaphragm = s.type === "semi-integral-abutment" && abutment ? (abutment.gammaC * abutment.backwallH * abutment.backwallT * abutment.length) / b.nGirders : 0;
   return {
     ...current,
-    DL: Math.round((leveling ? own("DC1") : own("DC") + own("DW")) * 10) / 10,
+    DL: Math.round((leveling ? own("DC1") : own("DC") + own("DW") + diaphragm) * 10) / 10,
     LL: leveling ? 0 : Math.round(own("LL") * 10) / 10,
-    expansionLength: leveling ? 0 : Math.round(Math.abs(s.station - (first + last) / 2) * 100) / 100,
-    ...(leveling ? { otherStatic: 0, cyclic: 0 } : {}),
+    expansionLength: leveling ? 0 : Math.round(Math.abs(s.station - fixedPoint(b)) * 100) / 100,
+    // Held at a fixed support the bridge expands from: no shear deformation, as under a leveling pad.
+    ...(leveling || (s.bearing === "fixed" && Math.abs(s.station - fixedPoint(b)) < 1e-6) ? { otherStatic: 0, cyclic: 0 } : {}),
     jointed: s.type === "seat-abutment" || s.type === "simple-pier",
   };
 }

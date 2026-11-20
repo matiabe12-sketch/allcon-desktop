@@ -121,7 +121,7 @@ export function rebarModel(b: BridgeInputs, els: IfcElement[], d: { girders: (Gi
         const n = e.name.toLowerCase();
         if (category === "approach") {
           const ap = d.comps.approachSlabs?.[k]?.inputs;
-          if (ap) placed = approachBars(host, e, ap, back);
+          if (ap && e.grid) placed = approachBars(host, e.grid, ap);
           else missing.add(`${b.supports[k].name} approach slab`);
         } else if (category === "wingwall") {
           const w = d.comps.wingwalls?.[k]?.inputs;

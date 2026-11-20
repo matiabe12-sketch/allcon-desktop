@@ -55,6 +55,8 @@ const merge = <T extends object>(defaults: T, saved: unknown): T => {
     // An optional object the default leaves empty (a shaft's column).
     else if (v === null && typeof x === "object") out[k] = x;
   }
+  // Optional inputs the defaults leave out (an abutment's lanes, its micropile rows, the plans' bars): kept as saved.
+  for (const [k, x] of Object.entries(s)) if (!(k in out) && x !== undefined && x !== null && (typeof x === "number" ? Number.isFinite(x) : ["string", "boolean", "object"].includes(typeof x))) out[k] = x;
   return out as T;
 };
 

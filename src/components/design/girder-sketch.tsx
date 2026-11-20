@@ -1,4 +1,4 @@
-import type { GirderDesign, GirderInputs, GirderResult } from "@/lib/design/girders/prestressed";
+import { debondedIn, type GirderDesign, type GirderInputs, type GirderResult } from "@/lib/design/girders/prestressed";
 
 // The girder's cross-section to scale: its outline, the haunch and the deck's effective width, and
 // the strands, with the centroids marked. No hooks, so it also draws into calc packages.
@@ -32,7 +32,7 @@ export function GirderSketch({ inputs, result }: { inputs: GirderInputs; result:
     const n = row.count;
     // Debonded strands drawn hollow: the ones nearest the middle (the outermost stay bonded).
     const byCenter = Array.from({ length: n }, (_, k) => k).sort((a, b) => Math.abs(a - (n - 1) / 2) - Math.abs(b - (n - 1) / 2));
-    const debonded = new Set(byCenter.slice(0, (row.debondLength ?? 0) > 0 ? (row.debonded ?? 0) : 0));
+    const debonded = new Set(byCenter.slice(0, debondedIn(row)));
     for (let k = 0; k < n; k++) strandDots.push({ x: cx + (k - (n - 1) / 2) * pitch * s, y: Y(row.y), debonded: debonded.has(k) });
   }
   // Harped strands at midspan: a bundle at their harp-point height, in the web.

@@ -26,6 +26,8 @@ export type WingwallInputs = {
   fc: number; // ksi
   fy: number; // ksi
   bars: Bars; // horizontal bars, retained face
+  /** The other bars: vertical bars each face and horizontal bars on the front face (CDOT's #4 @ 12 in typically). */
+  otherBars?: Bars;
   cover: number; // in
   exposure: 1 | 2;
 };
@@ -50,6 +52,7 @@ export const WINGWALL_DEFAULTS: WingwallInputs = {
   fc: 4,
   fy: 60,
   bars: { bar: 8, spacing: 6 },
+  otherBars: { bar: 4, spacing: 12 },
   cover: 2,
   exposure: 2,
 };
@@ -97,6 +100,16 @@ export function designWingwall(i: WingwallInputs) {
   add({ id: "a-min", name: "Horizontal bars, minimum reinforcement", demand: flex.minRequired, capacity: flex.MR, unit: "kip·ft/ft", ref: "AASHTO 5.6.3.3" });
   add({ id: "a-crack", name: "Horizontal bars, crack control (spacing)", demand: i.bars.spacing, capacity: flex.sMax, unit: "in", ref: "AASHTO 5.6.7" });
   add({ id: "a-shear", name: "Shear at the abutment face", demand: Vu, capacity: VR, unit: "kip/ft", ref: "AASHTO 5.7.3.3 (β = 2)" });
+  // Shrinkage and temperature steel each face, each way (5.10.6): As ≥ 1.30 b h / (2 (b + h) fy), 0.11 to 0.60 in²/ft;
+  // spacing at most 12 in (walls over 18 in thick) or 3 h and 18 in. b the wall's least width along the bars (its height
+  // at the tip), h its thickness.
+  const bT = Math.max(1, Math.min(i.h, i.H)) * 12;
+  const AsTemp = Math.min(0.6, Math.max(0.11, (1.3 * bT * i.t) / (2 * (bT + i.t) * i.fy)));
+  const sTempMax = i.t > 18 ? 12 : Math.min(3 * i.t, 18);
+  const asOf = (b: Bars) => (BARS[b.bar].area * 12) / b.spacing;
+  const other = i.otherBars ?? { bar: 4, spacing: 12 };
+  add({ id: "temp-area", name: "Shrinkage and temperature steel, each face each way (the least of the bars)", demand: AsTemp, capacity: Math.min(asOf(i.bars), asOf(other)), unit: "in²/ft", ref: "AASHTO 5.10.6", note: `#${other.bar} @ ${other.spacing} in vertical each face and horizontal on the front face; #${i.bars.bar} @ ${i.bars.spacing} in horizontal on the retained face` });
+  add({ id: "temp-spacing", name: "Shrinkage and temperature steel, spacing", demand: Math.max(i.bars.spacing, other.spacing), capacity: sTempMax, unit: "in", ref: "AASHTO 5.10.6" });
 
   // --- Section B: what the abutment takes, about its centroidal axes --------------------------------
   const Askew = i.A / Math.cos((i.skew * Math.PI) / 180);

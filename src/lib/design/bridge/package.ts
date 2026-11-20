@@ -70,7 +70,7 @@ async function gather(design: { id: string; name: string; inputs: unknown }, org
     const t = takeoffFor(kind, inputs, settings ?? (inputs as { takeoff?: TakeoffSettings }).takeoff);
     if (!t) return [];
     if (full) tabulations.push({ label: title, lines: takeoffQuantityLines(kind, t, title, (inputs as { takeoff?: TakeoffSettings }).takeoff?.items ?? {}, inputs) });
-    return takeoffPayLines(kind, t, (inputs as { takeoff?: TakeoffSettings }).takeoff?.items ?? {}, inputs);
+    return takeoffPayLines(kind, t, (inputs as { takeoff?: TakeoffSettings }).takeoff?.items ?? {}, inputs, { split: true });
   };
 
   // The deck's length, back face to back face of the abutments, for the deck's quantities.

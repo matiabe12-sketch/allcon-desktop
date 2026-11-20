@@ -40,7 +40,13 @@ export type LiveEnvelope = {
 
 export type ContinuousBeam = ReturnType<typeof continuousBeam>;
 
-export function continuousBeam(spans: number[]) {
+/**
+ * A beam whose stiffness varies along it (a steel girder's plates) supplies its own support moments:
+ * each interior support's moment for a unit load at X, and for a unit uniform load on every span.
+ */
+export type NonprismaticSupports = { supportIL: (k: number, X: number) => number; uniformSupports: number[] };
+
+export function continuousBeam(spans: number[], custom?: NonprismaticSupports) {
   const n = spans.length;
   if (n < 1 || spans.some((L) => !(L > 0))) throw new DesignError("Every span needs a length.");
   const starts: number[] = [];
@@ -106,6 +112,7 @@ export function continuousBeam(spans: number[]) {
   }
   const supportAt = (k: number, X: number) => {
     if (k === 0 || k === n) return 0;
+    if (custom) return custom.supportIL(k, X);
     const p = locate(X);
     if (!p) return 0;
     const t = (p.a / spans[p.j]) * N;
@@ -141,7 +148,7 @@ export function continuousBeam(spans: number[]) {
 
   /** Moment, shear and support moments at x in span s from a uniform w (klf) on every span. */
   function uniformAll(s: number, x: number, w = 1) {
-    const Ms = supportMoments(spans.map((L) => ({ left: (w * L ** 3) / 24, right: (w * L ** 3) / 24 })));
+    const Ms = custom ? custom.uniformSupports.map((v) => v * w) : supportMoments(spans.map((L) => ({ left: (w * L ** 3) / 24, right: (w * L ** 3) / 24 })));
     const L = spans[s];
     const M = (w * x * (L - x)) / 2 + Ms[s] * (1 - x / L) + Ms[s + 1] * (x / L);
     const V = w * (L / 2 - x) + (Ms[s + 1] - Ms[s]) / L;

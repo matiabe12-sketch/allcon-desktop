@@ -1,4 +1,5 @@
 "use client";
+import { debondSets, type StrandRow } from "@/lib/design/girders/prestressed";
 
 import { useState } from "react";
 import { Check, ChevronDown, ChevronRight, ExternalLink, FileText } from "lucide-react";
@@ -26,7 +27,7 @@ export function showValue(input: string, v: unknown): string {
   if (v === null || v === undefined) return "—";
   if (input === "spans" && Array.isArray(v)) return `${v.map((x) => n(x as number)).join(" + ")} ft`;
   if (input === "strands" && Array.isArray(v))
-    return v.map((r: { y: number; count: number; debonded?: number; debondLength?: number }) => `${r.count} at ${n(r.y)} in${r.debonded ? ` (${r.debonded} debonded ${n(r.debondLength ?? 0)} ft)` : ""}`).join("; ");
+    return v.map((r: StrandRow) => `${r.count} at ${n(r.y)} in${debondSets(r).length ? ` (${debondSets(r).map((d) => `${d.count} debonded ${n(d.length)} ft`).join(", ")})` : ""}`).join("; ");
   if (input === "stirrupsFromEnd" && Array.isArray(v))
     return v.map((z: { length: number; bar: number; legs: number; spacing: number }) => `#${z.bar} × ${z.legs} at ${n(z.spacing)} in${z.length > 0 ? ` for ${n(z.length)} ft` : " to midspan"}`).join("; ");
   if (input === "harped" && typeof v === "object") {

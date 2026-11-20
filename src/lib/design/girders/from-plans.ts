@@ -16,7 +16,7 @@ export type FromPlans = { drawingSet: string | null; values: PlanValue[]; findin
 const pos = z.number().positive();
 const nonneg = z.number().min(0);
 const bar = z.number().int().min(3).max(11);
-const row = z.object({ y: pos, count: z.number().int().positive(), debonded: z.number().int().min(0).optional(), debondLength: nonneg.optional() });
+const row = z.object({ y: pos, count: z.number().int().positive(), debonded: z.number().int().min(0).optional(), debondLength: nonneg.optional(), debonded2: z.number().int().min(0).optional(), debondLength2: nonneg.optional(), debonded3: z.number().int().min(0).optional(), debondLength3: nonneg.optional() });
 const zone = z.object({ length: nonneg, bar, legs: z.number().int().positive(), spacing: pos });
 
 /** The inputs the plans can give: label, group, and their schema. "spans" and "stirrupsFromEnd" are converted. */

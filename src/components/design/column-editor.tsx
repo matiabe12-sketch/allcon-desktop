@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { listPierCapDesigns, pierCapLink } from "@/app/actions/design";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { designColumn, type ColumnInputs, type ColumnLink } from "@/lib/design/piers/column";
+import { designColumn, hingeLegs, type ColumnInputs, type ColumnLink } from "@/lib/design/piers/column";
 import { DesignError } from "@/lib/design/walls/cip";
 import { ColumnSketch } from "./column-sketch";
 import { ChecksBanner, ChecksTable, Choice, DesignErrorCard, DesignHeader, Field, fmt, KeyValues, Section, Toggle } from "./design-kit";
@@ -168,8 +168,8 @@ export function ColumnEditor({ design, projects }: { design: { id: string; name:
               <Field label={inputs.transverse === "spiral" ? "Pitch" : "Spacing"} unit="in" value={inputs.tieSpacing} onChange={set("tieSpacing")} step={0.5} />
               {inputs.transverse === "ties" && inputs.shape !== "round" && (
                 <>
-                  <Field label="Tie legs across the bridge" value={inputs.legsT} onChange={(v) => set("legsT")(Math.max(2, Math.round(v)))} hint="Legs resisting shear across; beyond 2 are cross-ties, restraining the faces along the bridge" />
-                  <Field label="Tie legs along the bridge" value={inputs.legsL} onChange={(v) => set("legsL")(Math.max(2, Math.round(v)))} hint="Restraining the faces across the bridge: restrained bars no more than 24 in apart (5.10.4.3)" />
+                  <Field label={inputs.seismic.hinge ? "Tie legs across the bridge (between the hinge regions)" : "Tie legs across the bridge"} value={inputs.legsT} onChange={(v) => set("legsT")(Math.max(2, Math.round(v)))} hint="Legs resisting shear across; beyond 2 are cross-ties, restraining the faces along the bridge" />
+                  <Field label={inputs.seismic.hinge ? "Tie legs along the bridge (between the hinge regions)" : "Tie legs along the bridge"} value={inputs.legsL} onChange={(v) => set("legsL")(Math.max(2, Math.round(v)))} hint="Restraining the faces across the bridge: restrained bars no more than 24 in apart (5.10.4.3)" />
                 </>
               )}
               <Field label="f'c" unit="ksi" value={inputs.fc} onChange={set("fc")} step={0.5} />
@@ -207,6 +207,12 @@ export function ColumnEditor({ design, projects }: { design: { id: string; name:
             <Section title="Seismic Zone 1 (5.11.2)" open={inputs.seismic.hinge}>
               <Toggle label="SD1 ≥ 0.10: confine the hinge regions" value={inputs.seismic.hinge} onChange={(v) => setInputs((s) => ({ ...s, seismic: { ...s.seismic, hinge: v } }))} />
               {inputs.seismic.hinge && <Field label="Spacing in the hinge regions" unit="in" value={inputs.seismic.spacing} onChange={(v) => setInputs((s) => ({ ...s, seismic: { ...s.seismic, spacing: v } }))} step={0.5} hint="At most a quarter of the least dimension or 4 in (5.11.4.1.5)" />}
+              {inputs.seismic.hinge && inputs.transverse === "ties" && inputs.shape !== "round" && (
+                <>
+                  <Field label="Tie legs across the bridge, hinge regions" value={hingeLegs(inputs).T} onChange={(v) => setInputs((s) => ({ ...s, seismic: { ...s.seismic, legsT: Math.max(2, Math.round(v)) } }))} hint="Ash by Eqs. 5.11.4.1.4-2 and -3; never fewer than the legs between the hinge regions" />
+                  <Field label="Tie legs along the bridge, hinge regions" value={hingeLegs(inputs).L} onChange={(v) => setInputs((s) => ({ ...s, seismic: { ...s.seismic, legsL: Math.max(2, Math.round(v)) } }))} hint="The legs under Reinforcement hold between the hinge regions" />
+                </>
+              )}
             </Section>
             <Section title="Vehicle collision (3.6.5.1)" open={coll.enabled}>
               <Toggle label="Check the 600 kip collision (Extreme Event II)" value={coll.enabled} onChange={(v) => setColl({ enabled: v })} />

@@ -67,32 +67,73 @@ export function FoundationSketch({ kind, inputs: i }: { kind: FoundationKind; in
     if (kind === "pile-foundation" || kind === "abutment") {
       const isAb = kind === "abutment";
       const integral = isAb && String(i.type).startsWith("integral");
-      const nB = isAb ? (integral ? 1 : i.foundation === "piles" ? 2 : 0) : n(i.nB, 3);
-      const sp = isAb ? Math.max(1, n(i.rowBack, 12) - n(i.rowFront, 1)) : n(i.sB, 4.5);
-      const capW = isAb ? (integral ? n(i.capWidth, 3) : n(i.toe, 4) + n(i.stemT, 3) + n(i.heel, 7)) : (nB - 1) * sp + 2 * n(i.edge, 2);
+      // Micropiles: a pile foundation's, an integral abutment's rows, or the rows under a seat or semi-integral footing.
+      const micro = isAb ? i.type === "integral-micropiles" || (!integral && i.foundation === "micropiles") : i.pileType === "micropile";
+      const mp = (i.micropile ?? {}) as { casingOD?: number; holeD?: number; cased?: number; bond?: number };
+      const od = n(mp.casingOD, 7);
+      const hole = n(mp.holeD, 8);
+      const cased = n(mp.cased, 0);
+      const bond = n(mp.bond, 25);
+      const capW = isAb ? (integral ? n(i.capWidth, 3) : n(i.toe, 4) + n(i.stemT, 3) + n(i.heel, 7)) : (n(i.nB, 3) - 1) * n(i.sB, 4.5) + 2 * n(i.edge, 2);
       const capH = isAb ? (integral ? n(i.capDepth, 4) : n(i.footT, 3)) : n(i.capT, 48) / 12;
-      const L = n(isAb ? (i.type === "integral-shafts" ? i.shaftLength : i.pileLength) : i.length, 35);
+      const L = micro ? cased + bond : n(isAb ? (i.type === "integral-shafts" ? i.shaftLength : i.pileLength) : i.length, 35);
       const s = Math.min(380 / Math.max(capW, 8), 170 / (L + capH + (isAb ? n(i.stemH, 0) : 0) + 4));
       const cx = VW / 2;
+      const left = cx - (capW * s) / 2;
       const top = 30 + (isAb && !integral ? (n(i.stemH, 10) + n(i.backwallH, 5)) * s : isAb ? (n(i.totalDepth, 10) - capH) * s : 10);
       const capBot = top + capH * s;
-      const piles = nB ? Array.from({ length: nB }, (_, k) => (isAb && !integral ? cx - (capW * s) / 2 + (k === 0 ? n(i.rowFront, 1.5) : n(i.rowBack, 12)) * s : cx + (k - (nB - 1) / 2) * sp * s)) : [];
+      // Each pile in the section: its position across (ft from the cap's left edge, the toe toward the bridge) and its
+      // batter (deg; + leans toward the bridge, on the left).
+      const rad = (d: number) => (d * Math.PI) / 180;
+      const rowsAb = (): { x: number; batter: number }[] => {
+        if (i.type === "integral-micropiles") {
+          const rows = Math.max(1, Math.round(n(i.mpRows, 2)));
+          const sp = n(i.mpRowSpacing, 5);
+          return Array.from({ length: rows }, (_, r) => ({ x: capW / 2 - ((rows - 1) * sp) / 2 + r * sp, batter: -(r === 0 ? n(i.mpBatterFront) : n(i.mpBatterBack)) }));
+        }
+        if (integral) return [{ x: capW / 2, batter: 0 }];
+        if (i.foundation === "micropiles") return ((i.mpRowList ?? []) as { x: number; batter: number }[]).map((r) => ({ x: n(r.x), batter: n(r.batter) }));
+        if (i.foundation === "piles") return [{ x: n(i.rowFront, 1.5), batter: 0 }, { x: n(i.rowBack, 12), batter: 0 }];
+        return [];
+      };
+      const piles = isAb ? rowsAb() : Array.from({ length: n(i.nB, 3) }, (_, k) => ({ x: n(i.edge, 2) + k * n(i.sB, 4.5), batter: 0 }));
+      const count = isAb ? 0 : (() => {
+        const a = n(i.nB, 3);
+        const b = n(i.nL, 3);
+        return i.perimeter && a > 2 && b > 2 ? 2 * a + 2 * b - 4 : a * b;
+      })();
+      const label = isAb
+        ? `${String(i.type).replace("-", " ")}${i.type === "integral-micropiles" ? `, ${n(i.nPiles)} micropiles in each of ${piles.length} rows` : integral ? `, ${n(i.nPiles)} ${i.type === "integral-shafts" ? "shafts" : `${i.section} piles`} in one row` : micro ? `, ${piles.length} rows of ${n(i.mpPerRow, 1)} micropiles` : ""}${micro ? ` (${od} in, ${cased} ft cased + ${bond} ft bonded)` : ""}`
+        : micro
+          ? `${count} × ${od} in micropiles, ${cased} ft cased + ${bond} ft bonded (${hole} in hole)`
+          : `${count} × ${i.section}, ${L} ft`;
       return (
         <g>
-          <Layers x0={20} x1={VW - 20} top={capBot} scale={s} layers={soil} from={isAb && i.type === "integral-piles" ? 0 : 0} />
-          {isAb && integral && <rect x={cx - (capW * s) / 2} y={30} width={capW * s} height={top - 30} fill={CONC} stroke={LINE} />}
-          {isAb && !integral && <rect x={cx - (capW * s) / 2 + n(i.toe, 4) * s} y={30} width={n(i.stemT, 3) * s} height={top - 30} fill={CONC} stroke={LINE} />}
-          <rect x={cx - (capW * s) / 2} y={top} width={capW * s} height={capH * s} fill={CONC} stroke={LINE} />
-          {isAb && i.type === "integral-piles" && n(i.prebore) > 0 && piles.map((x, k) => <rect key={k} x={x - (n(i.holeD, 24) / 24) * s} y={capBot} width={(n(i.holeD, 24) / 12) * s} height={n(i.prebore) * s} fill="#fef3c7" stroke="#d97706" strokeDasharray="3 2" />)}
-          {piles.map((x, k) =>
-            isAb && i.type === "integral-shafts" ? (
-              <rect key={k} x={x - (n(i.shaftD, 36) / 24) * s} y={capBot} width={(n(i.shaftD, 36) / 12) * s} height={L * s} fill={CONC} stroke={LINE} />
-            ) : (
-              <line key={k} x1={x} y1={capBot - 0.5 * s} x2={x} y2={capBot + L * s} stroke={STEEL} strokeWidth="2.5" />
-            ),
-          )}
+          <Layers x0={20} x1={VW - 20} top={capBot} scale={s} layers={soil} from={0} />
+          {isAb && integral && <rect x={left} y={30} width={capW * s} height={top - 30} fill={CONC} stroke={LINE} />}
+          {isAb && !integral && <rect x={left + n(i.toe, 4) * s} y={30} width={n(i.stemT, 3) * s} height={top - 30} fill={CONC} stroke={LINE} />}
+          <rect x={left} y={top} width={capW * s} height={capH * s} fill={CONC} stroke={LINE} />
+          {isAb && i.type === "integral-piles" && n(i.prebore) > 0 && piles.map((p, k) => <rect key={k} x={left + p.x * s - (n(i.holeD, 24) / 24) * s} y={capBot} width={(n(i.holeD, 24) / 12) * s} height={n(i.prebore) * s} fill="#fef3c7" stroke="#d97706" strokeDasharray="3 2" />)}
+          {piles.map((p, k) => {
+            const x = left + p.x * s;
+            const t = Math.tan(rad(p.batter));
+            if (isAb && i.type === "integral-shafts") return <rect key={k} x={x - (n(i.shaftD, 36) / 24) * s} y={capBot} width={(n(i.shaftD, 36) / 12) * s} height={L * s} fill={CONC} stroke={LINE} />;
+            if (!micro) return <line key={k} x1={x} y1={capBot - 0.5 * s} x2={x - L * s * t} y2={capBot + L * s} stroke={STEEL} strokeWidth="2.5" />;
+            // A micropile: the casing through its cased length, then the grouted bond zone (the hole's width).
+            const yc = capBot + cased * s;
+            const xc = x - cased * s * t;
+            const w = Math.max(2, (hole / 12) * s);
+            const xe = x - L * s * t;
+            return (
+              <g key={k}>
+                {cased > 0 && <line x1={x} y1={capBot - 0.5 * s} x2={xc} y2={yc} stroke={STEEL} strokeWidth="2.5" />}
+                <polygon points={`${xc - w / 2},${yc} ${xc + w / 2},${yc} ${xe + w / 2},${capBot + L * s} ${xe - w / 2},${capBot + L * s}`} fill="#e2e8f0" stroke="#64748b" strokeWidth="0.75" />
+                <line x1={cased > 0 ? xc : x} y1={cased > 0 ? yc : capBot - 0.5 * s} x2={xe} y2={capBot + L * s} stroke={STEEL} strokeWidth="1.2" />
+              </g>
+            );
+          })}
           <text x={cx} y={20} textAnchor="middle" fontSize="10" fill={LINE}>
-            {isAb ? `${String(i.type).replace("-", " ")}${integral ? `, ${n(i.nPiles)} ${i.type === "integral-shafts" ? "shafts" : `${i.section} piles`} in one row` : ""}` : `${n(i.nB) * n(i.nL)} × ${i.section}, ${L} ft`}
+            {label}
           </text>
         </g>
       );

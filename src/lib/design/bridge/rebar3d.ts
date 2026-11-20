@@ -3,7 +3,7 @@ import type { IfcElement, V3 } from "./ifc";
 import type { GirderInputs } from "../girders/prestressed";
 import { girderShape } from "../girders/prestressed";
 import { strandLayout, strandY } from "../girders/strand-layout";
-import type { ColumnInputs } from "../piers/column";
+import { hingeLegs, type ColumnInputs } from "../piers/column";
 import { barPositions } from "../piers/column-section";
 import type { Connection } from "../piers/column-shaft";
 import { hookLeg } from "../rebar/bars";
@@ -117,6 +117,10 @@ export function girderBars(host: number, e: IfcElement, i: GirderInputs, span: {
   const H = shape.depth;
   const box = shape.family === "Prestressed box";
   const stations = stirrupStations(i, Lg);
+  if (shape.family === "CDOT Colorado Bulb Tee") {
+    out.push(...cbtBars(host, i, shape, stations, Lg, layout));
+    return out;
+  }
   const bySize = new Map<string, { bar: number; legs: number; zs: number[] }>();
   for (const s of stations) {
     const k = `${s.bar}:${s.legs}`;
@@ -134,6 +138,104 @@ export function girderBars(host: number, e: IfcElement, i: GirderInputs, span: {
     const leg = (side: 1 | -1): V3[] => (hook > 0 ? [p3(ft(side * (xLeg + hook)), ft(yTop), 0), p3(ft(side * xLeg), ft(yTop), 0)] : [p3(ft(side * xLeg), ft(yTop), 0)]);
     const path: V3[] = [...leg(-1), p3(ft(-xLeg), ft(yBot), 0), p3(ft(xLeg), ft(yBot), 0), ...leg(1).reverse()];
     out.push({ host, frame: "host", mark: "", size: g.bar, dia: db, role: "stirrup", label: `#${g.bar} stirrups (${g.legs} legs)`, path, at: g.zs.map((z) => p3(0, 0, z)), placed: "design" });
+  }
+  return out;
+}
+
+/** Welded wire's diameters (in): D20, D11, D8 deformed wires and the W5 spiral. */
+const WIRE = { D20: 0.505, D11: 0.374, D8: 0.319, W5: 0.252 };
+
+/**
+ * A Colorado Bulb Tee's own steel, as CDOT details it (B-618-CBT1; the girder sheets' Girder Elevation, Typical Girder
+ * Section and Rebar Detail), in the girder's frame (x across, y up from its bottom, z along from its end; inches here,
+ * feet out). At each stirrup place: a #4 hairpin (1½ in radius) projecting 7 in above the girder, its legs D + 5½ in
+ * long for the first 20 at each end and 2'-0" elsewhere; a D20 wire up each face of the web (D − 3 in), anchored by D8
+ * wire pairs below the primary steel and under the top flange; a D20 across the top flange, at the stirrups or at 1'-0"
+ * where they're closer. Along the top flange: 2-D20 at each tip and a continuous D20 each side. In the bottom flange,
+ * the #3 (D11) confinement shape with the stirrups for the confinement length (1.5D) from each end. At each end: 2 #6
+ * C-bars (D − 4 in, 2'-3" legs) and a W5 spiral (5 in, 4 in pitch) round the harped strands.
+ */
+function cbtBars(host: number, i: GirderInputs, shape: ReturnType<typeof girderShape>, stations: { z: number; bar: number }[], Lg: number, layout: ReturnType<typeof strandLayout>): BarSet3D[] {
+  const out: BarSet3D[] = [];
+  const H = shape.depth;
+  const p = shape.profile; // [y, half-width] from the bottom
+  const cov = 1.5;
+  const half = (y: number) => {
+    for (let k = 0; k < p.length - 1; k++) if (y >= p[k][0] && y <= p[k + 1][0]) return p[k][1] + ((p[k + 1][1] - p[k][1]) * (y - p[k][0])) / Math.max(1e-9, p[k + 1][0] - p[k][0]);
+    return p[p.length - 1][1];
+  };
+  const set = (size: number, dia: number, role: BarRole, label: string, path: V3[], at: V3[]): BarSet3D => ({ host, frame: "host", mark: "", size, dia, role, label, path, at, placed: "design" });
+  const P = (x: number, y: number, z = 0) => p3(ft(x), ft(y), ft(z));
+  const zs = stations.map((s) => s.z);
+  const web = shape.web / 2;
+  const tf = H - p[p.length - 2][0]; // the top flange's edge thickness
+  const bfEdge = p[1][0]; // the bottom flange's edge height
+  const bfTop = p[2][0]; // where its slope meets the web's fillet
+  // #4 hairpins: the first 20 at each end full depth, the rest 2'-0".
+  const top = H + 7;
+  const hp = 1.5;
+  const near = new Set([...zs.slice(0, 20), ...zs.slice(-20)]);
+  const bend = (y0: number): V3[] => {
+    const arc = Array.from({ length: 7 }, (_, k) => {
+      const t = Math.PI - (Math.PI * k) / 6;
+      return P(hp * Math.cos(t), top - hp + hp * Math.sin(t));
+    });
+    return [P(-hp, y0), ...arc, P(hp, y0)];
+  };
+  const db4 = barDiameter(4);
+  const full = zs.filter((z) => near.has(z));
+  const short = zs.filter((z) => !near.has(z));
+  if (full.length) out.push(set(4, db4, "stirrup", "#4 hairpins, D + 5½ in (the first 20 at each end)", bend(top - (H + 5.5)), full.map((z) => p3(0, 0, z))));
+  if (short.length) out.push(set(4, db4, "stirrup", "#4 hairpins, 2'-0\"", bend(top - 24), short.map((z) => p3(0, 0, z))));
+  // D20 web wires each face, D − 3 in; D8 anchor wire pairs along the girder at their feet and heads.
+  const xw = web - cov - WIRE.D20 / 2;
+  for (const s of [-1, 1]) out.push(set(4, WIRE.D20, "stirrup", "D20 wires, each face of the web (D − 3 in)", [P(s * xw, cov), P(s * xw, H - cov)], zs.map((z) => p3(0, 0, z))));
+  const xa = xw - WIRE.D20 / 2 - WIRE.D8 / 2;
+  for (const y of [cov + WIRE.D8 / 2, H - tf - 1])
+    out.push(set(3, WIRE.D8, "main", "D8 anchor wire pairs", [P(0, y, 1), P(0, y, Lg * 12 - 1)], [-1, 1].map((s) => P(s * xa, 0))));
+  // Across the top flange: D20 at the stirrups, or at 1'-0" where they're closer.
+  const yT = H - cov - WIRE.D20 / 2;
+  const across: number[] = [];
+  for (const z of zs) if (!across.length || z - across[across.length - 1] >= 1 - 1e-6) across.push(z);
+  const xt = shape.topWidth / 2 - cov;
+  out.push(set(4, WIRE.D20, "main", "D20 across the top flange", [P(-xt, yT), P(xt, yT)], across.map((z) => p3(0, 0, z))));
+  // Along the top flange, under them: 2-D20 at each tip, a continuous D20 each side (the sheet's places).
+  const yL = yT - WIRE.D20;
+  const tips = [xt - WIRE.D20 / 2, xt - 2.5];
+  const cont = [9.1, 15.3].filter((x) => x < tips[1] - 2);
+  out.push(set(4, WIRE.D20, "main", "2-D20 (or #6) at each flange tip", [P(0, yL, 1), P(0, yL, Lg * 12 - 1)], tips.flatMap((x) => [P(-x, 0), P(x, 0)])));
+  if (cont.length) out.push(set(4, WIRE.D20, "main", "D20 continuous, top flange", [P(0, yL, 1), P(0, yL, Lg * 12 - 1)], cont.flatMap((x) => [P(-x, 0), P(x, 0)])));
+  // Confinement in the bottom flange: #3 (or D11) with the stirrups, over its length from each end.
+  const cf = i.confinement ?? { bar: 3, spacing: 6, length: 12 };
+  const inConf = zs.filter((z) => z <= cf.length + 1e-6 || z >= Lg - cf.length - 1e-6);
+  if (inConf.length) {
+    const d3 = barDiameter(cf.bar);
+    const yb = cov + d3 / 2;
+    const hw = half(0) - cov - d3 / 2;
+    const ye = bfEdge - cov;
+    const yt = bfTop - cov;
+    const xi = 3.75; // its top, 7½ in wide
+    const shapePts: V3[] = [P(-hw, ye - 2 * d3), P(-hw, yb), P(hw, yb), P(hw, ye), P(xi, yt), P(-xi, yt), P(-hw, ye)];
+    out.push(set(cf.bar, d3, "stirrup", `#${cf.bar} (D11) confinement in the bottom flange, ${cf.length} ft from each end`, shapePts, inConf.map((z) => p3(0, 0, z))));
+  }
+  // At each end: 2 #6 C-bars, D − 4 in, legs 2'-3" into the girder, one each side of the web, 2 in from the end.
+  const d6 = barDiameter(6);
+  const x6 = web - cov - WIRE.D20 - d6 / 2;
+  for (const [z0, dir] of [[2, 1], [Lg * 12 - 2, -1]] as const) {
+    const y0 = (H - (H - 4)) / 2;
+    const c: V3[] = [P(0, y0, z0 + dir * 27), P(0, y0, z0), P(0, H - y0, z0), P(0, H - y0, z0 + dir * 27)];
+    out.push(set(6, d6, "main", "#6 end bars (tot 2 each end), D − 4 in, 2'-3\" legs", c, [-1, 1].map((s) => P(s * x6, 0))));
+  }
+  // The W5 spiral round the harped strands at each end: 5 in, 4 in pitch, from below the lowest to above the highest.
+  const harped = layout.strands.filter((s) => s.kind === "harped");
+  if (harped.length) {
+    const ys = harped.map((s) => strandY(s, layout, 0));
+    const [y0, y1] = [Math.max(cov, Math.min(...ys) - 2), Math.min(H - cov, Math.max(...ys) + 2)];
+    const r = (5 - WIRE.W5) / 2;
+    for (const zc of [3.5, Lg * 12 - 3.5]) {
+      const hx = helix(ft(r), ft(y0), ft(y1), ft(4)).map(([x, y, z]) => p3(x, z, y + ft(zc)));
+      out.push(set(2, WIRE.W5, "spiral", "W5 spiral (5 in, 4 in pitch) round the harped strands", hx, [p3(0, 0, 0)]));
+    }
   }
   return out;
 }
@@ -219,6 +321,7 @@ export function columnBars(host: number, e: IfcElement, i: ColumnInputs, capDept
   const lap = conn ? (conn.projecting === "column" ? conn.lap : 0) : 40 * db;
   const top = H + Math.max(0, capDepth - 0.5);
   const leg = ft(hookLeg(i.bar).leg);
+  const hl = hingeLegs(i);
   const xy = (p: [number, number]) => (swap ? [ft(p[1]), ft(p[0])] : [ft(p[0]), ft(p[1])]) as [number, number];
   // A flared column: each bar runs up its face's flare (its offset across the bridge scaled from the base's to the
   // top's), straight into the cap; the ties widen with the column, each at its height.
@@ -230,9 +333,9 @@ export function columnBars(host: number, e: IfcElement, i: ColumnInputs, capDept
       out.push({ host, frame: "host", mark: "", size: i.bar, dia: db, role: "main", label: `#${i.bar} column bars (along the flare)`, path: [p3(x, y, -ft(lap)), p3(x, y, 0), p3(x * k, y, H), p3(x * k, y, top), p3(x * k - side * leg, y, top)], at: [p3(0, 0, 0)], placed: "design" });
     }
     const ay = ft((W - 2 * i.cover - dt) / 2);
-    const nT = Math.max(0, Math.round(i.legsT) - 2);
-    const nL = Math.max(0, Math.round(i.legsL) - 2);
-    for (const z of zs0()) {
+    for (const { z, hinge } of levels()) {
+      const nT = Math.max(0, Math.round(hinge ? hl.T : i.legsT) - 2);
+      const nL = Math.max(0, Math.round(hinge ? hl.L : i.legsL) - 2);
       const T = i.T + ((i.Ttop! - i.T) * z) / H;
       const ax = ft((T - 2 * i.cover - dt) / 2);
       out.push({ host, frame: "host", mark: "", size: i.tieBar, dia: dt, role: "stirrup", label: `#${i.tieBar} ties (widening)`, path: [p3(-ax, -ay, z), p3(ax, -ay, z), p3(ax, ay, z), p3(-ax, ay, z), p3(-ax, -ay + ft(4), z)], at: [p3(0, 0, 0)], placed: "design" });
@@ -241,10 +344,22 @@ export function columnBars(host: number, e: IfcElement, i: ColumnInputs, capDept
     }
     return out;
   }
-  function zs0() {
-    const s = ft(i.tieSpacing);
-    const list: number[] = [];
-    for (let z = s / 2; z <= H; z += s) list.push(z);
+  // The ties' levels: in Seismic Zone 1 with SD1 ≥ 0.10 the hinge regions at their own spacing and legs, from the base
+  // (over the lap) and under the cap the larger of the largest dimension, a sixth of the height and 18 in (5.11.4.1.3).
+  function levels() {
+    const list: { z: number; hinge: boolean }[] = [];
+    if (!i.seismic.hinge) {
+      for (let z = ft(i.tieSpacing) / 2; z <= H; z += ft(i.tieSpacing)) list.push({ z, hinge: false });
+      return list;
+    }
+    const Lh = Math.max(ft(Math.max(i.T, W)), H / 6, 1.5);
+    const bottom = Math.min(H, Math.max(Lh, conn ? 0 : ft(lap)));
+    const top = Math.max(bottom, H - Lh);
+    const sh = ft(i.seismic.spacing);
+    let z = sh / 2;
+    for (; z <= bottom; z += sh) list.push({ z, hinge: true });
+    for (; z < top; z += ft(i.tieSpacing)) list.push({ z, hinge: false });
+    for (; z <= H; z += sh) list.push({ z, hinge: true });
     return list;
   }
   // Hooks turned in toward the column's middle, along the pier line.
@@ -255,8 +370,8 @@ export function columnBars(host: number, e: IfcElement, i: ColumnInputs, capDept
   }
   // Transverse: a spiral (two interlocking in an oblong column), hoops, or closed ties with cross-ties.
   const spacing = ft(i.tieSpacing);
-  const zs: number[] = [];
-  for (let z = spacing / 2; z <= H; z += spacing) zs.push(z);
+  const lv = levels();
+  const zs = lv.map((l) => l.z);
   if (i.transverse === "spiral") {
     const r = ft((W - 2 * i.cover - dt) / 2);
     const centers = i.shape === "round" ? [0] : [-ft((i.T - W) / 2), ft((i.T - W) / 2)];
@@ -268,17 +383,20 @@ export function columnBars(host: number, e: IfcElement, i: ColumnInputs, capDept
     const [ax, ay] = swap ? [c, a] : [a, c];
     out.push({ host, frame: "host", mark: "", size: i.tieBar, dia: dt, role: "stirrup", label: `#${i.tieBar} ties`, path: [p3(-ax, -ay, 0), p3(ax, -ay, 0), p3(ax, ay, 0), p3(-ax, ay, 0), p3(-ax, -ay + ft(4), 0)], at: zs.map((z) => p3(0, 0, z)), placed: "design" });
     // Cross-ties: the legs beyond the tie's two, evenly between, each way.
-    const cross = (n: number, alongX: boolean) => {
-      for (let k = 1; k <= n; k++) {
+    const cross = (n: number, alongX: boolean, at: number[]) => {
+      for (let k = 1; k <= n && at.length; k++) {
         const t = -1 + (2 * k) / (n + 1);
         const path = alongX ? [p3(-ax, t * ay, 0), p3(ax, t * ay, 0)] : [p3(t * ax, -ay, 0), p3(t * ax, ay, 0)];
-        out.push({ host, frame: "host", mark: "", size: i.tieBar, dia: dt, role: "stirrup", label: `#${i.tieBar} cross-ties`, path, at: zs.map((z) => p3(0, 0, z)), placed: "design" });
+        out.push({ host, frame: "host", mark: "", size: i.tieBar, dia: dt, role: "stirrup", label: `#${i.tieBar} cross-ties`, path, at: at.map((z) => p3(0, 0, z)), placed: "design" });
       }
     };
-    const [nT, nL] = [Math.max(0, Math.round(i.legsT) - 2), Math.max(0, Math.round(i.legsL) - 2)];
-    // Legs across the bridge run along T (the pier line).
-    cross(swap ? nL : nT, !swap);
-    cross(swap ? nT : nL, swap);
+    // Each level its own legs: the hinge regions' and the column's between them. Legs across the bridge run along T (the pier line).
+    for (const hinge of [false, true]) {
+      const at = lv.filter((l) => l.hinge === hinge).map((l) => l.z);
+      const [nT, nL] = [Math.max(0, Math.round(hinge ? hl.T : i.legsT) - 2), Math.max(0, Math.round(hinge ? hl.L : i.legsL) - 2)];
+      cross(swap ? nL : nT, !swap, at);
+      cross(swap ? nT : nL, swap, at);
+    }
   }
   return out;
 }

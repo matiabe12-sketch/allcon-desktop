@@ -63,6 +63,8 @@ export const CDOT_ITEMS: PayItem[] = [
   item("503-00310", "Crosshole Sonic Logging Testing", "EACH"),
   ...[6, 7, 8].map((d) => item(`503-010${d}0`, `Micropile (${d} Inch)`, "LF")),
   item("503-01100", "Micropile (10 Inch)", "LF"),
+  item("503-01120", "Micropile (12 Inch)", "LF"),
+  item("503-02000", "Verification Test Pile", "EACH"),
   // 420 Geotextiles, 506 Riprap
   item("420-00102", "Geotextile (Erosion Control) (Class 1)", "SY"),
   item("420-00112", "Geotextile (Drainage) (Class 1)", "SY"),
@@ -80,6 +82,8 @@ export const CDOT_ITEMS: PayItem[] = [
   item("512-00118", "Bearing Device (Special)", "EACH"),
   // 515 Waterproofing
   item("515-00120", "Waterproofing (Membrane)", "SY"),
+  item("403-09210", "Stone Matrix Asphalt", "TON"),
+  item("601-25730", "Precast Concrete Deck Panel (3 Inch)", "SY"),
   // 518 Joints
   item("518-01002", "Bridge Expansion Device (0-2 Inch)", "LF"),
   item("518-01004", "Bridge Expansion Device (0-4 Inch)", "LF"),
@@ -118,7 +122,7 @@ export const CDOT_ITEMS: PayItem[] = [
 export const payItem = (code: string) => CDOT_ITEMS.find((p) => p.code === code) ?? null;
 
 /** What a quantity is, for choosing its pay item. */
-export type QuantityRole = "concrete" | "rebar" | "excavation" | "backfill" | "refill" | "bedding" | "girder" | "bearing" | "joint" | "waterproofing" | "shaft" | "facing" | "soil-reinforcement" | "rail" | "removal" | "sealant" | "pile" | "pile-tip" | "prebore" | "testing" | "micropile";
+export type QuantityRole = "concrete" | "rebar" | "excavation" | "backfill" | "refill" | "bedding" | "girder" | "bearing" | "joint" | "waterproofing" | "shaft" | "facing" | "soil-reinforcement" | "rail" | "removal" | "sealant" | "pile" | "pile-tip" | "prebore" | "testing" | "micropile" | "asphalt" | "panels";
 
 /**
  * Each tool's quantities and the pay items each may go to (first: the default). Defaults follow
@@ -137,19 +141,19 @@ export const TOOL_PAY_ITEMS: Record<string, Partial<Record<QuantityRole, string[
   },
   "box-culvert": { concrete: ["601-03030", "601-01030"], rebar: ["602-00000", "602-00020"], waterproofing: ["515-00120"], excavation: ["206-00000"], backfill: ["206-00100", "206-00200", "206-00065"], bedding: ["206-01000"], removal: ["202-00495"] },
   "cip-cantilever-wall": { concrete: ["601-03050", "601-03055", "601-01050"], rebar: ["602-00000", "602-00020"], excavation: ["206-00000"], backfill: ["206-00100", "206-00200"] },
-  "cantilever-wingwall": { concrete: ["601-03040", "601-03050"], rebar: ["602-00020", "602-00000"] },
+  "cantilever-wingwall": { concrete: ["601-03056", "601-03040", "601-03050"], rebar: ["602-00020", "602-00000"] },
   "mse-wall": { facing: ["504-04420", "504-04410", "504-04430"], "soil-reinforcement": ["206-00360"], backfill: ["206-00100", "206-00200"], excavation: ["206-00000"], concrete: ["601-01000"], rebar: ["602-00000"] },
   "deck-slab": { concrete: ["601-03056", "601-03040", "601-04100", "601-05001"], rebar: ["602-00020", "602-00000"], waterproofing: ["515-00120"], rail: ["606-10900", "606-10905", "606-11035", "606-11037", "606-11005"] },
-  "lrfd-girder-check": { concrete: ["601-03056", "601-03040"], rebar: ["602-00020", "602-00000"], waterproofing: ["515-00120"], rail: ["606-10900", "606-10905", "606-11035", "606-11037", "606-11005"], girder: ["618-01154", "618-01992", "618-01994", "618-01995", "618-01137", "618-01145", "618-01163", "618-01172", "618-01181", "618-01190", "618-00142", "618-00154", "618-00163", "618-00172", "618-00184"] },
+  "lrfd-girder-check": { concrete: ["601-03056", "601-03040"], rebar: ["602-00020", "602-00000"], waterproofing: ["515-00120"], asphalt: ["403-09210"], panels: ["601-25730"], rail: ["606-10900", "606-10905", "606-11035", "606-11037", "606-11005"], girder: ["618-01154", "618-01992", "618-01994", "618-01995", "618-01137", "618-01145", "618-01163", "618-01172", "618-01181", "618-01190", "618-00142", "618-00154", "618-00163", "618-00172", "618-00184"] },
   "pier-column": { concrete: ["601-03040", "601-03041", "601-03000"], rebar: ["602-00020", "602-00000", "602-00010", "602-00011", "602-00025"], excavation: ["206-00000"], backfill: ["206-00200", "206-00100"] },
   "elastomeric-bearing": { bearing: ["512-00101", "512-00102", "512-00103", "512-00114", "512-00115", "512-00118"] },
   "ptfe-bearing": { bearing: ["512-00118", "512-00103", "512-00114", "512-00115"] },
   "spread-footing": { concrete: ["601-03040", "601-03000"], rebar: ["602-00000", "602-00020"], excavation: ["206-00000"], backfill: ["206-00100", "206-00200"] },
-  "pile-foundation": { concrete: ["601-03040", "601-03000"], rebar: ["602-00000", "602-00020"], pile: ["502-11253", "502-11274", "502-11489", "502-10836", "502-11057", "502-11263", "502-11284", "502-11473", "502-14102", "502-14117"], "pile-tip": ["502-00460"], micropile: ["503-01100", "503-01070", "503-01060", "503-01080"], excavation: ["206-00000"], backfill: ["206-00100", "206-00200"] },
+  "pile-foundation": { concrete: ["601-03040", "601-03000"], rebar: ["602-00000", "602-00020"], pile: ["502-11253", "502-11274", "502-11489", "502-10836", "502-11057", "502-11263", "502-11284", "502-11473", "502-14102", "502-14117"], "pile-tip": ["502-00460"], micropile: ["503-01100", "503-01070", "503-01060", "503-01080", "503-01120"], testing: ["503-02000"], excavation: ["206-00000"], backfill: ["206-00100", "206-00200"] },
   "drilled-shaft": { shaft: ["503-00036", "503-00024", "503-00030", "503-00042", "503-00048", "503-00054", "503-00060", "503-00066", "503-00072", "503-00078", "503-00084", "503-00096"], testing: ["503-00310"] }, // the shaft's bars are paid in item 503 (CDOT Standard Specifications 503.07)
-  micropile: { micropile: ["503-01070", "503-01060", "503-01080", "503-01100"] },
-  abutment: { concrete: ["601-03040", "601-03000"], rebar: ["602-00020", "602-00000"], pile: ["502-11253", "502-11274", "502-11489", "502-10836", "502-11057", "502-11263", "502-11284", "502-11473", "502-14102", "502-14117"], "pile-tip": ["502-00460"], prebore: ["502-00100"], shaft: ["503-00036", "503-00024", "503-00030", "503-00042", "503-00048", "503-00054", "503-00060", "503-00072"], excavation: ["206-00000"], backfill: ["206-00100", "206-00200"] , micropile: ["503-01100", "503-01070", "503-01060", "503-01080"] },
-  "approach-slab": { concrete: ["601-03056", "601-03040", "601-03000"], rebar: ["602-00020", "602-00000", "602-00025"], waterproofing: ["515-00120"], joint: ["518-01004", "518-01002"], sealant: ["408-01100"] },
+  micropile: { micropile: ["503-01070", "503-01060", "503-01080", "503-01100", "503-01120"], testing: ["503-02000"] },
+  abutment: { concrete: ["601-03040", "601-03000"], rebar: ["602-00020", "602-00000"], pile: ["502-11253", "502-11274", "502-11489", "502-10836", "502-11057", "502-11263", "502-11284", "502-11473", "502-14102", "502-14117"], "pile-tip": ["502-00460"], prebore: ["502-00100"], shaft: ["503-00036", "503-00024", "503-00030", "503-00042", "503-00048", "503-00054", "503-00060", "503-00072"], excavation: ["206-00000"], backfill: ["206-00100", "206-00200"] , micropile: ["503-01100", "503-01070", "503-01060", "503-01080", "503-01120"], testing: ["503-02000"] },
+  "approach-slab": { concrete: ["601-03056", "601-03040", "601-03000"], rebar: ["602-00020", "602-00000", "602-00025"], waterproofing: ["515-00120"], asphalt: ["403-09210"], joint: ["518-01004", "518-01002"], sealant: ["408-01100"] },
   "strip-seal-joint": { joint: ["518-01004", "518-01002", "518-01006", "518-01009", "518-01012", "518-01201"] },
   "sign-cantilever": { shaft: ["503-00036", "503-00024", "503-00030", "503-00042", "503-00048", "503-00054", "503-00060", "503-00072"], rebar: ["602-00000"] },
 };

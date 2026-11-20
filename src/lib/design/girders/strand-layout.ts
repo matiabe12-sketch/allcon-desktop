@@ -1,4 +1,4 @@
-import type { HarpedStrands, StrandRow } from "./prestressed";
+import { debondSets, type HarpedStrands, type StrandRow } from "./prestressed";
 import type { GirderShape } from "./sections";
 
 // Where each strand of a girder design sits: its place on the 2 in strand grid across the section and its
@@ -121,10 +121,11 @@ export function strandLayout(shape: GirderShape, d: { strands: StrandRow[]; harp
       const far = Math.max(m, ...xs.map(Math.abs), 0);
       for (let k = 0; k < extra; k++) xs.push((k % 2 ? 1 : -1) * (far + STRAND_PITCH * (1 + Math.floor(k / 2))));
     }
-    // The debonded ones: the innermost of the row.
-    const nDeb = (row.debondLength ?? 0) > 0 ? Math.min(row.debonded ?? 0, row.count) : 0;
-    const inner = new Set([...xs].sort((a, b) => Math.abs(a) - Math.abs(b) || a - b).slice(0, nDeb));
-    xs.forEach((x, k) => strands.push({ x, kind: "straight", y: row.y, debondLength: inner.has(x) ? row.debondLength! : 0, ...(k >= xs.length - extra && extra > 0 ? { offGrid: true } : {}) }));
+    // The debonded ones: the innermost of the row, the longest debonding innermost (pairs about the centerline).
+    const lengths = debondSets(row).sort((a, b) => b.length - a.length).flatMap((d) => Array<number>(d.count).fill(d.length));
+    const order = [...xs].sort((a, b) => Math.abs(a) - Math.abs(b) || a - b);
+    const lenAt = new Map(order.slice(0, lengths.length).map((x, k) => [x, lengths[k]]));
+    xs.forEach((x, k) => strands.push({ x, kind: "straight", y: row.y, debondLength: lenAt.get(x) ?? 0, ...(k >= xs.length - extra && extra > 0 ? { offGrid: true } : {}) }));
   }
   if (shape.family === "CDOT Colorado Bulb Tee" && harped.length) {
     const top = Math.max(...harped.map((h) => h.yEnd!));

@@ -158,6 +158,13 @@ describe("the pier's load path: Bridge → cap → column → footing", () => {
     expect(f.cases.length).toBe(new Set(col.rows.filter((x) => x.where === "base").map((x) => x.case)).size);
     expect(Math.max(...f.cases.map((c) => c.P))).toBeGreaterThan(r.reactions[1].DC);
     expect(runFoundation("spread-footing", f).checks.length).toBeGreaterThan(0);
+    // The column's collision switch carries its Extreme Event II cases down to the footing (AASHTO 3.6.5.1); off, none.
+    expect(f.cases.some((c) => c.limit === "extreme")).toBe(false);
+    const hit = designColumn({ ...columnInputs({}), loads: "stm", link, T: 30, W: 30, collision: { ...columnInputs({}).collision, enabled: true } });
+    const fc = footingFromColumn(hit, footingInputs({}));
+    const ext = fc.cases.filter((c) => c.limit === "extreme");
+    expect(ext.length).toBeGreaterThan(0);
+    expect(Math.max(...ext.map((c) => c.HB))).toBeGreaterThan(500); // the 600 kip force (or its 15° share) at the base
   });
 });
 

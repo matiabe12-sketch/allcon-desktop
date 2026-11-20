@@ -7,7 +7,7 @@ import { markGroups, schedule, type ConcreteItem } from "../rebar/schedule";
 import { ftT, inT as inTex } from "../takeoff/tex";
 import type { DetailView, Takeoff } from "../takeoff/types";
 import { barPositions, outline } from "./column-section";
-import type { ColumnInputs } from "./column";
+import { hingeLegs, type ColumnInputs } from "./column";
 import { assumedShaft, columnShaftConnection } from "./column-shaft";
 
 // A pier column's bars as CDOT details them and its quantities: the longitudinal bars run up into
@@ -66,13 +66,13 @@ export function columnTakeoff(i: ColumnInputs, count?: number): Takeoff {
   // Seismic Zone 1 with SD1 ≥ 0.10: the hinge regions (and the lap splices at the base) at the closer spacing,
   // extended into the cap and footing max(D/2, 15 in) (5.11.2, 5.11.4.1.3, 5.11.4.1.5, 5.11.4.3).
   const maxDim = Math.max(i.T, W);
-  const zones: { length: number; spacing: number }[] = [];
+  const zones: { length: number; spacing: number; hinge?: boolean }[] = [];
   if (i.seismic.hinge) {
     const Lh = Math.max(maxDim, H / 6, 18);
     const ext = Math.max(maxDim / 2, 15);
     const bottom = Math.min(H, Math.max(Lh, lapAtBase));
     const top = Math.min(Lh, H - bottom);
-    zones.push({ length: bottom + (i.base === "footing" ? ext : 0), spacing: i.seismic.spacing }, { length: Math.max(0, H - bottom - top), spacing: i.tieSpacing }, { length: top + ext, spacing: i.seismic.spacing });
+    zones.push({ length: bottom + (i.base === "footing" ? ext : 0), spacing: i.seismic.spacing, hinge: true }, { length: Math.max(0, H - bottom - top), spacing: i.tieSpacing }, { length: top + ext, spacing: i.seismic.spacing, hinge: true });
     notes.push(`Hinge regions: ${ftIn(Math.ceil(bottom))} at the base (over the lap splices) and ${ftIn(Math.ceil(top))} under the cap at ${ftIn(i.seismic.spacing)}, extended ${ftIn(Math.ceil(ext))} into the cap${i.base === "footing" ? " and the footing" : ""} (AASHTO 5.11.4.1.3, 5.11.4.3); ${ftIn(i.tieSpacing)} between them.`);
   } else zones.push({ length: H + 6, spacing: i.tieSpacing });
   const spacingText = i.seismic.hinge ? `${ftIn(i.seismic.spacing)} in the hinge regions, ${ftIn(i.tieSpacing)} between` : ftIn(i.tieSpacing);
@@ -100,10 +100,14 @@ export function columnTakeoff(i: ColumnInputs, count?: number): Takeoff {
     }
     // Cross-ties: the legs beyond the perimeter tie's two each way, a 135° hook one end and 90° the other.
     const hook90 = hookLeg(i.tieBar, "transverse", 90).leg;
-    const crossT = i.shape === "round" ? 0 : Math.max(0, Math.round(i.legsT) - 2); // legs running across the bridge
-    const crossL = i.shape === "round" ? 0 : Math.max(0, Math.round(i.legsL) - 2);
-    if (crossT) pre.push({ size: i.tieBar, count: crossT * sets * n, shape: { kind: "hooked", dims: [roundDown(hook135), roundDown(inT), roundDown(hook90)], hooks: 2 }, length: roundDown(hook135 + inT + hook90), use: "Cross-ties across", callout: `#${i.tieBar} cross-ties @ ${spacingText}` });
-    if (crossL) pre.push({ size: i.tieBar, count: crossL * sets * n, shape: { kind: "hooked", dims: [roundDown(hook135), roundDown(inW), roundDown(hook90)], hooks: 2 }, length: roundDown(hook135 + inW + hook90), use: "Cross-ties along", callout: `#${i.tieBar} cross-ties @ ${spacingText}` });
+    // Each zone its own legs: the hinge regions' (5.11.4.1.4) and the column's between them.
+    const hl = hingeLegs(i);
+    const crossAt = (z: (typeof zones)[number], legs: number, hingeLegsN: number) => (i.shape === "round" ? 0 : Math.max(0, Math.round(z.hinge ? hingeLegsN : legs) - 2) * countAt(z.length, z.spacing));
+    const crossT = zones.reduce((p, z) => p + crossAt(z, i.legsT, hl.T), 0); // legs running across the bridge
+    const crossL = zones.reduce((p, z) => p + crossAt(z, i.legsL, hl.L), 0);
+    const legsText = (a: number, b: number) => (i.seismic.hinge && a !== b ? `, ${a - 2} a set in the hinge regions, ${b - 2} between` : "");
+    if (crossT) pre.push({ size: i.tieBar, count: crossT * n, shape: { kind: "hooked", dims: [roundDown(hook135), roundDown(inT), roundDown(hook90)], hooks: 2 }, length: roundDown(hook135 + inT + hook90), use: "Cross-ties across", callout: `#${i.tieBar} cross-ties @ ${spacingText}${legsText(hl.T, i.legsT)}` });
+    if (crossL) pre.push({ size: i.tieBar, count: crossL * n, shape: { kind: "hooked", dims: [roundDown(hook135), roundDown(inW), roundDown(hook90)], hooks: 2 }, length: roundDown(hook135 + inW + hook90), use: "Cross-ties along", callout: `#${i.tieBar} cross-ties @ ${spacingText}${legsText(hl.L, i.legsL)}` });
   }
 
   // Concrete, each column from its base to the cap's soffit.

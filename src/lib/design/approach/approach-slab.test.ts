@@ -115,7 +115,9 @@ describe("approach slab calc package", () => {
       near(c.value("f_{rng}\\coloneq", "ksi"), r.fatigue.fRange);
       if (r.sleeper) near(c.value("q_u\\coloneq", "ksf"), r.sleeper.qu);
       expect(c.checks.length).toBe(r.checks.length);
-      expect(c.checks.filter((x) => x.includes("NG")).length).toBe(r.checks.filter((x) => !x.ok).length);
+      // The information-only checks show Info, not NG (the engine's advisory ones).
+      expect(c.checks.filter((x) => x.includes("NG")).length).toBe(r.checks.filter((x) => !x.ok && !x.advisory).length);
+      expect(c.checks.filter((x) => x.includes("Info")).length).toBe(r.checks.filter((x) => !x.ok && x.advisory).length);
     });
   }
 });
@@ -144,9 +146,9 @@ describe("approach slab take-off", () => {
     expect(t.schedule.groups.find((g) => g.use === "Sleeper, along")!.count).toBe(2 * 2 * 10);
     expect(t.schedule.groups.find((g) => g.use === "Sleeper, in the block")!.count).toBe(2 * 2 * 2);
     const lines = takeoffPayLines("approach-slab", t, {}, i);
-    expect(lines.map((l) => l.code).sort()).toEqual(["408-01100", "515-00120", "518-01004", "601-03056", "602-00020"]);
+    expect(lines.map((l) => l.code).sort()).toEqual(["403-09210", "408-01100", "515-00120", "518-01004", "601-03056", "602-00020"]);
     close(t.quantities.sealant!.value, 2 * 44);
-    close(t.quantities.joint!.value, 2 * 44);
+    close(t.quantities.joint!.value, 2 * Math.min(i.roadway, i.W)); // curb to curb
     // The anchorage bars: #5, 2'-9" + 10" (B-601-1EA)
     expect(t.schedule.groups.find((g) => g.use === "Anchorage bars")!.length).toBe(43);
     expect(t.schedule.total).toBeCloseTo(t.schedule.bySize.reduce((s, b) => s + b.weight, 0), 6);
@@ -157,7 +159,9 @@ describe("approach slab take-off", () => {
     const t = takeoffFor("approach-slab", i, { length: 1 })!;
     close(t.quantities.waterproofing!.value, ((slabLength(i) / 12) * 44) / 9);
     close(slabLength(i), 240 + 6 / Math.cos(Math.PI / 6));
-    close(t.quantities.joint!.value, 44 / Math.cos(Math.PI / 6));
+    close(t.quantities.joint!.value, Math.min(i.roadway, i.W) / Math.cos(Math.PI / 6)); // curb to curb along the skew
+    // The overlay by weight: 110 lb per SY-in over the roadway.
+    close(t.quantities.asphalt!.value, ((slabLength(i) / 12) * Math.min(i.roadway, i.W) / 9) * 3 * 0.055);
     const codes = takeoffPayLines("approach-slab", t, {}, i).map((l) => l.code);
     expect(codes).toContain("515-00120");
     expect(codes).toContain("518-01004");
@@ -175,5 +179,20 @@ describe("approach slab take-off", () => {
     const fails = (q: number) => designApproachSlab({ ...i, qR: q }).checks.filter((c) => !c.ok && !c.advisory).map((c) => c.id);
     expect(fails(4)).toEqual(["sleeper-bearing"]);
     expect(fails(5)).toEqual([]);
+  });
+});
+
+describe("an approach slab's edge copings (where the plans show them)", () => {
+  it("add their concrete and two #4 along each edge; none by default (B-601-1EA)", async () => {
+    const { approachSlabTakeoff } = await import("./approach-slab-detail");
+    const { APPROACH_SLAB_DEFAULTS } = await import("./approach-slab");
+    const plain = approachSlabTakeoff(APPROACH_SLAB_DEFAULTS, 1);
+    expect(plain.schedule.concrete.some((c) => c.label.startsWith("Edge coping"))).toBe(false);
+    const t = approachSlabTakeoff({ ...APPROACH_SLAB_DEFAULTS, coping: { depth: 24, width: 6 } }, 1);
+    const c = t.schedule.concrete.find((x) => x.label === "Edge coping")!;
+    const Ls = t.schedule.concrete.find((x) => x.label === "Approach slab")!.cy / ((APPROACH_SLAB_DEFAULTS.W * 1) / 27); // ft
+    expect(c.cy).toBeCloseTo((2 * Ls * 0.5 * 1) / 27, 6);
+    expect(c.math).toContain("\cdot");
+    expect(t.schedule.groups.filter((g) => g.use === "Copings, along").reduce((s, g) => s + g.count, 0)).toBe(4);
   });
 });

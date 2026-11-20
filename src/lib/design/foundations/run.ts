@@ -15,6 +15,11 @@ export type FoundationRun = { checks: Check[]; groups: Group[]; summary: { title
 
 const f = (v: number, d = 3) => (Number.isFinite(v) ? String(Math.round(v * 10 ** d) / 10 ** d) : "—");
 const pick = <T,>(arr: T[], by: (t: T) => number) => (arr.length ? arr.reduce((a, b) => (by(b) > by(a) ? b : a)) : null);
+/** The piles of a pile foundation: H-piles by section and length, micropiles by casing and their cased and bonded lengths. */
+const pileLabel = (i: PileInputs, n: number) => (i.pileType === "micropile" ? `${n} × ${i.micropile?.casingOD ?? 7} in micropiles, ${i.micropile?.cased ?? 0} ft cased + ${i.micropile?.bond ?? 0} ft bonded` : `${n} × ${i.section}, ${i.length} ft`);
+/** The micropiles' bond length needed both ways: preliminary (presumptive φ) and final with load tests. */
+const bondRows = (b: { preliminary: number; tested: number; phi: { preliminary: number; tested: number }; design: string } | null | undefined, given: number): [string, string][] =>
+  b ? [[`Bond needed: preliminary (φ ${b.phi.preliminary}) / final, load-tested (φ ${b.phi.tested}) (ft)`, `${f(b.preliminary, 1)} / ${f(b.tested, 1)}, ${given} ft given (${b.design === "final" ? "designed as final" : "designed as preliminary"})`]] : [];
 
 export const FOUNDATION_GROUPS: Record<FoundationKind, Group[]> = {
   "spread-footing": [
@@ -37,8 +42,8 @@ export const FOUNDATION_GROUPS: Record<FoundationKind, Group[]> = {
   ],
   abutment: [
     { title: "CDOT's integral abutment limits", of: (id) => ["unit-length", "movement", "grade", "skew", "curvature", "depth", "cap-max", "cap-min", "cap-embed", "girder-clear", "flex-detail"].includes(id) },
-    { title: "The foundation", of: (id) => id.startsWith("pile") || id.startsWith("shaft") || ["prebore", "embed", "ecc", "bearing", "sliding"].includes(id) },
-    { title: "The abutment", of: (id) => id.startsWith("cap-p") || id.startsWith("cap-n") || ["cap-min", "cap-shear", "diaphragm", "stem-flex", "stem-min", "stem-crack", "stem-shear", "backwall", "seat", "toe", "heel"].includes(id) },
+    { title: "The foundation", of: (id) => id.startsWith("pile") || id.startsWith("shaft") || id.startsWith("mp-") || ["prebore", "embed", "ecc", "bearing", "sliding"].includes(id) },
+    { title: "The abutment", of: (id) => id.startsWith("cap-p") || id.startsWith("cap-n") || id.startsWith("foot-") || ["cap-min", "cap-shear", "diaphragm", "stem-flex", "stem-min", "stem-crack", "stem-shear", "backwall", "seat", "toe", "heel"].includes(id) },
   ],
 };
 
@@ -67,7 +72,7 @@ export function runFoundation(kind: FoundationKind, inputs: unknown): Foundation
         checks: r.checks,
         groups,
         summary: [
-          { title: "The group", rows: [["Piles", `${r.n} × ${(inputs as PileInputs).section}`], ["Cap (ft)", `${f(r.capB, 2)} × ${f(r.capL, 2)}`], ["Most / least loaded pile (kip)", `${f(Math.max(...r.cases.map((c) => c.Pmax)), 1)} / ${f(Math.min(...r.cases.map((c) => c.Pmin)), 1)}`], ["Geotechnical φ", `${f(r.phiGeo)}${r.smallGroup ? " (× 0.8, ≤ 3 piles)" : ""}`], ["Fixed-head embedment (BDM 10.5.3, in)", f(r.fix, 1)]] },
+          { title: "The group", rows: [["Piles", pileLabel(inputs as PileInputs, r.n)], ["Cap (ft)", `${f(r.capB, 2)} × ${f(r.capL, 2)}`], ["Most / least loaded pile (kip)", `${f(Math.max(...r.cases.map((c) => c.Pmax)), 1)} / ${f(Math.min(...r.cases.map((c) => c.Pmin)), 1)}`], ...((inputs as PileInputs).pileType === "micropile" ? [] : ([["Geotechnical φ", `${f(r.phiGeo)}${r.smallGroup ? " (× 0.8, ≤ 3 piles)" : ""}`], ["Fixed-head embedment (BDM 10.5.3, in)", f(r.fix, 1)]] as [string, string][])), ...bondRows(r.micropileBond, (inputs as PileInputs).micropile?.bond ?? 0)] },
           ...(g ? [{ title: `Lateral (${g.c.lc.name})`, rows: [["Weak / strong axis moment (kip·ft)", `${f(g.Mweak, 1)} / ${f(g.Mstrong, 1)}`], ["Depth to fixity (ft)", f(g.zFix, 2)], ["Pr / Mrx / Mry", `${f(g.Pr, 0)} kip / ${f(g.Mrx / 12, 0)} / ${f(g.Mry / 12, 0)} kip·ft`]] as [string, string][] }] : []),
         ],
         lateral: lat ? { title: "The lead row's pile", r: lat } : null,
@@ -95,7 +100,7 @@ export function runFoundation(kind: FoundationKind, inputs: unknown): Foundation
         groups,
         summary: [
           { title: "Section", rows: [["Bar / casing / casing at threads (in²)", `${f(r.Ab, 2)} / ${f(r.Ac, 2)} / ${f(r.Act, 2)}`], ...(r.loss > 0 ? ([["Casing wall after corrosion (in)", `${f(r.tc)} (${f(r.loss)} lost)`]] as [string, string][]) : []), ...(r.dev ? ([["Bar development needed (ft)", f(r.dev.need / 12, 2)]] as [string, string][]) : []), ["Rn cased / uncased, compression (kip)", `${f(r.RnCC, 1)} / ${f(r.RnCU, 1)}`], ["Rn cased / uncased, tension (kip)", `${f(r.RnTC, 1)} / ${f(r.RnTU, 1)}`]] },
-          { title: "Bond (AASHTO 10.9.3.5.2)", rows: [["Ground", r.bond.row.name], ["Table range (ksf)", r.bond.range ? `${r.bond.range[0]}–${r.bond.range[1]}` : "none for this grouting"], ["αb used (ksf)", f(r.bond.alpha, 2)], ["Rs (kip)", f(r.Rs, 1)], ["Plunge length transfer Pt (kip)", f(r.Pt, 1)]] },
+          { title: "Bond (AASHTO 10.9.3.5.2)", rows: [...bondRows(r.bondNeeded, (inputs as MicropileInputs).bond), ["Ground", r.bond.row.name], ["Table range (ksf)", r.bond.range ? `${r.bond.range[0]}–${r.bond.range[1]}` : "none for this grouting"], ["αb used (ksf)", f(r.bond.alpha, 2)], ["Rs (kip)", f(r.Rs, 1)], ["Plunge length transfer Pt (kip)", f(r.Pt, 1)]] },
         ],
         lateral: g ? { title: g.c.name, r: g.r } : null,
         notes: r.notes,
@@ -107,7 +112,9 @@ export function runFoundation(kind: FoundationKind, inputs: unknown): Foundation
       if (r.integral) rows.push({ title: "Integral", rows: [["Per pile or shaft, Strength I / Service I (kip)", `${f(r.integral.Pu, 1)} / ${f(r.integral.Ps, 1)}`], ["Displacement imposed (in)", f(r.integral.delta)], ["Cap moments + / − (kip·ft)", `${f(r.integral.beam.Mpos, 1)} / ${f(r.integral.beam.Mneg, 1)}`], ["Passive pressure at the cap's bottom (ksf)", f(r.integral.pBottom)]] });
       if (r.seat) rows.push({ title: "Seat or semi-integral, per foot", rows: [["Height / footing width (ft)", `${f(r.seat.H, 2)} / ${f(r.seat.B, 2)}`], ["Earth pressure coefficient", f(r.seat.K)], ["Stem moment / shear", `${f(r.seat.Mstem, 1)} kip·ft / ${f(r.seat.Vstem, 1)} kip`]] });
       const lat = r.integral?.foundation?.lat ?? r.seat?.piles?.lat ?? null;
-      return { checks: r.checks, groups, summary: rows, lateral: lat ? { title: "Pile or shaft under the movement", r: lat } : null };
+      const mpr = r.micropileResult;
+      if (mpr) rows.push({ title: "Micropiles", rows: [...(r.seat?.micropiles ? ([["Most loaded / least loaded (kip)", `${f(r.seat.micropiles.Pmax, 1)} / ${f(r.seat.micropiles.Pmin, 1)}`]] as [string, string][]) : []), ...bondRows(mpr.bondNeeded, (inputs as AbutmentInputs).micropile?.bond ?? 0)] });
+      return { checks: r.checks, groups, summary: rows, lateral: lat ? { title: "Pile or shaft under the movement", r: lat } : null, notes: mpr?.notes };
     }
   }
 }

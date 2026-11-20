@@ -65,6 +65,12 @@ export const cell = (v: number, d = MAX_DECIMALS) => {
 };
 export const COLOR_NOTE = "Checks show OK in green and NG in red.";
 
+/**
+ * A check given for information only (the code doesn't require it, or the design takes it as advisory): OK when it
+ * passes, Info (in plain black, not NG in red) when it doesn't.
+ */
+export const info = (demand: string, capacity: string) => `\\operatorname{if}\\left(${demand}\\le ${capacity},\\text{OK},\\text{Info}\\right)=`;
+
 /** A value entered: a definition that's just a number, with its unit, not worked out. */
 export function isInput(latex: string) {
   const body = latex.split("\\coloneq")[1];

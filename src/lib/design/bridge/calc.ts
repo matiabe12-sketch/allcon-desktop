@@ -56,10 +56,12 @@ function summaryOf(title: string, parts: CalcPart[]): Line[] {
 /** The SOQ: an item per row, a column per part of the bridge, and the total (CDOT's summary of quantities). */
 export function soqRows(pay: PayColumn[]) {
   const items = new Map<string, { code: string; description: string; unit: string; values: number[] }>();
+  // A line another part pays for (a semi-integral end diaphragm, with the superstructure) goes to that part's column.
+  const superCol = pay.findIndex((c) => c.label === "Superstructure");
   pay.forEach((col, k) => {
     for (const l of col.lines) {
       const it = items.get(l.code) ?? { code: l.code, description: l.description, unit: l.unit, values: pay.map(() => 0) };
-      it.values[k] += l.quantity;
+      it.values[l.paidWith === "superstructure" && superCol >= 0 ? superCol : k] += l.quantity;
       items.set(l.code, it);
     }
   });

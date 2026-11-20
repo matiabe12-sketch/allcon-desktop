@@ -77,6 +77,15 @@ export function ApproachSlabEditor({ design, projects }: { design: { id: string;
                 </>
               )}
             </Section>
+            <Section title="Edge copings (where the plans show them)" open={!!inputs.coping}>
+              <Toggle label="A coping along each edge under the rail" value={!!inputs.coping} onChange={(v) => setInputs((s) => ({ ...s, coping: v ? { depth: 24, width: 5.5 } : null }))} />
+              {inputs.coping && (
+                <>
+                  <Field label="Depth at the edge, from the slab's top" unit="in" value={inputs.coping.depth} onChange={(v) => setInputs((s) => ({ ...s, coping: { ...s.coping!, depth: v } }))} />
+                  <Field label="Width of the turned-down leg" unit="in" value={inputs.coping.width} onChange={(v) => setInputs((s) => ({ ...s, coping: { ...s.coping!, width: v } }))} step={0.5} hint="Quantities only: its concrete and two #4 bars along it" />
+                </>
+              )}
+            </Section>
             <Section title="Barrier on the edge (A13.4)">
               <Toggle label="A barrier or transition on the slab" value={inputs.barrier} onChange={set("barrier")} />
               {inputs.barrier && (

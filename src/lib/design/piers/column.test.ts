@@ -143,6 +143,23 @@ describe("AASHTO detailing rules for columns", () => {
     const spiralOf = (t: ReturnType<typeof columnTakeoff>) => t.schedule.groups.find((g) => g.use === "Spiral")!.length;
     expect(spiralOf(seis)).toBeGreaterThan(spiralOf(plain));
   });
+
+  it("a tied column: the hinge regions take their own cross-ties, fewer between them", () => {
+    const i: ColumnInputs = { ...COLUMN_DEFAULTS, shape: "rectangular", T: 96, W: 36, barsT: 15, barsL: 5, transverse: "ties", tieBar: 5, tieSpacing: 4, legsT: 2, legsL: 5, seismic: { hinge: true, spacing: 4, legsT: 4, legsL: 11 } };
+    const r = designColumn(i);
+    // Ash from the hinge regions' legs (Eqs. 5.11.4.1.4-2, -3), not the column's.
+    close(r.checks.find((x) => x.id === "seis-conf-1")!.capacity, 11 * 0.31, 1e-9);
+    close(r.checks.find((x) => x.id === "seis-conf-0")!.capacity, 4 * 0.31, 1e-9);
+    // Never fewer in the hinge regions than between them.
+    const fewer = designColumn({ ...i, seismic: { ...i.seismic, legsL: 3 } });
+    close(fewer.checks.find((x) => x.id === "seis-conf-1")!.capacity, 5 * 0.31, 1e-9);
+    // The schedule: cross-ties along by zone, fewer than 9 a set over the whole height.
+    const count = (t: ReturnType<typeof columnTakeoff>) => t.schedule.groups.filter((g) => g.use === "Cross-ties along").reduce((p, g) => p + g.count, 0);
+    const zoned = count(columnTakeoff(i));
+    const full = count(columnTakeoff({ ...i, legsL: 11 }));
+    expect(zoned).toBeLessThan(full);
+    expect(zoned).toBeGreaterThan(count(columnTakeoff({ ...i, seismic: { ...i.seismic, legsL: 5 } })));
+  });
 });
 
 describe("pier column design", () => {

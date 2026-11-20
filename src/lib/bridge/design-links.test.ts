@@ -11,7 +11,7 @@ import { analyzeBridge } from "./bridge";
 import { BRIDGE_DEFAULTS, bridgeDefinition, supportsFor } from "./definition";
 import { designPrefill, designTargets } from "./design-links";
 import { toBridgeInputs } from "./geometry";
-import { jointFromBridge } from "../design/bridge/loadpath";
+import { fixedPoint, jointFromBridge } from "../design/bridge/loadpath";
 import { movingLoad } from "./moving";
 import { bridgeCalcLines } from "./report";
 
@@ -61,12 +61,13 @@ describe("designs from the bridge model", () => {
     expect(i.T).toBe(42);
     expect(designColumn(i).checks.length).toBeGreaterThan(5);
   });
-  it("an expansion device takes the length from the bridge's middle, plus the approach slab at an integral abutment, and the skew", () => {
+  it("an expansion device takes the length from the bridge's fixed point (its fixed support; an integral bridge's middle), plus the approach slab at an integral or semi-integral abutment, and the skew", () => {
     const b = toBridgeInputs(def);
     const k = b.supports.length - 1;
     const half = Math.abs(b.supports[k].station - (b.supports[0].station + b.supports[k].station) / 2);
     const i = jointFromBridge(b, k, 20, stripSealInputs({}));
-    expect(i.L).toBeCloseTo(half + (b.supports[k].type === "integral-abutment" ? 20 : 0), 2);
+    const slab = b.supports[k].type === "integral-abutment" || b.supports[k].type === "semi-integral-abutment" ? 20 : 0;
+    expect(i.L).toBeCloseTo(Math.abs(b.supports[k].station - fixedPoint(b)) + slab, 2);
     expect(i.skew).toBe(Math.abs(b.supports[k].skew));
     expect(jointFromBridge({ ...b, supports: b.supports.map((s, j) => (j === k ? { ...s, type: "integral-abutment" as const } : s)) }, k, 20, stripSealInputs({})).L).toBeCloseTo(half + 20, 2);
     expect(designStripSeal(i).checks.length).toBeGreaterThan(0);

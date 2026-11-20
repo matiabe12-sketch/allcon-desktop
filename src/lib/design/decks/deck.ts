@@ -46,6 +46,7 @@ export type DeckInputs = {
   rail?: { type: RailKey; testLevel: TestLevel; steel: RailSteel };
   /** Started from a girder design, which carries the deck's concrete, the rails and the waterproofing in its quantities: this design adds the bars. */
   fromGirder?: { id: string; name: string } | null;
+  panels?: boolean; // on partial-depth precast panels: no bottom mat between the girders (quantities only)
 };
 
 /** CDOT BDM Example 6.2 (Type 10 MASH, TL-4): the deck overhang's moment and tension at the curb face. */

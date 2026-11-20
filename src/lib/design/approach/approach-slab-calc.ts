@@ -1,6 +1,6 @@
 import type { Line } from "@/lib/calcs/library/templates";
 import { checksSummary } from "../checks-summary";
-import { COLOR_NOTE, INPUT_COLOR, isInput, num } from "../calc-style";
+import { COLOR_NOTE, info, INPUT_COLOR, isInput, num } from "../calc-style";
 import type { Figure } from "../figures";
 import { BARS, type Bars } from "../walls/cip";
 import { designApproachSlab, sleeperBottom, type ApproachSlabInputs } from "./approach-slab";
@@ -46,7 +46,7 @@ export function approachSlabCalcLines(i: ApproachSlabInputs, title: string, figu
   m(`\\theta\\coloneq ${num(i.skew)}\\mathrm{deg}`, "Skew");
   m(`t_s\\coloneq ${num(i.t)}\\mathrm{in}`, "Slab thickness");
   m(ok("7\\mathrm{in}", "t_s"), "Least depth, AASHTO 9.7.1.1");
-  m(ok("20\\mathrm{ft}", "L_s"), "For information: the worksheet's least length, CDOT B-601-1EA");
+  m(info("20\\mathrm{ft}", "L_s"), "For information: the worksheet's least length, CDOT B-601-1EA");
   m(`k_s\\coloneq ${num(i.supportLoss)}`, "The design span as a fraction of the length, CDOT BDM 11.3.7");
   m("S_d\\coloneq k_s\\cdot L_s=", "Design span", "ft");
   m(`f'_{c}\\coloneq ${num(i.fc)}\\mathrm{ksi}`);
@@ -102,10 +102,10 @@ export function approachSlabCalcLines(i: ApproachSlabInputs, title: string, figu
   if (r.worksheet) {
     text(`Worksheet:- CDOT B-601-1EA puts #${r.worksheet.bar} bars at ${r.worksheet.spacing} in in the bottom of a ${num(i.L)} ft slab (#6 at 20 ft, #9 over 20 ft and under 31 ft).`, "note");
     m(`A_{ws}\\coloneq\\frac{${num(BARS[r.worksheet.bar].area)}\\mathrm{in}^{2}}{${num(r.worksheet.spacing)}\\mathrm{in}}=`, "The worksheet's bars", "in^2/ft");
-    m(ok("A_{ws}", "A_s"), "For information: at least the worksheet's, CDOT B-601-1EA");
+    m(info("A_{ws}", "A_s"), "For information: at least the worksheet's, CDOT B-601-1EA");
   } else {
     text("Worksheet:- CDOT B-601-1EA covers slabs under 31 ft; this one is a special design.", "note");
-    m(ok("L_s", "31\\mathrm{ft}"), "For information: within the worksheet's range");
+    m(info("L_s", "31\\mathrm{ft}"), "For information: within the worksheet's range");
   }
   m("M_{cr}\\coloneq0.67\\cdot1.6\\cdot f_r\\cdot\\frac{t_s^{2}}{6}=", "AASHTO Eq. 5.6.3.3-1", "kip*ft/ft");
   m(ok("\\min\\left(1.33\\cdot M_u,M_{cr}\\right)", "M_r"), "Minimum reinforcement, AASHTO 5.6.3.3");
@@ -127,13 +127,13 @@ export function approachSlabCalcLines(i: ApproachSlabInputs, title: string, figu
   m("f_{rng}\\coloneq\\frac{1.75\\cdot M_f}{A_s\\cdot j\\cdot d_e}=", "Stress range, γ = 1.75", "ksi");
   m(`f_{min}\\coloneq\\frac{M_{DC}${dw ? "+M_{DW}" : ""}}{A_s\\cdot j\\cdot d_e}=`, "Under the permanent loads", "ksi");
   m("F_{TH}\\coloneq26\\mathrm{ksi}-22\\cdot\\frac{f_{min}}{f_y}\\cdot\\mathrm{ksi}=", "AASHTO Eq. 5.5.3.2-1", "ksi");
-  m(ok("f_{rng}", "F_{TH}"), "For information: CDOT's predesigned worksheet does not check fatigue");
+  m(info("f_{rng}", "F_{TH}"), "For information: CDOT's predesigned worksheet does not check fatigue");
 
   text("Shear (AASHTO 5.12.2.1, 5.7.3.3)", "subheading", { keepWithNext: true });
   text("Shear:- slabs designed for moment by AASHTO 4.6.2.3 may be taken as satisfactory for shear (AASHTO 5.12.2.1). The concrete's resistance with β = 2 is shown as well.");
   m("d_v\\coloneq\\max\\left(0.9\\cdot d_e,0.72\\cdot t_s\\right)=", "AASHTO 5.7.2.8", "in");
   m("V_c\\coloneq0.0316\\cdot2\\cdot\\sqrt{\\frac{f'_{c}}{\\mathrm{ksi}}}\\cdot\\mathrm{ksi}\\cdot12\\mathrm{in}\\cdot\\frac{d_v}{\\mathrm{ft}}=", "AASHTO Eq. 5.7.3.3-3, per foot", "kip/ft");
-  m(ok("V_u", "0.9\\cdot V_c"), "For information (AASHTO 5.12.2.1)");
+  m(info("V_u", "0.9\\cdot V_c"), "For information (AASHTO 5.12.2.1)");
 
   text("Distribution and temperature bars", "subheading", { keepWithNext: true });
   m("p\\coloneq\\min\\left(\\frac{100}{\\sqrt{\\frac{S_d}{\\mathrm{ft}}}},50\\right)=", "Percent of the main bars, primary bars parallel to traffic, AASHTO 9.7.3.2");

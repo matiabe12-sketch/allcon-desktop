@@ -90,6 +90,10 @@ export type PileInputs = {
   cover: number; // in, to the bottom bars (the piles pass between them)
   barsB: Bars; // bottom, along B (lower layer)
   barsL: Bars;
+  /** The top mat each way (over uplifted piles, and shrinkage and temperature steel) and the side bars all round. */
+  topB?: Bars;
+  topL?: Bars;
+  sideBars?: Bars;
   exposure: 1 | 2;
   cases: PileCase[];
   /** H-piles (the default) or micropiles, each checked by the Micropile design (AASHTO 10.9) under its share of the group's loads. */
@@ -139,6 +143,9 @@ export const PILE_DEFAULTS: PileInputs = {
   cover: 3,
   barsB: { bar: 8, spacing: 9 },
   barsL: { bar: 8, spacing: 9 },
+  topB: { bar: 6, spacing: 9 },
+  topL: { bar: 6, spacing: 9 },
+  sideBars: { bar: 5, spacing: 6 },
   exposure: 2, // foundation elements: Class 2 (CDOT BDM 11.4)
   cases: [
     { name: "Strength I", limit: "strength", P: 1600, MB: 600, ML: 250, HB: 40, HL: 15 },
@@ -237,7 +244,11 @@ export function designPiles(i: PileInputs) {
   const pick = <T,>(arr: T[], f: (t: T) => number) => arr.reduce((a, b) => (f(b) > f(a) ? b : a), arr[0]);
 
   let micropileNotes: string[] = [];
+  let micropileBond: ReturnType<typeof designMicropile>["bondNeeded"] | null = null;
   let micropileGroup: { d: "B" | "L"; avg: number; lead: number } | null = null;
+  /** The micropile as designed (its inputs with the group's cases, and its result), for the calc package. */
+  let micropileIn: MicropileInputs | null = null;
+  let micropileResult: ReturnType<typeof designMicropile> | null = null;
   if (micro) {
     // Each micropile under the group's worst share, case by case (compression, tension, and the shear spread evenly),
     // by the Micropile design: bond, structural, lateral and buckling (AASHTO 10.9).
@@ -252,9 +263,11 @@ export function designPiles(i: PileInputs) {
     });
     const pmG = pmd.reduce((a, b) => (b.avg < a.avg ? b : a));
     micropileGroup = pmG;
-    const r = designMicropile({ ...mp, groupPm: n > 1 ? { avg: pmG.avg, lead: pmG.lead } : null, spacing: Math.min(i.nB > 1 ? i.sB : Infinity, i.nL > 1 ? i.sL : Infinity, 99), cases: cases.map((c) => ({ name: c.lc.name, limit: c.lc.limit, compression: Math.max(0, c.Pmax), tension: Math.max(0, -c.Pmin), H: Math.hypot(c.lc.HB, c.lc.HL) / n })) });
+    micropileIn = { ...mp, groupPm: n > 1 ? { avg: pmG.avg, lead: pmG.lead } : null, spacing: Math.min(i.nB > 1 ? i.sB : Infinity, i.nL > 1 ? i.sL : Infinity, 99), cases: cases.map((c) => ({ name: c.lc.name, limit: c.lc.limit, compression: Math.max(0, c.Pmax), tension: Math.max(0, -c.Pmin), H: Math.hypot(c.lc.HB, c.lc.HL) / n })) };
+    const r = (micropileResult = designMicropile(micropileIn));
     for (const ch of r.checks) if (ch.id !== "spacing") checks.push({ ...ch, id: `mp-${ch.id}`, name: `Micropile: ${ch.name}` });
     micropileNotes = r.notes;
+    micropileBond = r.bondNeeded;
     // The whole group lifting (AASHTO 10.9.3.6 → 10.7.3.11): the lesser of the piles' sum and the block, φ 0.50; the
     // block's resistance not counted, so the piles' bond at φ 0.50.
     const up = factored.reduce((a, b) => (b.Vmin < a.Vmin ? b : a), factored[0]);
@@ -373,8 +386,42 @@ export function designPiles(i: PileInputs) {
     const Vnc = 0.126 * Math.sqrt(i.fc) * Math.min(corner, 4 * (pileD + dvp)) * dvp;
     const rp = pick(capCases, (x) => x.Rmax);
     add({ id: "cap-punch-pile", name: `Cap: two-way shear at a corner pile (${rp.c.lc.name})`, demand: rp.Rmax, capacity: 0.9 * Vnc, unit: "kip", ref: "AASHTO 5.12.8.6.3" });
+
+    // The top mat: the piles pulled up beyond a column face bend the cap with its top in tension (their uplift times
+    // its arm to the face, per foot of the cap's width; the cap's and the soil's weight over them not counted).
+    const topB = i.topB ?? { bar: 6, spacing: 9 };
+    const topL = i.topL ?? { bar: 6, spacing: 9 };
+    const side = i.sideBars ?? { bar: 5, spacing: 6 };
+    const coverTop = 2;
+    const up = (cc: (typeof capCases)[number], axis: "x" | "y", face: number) =>
+      Math.max(...([1, -1] as const).map((sd) => piles.reduce((t, p, k) => {
+        const pos = sd * (axis === "x" ? p.x : p.y);
+        return t + (pos > face ? Math.max(0, -cc.R[k]) * (pos - face) : 0);
+      }, 0)));
+    const tB = pick(capCases, (x) => up(x, "x", cB / 2));
+    const tL = pick(capCases, (x) => up(x, "y", cL / 2));
+    const MtB = up(tB, "x", cB / 2) / capL;
+    const MtL = up(tL, "y", cL / 2) / capB;
+    const fTopB = flexure({ ...common, Mu: MtB, Ms: MtB / 1.5, h: i.capT, cover: coverTop, bars: topB });
+    const fTopL = flexure({ ...common, Mu: MtL, Ms: MtL / 1.5, h: i.capT, cover: coverTop + BARS[topB.bar].dia, bars: topL });
+    add({ id: "cap-top-B", name: `Cap, top bars along B: the uplifted piles (${tB.c.lc.name})`, demand: MtB, capacity: fTopB.MR, unit: "kip·ft/ft", ref: "AASHTO 5.12.8.4, 5.6.3.2" });
+    add({ id: "cap-top-L", name: `Cap, top bars along L: the uplifted piles (${tL.c.lc.name})`, demand: MtL, capacity: fTopL.MR, unit: "kip·ft/ft", ref: "AASHTO 5.12.8.4, 5.6.3.2" });
+    // Shrinkage and temperature steel each face (5.10.6): As ≥ 1.30 b h / (2 (b + h) fy), 0.11 to 0.60 in²/ft; spacing
+    // at most 12 in (over 18 in thick). b the cap's least plan dimension, h its depth.
+    const bLeast = Math.min(capB, capL) * 12;
+    const AsT = Math.min(0.6, Math.max(0.11, (1.3 * bLeast * i.capT) / (2 * (bLeast + i.capT) * i.fy)));
+    const asOf = (b: { bar: number; spacing: number }) => (BARS[b.bar].area * 12) / b.spacing;
+    const sMaxT = i.capT > 18 ? 12 : Math.min(3 * i.capT, 18);
+    add({ id: "cap-top-temp", name: "Cap, top mat: shrinkage and temperature steel each way", demand: AsT, capacity: Math.min(asOf(topB), asOf(topL)), unit: "in²/ft", ref: "AASHTO 5.10.6" });
+    add({ id: "cap-top-spacing", name: "Cap, top mat: spacing", demand: Math.max(topB.spacing, topL.spacing), capacity: sMaxT, unit: "in", ref: "AASHTO 5.10.6" });
+    // Side bars: skin reinforcement where de exceeds 3 ft (5.6.7: 0.012 (de − 30) in²/ft each face, at most de/6 and
+    // 12 in apart), and shrinkage and temperature steel on the side faces (5.10.6), whichever is more.
+    const de = Math.max(dB, dL);
+    const Ask = de > 36 ? 0.012 * (de - 30) : 0;
+    add({ id: "cap-side", name: `Cap, side bars each face: ${Ask > 0 ? "skin reinforcement and " : ""}shrinkage and temperature steel`, demand: Math.max(AsT, Ask), capacity: asOf(side), unit: "in²/ft", ref: Ask > 0 ? "AASHTO 5.6.7, 5.10.6" : "AASHTO 5.10.6", note: `de ${de.toFixed(1)} in${Ask > 0 ? `: skin ${Ask.toFixed(3)} in²/ft` : ""}; shrinkage and temperature ${AsT.toFixed(3)} in²/ft` });
+    add({ id: "cap-side-spacing", name: "Cap, side bars: spacing", demand: side.spacing, capacity: Ask > 0 ? Math.min(de / 6, 12, sMaxT) : sMaxT, unit: "in", ref: Ask > 0 ? "AASHTO 5.6.7, 5.10.6" : "AASHTO 5.10.6" });
   }
-  return { checks, notes: micropileNotes, micropileGroup, section: s, piles, capB, capL, n, Wcap, Wsoil, cases, combined, capCases, flexB, flexL, dB, dL, phiGeo, smallGroup, fix, width, flexX, flexY };
+  return { checks, notes: micropileNotes, micropileBond, micropileGroup, micropileIn, micropileResult, section: s, piles, capB, capL, n, Wcap, Wsoil, cases, combined, capCases, flexB, flexL, dB, dL, phiGeo, smallGroup, fix, width, flexX, flexY };
 }
 
 export type PileResult = ReturnType<typeof designPiles>;

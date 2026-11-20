@@ -95,6 +95,14 @@ export function wingwallCalcLines(i: WingwallInputs, title: string, figures?: { 
   m("d_v\\coloneq\\max\\left(d_e-\\frac{a}{2},0.9\\cdot d_e,0.72\\cdot t\\right)=", "AASHTO 5.7.2.8", "in");
   m("V_r\\coloneq0.9\\cdot0.0316\\cdot2\\cdot\\sqrt{\\frac{f'_{c}}{\\mathrm{ksi}}}\\cdot\\mathrm{ksi}\\cdot d_v=", "AASHTO 5.7.3.3 (β = 2)", "kip/ft");
   m(ok("V_u", "V_r"), "Shear");
+  // Shrinkage and temperature steel, each face each way (AASHTO 5.10.6), as the engine checks it.
+  const ob = i.otherBars ?? { bar: 4, spacing: 12 };
+  m(`b_T\\coloneq ${num(Math.max(1, Math.min(i.h, i.H)))}\\mathrm{ft}`, "The wall's least width along the bars (its height at the tip)");
+  m("A_{st}\\coloneq\\max\\left(0.11\\frac{\\mathrm{in}^{2}}{\\mathrm{ft}},\\min\\left(0.60\\frac{\\mathrm{in}^{2}}{\\mathrm{ft}},\\frac{1.30\\cdot b_T\\cdot t}{2\\cdot\\left(b_T+t\\right)\\cdot f_y}\\cdot\\frac{\\mathrm{kip}}{\\mathrm{in}\\cdot\\mathrm{ft}}\\right)\\right)=", "Shrinkage and temperature steel, AASHTO Eqs. 5.10.6-1 and -2", "in^2/ft");
+  m(`A_{so}\\coloneq\\frac{${num(BARS[ob.bar].area)}\\mathrm{in}^{2}}{${num(ob.spacing)}\\mathrm{in}}=`, `#${ob.bar} @ ${ob.spacing} in: vertical each face, horizontal on the front face`, "in^2/ft");
+  m(ok("A_{st}", "\\min\\left(A_s,A_{so}\\right)"), "Each face, each way, AASHTO 5.10.6");
+  m(`s_o\\coloneq ${num(ob.spacing)}\\mathrm{in}`, "The other bars' spacing");
+  m(ok("\\max\\left(s,s_o\\right)", `${i.t > 18 ? 12 : Math.min(3 * i.t, 18)}\\mathrm{in}`), `Spacing, AASHTO 5.10.6 (${i.t > 18 ? "over 18 in thick: 12 in" : "3t and 18 in"})`);
 
   text("Section B: forces the abutment takes, about its centroidal axes", "subheading");
   m("A'\\coloneq\\frac{A}{\\cos\\left(\\theta\\right)}=", "Abutment width along the skew", "ft");

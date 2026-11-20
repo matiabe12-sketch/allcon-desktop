@@ -24,6 +24,8 @@ export type Support = {
   spacing?: number;
   /** A pier's physical description, as PGSuper's physical pier model: its cap, columns and the top of its foundation. */
   pier?: PierShape;
+  /** Fixed bearings hold the girders along the bridge; expansion bearings let them slide (the Bridge section's support lines). */
+  bearing?: "fixed" | "expansion";
 };
 
 export type PierShape = {

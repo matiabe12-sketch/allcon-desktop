@@ -56,6 +56,11 @@ export type ApproachSlabInputs = {
   barrier: boolean;
   Mc: number; // kip·ft/ft
   T: number; // kip/ft
+  /**
+   * A coping along each edge under the rail, where the plans show one (none on B-601-1EA): a leg `width` in wide turned
+   * down to `depth` in below the slab's top at its outer face, with two #4 bars along it. Quantities only.
+   */
+  coping?: { depth: number; width: number } | null;
   // The joint at the slab's end (BDM 14.4.2): B-601-1EA's 0–4" expansion device on the sleeper, or B-601-1's poured joint (movement ≤ ¾" and an asphalt approach)
   joint: "device" | "none";
 };

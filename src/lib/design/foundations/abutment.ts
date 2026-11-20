@@ -5,7 +5,7 @@ import { axialResistance, fixityEmbedment, flexuralResistance, HP_SECTIONS, inte
 import { analyzeLateral, type Layer } from "./lateral";
 import { pMultiplier, toLayers, type SoilLayer } from "./piles";
 import { designMicropile, MICROPILE_DEFAULTS, type MicropileInputs } from "./micropile";
-import { gridPiles, groupForces } from "./micropile-group";
+import { gridPiles, groupForces, type GroupPile } from "./micropile-group";
 
 // A bridge abutment, CDOT BDM 11.3 with AASHTO LRFD (10th Edition) 3.11, 3.12, 4.7.4.4, 5, 6.15, 10
 // and 11.6.
@@ -73,7 +73,7 @@ export type AbutmentInputs = {
   toe: number; // ft
   heel: number; // ft
   footT: number; // ft
-  foundation: "footing" | "piles";
+  foundation: "footing" | "piles" | "micropiles";
   pressure: "at-rest" | "active";
   // Materials and bars
   fc: number;
@@ -86,8 +86,16 @@ export type AbutmentInputs = {
   diaphragmBars: Bars; // horizontal, each face
   stemBars: Bars; // back face, vertical
   backwallBars: Bars;
-  toeBars: Bars; // footing bottom
-  heelBars: Bars; // footing top
+  toeBars: Bars; // footing bottom, across it
+  heelBars: Bars; // footing top, across it
+  /** Seat and semi-integral: the stem's other bars and the footing's bars along the abutment (all optional, CDOT's usual #5 @ 12 in). */
+  stemHQty?: number; // ft, the stem's average height for quantities (a stepped footing); the design uses stemH
+  stemFrontBars?: Bars; // front face, vertical
+  stemHorizBars?: Bars; // horizontal, each face
+  seatTop?: { bar: number; count: number }; // continuous along the top of the stem (the seat)
+  seatU?: Bars; // U bars round the seat
+  footLongTop?: Bars; // footing, top, along the abutment
+  footLongBot?: Bars; // footing, bottom, along the abutment
   exposure: 1 | 2;
   // Soil
   backfillPhi: number;
@@ -116,8 +124,14 @@ export type AbutmentInputs = {
   mpBatterBack: number; // deg, the other rows
   /** kip·ft, the factored (Strength) moment on the group across its rows (the integral frame's, from the bridge's analysis). */
   groupMoment: number;
+  /** kip·ft, the factored (Strength) moment on the group along the abutment: the live load placed toward one curb. */
+  groupMomentAlong?: number;
   /** The micropiles' section, lengths and bond (the Micropile design's inputs). */
   micropile: Partial<MicropileInputs>;
+  // Seat on micropiles: rows across the footing (ft from the toe), each with its batter (deg from vertical) and
+  // mpPerRow micropiles along the abutment's length; the micropiles' section and bond in `micropile`.
+  mpRowList?: { x: number; batter: number }[];
+  mpPerRow?: number;
   // Seat on piles: two rows
   rowFront: number; // ft from the toe
   rowBack: number;
@@ -216,6 +230,8 @@ export const ABUTMENT_DEFAULTS: AbutmentInputs = {
   rowFront: 1.5,
   rowBack: 12.5,
   pileSpacing: 4,
+  mpRowList: [{ x: 1.5, batter: 0 }, { x: 4.5, batter: 14 }],
+  mpPerRow: 12,
   c: 0,
   phi: 34,
   gammaBelow: 125,
@@ -322,11 +338,13 @@ export function designAbutment(i: AbutmentInputs) {
   const move = Math.max(expansion, contraction);
   const totalGirderR = { DC: i.nGirders * i.RDC, DW: i.nGirders * i.RDW, LL: abutmentLiveLoad(i) };
 
+  /** The micropiles' own design (an integral abutment's or a footing's), for its notes and bond lengths. */
+  let micropileResult: ReturnType<typeof designMicropile> | null = null;
   let integralOut: ReturnType<typeof integralDesign> | null = null;
   let seatOut: ReturnType<typeof seatDesign> | null = null;
   if (integral) integralOut = integralDesign();
   else seatOut = seatDesign();
-  return { checks, expansion, contraction, move, integral: integralOut, seat: seatOut, totalGirderR };
+  return { checks, expansion, contraction, move, integral: integralOut, seat: seatOut, totalGirderR, micropileResult: micropileResult as ReturnType<typeof designMicropile> | null };
 
   function integralDesign() {
     add({ id: "unit-length", name: "Bridge unit length (BDM Table 11-1)", demand: i.unitLength, capacity: 460, unit: "ft", ref: "CDOT BDM 11.3.1" });
@@ -361,7 +379,11 @@ export function designAbutment(i: AbutmentInputs) {
 
     // The foundation elements under the imposed movement.
     const pea: Layer = { thickness: i.prebore, model: i.peaGravel ? { kind: "sand", phi: 40, gamma: 95, k: 300 } : { kind: "none" } };
-    let foundation: { kind: "piles"; lat: ReturnType<typeof analyzeLateral>; inter: ReturnType<typeof interaction>; KL: number; Pr: number; Mry: number } | { kind: "shafts"; lat: ReturnType<typeof analyzeLateral>; phiMn: number } | null = null;
+    let foundation:
+      | { kind: "piles"; lat: ReturnType<typeof analyzeLateral>; inter: ReturnType<typeof interaction>; KL: number; Pr: number; Mry: number }
+      | { kind: "shafts"; lat: ReturnType<typeof analyzeLateral>; phiMn: number }
+      | { kind: "micropiles"; lat: ReturnType<typeof analyzeLateral>; phiMn: number; mpIn: MicropileInputs; PmaxS: number; PminS: number; Pr: number; Zc: number; value: number; nPiles: number; group: GroupPile[]; fS: number[] }
+      | null = null;
     const delta = i.thermalForce * move;
     if (i.type === "integral-piles") {
       const s = HP_SECTIONS[i.section];
@@ -391,11 +413,12 @@ export function designAbutment(i: AbutmentInputs) {
       // the movement pushed through each by p–y, its head pinned (BDM 11.3.1), the casing's bending with its axial load.
       const mp: MicropileInputs = { ...MICROPILE_DEFAULTS, ...i.micropile };
       const group = gridPiles(n, rowsMP, sp || 1, i.mpRowSpacing, { batterByRow: Array.from({ length: rowsMP }, (_, r) => (r === 0 ? i.mpBatterFront : i.mpBatterBack)) });
-      const fS = groupForces(group, factoredStrength, i.groupMoment, 0);
+      const fS = groupForces(group, factoredStrength, i.groupMoment, i.groupMomentAlong ?? 0);
       const PmaxS = Math.max(...fS);
       const PminS = Math.min(...fS);
       add({ id: "pile-length", name: "Micropiles at least 10 ft below the cap", demand: 10, capacity: mp.cased + mp.bond, unit: "ft", ref: "CDOT BDM 11.3" });
-      const r = designMicropile({ ...mp, spacing: Math.min(sp || 99, i.mpRowSpacing), cases: [{ name: "Strength I", limit: "strength", compression: Math.max(0, PmaxS), tension: Math.max(0, -PminS), H: 0 }, { name: "Service I", limit: "service", compression: Math.max(...groupForces(group, service, 0, 0)), tension: 0, H: 0 }] });
+      const mpIn: MicropileInputs = { ...mp, spacing: Math.min(sp || 99, i.mpRowSpacing), cases: [{ name: "Strength I", limit: "strength", compression: Math.max(0, PmaxS), tension: Math.max(0, -PminS), H: 0 }, { name: "Service I", limit: "service", compression: Math.max(...groupForces(group, service, 0, 0)), tension: 0, H: 0 }] };
+      const r = (micropileResult = designMicropile(mpIn));
       for (const ch of r.checks) if (!/^(deflection|interaction)$/.test(ch.id)) checks.push({ ...ch, id: `mp-${ch.id}`, name: `Micropile: ${ch.name}` });
       const ID = mp.casingOD - 2 * mp.casingT;
       const Ic = (Math.PI / 64) * (mp.casingOD ** 4 - ID ** 4);
@@ -404,8 +427,8 @@ export function designAbutment(i: AbutmentInputs) {
       const Pr = r.checks.find((c) => c.id === "cased-comp")?.capacity ?? r.checks.find((c) => c.id === "uncased-comp")?.capacity ?? 0;
       const Mr = 1.0 * Math.min(mp.casingFy, 80) * Zc / 12; // kip·ft, the casing (AASHTO 6.12.2.2.3, φf 1.0)
       const value = (Pr > 0 ? PmaxS / Pr : 1) + (Mr > 0 ? lat.Mmax / Mr : 1);
-      add({ id: "mp-movement", name: "Micropile: axial with the movement's moment (the casing, pinned head)", demand: value, capacity: 1, unit: "", ref: "AASHTO 10.9.3.10.1, 6.9.2.2; CDOT BDM 11.3.1", note: `${PmaxS.toFixed(1)} kip on the most loaded pile (the group's moment ${i.groupMoment} kip·ft across ${rowsMP} rows); ${lat.Mmax.toFixed(1)} kip·ft from ${delta.toFixed(2)} in of movement` });
-      foundation = { kind: "shafts", lat, phiMn: Mr };
+      add({ id: "mp-movement", name: "Micropile: axial with the movement's moment (the casing, pinned head)", demand: value, capacity: 1, unit: "", ref: "AASHTO 10.9.3.10.1, 6.9.2.2; CDOT BDM 11.3.1", note: `${PmaxS.toFixed(1)} kip on the most loaded pile (the group's moments: ${i.groupMoment} kip·ft across ${rowsMP} rows${i.groupMomentAlong ? `, ${i.groupMomentAlong} kip·ft along the abutment` : ""}); ${lat.Mmax.toFixed(1)} kip·ft from ${delta.toFixed(2)} in of movement` });
+      foundation = { kind: "micropiles", lat, phiMn: Mr, mpIn, PmaxS, PminS, Pr, Zc, value, nPiles: n * rowsMP, group, fS };
     } else {
       add({ id: "shaft-length", name: "Shafts at least 10 ft below the cap", demand: 10, capacity: i.shaftLength, unit: "ft", ref: "CDOT BDM 11.3" });
       add({ id: "shaft-d", name: "Shaft diameter at least 24 in", demand: 24, capacity: i.shaftD, unit: "in", ref: "CDOT BDM 10.6.1.1" });
@@ -449,7 +472,7 @@ export function designAbutment(i: AbutmentInputs) {
     const Mdia = (1.35 * pBottom * i.girderSpacing ** 2) / 10;
     const dia = flexure({ ...common, Mu: Mdia, Ms: Mdia / 1.35, h: i.capWidth * 12, cover: 2, bars: i.diaphragmBars });
     add({ id: "diaphragm", name: "End diaphragm: horizontal bars under passive pressure between girders", demand: Mdia, capacity: dia.MR, unit: "kip·ft/ft", ref: "AASHTO 3.11.5.4, 11.6.1.3, 5.6.3.2" });
-    return { capW, apr, n, Pu, Ps, supports, girders, beam, foundation, delta, Kp, pBottom, Mdia, Pg };
+    return { capW, apr, n, Pu, Ps, supports, girders, beam, foundation, delta, Kp, pBottom, Mdia, Pg, factoredStrength, service, wCap, dCap, asTop, asBot, dv, rowsMP };
   }
 
   function seatDesign() {
@@ -498,7 +521,48 @@ export function designAbutment(i: AbutmentInputs) {
     const worstE = strength.reduce((a, b) => (Math.abs(b.e) > Math.abs(a.e) ? b : a));
     let footing: null | { qeq: number; qR: number; slide: number; RR: number; nb: ReturnType<typeof nominalBearing> } = null;
     let piles: null | { Pfront: number; Pback: number; Hp: number; inter: ReturnType<typeof interaction>; lat: ReturnType<typeof analyzeLateral> } = null;
-    if (i.foundation === "footing") {
+    let micropiles: null | { rows: { x: number; batter: number; P: number[] }[]; s: number; H: number; Pmax: number; Pmin: number; result: ReturnType<typeof designMicropile>; forceOf: (r: (typeof rows)[number]) => number[]; plate: number; mpIn: MicropileInputs; xc: number; S2: number; perRow: number; onRows: ReturnType<typeof footingOnRows> | null } = null;
+    if (i.foundation === "micropiles") {
+      // Rows of micropiles under the footing, a rigid cap (FHWA GEC 12 9.8, FHWA NHI-05-039 Sample Problem 1): per foot of
+      // abutment, each row's share P/n ± M·(xc − x)/Σ(x − xc)² of the load and its moment about the group's centroid, times
+      // the micropiles' spacing along the abutment, along a battered row's axis by 1/cos. The shear spread over all the
+      // micropiles, the batter's help not counted (conservative); each micropile by the Micropile design (AASHTO 10.9)
+      // with the group's p-multipliers across the rows (AASHTO Table 10.7.2.4-1).
+      const list = (i.mpRowList ?? []).filter((r) => r.x >= 0 && r.x <= B).sort((a, b) => a.x - b.x);
+      const xs = list.map((r) => r.x);
+      if (!xs.length) throw new DesignError("Give the micropile rows' positions from the toe.");
+      const perRow = Math.max(1, Math.round(i.mpPerRow ?? 1));
+      const s = i.length / perRow; // ft of abutment per micropile in a row
+      const nr = xs.length;
+      const xc = xs.reduce((t, x) => t + x, 0) / nr;
+      const S2 = xs.reduce((t, x) => t + (x - xc) ** 2, 0);
+      const batter = (k: number) => rad(list[k].batter ?? 0);
+      const forces = (r: (typeof rows)[number]) => xs.map((x, k) => ((r.V / nr + (S2 > 0 ? (r.V * (xc - r.xR) * (xc - x)) / S2 : 0)) * s) / Math.cos(batter(k)));
+      const mp: MicropileInputs = { ...MICROPILE_DEFAULTS, ...i.micropile };
+      const service = rows.filter((r) => r.c.name.startsWith("Service"));
+      const all = strength.map((r) => ({ r, P: forces(r) }));
+      const Pmax = Math.max(...all.flatMap((a) => a.P));
+      const Pmin = Math.min(...all.flatMap((a) => a.P));
+      const H = (strength[0].Hh * i.length) / (nr * perRow);
+      const ratio = nr > 1 ? (Math.min(...xs.slice(1).map((x, k) => x - xs[k])) * 12) / mp.casingOD : 99;
+      const pms = xs.map((_, k) => (nr === 1 ? (ratio <= 5 ? pMultiplier(1, ratio) : 1) : pMultiplier(k + 1, ratio)));
+      const sv = service.map((r) => Math.max(...forces(r)));
+      const mpIn: MicropileInputs = {
+        ...mp,
+        spacing: Math.min(s, nr > 1 ? Math.min(...xs.slice(1).map((x, k) => x - xs[k])) : 99),
+        groupPm: nr * perRow > 1 ? { avg: pms.reduce((t, v) => t + v, 0) / pms.length, lead: Math.max(...pms) } : null,
+        capFc: i.fc,
+        cases: [
+          ...all.map((a) => ({ name: a.r.c.name, limit: "strength" as const, compression: Math.max(0, Math.max(...a.P)), tension: Math.max(0, -Math.min(...a.P)), H })),
+          ...service.map((r, k) => ({ name: r.c.name, limit: "service" as const, compression: Math.max(0, sv[k]), tension: 0, H: (r.Hh * i.length) / (nr * perRow) })),
+        ],
+      };
+      const result = designMicropile(mpIn);
+      for (const ch of result.checks) checks.push({ ...ch, id: `mp-${ch.id}`, name: `Micropile: ${ch.name}` });
+      if (Pmin < 0 && strength.every((r) => r.V < 0)) add({ id: "mp-group-uplift", name: "The group in uplift", demand: -Pmin, capacity: 0.5 * result.Rs, unit: "kip", ref: "AASHTO 10.7.3.11" });
+      micropileResult = result;
+      micropiles = { rows: xs.map((x, k) => ({ x, batter: list[k].batter ?? 0, P: all.map((a) => a.P[k]) })), s, H, Pmax, Pmin, result, forceOf: forces, plate: mp.plate?.size ?? mp.casingOD, mpIn, xc, S2, perRow, onRows: null as ReturnType<typeof footingOnRows> | null };
+    } else if (i.foundation === "footing") {
       add({ id: "ecc", name: `Eccentricity (${worstE.c.name})`, demand: Math.abs(worstE.e), capacity: B / 3, unit: "ft", ref: "AASHTO 10.6.3.3, 11.6.3.3" });
       const bmax = strength[0];
       const Bp = Math.max(0.01, B - 2 * Math.abs(bmax.e));
@@ -553,6 +617,10 @@ export function designAbutment(i: AbutmentInputs) {
       const N = (8 + 0.02 * i.unitLength) * (1 + 0.000125 * i.skew ** 2);
       add({ id: "seat", name: "Bearing seat width", demand: N, capacity: i.seatWidth, unit: "in", ref: "AASHTO 4.7.4.4" });
     }
+    if (micropiles) {
+      micropiles.onRows = footingOnRows(micropiles);
+      return { H, B, K, EH, BR, rows, footing, piles, micropiles, Mstem, Vstem, Mbw, Mtoe: 0, Mheel: 0, items };
+    }
     // The footing (or pile cap) as cantilevers from the stem: the toe under the bearing pressure.
     const r0 = strength[0];
     const qToe = i.foundation === "footing" ? (() => {
@@ -560,13 +628,98 @@ export function designAbutment(i: AbutmentInputs) {
       const q1 = Math.abs(e) <= B / 6 ? (r0.V / B) * (1 + (6 * e) / B) : (2 * r0.V) / (3 * (B / 2 - e));
       return q1;
     })() : 0;
-    const Mtoe = i.foundation === "footing" ? (qToe * i.toe ** 2) / 2 - 1.25 * i.gammaC * i.footT * i.toe ** 2 / 2 : (piles ? (piles.Pfront / i.pileSpacing) * Math.max(0, i.toe - i.rowFront) : 0);
+    const Mtoe = i.foundation === "footing" ? (qToe * i.toe ** 2) / 2 - 1.25 * i.gammaC * i.footT * i.toe ** 2 / 2 : piles ? (piles.Pfront / i.pileSpacing) * Math.max(0, i.toe - i.rowFront) : 0;
     const ft = flexure({ ...common, Mu: Math.max(0, Mtoe), Ms: Math.max(0, Mtoe) / 1.4, h: i.footT * 12, cover: 3, bars: i.toeBars });
     add({ id: "toe", name: "Footing toe: flexure at the stem", demand: Math.max(0, Mtoe), capacity: ft.MR, unit: "kip·ft/ft", ref: "AASHTO 5.6.3.2" });
     const Mheel = 1.35 * g * (Hs + Hb) * i.heel ** 2 / 2 + 1.25 * i.gammaC * i.footT * i.heel ** 2 / 2;
     const fh = flexure({ ...common, Mu: Mheel, Ms: Mheel / 1.3, h: i.footT * 12, cover: 2, bars: i.heelBars });
     add({ id: "heel", name: "Footing heel: flexure at the stem (soil and footing, no pressure under it)", demand: Mheel, capacity: fh.MR, unit: "kip·ft/ft", ref: "AASHTO 5.6.3.2" });
-    return { H, B, K, EH, BR, rows, footing, piles, Mstem, Vstem, Mbw, Mtoe, Mheel, items };
+    return { H, B, K, EH, BR, rows, footing, piles, micropiles, Mstem, Vstem, Mbw, Mtoe, Mheel, items };
+
+    /**
+     * The footing across its width as a beam on the rows of micropiles (per foot of abutment): each row's reaction its
+     * axial force's vertical part over its spacing along the abutment; the footing's weight and the soil on the heel
+     * downward; the stem's load and moment between its vertical bars. A free body each side of the stem (the toe's from
+     * the toe, the heel's from the heel) gives the moment at any section out to the stem's bars (the footing taken as
+     * supported at the wall's vertical steel, not at its faces: the conservative choice), with no need of the stem's
+     * share: the largest positive (bottom bars) and negative (top bars), and the shear at dv from each face
+     * (5.12.8.6.1: a section's shear is the reactions beyond it). Then punching at the most loaded micropile
+     * (5.12.8.6.3): its force on a perimeter at dv/2 round its bearing plate, cut by the footing's edge, dv the
+     * concrete over the pile's head.
+     */
+    function footingOnRows(m: NonNullable<typeof micropiles>) {
+      const barIn = (2 + BARS[i.stemBars.bar].dia / 2) / 12; // ft, the stem's vertical bars inside each face
+      const x1 = i.toe + barIn;
+      const x2 = i.toe + i.stemT - barIn;
+      const hs = Hs + Hb;
+      const at = (r: (typeof rows)[number], c: { dc: number; ev: number }) => {
+        const R = m.forceOf(r).map((P, k) => ({ x: m.rows[k].x, R: (P * Math.cos(rad(m.rows[k].batter))) / m.s }));
+        const wf = c.dc * i.gammaC * i.footT;
+        const ws = c.ev * g * hs;
+        // Positive: tension in the bottom bars.
+        const Mleft = (x: number) => R.filter((q) => q.x < x).reduce((t, q) => t + q.R * (x - q.x), 0) - (wf * x * x) / 2;
+        const Mright = (x: number) => R.filter((q) => q.x > x).reduce((t, q) => t + q.R * (q.x - x), 0) - (wf * (B - x) ** 2) / 2 - (ws * (B - x) ** 2) / 2;
+        const Vleft = (x: number) => R.filter((q) => q.x < x).reduce((t, q) => t + q.R, 0) - wf * x;
+        const Vright = (x: number) => R.filter((q) => q.x > x).reduce((t, q) => t + q.R, 0) - (wf + ws) * (B - x);
+        const xs: number[] = [];
+        for (let k = 0; k <= 20; k++) xs.push((x1 * k) / 20, x2 + ((B - x2) * k) / 20);
+        const Ms = xs.map((x) => (x <= x1 + 1e-9 ? Mleft(x) : Mright(x)));
+        const kPos = Ms.indexOf(Math.max(...Ms));
+        const kNeg = Ms.indexOf(Math.min(...Ms));
+        return { Mpos: Math.max(0, ...Ms), Mneg: Math.max(0, ...Ms.map((v) => -v)), Vleft, Vright, R, wf, ws, xPos: xs[kPos], xNeg: xs[kNeg] };
+      };
+      const sv = rows.filter((r) => r.c.name.startsWith("Service"));
+      const st = strength.map((r) => ({ r, a: at(r, r.c) }));
+      const se = sv.map((r) => at(r, r.c));
+      const bot = st.reduce((p, q) => (q.a.Mpos > p.a.Mpos ? q : p));
+      const top = st.reduce((p, q) => (q.a.Mneg > p.a.Mneg ? q : p));
+      const MsBot = Math.max(0, ...se.map((x) => x.Mpos));
+      const MsTop = Math.max(0, ...se.map((x) => x.Mneg));
+      const fb = flexure({ ...common, Mu: bot.a.Mpos, Ms: MsBot, h: i.footT * 12, cover: 3, bars: i.toeBars });
+      const ftp = flexure({ ...common, Mu: top.a.Mneg, Ms: MsTop, h: i.footT * 12, cover: 2, bars: i.heelBars });
+      add({ id: "foot-bot", name: `Footing, bottom bars across it: flexure on the pile rows (${bot.r.c.name})`, demand: bot.a.Mpos, capacity: fb.MR, unit: "kip·ft/ft", ref: "AASHTO 5.12.8.4, 5.6.3.2" });
+      // Minimum steel and crack control where the face is in tension (a moment of at least 1 kip·ft/ft).
+      if (bot.a.Mpos >= 1) add({ id: "foot-bot-min", name: "Footing, bottom bars: minimum reinforcement", demand: fb.minRequired, capacity: fb.MR, unit: "kip·ft/ft", ref: "AASHTO 5.6.3.3" });
+      if (MsBot >= 1) add({ id: "foot-bot-crack", name: "Footing, bottom bars: crack control (spacing)", demand: i.toeBars.spacing, capacity: fb.sMax, unit: "in", ref: "AASHTO 5.6.7" });
+      add({ id: "foot-top", name: `Footing, top bars across it: flexure on the pile rows (${top.r.c.name})`, demand: top.a.Mneg, capacity: ftp.MR, unit: "kip·ft/ft", ref: "AASHTO 5.12.8.4, 5.6.3.2" });
+      if (top.a.Mneg >= 1) add({ id: "foot-top-min", name: "Footing, top bars: minimum reinforcement", demand: ftp.minRequired, capacity: ftp.MR, unit: "kip·ft/ft", ref: "AASHTO 5.6.3.3" });
+      if (MsTop >= 1) add({ id: "foot-top-crack", name: "Footing, top bars: crack control (spacing)", demand: i.heelBars.spacing, capacity: ftp.sMax, unit: "in", ref: "AASHTO 5.6.7" });
+      // One-way shear at dv from the stem's faces, the reactions beyond the section (5.12.8.6.1), β = 2.
+      const dv = Math.max(0.9 * fb.de, 0.72 * i.footT * 12) / 12;
+      const Vu = Math.max(...st.map((q) => Math.max(Math.abs(q.a.Vleft(Math.max(0, x1 - dv))), Math.abs(q.a.Vright(Math.min(B, x2 + dv))))));
+      add({ id: "foot-shear", name: "Footing: one-way shear at dv from the stem's faces", demand: Vu, capacity: 0.9 * 0.0316 * 2 * Math.sqrt(i.fc) * 12 * dv * 12, unit: "kip/ft", ref: "AASHTO 5.12.8.6.1, 5.7.3.3" });
+      // Punching at the most loaded micropile (5.12.8.6.3): dv the concrete over the pile's head (its embedment out).
+      const mpE = (i.micropile?.embed ?? 12) / 12;
+      const dvp = Math.max(0.5, i.footT - mpE) * 12; // in
+      const side = m.plate + dvp; // in, the perimeter's side at dv/2 round the plate
+      const worst = m.rows.map((r, k) => ({ k, P: Math.max(...r.P) * Math.cos(rad(r.batter)) })).reduce((p, q) => (q.P > p.P ? q : p));
+      const edge = Math.min(m.rows[worst.k].x, B - m.rows[worst.k].x) * 12; // in, from the pile's center to the nearer edge across
+      const bo = edge < side / 2 ? side + 2 * (edge + side / 2) : 4 * side;
+      const Vnp = 0.126 * Math.sqrt(i.fc) * bo * dvp;
+      add({ id: "foot-punch", name: "Footing: punching at the most loaded micropile", demand: worst.P, capacity: 0.9 * Vnp, unit: "kip", ref: "AASHTO 5.12.8.6.3", note: `perimeter ${bo.toFixed(1)} in at dv/2 round a ${m.plate} in plate, dv = ${dvp.toFixed(1)} in over the pile's head${edge < side / 2 ? ", cut by the footing's edge" : ""}` });
+
+      // Along the abutment: the footing spans between the micropiles of each row (s apart) under the wall's load, a
+      // continuous beam over its full width (AASHTO 4.6.2.1.? / the usual coefficients: w s²/10 over the piles, w s²/14
+      // between them, the shear 1.15 w s/2), the stem's stiffening not counted (conservative). w the most vertical
+      // Strength case per foot of abutment; the bars along the abutment over the footing's width.
+      const lt = i.footLongTop ?? { bar: 5, spacing: 12 };
+      const lb = i.footLongBot ?? { bar: 5, spacing: 12 };
+      const wU = Math.max(...strength.map((r) => r.V));
+      const wS = Math.max(0, ...rows.filter((r) => r.c.name.startsWith("Service")).map((r) => r.V));
+      const sp = m.s;
+      const perFt = (M: number) => M / B; // kip·ft per ft of the footing's width
+      const coverT = 2 + BARS[i.heelBars.bar].dia;
+      const coverB = 3 + BARS[i.toeBars.bar].dia;
+      const fLt = flexure({ ...common, Mu: perFt((wU * sp * sp) / 10), Ms: perFt((wS * sp * sp) / 10), h: i.footT * 12, cover: coverT, bars: lt });
+      const fLb = flexure({ ...common, Mu: perFt((wU * sp * sp) / 14), Ms: perFt((wS * sp * sp) / 14), h: i.footT * 12, cover: coverB, bars: lb });
+      add({ id: "foot-long-top", name: "Footing, top bars along the abutment: over the micropiles (w s²/10)", demand: perFt((wU * sp * sp) / 10), capacity: fLt.MR, unit: "kip·ft/ft", ref: "AASHTO 5.12.8.4, 5.6.3.2", note: `w = ${wU.toFixed(1)} kip/ft of abutment, piles ${sp.toFixed(2)} ft apart along it, over the footing's ${(B).toFixed(2)} ft width` });
+      add({ id: "foot-long-bot", name: "Footing, bottom bars along the abutment: between the micropiles (w s²/14)", demand: perFt((wU * sp * sp) / 14), capacity: fLb.MR, unit: "kip·ft/ft", ref: "AASHTO 5.12.8.4, 5.6.3.2" });
+      add({ id: "foot-long-crack", name: "Footing, top bars along the abutment: crack control (spacing)", demand: lt.spacing, capacity: fLt.sMax, unit: "in", ref: "AASHTO 5.6.7" });
+      const dvL = Math.max(0.9 * fLt.de, 0.72 * i.footT * 12) / 12;
+      add({ id: "foot-long-shear", name: "Footing along the abutment: shear at the micropiles (1.15 w s/2)", demand: perFt((1.15 * wU * sp) / 2), capacity: 0.9 * 0.0316 * 2 * Math.sqrt(i.fc) * 12 * dvL * 12, unit: "kip/ft", ref: "AASHTO 5.7.3.3" });
+      const shearAt = st.map((q) => ({ q, L: q.a.Vleft(Math.max(0, x1 - dv)), Rt: q.a.Vright(Math.min(B, x2 + dv)) })).reduce((p, c) => (Math.max(Math.abs(c.L), Math.abs(c.Rt)) > Math.max(Math.abs(p.L), Math.abs(p.Rt)) ? c : p));
+      return { x1, x2, hs, bot, top, MsBot, MsTop, dv, Vu, shear: { r: shearAt.q.r, toe: Math.abs(shearAt.L) >= Math.abs(shearAt.Rt), x: Math.abs(shearAt.L) >= Math.abs(shearAt.Rt) ? Math.max(0, x1 - dv) : Math.min(B, x2 + dv) }, punch: { k: worst.k, P: worst.P, dvp, side, edge, bo, cut: edge < side / 2 }, long: { wU, wS, sp, lt, lb, coverT, coverB, dvL } };
+    }
   }
 }
 

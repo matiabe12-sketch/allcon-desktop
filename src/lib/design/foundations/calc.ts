@@ -9,6 +9,7 @@ import { bearingFactors, designFooting, type FootingInputs } from "./footing";
 import { FOUNDATION_INFO, type FoundationKind } from "./kinds";
 import { designMicropile, type MicropileInputs } from "./micropile";
 import { designPiles, type PileInputs } from "./piles";
+import { abutmentWorked, hPileWorked, micropileWorked, pileCapWorked, shaftWorked, writer } from "./calc-worked";
 import { runFoundation } from "./run";
 import { designShaft, type ShaftInputs } from "./shaft";
 
@@ -134,11 +135,14 @@ export function foundationCalcLines(kind: FoundationKind, inputs: unknown, title
 
   function piles(i: PileInputs) {
     const r = designPiles(i);
-    m(`n_p\\coloneq ${r.n}`, `Piles, ${i.nB} along B by ${i.nL} along L, ${i.section}`);
+    const micro = !!(r.micropileIn && r.micropileResult);
+    m(`n_p\\coloneq ${r.n}`, micro ? `Micropiles, ${i.nB} along B by ${i.nL} along L` : `Piles, ${i.nB} along B by ${i.nL} along L, ${i.section}`);
     m(`s_B\\coloneq ${num(i.sB)}\\mathrm{ft}`);
     m(`s_L\\coloneq ${num(i.sL)}\\mathrm{ft}`);
-    m(`R_n\\coloneq ${num(i.Rn)}\\mathrm{kip}`, "Nominal geotechnical resistance per pile, geotechnical report");
-    m(`\\phi_{dyn}\\coloneq ${num(r.phiGeo)}`, r.smallGroup ? "AASHTO Table 10.5.5.2.3-1 × 0.8, three piles or fewer (CDOT BDM 10.5.2.2)" : "AASHTO Table 10.5.5.2.3-1");
+    if (!micro) {
+      m(`R_n\\coloneq ${num(i.Rn)}\\mathrm{kip}`, "Nominal geotechnical resistance per pile, geotechnical report");
+      m(`\\phi_{dyn}\\coloneq ${num(r.phiGeo)}`, r.smallGroup ? "AASHTO Table 10.5.5.2.3-1 × 0.8, three piles or fewer (CDOT BDM 10.5.2.2)" : "AASHTO Table 10.5.5.2.3-1");
+    }
     const g = r.cases.filter((c) => c.lc.limit !== "service").reduce((a, b) => (b.Pmax > a.Pmax ? b : a));
     const Sx2 = r.piles.reduce((t, p) => t + p.x ** 2, 0);
     const Sy2 = r.piles.reduce((t, p) => t + p.y ** 2, 0);
@@ -152,63 +156,25 @@ export function foundationCalcLines(kind: FoundationKind, inputs: unknown, title
     m(`x_c\\coloneq ${num(far.x)}\\mathrm{ft}`, "The corner pile");
     m(`y_c\\coloneq ${num(far.y)}\\mathrm{ft}`);
     m(`P_{max}\\coloneq\\frac{V_c}{n_p}${Sx2 > 0 ? "+\\frac{M_B\\cdot x_c}{\\Sigma_{x2}}" : ""}${Sy2 > 0 ? "+\\frac{M_L\\cdot y_c}{\\Sigma_{y2}}" : ""}=`, "The most loaded pile", "kip");
-    m(ok("P_{max}", "\\phi_{dyn}\\cdot R_n"), "Geotechnical axial resistance");
+    // Micropiles: each by the Micropile design with the group's loads (AASHTO 10.9); driven piles by their nominal resistance.
+    if (r.micropileIn && r.micropileResult) micropileWorked(writer(lines), r.micropileIn, r.micropileResult);
+    else {
+      m(ok("P_{max}", "\\phi_{dyn}\\cdot R_n"), "Geotechnical axial resistance");
+      hPileWorked(writer(lines), i, r);
+    }
+    pileCapWorked(writer(lines), i, r);
   }
 
   function shaft(i: ShaftInputs) {
-    const r = designShaft(i);
-    m(`D_s\\coloneq ${num(i.D)}\\mathrm{in}`, "Diameter");
-    m(`L_s\\coloneq ${num(i.length)}\\mathrm{ft}`, "Length");
-    m(ok("24\\mathrm{in}", "D_s"), "CDOT BDM 10.6.1.1");
-    text("Side and tip resistance:- by layer as the table above the lateral analysis gives (AASHTO 10.8.3.5: clay α Eq. 10.8.3.5.1b-1, the top 5 ft not counted; sand β Eq. 10.8.3.5.2b-1 with φ' from N160 and σ'p from N60; rock Eq. 10.8.3.5.4b-1; or entered).");
-    m(`R_R\\coloneq ${num(r.ax.RR)}\\mathrm{kip}`, "Σφqs·Rs + φqp·Rp");
-    const g = r.structural.reduce<(typeof r.structural)[number] | null>((a, b) => (!a || b.Pu > a.Pu ? b : a), null);
-    if (g) {
-      m(`P_u\\coloneq ${num(g.c.P + 1.25 * r.Wshaft)}\\mathrm{kip}`, `${g.c.name}, with the shaft's weight`);
-      m(ok("P_u", "R_R"), "Axial, AASHTO 10.8.3.5");
-    }
+    shaftWorked(writer(lines), i, designShaft(i));
   }
 
+
   function micropile(i: MicropileInputs) {
-    const r = designMicropile(i);
-    const db = BARS[i.bar]?.dia ?? 2.5;
-    m(`f'_{cg}\\coloneq ${num(i.fcGrout)}\\mathrm{ksi}`, "Grout");
-    m(`f_{yb}\\coloneq ${num(r.fyB)}\\mathrm{ksi}`, "Bar, at most 87 ksi (the stress at a strain of 0.003, AASHTO 10.9.3.10.2a)");
-    m(`f_{yc}\\coloneq ${num(r.fyCased)}\\mathrm{ksi}`, "Cased length: the lesser of the bar's, the casing's and 87 ksi, for both (10.9.3.10.2a)");
-    m(`A_b\\coloneq ${num(r.Ab)}\\mathrm{in}^{2}`, `#${i.bar} bar (${num(db)} in)`);
-    m(`A_c\\coloneq ${num(r.Ac)}\\mathrm{in}^{2}`, `Casing ${num(i.casingOD)} × ${num(i.casingT)} in`);
-    m(`A_{gc}\\coloneq ${num(r.AgCased)}\\mathrm{in}^{2}`, "Grout inside the casing");
-    m(`A_{gu}\\coloneq ${num(r.AgUncased)}\\mathrm{in}^{2}`, "Grout in the bond zone's hole");
-    m("R_{nc}\\coloneq0.85\\cdot\\left(0.85\\cdot f'_{cg}\\cdot A_{gc}+f_{yc}\\cdot\\left(A_b+A_c\\right)\\right)=", "Cased length, AASHTO Eq. 10.9.3.10.2a-2", "kip");
-    m("R_{nu}\\coloneq0.85\\cdot\\left(0.85\\cdot f'_{cg}\\cdot A_{gu}+f_{yb}\\cdot A_b\\right)=", "Uncased length, AASHTO Eq. 10.9.3.10.2b-2", "kip");
-    m(`d_b\\coloneq ${num(i.holeD)}\\mathrm{in}`, "Drill hole");
-    m(`\\alpha_b\\coloneq ${num(r.bond.alpha)}\\mathrm{ksf}`, r.bond.range ? `Nominal bond, AASHTO Table C10.9.3.5.2-1 (FHWA NHI-05-039) Type ${i.grouting}: ${r.bond.range[0]}–${r.bond.range[1]} ksf` : "Nominal bond, load test");
-    m(`L_b\\coloneq ${num(i.bond)}\\mathrm{ft}`, "Bond length");
-    m("R_s\\coloneq\\pi\\cdot d_b\\cdot\\alpha_b\\cdot L_b=", "AASHTO Eq. 10.9.3.5.2-1", "kip");
-    m(`\\phi_g\\coloneq ${num(i.phiBond)}`, "AASHTO Table 10.5.5.2.5-1");
-    const c = i.cases.filter((x) => x.limit !== "service").reduce((a, b) => (b.compression > a.compression ? b : a));
-    m(`P_c\\coloneq ${num(c.compression)}\\mathrm{kip}`, c.name);
-    m(ok("P_c", "\\phi_g\\cdot R_s"), "Bond in compression (tip and plunge length aside)");
-    m(ok("P_c", "0.75\\cdot R_{nc}"), "Cased length, φ 0.75 (Table 10.5.5.2.5-2)");
-    m(ok("P_c", "0.75\\cdot R_{nu}"), "Uncased length (no plunge transfer counted)");
+    micropileWorked(writer(lines), i, designMicropile(i));
   }
 
   function abutment(i: AbutmentInputs) {
-    const r = designAbutment(i);
-    m(`L_u\\coloneq ${num(i.unitLength)}\\mathrm{ft}`, "Bridge unit length");
-    m(`\\alpha_t\\coloneq ${num(i.alpha * 1e6)}\\cdot10^{-6}`, "Per °F");
-    m(`T_{hi}\\coloneq ${num(Math.max(0, i.tMax - 60))}`, "°F above the 60 °F base, CDOT BDM 11.3.1");
-    m(`T_{lo}\\coloneq ${num(Math.max(0, 60 - i.tMin))}`, "°F below it");
-    m(`\\Delta_{cs}\\coloneq ${num(i.csMove)}\\mathrm{in}`, "Creep, shrinkage, elastic shortening");
-    m("\\Delta_e\\coloneq\\alpha_t\\cdot\\frac{L_u}{2}\\cdot T_{hi}=", "Expansion from the unit's middle", "in");
-    m("\\Delta_c\\coloneq\\alpha_t\\cdot\\frac{L_u}{2}\\cdot T_{lo}+\\Delta_{cs}=", "Contraction", "in");
-    if (i.type.startsWith("integral")) {
-      m(`\\gamma_{TU}\\coloneq ${num(i.gammaTU)}`, "AASHTO Table 3.4.1-1, deformations");
-      m(ok("\\gamma_{TU}\\cdot\\max\\left(\\Delta_e,\\Delta_c\\right)", "2\\mathrm{in}"), "CDOT BDM 11.3.1");
-      m(ok("L_u", "460\\mathrm{ft}"), "CDOT BDM Table 11-1");
-      m(`\\phi_{bf}\\coloneq ${num(i.backfillPhi)}\\mathrm{deg}`, "Backfill");
-      m("K_p\\coloneq\\tan\\left(45\\mathrm{deg}+\\frac{\\phi_{bf}}{2}\\right)^{2}=", "Passive (Rankine), AASHTO 3.11.5.4", "");
-      void r;
-    }
+    abutmentWorked(writer(lines), i, designAbutment(i));
   }
 }

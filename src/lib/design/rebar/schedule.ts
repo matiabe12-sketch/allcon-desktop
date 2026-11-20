@@ -30,10 +30,17 @@ export type BarGroup = {
   splice?: string; // how its run is spliced
   series?: { dim: number; min: number; max: number }; // a bar series (CDOT 4.3): dimension `dim` varies from min to max; `length` is the average
   paid?: string; // paid under another item (a bridge rail's bars in its 606 item): shown, not in the reinforcing steel's total
+  payAs?: string; // a reinforcing steel item of its own (a footing's plain bars, 602-00000, beside epoxy-coated ones): in the total
+  paidWith?: PaidWith; // in a bridge's summary of quantities, paid with another part (a semi-integral end diaphragm's bars with the superstructure)
 };
 
+/** A part of a bridge that pays for some of another design's concrete or bars in the summary of quantities. */
+export type PaidWith = "superstructure";
+
 /** A part's concrete; `math`, when given, is how it's worked out in the quantity sheet (LaTeX of a volume), `ref` the note beside it. */
-export type ConcreteItem = { label: string; cy: number; basis: string; math?: string; terms?: string[]; ref?: string };
+/** `item`: the pay item this concrete goes to when not the design's own (a footing's Class D under a Class DF wall). */
+/** `paidWith`: in a bridge's summary of quantities, the part that pays for it (a semi-integral end diaphragm, the superstructure). */
+export type ConcreteItem = { label: string; cy: number; basis: string; math?: string; terms?: string[]; ref?: string; item?: string; paidWith?: PaidWith };
 export type ExtraSteel = { label: string; weight: number; basis: string; math?: string; terms?: string[]; ref?: string };
 // `terms`, in place of `math`: the summands (a "-" leading a negative one), which the sheet spreads
 // over as many lines as it takes to stay on the page.

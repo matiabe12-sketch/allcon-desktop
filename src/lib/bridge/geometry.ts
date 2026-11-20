@@ -247,7 +247,7 @@ export function toBridgeInputs(d: BridgeDefinition): BridgeInputs {
     alignment: g.alignment,
     profile: g.profile,
     roadway: g.roadway,
-    supports: g.supports,
+    supports: g.supports.map((s, k) => ({ ...s, ...(d.supports[k]?.bearing ? { bearing: d.supports[k].bearing } : {}) })),
     shape: d.girder.shape === "custom" ? BRIDGE_GIRDER_BASE.shape : d.girder.shape,
     nGirders: d.nGirders,
     spacing: d.spacing,

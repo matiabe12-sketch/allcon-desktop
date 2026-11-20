@@ -307,9 +307,25 @@ export function bridgeIfc(b: BridgeInputs, run: BridgeRun, c: BridgeComponents =
     }
     // The deck: its top on the profile and the crown, between the support lines and the deck's edges, a
     // surface along the alignment (its curves, vertical curves and cross slopes), the soffit deckT below it.
+    // At an abutment the deck runs past the support line to where the approach slab starts: over an integral
+    // abutment's end diaphragm to the cap's back face, over a semi-integral one's to the stem's back face (the
+    // deck cast with the diaphragm); at a seat abutment to the girders' ends (the joint at the backwall).
+    const deckBack = (k: number) => {
+      const s = lay.supports[k];
+      if (!s || !b.supports[k]?.type.endsWith("abutment")) return 0;
+      const a = c.abutments?.[k]?.inputs ?? ABUTMENT_DEFAULTS;
+      if (a.type.startsWith("integral")) return Math.max(0, a.capWidth - s.bearingOffset);
+      if (b.supports[k].type === "semi-integral-abutment" || a.type === "semi-integral") return Math.max(0, a.stemT);
+      return s.endDistance;
+    };
+    const backA = span.index === 0 ? deckBack(span.index) : 0;
+    const backB = span.index + 1 === lay.supports.length - 1 ? deckBack(span.index + 1) : 0;
     const corner = (s: (typeof lay.supports)[number], o: number) => {
       const t = o / Math.cos((s.skew * Math.PI) / 180);
-      return stationOffset(b.alignment, s.x + t * Math.sin((s.lineAz * Math.PI) / 180), s.y + t * Math.cos((s.lineAz * Math.PI) / 180), s.station, cache).station;
+      const [lx, ly] = [Math.sin((s.lineAz * Math.PI) / 180), Math.cos((s.lineAz * Math.PI) / 180)];
+      // Square to the support line, back from it (toward the approach) at the bridge's ends.
+      const back = s === sa ? -backA : s === sb ? backB : 0;
+      return stationOffset(b.alignment, s.x + t * lx - back * ly, s.y + t * ly + back * lx, s.station, cache).station;
     };
     const oL = b.bridgeLineOffset - b.leftEdge;
     const oR = b.bridgeLineOffset + b.rightEdge;
@@ -447,6 +463,23 @@ export function bridgeIfc(b: BridgeInputs, run: BridgeRun, c: BridgeComponents =
         els.push({ cls: "IfcWall", type: "PARAPET", name: `${s.name} backwall`, part, origin: v3(P(bw.x, bw.y, capTop)), ...flat(lineX, lineY), profile: { kind: "rect", x: length, y: a.backwallT }, depth: a.backwallH, material: "Concrete Class D (Bridge)", psets: designPset("abutment", aid) });
         const fc = { x: stem.x + sign * fw.x * (a.heel - a.toe) / 2, y: stem.y + sign * fw.y * (a.heel - a.toe) / 2 };
         els.push({ cls: "IfcFooting", type: "STRIP_FOOTING", name: `${s.name} footing`, part, origin: v3(P(fc.x, fc.y, footBottom)), ...flat(lineX, lineY), profile: { kind: "rect", x: length, y: B }, depth: a.footT, material: "Concrete Class D (Bridge)", psets: designPset("abutment", aid) });
+        if (a.foundation === "micropiles") {
+          // Rows of micropiles under the footing, each row at its distance from the toe (the toe toward the bridge), a
+          // battered row leaning toward the bridge (its tip under the toe's side: it takes the earth pressure's thrust,
+          // as F-15-E's sheet BX13 shows).
+          const mp = { ...MICROPILE_DEFAULTS, ...a.micropile };
+          const per = Math.max(1, Math.round(a.mpPerRow ?? 1));
+          const toe = { x: stem.x - sign * fw.x * (a.stemT / 2 + a.toe), y: stem.y - sign * fw.y * (a.stemT / 2 + a.toe) };
+          (a.mpRowList ?? []).forEach((row, r) => {
+            const bt = (row.batter * Math.PI) / 180;
+            const zdir: V3 = [-sign * fw.x * Math.sin(bt), -sign * fw.y * Math.sin(bt), -Math.cos(bt)];
+            for (let k = 0; k < per; k++) {
+              const t = -length / 2 + 1.5 + (k * (length - 3)) / Math.max(1, per - 1);
+              const p = { x: toe.x + t * lineX + sign * row.x * fw.x, y: toe.y + t * lineY + sign * row.x * fw.y };
+              els.push({ cls: "IfcPile", type: "BORED", name: `${s.name} micropile ${r + 1}-${k + 1}`, part, origin: v3(P(p.x, p.y, footBottom + mp.embed / 12)), xdir: v3([lineX, lineY, 0]), zdir: v3(zdir), profile: { kind: "circle", r: r6(mp.casingOD / 24) }, depth: r6(mp.cased + mp.bond + mp.embed / 12), material: "Steel casing, grouted (micropile)", psets: designPset("abutment", aid, { Diameter_in: mp.holeD, PayItem: "503 Micropile" }) });
+            }
+          });
+        }
       }
       // Its wingwalls (when a wingwall design is linked): one at each end of the abutment, from its back face
       // along the approach, square to the support line, their outer faces flush with the abutment's ends; the
@@ -484,10 +517,47 @@ export function bridgeIfc(b: BridgeInputs, run: BridgeRun, c: BridgeComponents =
       // The approach slab behind it.
       const ap = c.approachSlabs?.[i]?.inputs ?? APPROACH_SLAB_DEFAULTS;
       const apid = c.approachSlabs?.[i]?.id ?? null;
-      const behind = (integral ? a.capWidth - s.bearingOffset : a.stemT) + ap.L / 2; // from the abutment's back face
-      const back = { x: cc.x + sign * fw.x * behind, y: cc.y + sign * fw.y * behind };
-      const zTop = profileAt(b.profile, s.station + sign * ap.L / 2, vcs).elevation;
-      els.push({ cls: "IfcSlab", type: "APPROACH_SLAB", name: `${s.name} approach slab`, part, origin: v3(P(back.x, back.y, zTop - ap.t / 12)), ...flat(lineX, lineY), profile: { kind: "rect", x: length, y: ap.L }, depth: r6(ap.t / 12), material: "Concrete Class DF", psets: designPset("approach-slab", apid, { PayItem: "601-03056 Concrete Class DF" }) });
+      // Its top on the roadway, as the deck's: the profile and the crown, from the abutment's back face (where the deck
+      // ends) out its length, square to the support line, across the deck's width; rows from the abutment outward.
+      const face = integral ? a.capWidth - s.bearingOffset : a.stemT; // from the support line
+      const oL = b.bridgeLineOffset - b.leftEdge;
+      const oR = b.bridgeLineOffset + b.rightEdge;
+      const crownAt = sectionAt(b.roadway, s.station).crownOffset;
+      const nAcross = Math.max(1, Math.ceil((oR - oL) / 6));
+      const offs = [...new Set([...Array.from({ length: nAcross + 1 }, (_, k) => oL + ((oR - oL) * k) / nAcross), ...(crownAt > oL && crownAt < oR ? [crownAt] : [])].map((o) => r6(o)))].sort((p, q) => p - q);
+      const nAlong = Math.max(2, Math.ceil(ap.L / 5) + 1);
+      const cosSk = Math.cos((s.skew * Math.PI) / 180);
+      const at = (o: number, d: number) => {
+        const t = o / cosSk;
+        const x = s.x + t * lineX + sign * d * fw.x;
+        const y = s.y + t * lineY + sign * d * fw.y;
+        const so = stationOffset(b.alignment, x, y, s.station, cache);
+        return { p: P(x, y, deckElevation(b.profile, b.roadway, so.station, so.offset, vcs)), st: so.station };
+      };
+      const rowsAt = Array.from({ length: nAlong }, (_, k) => face + (ap.L * k) / (nAlong - 1));
+      const slabTop: V3[][] = rowsAt.map((d) => offs.map((o) => at(o, d).p));
+      // The grid's rows must run ahead (increasing station) for the solid's faces to point out.
+      const ahead = sign > 0 ? slabTop : [...slabTop].reverse();
+      const slabMid = { x: cc.x + sign * fw.x * (face + ap.L / 2), y: cc.y + sign * fw.y * (face + ap.L / 2) };
+      const zMid = at(b.bridgeLineOffset, face + ap.L / 2).p[2];
+      const bx: V3 = [lineX, lineY, 0];
+      const by = cross(UP, bx);
+      els.push({
+        cls: "IfcSlab",
+        type: "APPROACH_SLAB",
+        name: `${s.name} approach slab`,
+        part,
+        origin: [0, 0, 0],
+        xdir: [1, 0, 0],
+        zdir: UP,
+        profile: { kind: "mesh", ...gridSolid(ahead, ap.t / 12) },
+        depth: r6(ap.t / 12),
+        material: "Concrete Class DF",
+        psets: designPset("approach-slab", apid, { PayItem: "601-03056 Concrete Class DF" }),
+        // Its bars' box (the slab as cast, at mid-depth) and its top, rows from the abutment out.
+        box: { c: v3(P(slabMid.x, slabMid.y, zMid - ap.t / 24)), ax: [v3(bx), v3(by), UP], half: [r6(length / 2), r6(ap.L / 2), r6(ap.t / 24)] },
+        grid: { top: slabTop, stA: offs.map((o) => r6(at(o, face).st)), stB: offs.map((o) => r6(at(o, face + ap.L).st)) },
+      });
       return;
     }
     // A pier: its cap, columns and foundations.

@@ -128,12 +128,16 @@ export async function runLoadPath(o: {
     const k = c.support;
     const bd = await load(c.bearingId, "elastomeric-bearing");
     const bBefore = bearingInputs(bd?.inputs ?? {});
-    const bNext = bearingFromBridge(b, run, k, bBefore);
+    // An abutment's design first: a semi-integral abutment's end diaphragm rides on the bearings.
+    const abut = s.type.endsWith("abutment") ? await load(c.abutmentId, "abutment") : null;
+    const abutBefore = abut ? abutmentInputs(abut.inputs) : abutmentInputs({});
+    const abutNext = s.type.endsWith("abutment") ? abutmentFromBridge(b, run, k, abutBefore) : null;
+    const bNext = bearingFromBridge(b, run, k, bBefore, abutNext);
     c.bearingId = await upsert(`bearing-${k}`, `${s.name}, bearings`, "elastomeric-bearing", bd, bBefore, bNext, verdictTry(() => designBearing(bNext).checks), `${prefix}, ${s.name} bearings`);
-    if (s.type.endsWith("abutment")) {
-      const d = await load(c.abutmentId, "abutment");
-      const before = d ? abutmentInputs(d.inputs) : abutmentInputs({});
-      const next = abutmentFromBridge(b, run, k, before);
+    if (s.type.endsWith("abutment") && abutNext) {
+      const d = abut;
+      const before = abutBefore;
+      const next = abutNext;
       c.abutmentId = await upsert(`abutment-${k}`, s.name, "abutment", d, before, next, verdictTry(() => runFoundation("abutment", next).checks), `${prefix}, ${s.name}`);
       const sd = await load(c.approachSlabId, "approach-slab");
       const sBefore = approachSlabInputs(sd?.inputs ?? {});

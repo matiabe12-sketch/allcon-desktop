@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { pointAt } from "./alignment";
 import { BRIDGE_DEFAULTS, runBridge, type BridgeInputs } from "./bridge";
 import { bridgeIfc, earcut, meshVolume, type IfcElement } from "./ifc";
+import { ABUTMENT_DEFAULTS } from "../foundations/abutment";
 
 const dot = (a: number[], b: number[]) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 const count = (els: IfcElement[], cls: string) => els.filter((e) => e.cls === cls).length;
@@ -56,8 +57,22 @@ describe("the Bridge as an IFC 4.3 model", () => {
       return v + (p[0] * (q[1] * r[2] - q[2] * r[1]) - p[1] * (q[0] * r[2] - q[2] * r[0]) + p[2] * (q[0] * r[1] - q[1] * r[0])) / 6;
     }, 0);
     const lay = runBridge(BRIDGE_DEFAULTS).layout;
-    const plan = (BRIDGE_DEFAULTS.leftEdge + BRIDGE_DEFAULTS.rightEdge) * (lay.supports[1].station - lay.supports[0].station);
+    // Span 1: from the pier's line to the abutment's, and on past that (integral) to the cap's back face, where the approach slab starts.
+    const back = (k: number) => ABUTMENT_DEFAULTS.capWidth - lay.supports[k].bearingOffset;
+    const plan = (BRIDGE_DEFAULTS.leftEdge + BRIDGE_DEFAULTS.rightEdge) * (lay.supports[1].station - lay.supports[0].station + back(0));
     expect(vol / (plan * (BRIDGE_DEFAULTS.deckT / 12))).toBeCloseTo(1, 3);
+    // No gap at the abutment: the deck ends where the approach slab begins (the cap's back face), its whole width.
+    const slab = m.elements.find((e) => e.name === "Abutment 1 approach slab")!;
+    for (const st of deck.grid!.stA) expect(lay.supports[0].station - st).toBeCloseTo(back(0), 3);
+    // And on the same surface: the slab's first row (at the abutment) is the deck's end row, crown and grade, point for
+    // point (no step at the edges); the slab runs its length out, its top on the roadway.
+    const [deckEnd, slabEnd] = [deck.grid!.top[0], slab.grid!.top[0]];
+    expect(slabEnd.length).toBe(deckEnd.length);
+    slabEnd.forEach((p, j) => p.forEach((v, k) => expect(v, `column ${j}`).toBeCloseTo(deckEnd[j][k], 4)));
+    const rows = slab.grid!.top;
+    expect(Math.hypot(rows[rows.length - 1][0][0] - rows[0][0][0], rows[rows.length - 1][0][1] - rows[0][0][1])).toBeCloseTo(20, 4); // the default's 20 ft
+    if (slab.profile.kind !== "mesh") throw new Error("mesh");
+    expect(meshVolume(slab.profile.pts, slab.profile.tris) / (20 * (BRIDGE_DEFAULTS.leftEdge + BRIDGE_DEFAULTS.rightEdge) * (12 / 12))).toBeCloseTo(1, 2); // 1 ft thick, closed and outward
   });
 
   it("runs the alignment past both ends, with the profile's PVI", () => {

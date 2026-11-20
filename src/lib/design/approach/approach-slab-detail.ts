@@ -3,7 +3,8 @@ import type { Pt } from "../stm/geometry";
 import { ftIn, roundDown } from "../rebar/bars";
 import { countAt, runGroups, type PreGroup, type RunOptions } from "../rebar/runs";
 import { markGroups, schedule, type ConcreteItem } from "../rebar/schedule";
-import { ftT, inT } from "../takeoff/tex";
+import { ASPHALT_TON_PER_SY_IN, ftT, inT } from "../takeoff/tex";
+import { num } from "../calc-style";
 import type { DetailView, Takeoff } from "../takeoff/types";
 import type { ApproachSlabInputs } from "./approach-slab";
 
@@ -113,6 +114,9 @@ export function approachSlabTakeoff(i: ApproachSlabInputs, count = 2): Takeoff {
     run({ size: i.sleeperLong.bar, count: nLong, straight: Wsk - 2 * C, use: "Sleeper, along", callout: `#${i.sleeperLong.bar} (Tot ${nLong}) along the sleeper`, cover: sc, spacing: i.sleeperLong.spacing });
     if (device) run({ size: 5, count: 2, straight: Wsk - 2 * C, use: "Sleeper, in the block", callout: "#5 (Tot 2) at the block's top", cover: 2, spacing: 6 });
   }
+  // --- the edge copings under the rail (where the plans show them): two #4 along each ----------------------------------
+  const cop = i.coping && i.coping.depth > i.t && i.coping.width > 0 ? i.coping : null;
+  if (cop) run({ size: 4, count: 4, straight: Ls - 2 * C, use: "Copings, along", callout: "#4 (Tot 2) along each edge coping", cover: 2, spacing: 6 });
 
   // --- concrete and other quantities ---------------------------------------------------------------------------------
   const slabCy = (LsFt * i.W * (i.t / 12)) / 27;
@@ -120,6 +124,7 @@ export function approachSlabTakeoff(i: ApproachSlabInputs, count = 2): Takeoff {
   const concrete: ConcreteItem[] = [
     { label: N > 1 ? "Approach slabs" : "Approach slab", cy: N * slabCy, basis: `${each("slabs")}${fit(LsFt)} ft along the roadway (${seatNote}, from the back of the notch) by ${i.W} ft by ${i.t} in`, math: `${times}${ftT(fit(LsFt))}\\cdot ${ftT(i.W)}\\cdot ${inT(i.t)}`, ref: "Approach slab: length from the back of the notch × width × thickness" },
   ];
+  if (cop) concrete.push({ label: N > 1 ? "Edge copings" : "Edge coping", cy: (N * 2 * LsFt * (cop.width / 12) * ((cop.depth - i.t) / 12)) / 27, basis: `${each("slabs")}two edges, ${fit(LsFt)} ft long, ${cop.width} in wide, ${cop.depth} in deep at the edge (${cop.depth - i.t} in below the slab)`, math: `${times}2\\cdot ${ftT(fit(LsFt))}\\cdot ${inT(cop.width)}\\cdot ${inT(cop.depth - i.t)}`, ref: "Edge coping: two edges × length × width × depth below the slab" });
   const blockH = i.t + i.wearing; // in, the block up to the roadway's surface
   if (i.sleeper) {
     const len = Wsk / 12;
@@ -135,7 +140,11 @@ export function approachSlabTakeoff(i: ApproachSlabInputs, count = 2): Takeoff {
   // The poured joint (Item 408) at the abutment end; with no device, at the sleeper end too (B-601-1).
   const nSeal = device ? 1 : 2;
   quantities.sealant = { value: (N * nSeal * Wsk) / 12, basis: `the poured joint along ${nSeal === 1 ? "the slab's end at the abutment" : "both of the slab's ends"}`, math: `${N * nSeal > 1 ? `${N * nSeal}\\cdot ` : ""}\\frac{${ftT(i.W)}}{\\cos\\left(${i.skew}\\mathrm{deg}\\right)}`, ref: "the poured joint sealant along the skewed end(s), Item 408" };
-  if (device) quantities.joint = { value: (N * Wsk) / 12, basis: `${each("joints")}across the slab's end, ${fit(Wsk / 12)} ft along the skew`, math: `${times}\\frac{${ftT(i.W)}}{\\cos\\left(${i.skew}\\mathrm{deg}\\right)}`, ref: "the joint along the slab's skewed end" };
+  // The device runs curb to curb along the skew; the rails' cover plates close it over the barriers.
+  const curb = i.roadway > 0 && i.roadway < i.W ? i.roadway : i.W;
+  const curbSk = curb / Math.cos((i.skew * Math.PI) / 180);
+  if (device) quantities.joint = { value: N * curbSk, basis: `${each("joints")}curb to curb, ${fit(curbSk)} ft along the skew`, math: `${times}\\frac{${ftT(curb)}}{\\cos\\left(${i.skew}\\mathrm{deg}\\right)}`, ref: "the device curb to curb along the slab's skewed end" };
+  if (i.wearing > 0) quantities.asphalt = { value: ((N * LsFt * curb) / 9) * i.wearing * ASPHALT_TON_PER_SY_IN, basis: `${each("slabs")}${fit(LsFt)} ft by ${fit(curb)} ft curb to curb, ${i.wearing} in at 0.055 ton per SY-in`, math: `${times}\\frac{${ftT(fit(LsFt))}\\cdot ${ftT(curb)}}{9}\\cdot ${num(i.wearing)}\\cdot 0.055`, ref: "the overlay's area (SY) × thickness (in) × 0.055 ton per SY-in (110 lb)" };
 
   // --- views (inches, y up) -------------------------------------------------------------------------------------------
   // Longitudinal section along the roadway: the abutment with the notch at the left, the slab on its seat, the sleeper at the right.

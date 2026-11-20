@@ -1,10 +1,11 @@
 import { payItem, type QuantityRole } from "./cdot-items";
-import type { Schedule } from "./schedule";
+import type { PaidWith, Schedule } from "./schedule";
 
 // A design's quantities as pay item lines (CDOT item number, description, pay unit, quantity),
 // for its project's line items.
 
-export type PayLine = { code: string; description: string; unit: string; quantity: number; role: QuantityRole };
+/** `paidWith`: a bridge's summary of quantities puts this line under that part (a semi-integral end diaphragm, the superstructure). */
+export type PayLine = { code: string; description: string; unit: string; quantity: number; role: QuantityRole; paidWith?: PaidWith };
 
 /** A quantity as CDOT's summaries of quantities carry it: concrete to the tenth of a cubic yard, bars to the nearest 10 lb, the rest whole. */
 export function roundFor(unit: string, v: number) {

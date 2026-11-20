@@ -134,6 +134,12 @@ export function BearingEditor({ design, projects }: { design: { id: string; name
                 <Field label="Friction coefficient μ (C14.8.3.1)" value={inputs.mu} onChange={set("mu")} step={0.05} />
               </Section>
             )}
+            <Section title="Anchor rods (14.8.3.1)">
+              <Field label="Rods per bearing (0: none)" value={inputs.anchorRods?.n ?? 0} onChange={(v) => setInputs((x) => ({ ...x, anchorRods: v > 0 ? { d: 1.5, Fu: 75, ...(x.anchorRods ?? {}), n: Math.round(v) } : null }))} />
+              {!!inputs.anchorRods?.n && <Field label="Rod diameter" unit="in" value={inputs.anchorRods.d} onChange={(v) => setInputs((x) => ({ ...x, anchorRods: { ...x.anchorRods!, d: v } }))} step={0.125} />}
+              {!!inputs.anchorRods?.n && <Field label="Rod Fu (ASTM F1554)" unit="ksi" value={inputs.anchorRods.Fu} onChange={(v) => setInputs((x) => ({ ...x, anchorRods: { ...x.anchorRods!, Fu: v } }))} hint="Grade 36: 58, Grade 55: 75, Grade 105: 125" />}
+              <Field label="Connection force, part of the dead load (3.10.9.2)" value={inputs.connectionFactor ?? 0.25} onChange={set("connectionFactor")} step={0.05} hint="Seismic Zone 1: 0.25 where As ≥ 0.05, else 0.15" />
+            </Section>
           </CardContent>
         </Card>
 

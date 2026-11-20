@@ -1,4 +1,4 @@
-import { spanInputs, type GirderDesign, type GirderInputs, type GirderResult } from "./prestressed";
+import { debondSets, spanInputs, type GirderDesign, type GirderInputs, type GirderResult } from "./prestressed";
 
 // The girder schedule as CDOT's worksheet B-618-CBT1 tabulates it, filled from the design: for each
 // span, the exterior and interior girders (by letter, A at the left), their length along grade, the
@@ -67,7 +67,7 @@ export function girderSchedule(i: GirderInputs, d: GirderDesign) {
     const si = spanInputs(i, k);
     rows.push(rowFor(k + 1, sp.exterior, si, "exterior"));
     if (i.nGirders > 2) rows.push(rowFor(k + 1, sp.interior, si, "interior"));
-    for (const row of si.strands) if ((row.debonded ?? 0) > 0 && (row.debondLength ?? 0) > 0) debond.push({ span: k + 1, y: row.y, strands: row.count, debonded: row.debonded ?? 0, length: row.debondLength ?? 0 });
+    for (const row of si.strands) for (const d of debondSets(row)) debond.push({ span: k + 1, y: row.y, strands: row.count, debonded: d.count, length: d.length });
   });
   const final = d.spans.every((s) => s.ok) && d.piers.every((p) => p.ok);
   return { rows, debond, final, harped: i.harped.count > 0 };

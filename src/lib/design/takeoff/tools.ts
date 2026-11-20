@@ -15,7 +15,7 @@ import { ftIn, hookLeg, roundDown, splitRun } from "../rebar/bars";
 import { countAt, runGroups, type PreGroup, type RunOptions } from "../rebar/runs";
 import { markGroups, schedule, type BarShape, type ConcreteItem, type ExtraSteel } from "../rebar/schedule";
 import { num } from "../calc-style";
-import { avgT, ftT, inT, perFtT, plus18T, sumT } from "./tex";
+import { ASPHALT_TON_PER_SY_IN, avgT, ftT, inT, perFtT, plus18T, sumT } from "./tex";
 import type { DetailView, Takeoff } from "./types";
 
 // Each design tool's take-off: its bars as CDOT details them, and its quantities. The bars a
@@ -512,12 +512,13 @@ export function wingwallTakeoff(i: WingwallInputs): Takeoff {
     lines.push({ pts: [[-embed, y], [Math.max(12, len - c), y]], mark: "Horizontal, retained face", kind: "main" });
   }
   series(b.bar, rows, horiz, hookLeg(b.bar).leg, "Horizontal, retained face", `#${b.bar} @ ${ftIn(b.spacing)} (retained face)`);
-  // Front face horizontals and verticals each face: shrinkage and temperature bars (5.10.6), #4 @ 12" assumed.
-  run({ size: 4, count: countAt(H - 2 * c, 12), straight: L - c + embed, use: "Horizontal, front face", callout: `#4 @ 1'-0" (front face)`, spacing: 12, cover: c });
-  const nv = countAt(L - 2 * c, 12);
+  // Front face horizontals and verticals each face: the shrinkage and temperature bars (5.10.6), the design's other bars.
+  const ob = i.otherBars ?? { bar: 4, spacing: 12 };
+  run({ size: ob.bar, count: countAt(H - 2 * c, ob.spacing), straight: L - c + embed, use: "Horizontal, front face", callout: `#${ob.bar} @ ${ftIn(ob.spacing)} (front face)`, spacing: ob.spacing, cover: c });
+  const nv = countAt(L - 2 * c, ob.spacing);
   const verts = Array.from({ length: nv }, (_, k) => Math.max(12, H - ((H - h) * (c + ((L - 2 * c) * k) / Math.max(1, nv - 1))) / L - 2 * c));
-  series(4, 2 * nv, verts, 0, "Vertical, each face", `#4 @ 1'-0" each face (vert.)`);
-  notes.push("The front face's horizontals and the vertical bars are shrinkage and temperature bars (AASHTO 5.10.6), #4 at 12 in assumed: set them to the design's where it sizes them. Tie to the abutment per M-601-20.");
+  series(ob.bar, 2 * nv, verts, 0, "Vertical, each face", `#${ob.bar} @ ${ftIn(ob.spacing)} each face (vert.)`);
+  notes.push("The front face's horizontals and the vertical bars are the shrinkage and temperature bars (AASHTO 5.10.6), checked in the design. Tie to the abutment per M-601-20.");
   const area = ((H + h) / 2) * L; // in² of elevation
   const concrete: ConcreteItem[] = [{ label: "Wingwall", cy: (area * t) / 46656, basis: `${fit(area / 144)} ft² of elevation by ${ftIn(t)} thick`, math: `${avgT(inT(H), inT(h))}\\cdot ${inT(L)}\\cdot ${inT(t)}`, ref: `Wingwall: ${H === h ? "height" : "average height (at the abutment and the tip)"} × length × thickness` }];
   const { sch, markOf } = finish(pre, concrete);
@@ -540,14 +541,37 @@ export function deckTakeoff(i: DeckInputs, lengthFt = 100): Takeoff {
     lines.push({ pts: [[c, y], [Wd - c, y]], mark: use, kind: "main" });
   };
   tr(i.topBars, "Transverse, top", i.coverTop, i.t - i.coverTop - bar(i.topBars.bar).db / 2);
-  tr(i.botBars, "Transverse, bottom", i.coverBot, i.coverBot + bar(i.botBars.bar).db / 2);
+  // On precast panels the panels' strands are the bottom steel between the girders: the bottom mat is in the
+  // overhangs only, each bar from the edge to the exterior girder's centerline, and 3 bars along each girder (CDOT's
+  // panel details).
+  const oh = i.overhang * 12;
+  const panels = !!i.panels;
+  if (panels) {
+    const b = i.botBars;
+    const y = i.coverBot + bar(b.bar).db / 2;
+    run({ size: b.bar, count: 2 * countAt(Ld - 2 * c, b.spacing), straight: oh - c, use: "Transverse, bottom (overhangs)", callout: `#${b.bar} @ ${ftIn(b.spacing)} (transverse, bottom, each overhang)`, spacing: b.spacing, cover: i.coverBot });
+    lines.push({ pts: [[c, y], [oh, y]], mark: "Transverse, bottom (overhangs)", kind: "main" });
+    lines.push({ pts: [[Wd - oh, y], [Wd - c, y]], mark: "Transverse, bottom (overhangs)", kind: "main" });
+  } else tr(i.botBars, "Transverse, bottom", i.coverBot, i.coverBot + bar(i.botBars.bar).db / 2);
   const lg = (b: DeckInputs["topLong"], use: string, cover: number, y: number) => {
     const n = countAt(Wd - 2 * c, b.spacing);
     run({ size: b.bar, count: n, straight: Ld - 2 * c, use, callout: `#${b.bar} @ ${ftIn(b.spacing)} (${use.toLowerCase()})`, spacing: b.spacing, cover });
     for (let k = 0; k < n; k++) dots.push({ x: c + ((Wd - 2 * c) * k) / Math.max(1, n - 1), y, d: bar(b.bar).db, mark: use });
   };
   lg(i.topLong, "Longitudinal, top", i.coverTop, i.t - i.coverTop - bar(i.topBars.bar).db - bar(i.topLong.bar).db / 2);
-  lg(i.botLong, "Longitudinal, bottom", i.coverBot, i.coverBot + bar(i.botBars.bar).db + bar(i.botLong.bar).db / 2);
+  if (panels) {
+    const b = i.botLong;
+    const y = i.coverBot + bar(i.botBars.bar).db + bar(b.bar).db / 2;
+    const reach = oh - i.flange / 2 - c; // the overhang's soffit, edge to the flange
+    const nOh = Math.max(0, countAt(reach, b.spacing));
+    run({ size: b.bar, count: 2 * nOh, straight: Ld - 2 * c, use: "Longitudinal, bottom (overhangs)", callout: `#${b.bar} @ ${ftIn(b.spacing)} (longitudinal, bottom, each overhang)`, spacing: b.spacing, cover: i.coverBot });
+    run({ size: b.bar, count: 3 * i.nGirders, straight: Ld - 2 * c, use: "Longitudinal, over the girders", callout: `3 #${b.bar} over each girder`, spacing: 0, cover: i.coverBot });
+    for (let k = 0; k < nOh; k++) {
+      const x = c + (reach * k) / Math.max(1, nOh - 1);
+      dots.push({ x, y, d: bar(b.bar).db, mark: "Longitudinal, bottom (overhangs)" }, { x: Wd - x, y, d: bar(b.bar).db, mark: "Longitudinal, bottom (overhangs)" });
+    }
+    for (let g = 0; g < i.nGirders; g++) for (const dx of [-6, 0, 6]) dots.push({ x: oh + g * i.S * 12 + dx, y, d: bar(b.bar).db, mark: "Longitudinal, over the girders" });
+  } else lg(i.botLong, "Longitudinal, bottom", i.coverBot, i.coverBot + bar(i.botBars.bar).db + bar(i.botLong.bar).db / 2);
   const ohArea = ((i.tEdge + i.tFlange) / 2) * i.overhang * 12;
   const area = (Wd - 2 * i.overhang * 12) * i.t + 2 * ohArea; // in²
   const deckAreaT = `${inT(Wd - 2 * i.overhang * 12)}\\cdot ${inT(i.t)}+2\\cdot ${avgT(inT(i.tEdge), inT(i.tFlange))}\\cdot ${ftT(i.overhang)}`;
@@ -690,8 +714,16 @@ export function girderTakeoff(i: GirderInputs, deckFt?: number): Takeoff {
   const flange = girderShape(i).topWidth / 12;
   const slabA = b.W * (i.deckT / 12);
   const haunchA = i.nGirders * flange * (i.haunch / 12);
+  // Partial-depth precast panels (3 in, CDOT's standard) span between the girders' flanges: paid by the square yard
+  // (601-25730) and taken out of the cast-in-place deck.
+  const PANEL_T = 3;
+  const panelW = i.deckPanels ? Math.max(0, (i.nGirders - 1) * (i.S - flange)) : 0;
+  const panelA = panelW * (PANEL_T / 12);
+  const overlay = i.overlay ?? 0;
   const concrete: ConcreteItem[] = [
-    { label: "Deck slab", cy: (slabA * Ld) / 27, basis: `${fit(b.W)} ft out to out by ${fit(i.deckT)} in as cast, ${fit(Ld)} ft long`, math: `${ftT(b.W)}\\cdot ${inT(i.deckT)}\\cdot ${ftT(Ld)}`, ref: "Deck slab: out-to-out width × thickness as cast × length" },
+    panelA > 0
+      ? { label: "Deck slab (cast in place, on the panels)", cy: ((slabA - panelA) * Ld) / 27, basis: `${fit(b.W)} ft out to out by ${fit(i.deckT)} in, less the ${PANEL_T} in panels over ${fit(panelW)} ft between the flanges, ${fit(Ld)} ft long`, math: `\\left(${ftT(b.W)}\\cdot ${inT(i.deckT)}-${i.nGirders - 1}\\cdot\\left(${ftT(i.S)}-${inT(flange * 12)}\\right)\\cdot ${inT(PANEL_T)}\\right)\\cdot ${ftT(Ld)}`, ref: "Deck slab: (out-to-out width × thickness − bays × (spacing − flange) × panel thickness) × length" }
+      : { label: "Deck slab", cy: (slabA * Ld) / 27, basis: `${fit(b.W)} ft out to out by ${fit(i.deckT)} in as cast, ${fit(Ld)} ft long`, math: `${ftT(b.W)}\\cdot ${inT(i.deckT)}\\cdot ${ftT(Ld)}`, ref: "Deck slab: out-to-out width × thickness as cast × length" },
     ...(haunchA > 0 ? [{ label: "Haunches", cy: (haunchA * Ld) / 27, basis: `${i.nGirders} × ${fit(flange * 12)} in flange by ${fit(i.haunch)} in, ${fit(Ld)} ft`, math: `${i.nGirders}\\cdot ${inT(flange * 12)}\\cdot ${inT(i.haunch)}\\cdot ${ftT(Ld)}`, ref: "Haunches: girders × top flange width × haunch × length" }] : []),
   ];
   // Over each pier of continuous spans: the deck's negative moment bars (the girder design's pierBars, on top of the
@@ -708,17 +740,22 @@ export function girderTakeoff(i: GirderInputs, deckFt?: number): Takeoff {
       ? { value: lf * (girderShape(i).topWidth / 12), basis: `${i.nGirders} boxes per span, ${fit(girderShape(i).topWidth)} in wide, ${each.map((x) => `${fit(x)} ft`).join(" + ")} end to end (square feet of box)`, math: `${i.nGirders}\\cdot ${inT(girderShape(i).topWidth)}\\cdot ${sumT(each.map(ftT))}`, ref: "boxes per span × top width × each span's box length (CDOT pays boxes by the square foot)" }
       : { value: lf, basis: `${i.nGirders} girders per span, ${each.map((x) => `${fit(x)} ft`).join(" + ")} end to end`, math: `${i.nGirders}\\cdot ${sumT(each.map(ftT))}`, ref: "girders per span × each span's girder length end to end" },
     waterproofing: { value: (b.roadway * Ld) / 9, basis: `${fit(b.roadway)} ft between the rails by ${fit(Ld)} ft`, math: `${ftT(b.roadway)}\\cdot ${ftT(Ld)}`, ref: "the roadway between the rails × length" },
+    ...(panelW > 0 ? { panels: { value: (panelW * Ld) / 9, basis: `${i.nGirders - 1} bays of ${fit(i.S - flange)} ft between the flanges by ${fit(Ld)} ft`, math: `\\frac{${i.nGirders - 1}\\cdot\\left(${ftT(i.S)}-${inT(flange * 12)}\\right)\\cdot ${ftT(Ld)}}{9}`, ref: "bays × (spacing − top flange) × length, in square yards" } } : {}),
+    ...(overlay > 0 ? { asphalt: { value: ((b.roadway * Ld) / 9) * overlay * ASPHALT_TON_PER_SY_IN, basis: `${fit((b.roadway * Ld) / 9)} SY between the rails by ${fit(overlay)} in, at 0.055 ton per SY-in`, math: `\\frac{${ftT(b.roadway)}\\cdot ${ftT(Ld)}}{9}\\cdot ${num(overlay)}\\cdot 0.055`, ref: "the roadway's area (SY) × thickness (in) × 0.055 ton per SY-in (110 lb)" } } : {}),
     ...(b.rail ? { rail: { value: 2 * Ld, basis: `${b.rail.name.replace(/ \(#\d option\)/, "")} on both edges, ${fit(Ld)} ft each`, math: `2\\cdot ${ftT(Ld)}`, ref: `${b.rail.name.replace(/ \(#\d option\)/, "")} on both edges` } } : {}),
   };
   const notes = [
     "Prestressed girders are paid by the linear foot, strands and bars included (618).",
     `The deck is ${fit(Ld)} ft long, girder end to girder end over ${spans.length > 1 ? "the spans" : "the span"} (adjustable). Its area is the out-to-out width by the length along the girders, which a skew doesn't change. Approach slabs, end diaphragms and the deck's own mats are not included here (the mats are the Deck Slab design's); the negative moment bars over the piers are.`,
     ...(b.rail ? [`${b.rail.name} (${b.rail.sheet}) is paid by the foot under item ${b.rail.payItem}, its concrete and bars included.`] : []),
+    ...(panelW > 0 ? ["Partial-depth precast deck panels (3 in) between the girders' flanges are paid by the square yard (601-25730), their strands included; the cast-in-place deck is the rest."] : []),
+    ...(overlay > 0 ? [`The ${fit(overlay)} in asphalt overlay on the membrane, between the rails, is paid by weight (Item 403).`] : []),
   ];
   return { what: `${i.shape.toUpperCase()} girders and deck`, schedule: sch, quantities, views: [], notes, length: { label: "Deck length", value: +Ld.toFixed(2), unit: "ft" } };
 }
 
-export function bearingTakeoff(count = 1): Takeoff {
+export function bearingTakeoff(count = 1, leveling = false): Takeoff {
+  if (leveling) return { what: "leveling pads", schedule: schedule([], []), quantities: {}, views: [], notes: ["Plain elastomeric leveling pads under the girders: included in the girders' item (618), not paid separately."], length: { label: "Number of pads", value: count, unit: "EA" } };
   return { what: "bearings", schedule: schedule([], []), quantities: { bearing: { value: count, basis: `${count} bearing${count > 1 ? "s" : ""}` } }, views: [], notes: [], length: { label: "Number of bearings", value: count, unit: "EA" } };
 }
 

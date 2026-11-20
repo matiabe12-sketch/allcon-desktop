@@ -46,7 +46,7 @@ export const BOND_TABLE: Record<BondGround, { name: string; ranges: ([number, nu
 export const GROUT_TYPES = ["A", "B", "C", "D", "E"] as const;
 
 /** Threadbar areas (in²) beyond #18 (ASTM A615 Grade 75 / 80 sizes used in micropiles). */
-const BAR_AREA: Record<number, { area: number; dia: number }> = { ...BARS, 20: { area: 4.91, dia: 2.5 } };
+export const MICROPILE_BARS: Record<number, { area: number; dia: number }> = { ...BARS, 20: { area: 4.91, dia: 2.5 }, 24: { area: 7.07, dia: 3 } };
 
 export type MicropileInputs = {
   // Section
@@ -54,7 +54,9 @@ export type MicropileInputs = {
   casingT: number; // in, wall
   casingFy: number; // ksi
   threadReduction: number; // in², casing area lost at the threaded joints (tension)
-  bar: number; // threadbar size
+  bar: number; // threadbar size (#20 a 2.5 in bar, #24 a 3 in bar)
+  /** Bars in the core (1 when not given), bundled at the center. */
+  barCount?: number;
   barFy: number; // ksi
   fcGrout: number; // ksi
   holeD: number; // in, drill hole in the bond zone
@@ -68,7 +70,14 @@ export type MicropileInputs = {
   bondGround: BondGround;
   grouting: (typeof GROUT_TYPES)[number];
   alphaB: number; // ksf, nominal bond used (0: the table's lower bound)
-  phiBond: number; // 0.55 presumptive, ≤ 0.70 with load tests
+  phiBond: number; // the preliminary (presumptive) bond φ: 0.55 (AASHTO Table 10.5.5.2.5-1)
+  /**
+   * Final design with load tests in the plans: verification tests before production and proof tests on production
+   * micropiles (AASHTO 10.9.3.5.4). The bond then takes `phiBondTested` (up to 0.70, Table 10.5.5.2.5-1); without
+   * them, the preliminary `phiBond`.
+   */
+  loadTested?: boolean;
+  phiBondTested?: number;
   tipOnRock: boolean;
   quKsf: number; // rock under the tip
   soil: SoilLayer[]; // for the lateral analysis, from the cap down
@@ -87,6 +96,12 @@ export type MicropileInputs = {
   /** In a group: the p-multipliers (AASHTO Table 10.7.2.4-1), the group's average for its deflection and the lead row's for
    *  the moment, that row's pile pushed to the group's deflection. */
   groupPm?: { avg: number; lead: number } | null;
+  /**
+   * The connection into the cap (AASHTO 10.9.3.10.7): a square bearing plate on the casing's top, `size` in square and
+   * `t` in thick (Fy ksi), fillet-welded all round (`weld` in, Fexx ksi); the cap's concrete `capFc` ksi under it.
+   */
+  plate?: { size: number; t: number; Fy: number; weld: number; Fexx: number } | null;
+  capFc?: number;
 };
 
 const ROCK: BondGround[] = ["soft-shale", "hard-shale", "limestone", "sandstone", "granite"];
@@ -98,6 +113,7 @@ export const MICROPILE_DEFAULTS: MicropileInputs = {
   casingFy: 80,
   threadReduction: 1.5,
   bar: 20,
+  barCount: 1,
   barFy: 75,
   fcGrout: 5,
   holeD: 8,
@@ -110,6 +126,8 @@ export const MICROPILE_DEFAULTS: MicropileInputs = {
   grouting: "A",
   alphaB: 7,
   phiBond: 0.55,
+  loadTested: false,
+  phiBondTested: 0.7,
   tipOnRock: false,
   quKsf: 100,
   soil: [
@@ -144,9 +162,10 @@ export function designMicropile(i: MicropileInputs) {
   if (!i.cases.length) throw new DesignError("Enter at least one load case.");
   const checks: Check[] = [];
   const add = (c: Omit<Check, "ok"> & { ok?: boolean }) => checks.push({ ...c, ok: c.ok ?? c.demand <= c.capacity });
-  const b = BAR_AREA[i.bar];
+  const b = MICROPILE_BARS[i.bar];
   if (!b) throw new DesignError("Choose a bar size.");
-  const Ab = b.area;
+  const nb = Math.max(1, Math.round(i.barCount ?? 1));
+  const Ab = b.area * nb;
   const IDc = i.casingOD - 2 * i.casingT;
   // Corrosion: sacrificial steel off the casing's outside, the rate over the life beyond the coating's (BDM 10.5.1.4).
   const life = i.designLife ?? 75;
@@ -171,27 +190,41 @@ export function designMicropile(i: MicropileInputs) {
   if (bond.alpha <= 0) throw new DesignError("That grouting type has no presumptive bond for this ground: enter αb from a load test.");
   const db = i.holeD / 12;
   const Rs = Math.PI * db * bond.alpha * i.bond;
-  const Pt = i.plunge > 0 ? i.phiBond * Math.PI * db * bond.alpha * i.plunge : 0;
+  // The bond's φ: the load-tested one in final design, else the preliminary one.
+  const phiTested = Math.min(0.7, i.phiBondTested ?? 0.7);
+  const phiG = i.loadTested ? phiTested : i.phiBond;
+  const Pt = i.plunge > 0 ? phiG * Math.PI * db * bond.alpha * i.plunge : 0;
   const Rp = i.tipOnRock ? 2.5 * i.quKsf * (Math.PI / 4) * db * db : 0;
   const phiTip = 0.5;
   const pick = <T,>(arr: T[], f: (t: T) => number) => arr.reduce((a, b2) => (f(b2) > f(a) ? b2 : a), arr[0]);
   const factored = i.cases.filter((c) => c.limit !== "service");
   const service = i.cases.filter((c) => c.limit === "service");
+  // The bond length each way: preliminary (φ as entered) and final with load tests, for the governing compression and tension.
+  const need = (phi: number) => {
+    if (!factored.length) return 0;
+    const Pc = pick(factored, (x) => x.compression).compression;
+    const Ptn = pick(factored, (x) => x.tension).tension;
+    const perFt = phi * Math.PI * db * bond.alpha;
+    const tip = i.tipOnRock ? phiTip * Rp : 0;
+    return Math.max(0, (Pc - tip - Pt) / perFt, (Ptn - Pt) / perFt);
+  };
 
+  // The micropile's structural resistance: AASHTO 10.9.3.10's factors, 1.0 at an extreme event (1.3.2.1, 10.5.5.3.3).
+  const phiS = (c: MicropileCase, strength: number) => (c.limit === "extreme" ? 1.0 : strength);
   add({ id: "spacing", name: "Center-to-center spacing at least 30 in or 3 hole diameters", demand: Math.max(30, 3 * i.holeD) / 12, capacity: i.spacing, unit: "ft", ref: "AASHTO 10.9.1.2" });
   add({ id: "embed", name: "Embedment into the cap", demand: 12, capacity: i.embed, unit: "in", ref: "AASHTO 10.9.1.2" });
   if (factored.length) {
     const c = pick(factored, (x) => x.compression);
-    const phiB = c.limit === "extreme" ? 1 : i.phiBond;
-    add({ id: "bond-comp", name: `Grout-to-ground bond in compression (${c.name})`, demand: c.compression, capacity: phiB * Rs + (c.limit === "extreme" ? 1 : phiTip) * Rp + Pt, unit: "kip", ref: "AASHTO 10.9.3.5.2, 10.9.3.5.3" });
-    add({ id: "cased-comp", name: `Cased length in compression (${c.name})`, demand: c.compression, capacity: 0.75 * RnCC, unit: "kip", ref: "AASHTO 10.9.3.10.2a" });
-    add({ id: "uncased-comp", name: `Uncased length in compression, less the plunge length's transfer (${c.name})`, demand: Math.max(0, c.compression - Pt), capacity: 0.75 * RnCU, unit: "kip", ref: "AASHTO 10.9.3.10.2b, 10.9.3.10.4" });
+    const phiB = c.limit === "extreme" ? 1 : phiG;
+    add({ id: "bond-comp", name: `Grout-to-ground bond in compression (${c.name})`, demand: c.compression, capacity: phiB * Rs + (c.limit === "extreme" ? 1 : phiTip) * Rp + Pt, unit: "kip", ref: "AASHTO 10.9.3.5.2, 10.9.3.5.3", note: `φ ${phiB}${c.limit === "extreme" ? " (extreme event)" : i.loadTested ? " (final design, load-tested)" : " (preliminary, presumptive)"}; ${need(phiG).toFixed(1)} ft of bond needed, ${i.bond} ft given` });
+    add({ id: "cased-comp", name: `Cased length in compression (${c.name})`, demand: c.compression, capacity: phiS(c, 0.75) * RnCC, unit: "kip", ref: "AASHTO 10.9.3.10.2a" });
+    add({ id: "uncased-comp", name: `Uncased length in compression, less the plunge length's transfer (${c.name})`, demand: Math.max(0, c.compression - Pt), capacity: phiS(c, 0.75) * RnCU, unit: "kip", ref: "AASHTO 10.9.3.10.2b, 10.9.3.10.4" });
     const t = pick(factored, (x) => x.tension);
     if (t.tension > 0) {
-      const phiU = t.limit === "extreme" ? 0.8 : i.phiBond;
-      add({ id: "bond-ten", name: `Grout-to-ground bond in tension (${t.name})`, demand: t.tension, capacity: phiU * Rs + Pt, unit: "kip", ref: t.limit === "extreme" ? "AASHTO 10.9.3.7, CDOT BDM 10.3.3" : "AASHTO 10.9.3.7" });
-      add({ id: "cased-ten", name: `Cased length in tension, at the casing's threads (${t.name})`, demand: t.tension, capacity: 0.8 * RnTC, unit: "kip", ref: "AASHTO 10.9.3.10.3a" });
-      add({ id: "uncased-ten", name: `Uncased length in tension: the bar (${t.name})`, demand: Math.max(0, t.tension - Pt), capacity: 0.8 * RnTU, unit: "kip", ref: "AASHTO 10.9.3.10.3b" });
+      const phiU = t.limit === "extreme" ? 0.8 : phiG;
+      add({ id: "bond-ten", name: `Grout-to-ground bond in tension (${t.name})`, demand: t.tension, capacity: phiU * Rs + Pt, unit: "kip", ref: t.limit === "extreme" ? "AASHTO 10.9.3.7, CDOT BDM 10.3.3" : "AASHTO 10.9.3.7", note: `φ ${phiU}${t.limit === "extreme" ? " (extreme event)" : i.loadTested ? " (final design, load-tested)" : " (preliminary, presumptive)"}` });
+      add({ id: "cased-ten", name: `Cased length in tension, at the casing's threads (${t.name})`, demand: t.tension, capacity: phiS(t, 0.8) * RnTC, unit: "kip", ref: "AASHTO 10.9.3.10.3a" });
+      add({ id: "uncased-ten", name: `Uncased length in tension: the bar (${t.name})`, demand: Math.max(0, t.tension - Pt), capacity: phiS(t, 0.8) * RnTU, unit: "kip", ref: "AASHTO 10.9.3.10.3b" });
     }
   }
 
@@ -219,7 +252,7 @@ export function designMicropile(i: MicropileInputs) {
   const Es = 29000;
   const Igrout = (Math.PI * IDc ** 4) / 64;
   const Icasing = (Math.PI * (ODc ** 4 - IDc ** 4)) / 64;
-  const Ibar = (Math.PI * b.dia ** 4) / 64;
+  const Ibar = (nb * Math.PI * b.dia ** 4) / 64;
   const Eg = 57 * Math.sqrt(i.fcGrout * 1000); // ksi, grout as concrete (ACI 318 form)
   const EI = Es * (Icasing + Ibar) + 0.4 * Eg * Igrout; // the grout cracked
   const layers = [...(i.unsupported > 0 ? [{ thickness: i.unsupported, model: { kind: "none" as const } }] : []), ...toLayers(i.soil)];
@@ -241,11 +274,24 @@ export function designMicropile(i: MicropileInputs) {
     const KL = i.unsupported > 0 ? 1.2 * (i.unsupported + (r.zZero ?? 0)) * 12 : 0;
     const rg = Math.sqrt((Icasing + Ibar) / (Ac + Ab));
     const Pe = KL > 0 ? (Math.PI ** 2 * Es * (Ac + Ab)) / (KL / rg) ** 2 : Infinity;
-    const Po = 0.75 * RnCC;
-    const Pr = KL > 0 ? Math.min(Po, 0.75 * 0.877 * Pe) : Po;
+    const Po = phiS(c, 0.75) * RnCC;
+    const Pr = KL > 0 ? Math.min(Po, phiS(c, 0.75) * 0.877 * Pe) : Po;
     const value = c.compression / Pr + (r.Mmax * 12) / (1.0 * Mp);
     return { c, r, value, Pr, KL };
   }).filter((x): x is NonNullable<typeof x> => !!x);
+  // The casing in shear (6.12.1.2.3b, φv 1.0): Vn = 0.5 Fcr Ag, Fcr the larger of 1.60E/(√(Lv/D)(D/t)^1.25) and
+  // 0.78E/(D/t)^1.5, at most 0.58 Fy; t the wall after corrosion less the threads' share (as their area), Lv from the
+  // head to the first point of no deflection (the shear's reversal; the whole length when there's none: conservative).
+  if (comb.length) {
+    const sh = pick(comb, (x) => Math.abs(x.r.Vmax));
+    const Ac0 = (Math.PI / 4) * (ODc ** 2 - IDc ** 2);
+    const tv = Math.max(0.01, tc * (1 - Math.min(0.9, i.threadReduction / Math.max(Ac0, 1e-9))));
+    const Dt = ODc / tv;
+    const Lv = ((sh.r.zZero ?? length) || length) * 12;
+    const Fcr = Math.min(0.58 * i.casingFy, Math.max((1.6 * Es) / (Math.sqrt(Lv / ODc) * Dt ** 1.25), (0.78 * Es) / Dt ** 1.5));
+    const Agv = (Math.PI / 4) * (ODc ** 2 - (ODc - 2 * tv) ** 2);
+    add({ id: "casing-shear", name: `Casing in shear (${sh.c.name})`, demand: Math.abs(sh.r.Vmax), capacity: 1.0 * 0.5 * Fcr * Agv, unit: "kip", ref: "AASHTO 10.9.3.10.1, 6.12.1.2.3b", note: `wall ${tv.toFixed(3)} in (corrosion and threads out), Lv ${Lv.toFixed(0)} in, Fcr ${Fcr.toFixed(1)} ksi` });
+  }
   if (comb.length) {
     const g = pick(comb, (x) => x.value);
     add({ id: "interaction", name: `Casing: axial with flexure (${g.c.name})`, demand: g.value, capacity: 1, unit: "", ref: "AASHTO 10.9.3.10.1, 6.9.2.2 Eq. -3; FHWA NHI-05-039 5.6.4" });
@@ -266,12 +312,37 @@ export function designMicropile(i: MicropileInputs) {
     const g = pick(sv, (x) => Math.abs(x.r!.y0));
     add({ id: "deflection", name: `Lateral deflection at the cap (${g.c.name})`, demand: Math.abs(g.r!.y0), capacity: i.tolerable, unit: "in", ref: "AASHTO 10.9.3.9, 10.7.2.4" });
   }
+  // The connection into the cap (10.9.3.10.7): the concrete under the plate (5.6.5, φb 0.70, A2 taken as A1), the plate
+  // bending as a cantilever from the casing (AISC Design Guide 1, 3.1.3: m = n = (N − 0.8 d)/2, n′ = d/4; φ 0.90),
+  // and the fillet weld round the casing (6.13.3.2.4b, φe2 0.80), all under the most loaded case, compression or tension.
+  let connection: { Pu: number; bearing: number; tMin: number; weldR: number } | null = null;
+  if (i.plate && i.plate.size > 0 && factored.length) {
+    // A plate entered part way takes the common rest: 1 in thick, A36, a ¼ in fillet of E70.
+    const num = (v: unknown, d: number) => (typeof v === "number" && v > 0 ? v : d);
+    const p = { size: i.plate.size, t: num(i.plate.t, 1), Fy: num(i.plate.Fy, 36), weld: num(i.plate.weld, 0.25), Fexx: num(i.plate.Fexx, 70) };
+    const Pc = pick(factored, (x) => x.compression).compression;
+    const Pt2 = pick(factored, (x) => x.tension).tension;
+    const Pu = Math.max(Pc, Pt2);
+    const A1 = p.size * p.size;
+    const fcc = i.capFc ?? 4.5;
+    const bearing = 0.7 * 0.85 * fcc * A1;
+    const lever = Math.max((p.size - 0.8 * i.casingOD) / 2, i.casingOD / 4);
+    const tMin = lever * Math.sqrt((2 * Pc) / (0.9 * p.Fy * A1));
+    const weldR = 0.8 * 0.6 * p.Fexx * 0.707 * p.weld * Math.PI * i.casingOD;
+    connection = { Pu, bearing, tMin, weldR };
+    add({ id: "plate-bearing", name: "Connection: the cap's concrete under the bearing plate", demand: Pc, capacity: bearing, unit: "kip", ref: "AASHTO 10.9.3.10.7, 5.6.5", note: `${p.size} in square plate, φb 0.70 × 0.85 f'c A1 (A2 taken as A1)` });
+    add({ id: "plate-t", name: "Connection: bearing plate thickness", demand: tMin, capacity: p.t, unit: "in", ref: "AASHTO 10.9.3.10.7; AISC Design Guide 1, 3.1.3", note: `cantilever ${lever.toFixed(2)} in from the casing, ${p.Fy} ksi, φ 0.90` });
+    add({ id: "plate-weld", name: "Connection: fillet weld of the plate to the casing", demand: Pu, capacity: weldR, unit: "kip", ref: "AASHTO 6.13.3.2.4b", note: `${p.weld} in fillet all round, ${p.Fexx} ksi electrode, φe2 0.80` });
+  }
   const notes: string[] = [];
-  if (i.phiBond <= 0.55) notes.push("φ 0.55 on the bond is presumptive, for preliminary design (AASHTO Table 10.5.5.2.5-1): final design needs verification load tests, and proof tests on at least one micropile per substructure or 5% of them (AASHTO 10.9.3.5.1, 10.9.3.5.4).");
+  if (!i.plate || !(i.plate.size > 0)) notes.push("The connection into the cap (AASHTO 10.9.3.10.7): give the bearing plate to check the concrete under it, its thickness and its weld.");
+  const bondNeeded = { preliminary: need(i.phiBond), tested: need(phiTested), phi: { preliminary: i.phiBond, tested: phiTested }, design: i.loadTested ? "final" : "preliminary" };
+  if (i.loadTested) notes.push(`Final design with load tests: the bond at φ ${phiTested} (AASHTO Table 10.5.5.2.5-1). The plans must call for verification tests before production and proof tests on at least one micropile per substructure or 5% of them (AASHTO 10.9.3.5.1, 10.9.3.5.4); a verification test pile is in the quantities. Without them (preliminary, φ ${i.phiBond}) the bond needs ${bondNeeded.preliminary.toFixed(1)} ft.`);
+  else notes.push(`Preliminary design: φ ${i.phiBond} on the bond is presumptive (AASHTO Table 10.5.5.2.5-1). With verification and proof load tests in the plans (AASHTO 10.9.3.5.1, 10.9.3.5.4), final design may take φ ${phiTested}: the bond would need ${bondNeeded.tested.toFixed(1)} ft instead of ${bondNeeded.preliminary.toFixed(1)} ft.`);
   if (i.cases.some((c) => c.tension > 0)) notes.push("Uplift without a tension load test takes the compression bond (AASHTO C10.9.3.7); a tension test is recommended where uplift governs.");
   if (ROCK.includes(i.bondGround)) notes.push("Bonded in rock: no group reduction of the bond (the block check of AASHTO 10.7.3.9 is for piles in cohesive soil).");
   if (i.aggressive) notes.push(`Aggressive ground (CDOT BDM 10.5.1.4): ${loss.toFixed(3)} in of the casing's wall taken off its outside (${rate} in/yr over ${years} of ${life} years) in every structural and lateral property. The bar's grout cover protects it in the bond zone; encapsulate the bar (FHWA NHI-05-039 5.11) where that ground is aggressive too.`);
-  return { fyCased, fyB, checks, notes, loss, tc, dev, elastic, Ab, Ac, Act, AgCased, AgUncased, RnCC, RnCU, RnTC, RnTU, bond, Rs, Pt, Rp, EI, Mp, comb, length };
+  return { bondNeeded, phiG, connection, fyCased, fyB, checks, notes, loss, tc, dev, elastic, Ab, Ac, Act, AgCased, AgUncased, RnCC, RnCU, RnTC, RnTU, bond, Rs, Pt, Rp, EI, Mp, comb, length };
 }
 
 export type MicropileResult = ReturnType<typeof designMicropile>;

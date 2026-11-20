@@ -55,6 +55,7 @@ export function WingwallEditor({ design, projects }: { design: { id: string; nam
               <Field label="fy" unit="ksi" value={inputs.fy} onChange={set("fy")} />
               <Field label="Concrete unit weight γc" unit="pcf" value={inputs.gammaC} scale={1000} onChange={set("gammaC")} />
               <BarsField label="Horizontal bars, retained face" value={inputs.bars} onChange={set("bars")} />
+              <BarsField label="Other bars (vertical each face, horizontal front face)" value={inputs.otherBars ?? { bar: 4, spacing: 12 }} onChange={set("otherBars")} />
               <Field label="Cover" unit="in" value={inputs.cover} onChange={set("cover")} step={0.25} />
               <Field label="Exposure class (1 or 2)" value={inputs.exposure} onChange={(v) => set("exposure")(v >= 1.5 ? 2 : 1)} />
             </Section>
@@ -73,7 +74,7 @@ export function WingwallEditor({ design, projects }: { design: { id: string; nam
                     <WingwallSketch inputs={inputs} result={r} />
                   </CardContent>
                 </Card>
-                <ChecksTable checks={r.checks} groupOf={() => "Section A: horizontal bars"} />
+                <ChecksTable checks={r.checks} groupOf={(id) => (id.startsWith("temp-") ? "Shrinkage and temperature steel" : "Section A: horizontal bars")} />
                 <TakeoffPanel kind="cantilever-wingwall" design={design} inputs={inputs} ok={r.checks.every((c) => c.advisory || c.ok)} onSettings={(t) => setInputs((s) => ({ ...s, takeoff: t }))} />
                 <div className="grid gap-4 xl:grid-cols-2">
                   <KeyValues

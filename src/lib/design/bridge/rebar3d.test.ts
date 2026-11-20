@@ -50,8 +50,32 @@ describe("F-18-Y's bars in 3D", async () => {
       expect(e.bars).toBe("design");
       const sets = setsOn(k);
       expect(copies(sets.filter((s) => s.role === "strand"))).toBe(46);
-      expect(copies(sets.filter((s) => s.role === "stirrup"))).toBe(stirrupStations(F18Y_GIRDER, e.depth).length);
+      expect(copies(sets.filter((s) => s.label.startsWith("#4 hairpins")))).toBe(stirrupStations(F18Y_GIRDER, e.depth).length);
     }
+  });
+  it("a CBT's own steel as CDOT details it (B-618-CBT1): hairpins, D20 web wires, confinement over 1.5D, #6 end bars, a W5 spiral", () => {
+    const { e, k } = of("girder")[0];
+    const sets = setsOn(k);
+    const n = stirrupStations(F18Y_GIRDER, e.depth).length;
+    const by = (start: string) => sets.filter((s) => s.label.startsWith(start));
+    // The first 20 at each end full depth, 7 in above the girder (54 in): their feet 1½ in up.
+    const full = by("#4 hairpins, D + 5½")[0];
+    expect(full.at).toHaveLength(40);
+    expect(Math.max(...full.path.map((q) => q[1])) * 12).toBeCloseTo(54 + 7, 3);
+    expect(Math.min(...full.path.map((q) => q[1])) * 12).toBeCloseTo(1.5, 3);
+    expect(copies(by("#4 hairpins, 2'-0\""))).toBe(n - 40);
+    expect(copies(by("D20 wires"))).toBe(2 * n);
+    // Confinement only within its length of either end.
+    const cf = F18Y_GIRDER.confinement ?? { length: 12 };
+    for (const q of by("#3 (D11) confinement")[0].at) expect(Math.min(q[2], e.depth - q[2])).toBeLessThanOrEqual(cf.length + 1e-6);
+    expect(copies(by("#6 end bars"))).toBe(4);
+    expect(by("W5 spiral")).toHaveLength(2);
+    // Everything but the hairpins' tops inside the girder's depth.
+    for (const s of sets.filter((x) => !x.label.startsWith("#4 hairpins")))
+      for (const [, y] of local(s)) {
+        expect(y).toBeGreaterThan(0);
+        expect(y).toBeLessThan(54 / 12);
+      }
   });
   it("the strands stay inside the CBT 54, the harped ones no higher than 52.25 in", () => {
     const { e, k } = of("girder")[0];
@@ -147,8 +171,11 @@ describe("F-18-Y's bars in 3D", async () => {
           expect(q[2]).toBeLessThan(zTop + 0.01);
         }
       const across = sets.filter((s) => /transverse, top/.test(s.label)).length;
-      // The span's 111.08 ft at the design's spacing, 2 in clear at the abutment end.
-      const want = 111.08 / (r.deck.topBars.spacing / 12);
+      // The span's deck along its middle (the abutment end past the support line, over the end diaphragm) at the design's spacing.
+      const mid = Math.floor(g.top[0].length / 2);
+      const Lm = g.top.slice(1).reduce((t, row, j) => t + Math.hypot(row[mid][0] - g.top[j][mid][0], row[mid][1] - g.top[j][mid][1], row[mid][2] - g.top[j][mid][2]), 0);
+      expect(Lm).toBeGreaterThan(111.08); // past the support line at the abutment
+      const want = Lm / (r.deck.topBars.spacing / 12);
       expect(Math.abs(across - want)).toBeLessThan(2);
     }
   });
@@ -196,6 +223,18 @@ describe("F-18-Y's bars in 3D", async () => {
               expect(z).toBeLessThanOrEqual(e.depth + 1e-3);
             }
       }
+    // The approach slabs on the roadway: their bars within the slab, under its top (the anchorage bars run on into the abutment).
+    for (const { e, k } of of("approach")) {
+      const g = els.find((x) => x.name === e.name)!;
+      const tops = g.grid!.top.flat().map((q) => q[2]);
+      const [hi, lo] = [Math.max(...tops), Math.min(...tops) - g.depth];
+      expect(setsOn(k).length).toBeGreaterThan(50);
+      for (const s of setsOn(k).filter((x) => !/anchorage/.test(x.label)))
+        for (const q of worldPts(s)) {
+          expect(q[2], s.label).toBeLessThan(hi);
+          expect(q[2], s.label).toBeGreaterThan(lo);
+        }
+    }
     expect(of("wingwall")).toHaveLength(4);
     // Each runs from the abutment out beside its approach slab (high at the abutment, low at the tip by the sleeper slab).
     for (const { e } of of("wingwall")) {
@@ -204,7 +243,8 @@ describe("F-18-Y's bars in 3D", async () => {
       const L = ab[0].wingwall.L;
       const tip = [0, 1].map((k) => e.origin[k] + e.xdir[k] * L);
       const toTip = [tip[0] - cap.origin[0], tip[1] - cap.origin[1]];
-      const toSlab = [slab.origin[0] - cap.origin[0], slab.origin[1] - cap.origin[1]];
+      const sb = els.find((x) => x.name === slab.name)!.box!;
+      const toSlab = [sb.c[0] - cap.origin[0], sb.c[1] - cap.origin[1]];
       expect(toTip[0] * toSlab[0] + toTip[1] * toSlab[1], e.name).toBeGreaterThan(0);
     }
   });

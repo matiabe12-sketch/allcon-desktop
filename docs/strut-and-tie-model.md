@@ -172,8 +172,10 @@ stiffness method); at each face, dv from it, and inboard of each load: flexure (
 5.5.4.2), minimum reinforcement (5.6.3.3, γ1 1.6, γ3 0.67, fr 0.24√f'c), shear by the General
 Procedure (5.7.3.4.2; Eq. -2 with ag 0.75 in assumed when below the minimum stirrups), minimum
 stirrups and spacing (5.7.2.5, 5.7.2.6), longitudinal reinforcement for shear (5.7.3.5), skin
-reinforcement (Eq. 5.6.7-3 and spacing). Crack control (Eq. 5.6.7-1) needs Service I moments and
-isn't checked yet. The calc package adds the governing sections as live math.
+reinforcement (Eq. 5.6.7-3 and spacing), and crack control (Eq. 5.6.7-1, Class 1): every Service I load set from
+the girder link (each lane arrangement, with and without its wind) by the same beam, fss = Ms / (As j d) on the
+cracked section, against the bars' spacing across the cap (2026-11-20). The calc package adds the governing sections
+as live math.
 
 ## Loads from girder designs (lane placement on the cap)
 
@@ -214,8 +216,15 @@ copy is a snapshot with its source; "Refresh from the girder designs" re-reads i
   height over the bearings. A hammerhead's column takes the horizontal force at its first node
   (rebuild an older model for it). These provisions were coded from the 10th Edition's articles
   as cited; check them against the specification before relying on a wind-governed design.
-- Braking and other loads along the bridge act across the cap's plane: outside this model.
-- Not yet: reactions of continuous girders (taken as simple spans, with a warning), and a button
+- **Loads along the bridge** (2026-11-20, `cap-along.ts`): braking, the wind along the bridge and the bearings'
+  temperature force act across the cap's plane, outside the model. The Bridge sets the pier's share (`girders.along`,
+  factored: the governing of 1.75 BR, 1.35 BR + WS + WL and WS, with 0.50 TU; docs/bridge-model.md), and the cap is
+  checked apart for it: bent about its vertical axis (a hammerhead's arms from their tips, a bent's spans as simple
+  spans between columns) with the side face's bars (the outer top and bottom bars and the skin bars), its shear
+  across (the concrete), and the torsion from the seat above its middle (5.7.2.1; over the threshold, the closed
+  stirrups with the gravity shear's share, 5.7.3.6.2). A two-stage cap: on the completed member.
+- Continuous girders (5.12.3.3): DC1 as simple spans, DC2, DW and the live load from the continuous beam (the old
+  warning that they were taken as simple spans was stale, removed 2026-11-20). Not yet: a button
   in the girder editor to start a cap from it.
 
 ## Standard caps (templates)

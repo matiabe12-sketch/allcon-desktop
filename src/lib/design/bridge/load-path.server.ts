@@ -15,7 +15,7 @@ import { nodeLpSolver } from "../stm/lp-node";
 import { designStm, stmInputs } from "../stm/strut-tie";
 import { designWingwall } from "../walls/wingwall";
 import { girderInputsFor, runBridge, spanGroups, type BridgeInputs } from "./bridge";
-import { abutmentFromBridge, approachSlabFromBridge, bearingFromBridge, capFromBridge, changedKeys, columnFromBridge, deckFromBridge, footingFromColumn, jointFromBridge, pilesFromColumn, shaftCageOf, shaftFromColumn, wingwallFromBridge } from "./loadpath";
+import { abutmentFromBridge, approachSlabFromBridge, bearingFromBridge, bearingLineForce, capFromBridge, changedKeys, columnFromBridge, columnLongitudinal, deckFromBridge, footingFromColumn, integralStiffness, jointFromBridge, longitudinalShares, thermalReactions, approachOnAbutment, windAlong, padLineStiffness, pierStiffness, pilesFromColumn, shaftCageOf, shaftFromColumn, wingwallFromBridge, type LongStiffness } from "./loadpath";
 
 // A bridge's load path through its linked designs (docs/bridge-model.md): each linked design's inputs
 // brought up to date from the bridge, top to bottom (girders, deck, bearings; abutments, approach slabs
@@ -120,9 +120,51 @@ export async function runLoadPath(o: {
   const dBefore = deckInputs(dd?.inputs ?? {});
   const dNext = deckFromBridge(b, run, dBefore, girderIds[0] ? { id: girderIds[0], name: names[0] || `${prefix}, girders` } : null);
   const deckId = await upsert("deck", "Deck, overhang and rail", "deck-slab", dd, dBefore, dNext, verdictTry(() => designDeck(dNext).checks), `${prefix}, deck`);
+  // The rail's end-zone collision values, for the approach slabs it carries on along.
+  let railEnd: { Mc: number; T: number } | null = null;
+  try {
+    const e = designDeck(dNext).endCase1;
+    railEnd = e ? { Mc: e.Mc, T: e.T } : null;
+  } catch {
+    railEnd = null;
+  }
 
   // --- each support's parts -------------------------------------------------------------------------------------------
   const comps = b.supports.map((_, i) => ({ support: i, ...(b.components.find((c) => c.support === i) ?? {}) }));
+  // The bridge's longitudinal forces shared once among its supports by their stiffness along the bridge (loadpath.ts
+  // longitudinalShares): each support's bearings (as linked) in series with its columns, or an integral abutment's
+  // piles at the movement (their p–y secant stiffness).
+  const stiff: LongStiffness[] = [];
+  const padPre: number[] = [];
+  for (const c of comps) {
+    const s = b.supports[c.support];
+    const bd0 = await load(c.bearingId, "elastomeric-bearing");
+    const pad = bearingInputs(bd0?.inputs ?? {});
+    const cast = s.type === "integral-abutment" || s.type === "continuous-pier";
+    // A sliding bearing sticks until friction's overcome: its pad's stiffness below that.
+    const kBear = cast || s.bearing === "fixed" ? Infinity : padLineStiffness(pad, b.nGirders);
+    let kSub = Infinity;
+    const a0 = s.type.endsWith("abutment") ? await load(c.abutmentId, "abutment") : null;
+    const aIn = a0 || s.type.endsWith("abutment") ? abutmentFromBridge(b, run, c.support, abutmentInputs(a0?.inputs ?? {}), { braking: 0 }) : null;
+    if (s.type === "integral-abutment" && aIn) kSub = integralStiffness(aIn);
+    else if (s.pier && run.layout.piers[c.support]) {
+      const col0 = await load(c.columnId, "pier-column");
+      kSub = pierStiffness(s.pier, run.layout.piers[c.support]!.columnHeight, columnInputs(col0?.inputs ?? {}).fc);
+    }
+    stiff.push({ kSub, kBear });
+    let f = 0;
+    try {
+      const bi = bearingFromBridge(b, run, c.support, pad, aIn);
+      f = bearingLineForce(bi, designBearing(bi), b.nGirders);
+    } catch {
+      f = 0;
+    }
+    padPre.push(f);
+  }
+  const shares = longitudinalShares(b, stiff);
+  // The temperature force each support takes along the bridge: its pads' shear where they slide; where it's fixed,
+  // the other supports' pads' reaction (the superstructure in equilibrium).
+  const tuForce = thermalReactions(b, stiff, padPre);
   for (const c of comps) {
     const s = b.supports[c.support];
     const k = c.support;
@@ -131,7 +173,7 @@ export async function runLoadPath(o: {
     // An abutment's design first: a semi-integral abutment's end diaphragm rides on the bearings.
     const abut = s.type.endsWith("abutment") ? await load(c.abutmentId, "abutment") : null;
     const abutBefore = abut ? abutmentInputs(abut.inputs) : abutmentInputs({});
-    const abutNext = s.type.endsWith("abutment") ? abutmentFromBridge(b, run, k, abutBefore) : null;
+    const abutNext = s.type.endsWith("abutment") ? abutmentFromBridge(b, run, k, abutBefore, { braking: shares[k].braking, windLong: windAlong(run, shares[k]) }) : null;
     // Its wingwalls, where the Bridge has them: their geometry and bars, so their Section B forces reach the abutment.
     const wdPre = abutNext ? await load(c.wingwallId, "cantilever-wingwall") : null;
     if (abutNext && wdPre) {
@@ -140,14 +182,25 @@ export async function runLoadPath(o: {
     }
     const bNext = bearingFromBridge(b, run, k, bBefore, abutNext);
     c.bearingId = await upsert(`bearing-${k}`, `${s.name}, bearings`, "elastomeric-bearing", bd, bBefore, bNext, verdictTry(() => designBearing(bNext).checks), `${prefix}, ${s.name} bearings`);
+    // The force the bearings pass along the bridge as it expands and contracts (unfactored): the pads' shear, or a
+    // sliding bearing's friction; none where cast in or fixed.
+    let padTU = 0;
+    try {
+      padTU = bearingLineForce(bNext, designBearing(bNext), b.nGirders);
+    } catch {
+      padTU = 0;
+    }
+    if (Number.isFinite(stiff[k].kBear)) tuForce[k] = padTU;
+    if (abutNext && abutNext.type !== "integral-piles" && abutNext.type !== "integral-shafts" && abutNext.type !== "integral-micropiles") abutNext.bearingShear = Math.round((tuForce[k] / abutNext.length) * 1000) / 1000;
     if (s.type.endsWith("abutment") && abutNext) {
       const d = abut;
       const before = abutBefore;
-      const next = abutNext;
-      c.abutmentId = await upsert(`abutment-${k}`, s.name, "abutment", d, before, next, verdictTry(() => runFoundation("abutment", next).checks), `${prefix}, ${s.name}`);
+      // The approach slab first: its weight, wearing surface and lane load rest half on the abutment.
       const sd = await load(c.approachSlabId, "approach-slab");
       const sBefore = approachSlabInputs(sd?.inputs ?? {});
-      const sNext = approachSlabFromBridge(b, k, sBefore);
+      const sNext = approachSlabFromBridge(b, k, sBefore, railEnd);
+      const next = { ...abutNext, ...approachOnAbutment(b, sNext, abutNext.length, run.groups[0]?.inputs.barrierWeight ?? 0) };
+      c.abutmentId = await upsert(`abutment-${k}`, s.name, "abutment", d, before, next, verdictTry(() => runFoundation("abutment", next).checks), `${prefix}, ${s.name}`);
       c.approachSlabId = await upsert(`approach-${k}`, `${s.name}, approach slab`, "approach-slab", sd, sBefore, sNext, verdictTry(() => designApproachSlab(sNext).checks), `${prefix}, ${s.name} approach slab`);
       const wd = await load(c.wingwallId, "cantilever-wingwall");
       const wBefore = wingwallInputs(wd?.inputs ?? {});
@@ -170,6 +223,14 @@ export async function runLoadPath(o: {
     let capVerdict = "";
     try {
       capNext = capFromBridge(b, run, k, capBefore, girderIds, names);
+      // Its force along the bridge at the bearings, its share (the stiffness split): the governing of Strength I's
+      // braking, V's braking with the wind and III's wind, with the bearings' temperature force at γTU 0.50.
+      if (capNext.girders) {
+        const wa = windAlong(run, shares[k]);
+        const br = shares[k].braking;
+        const F = Math.max(1.75 * br, wa ? 1.35 * br + wa.WS5 + wa.WL : 0, wa ? wa.WS3 : 0) + 0.5 * tuForce[k];
+        capNext = { ...capNext, girders: { ...capNext.girders, along: F > 0 ? { F: Math.round(F * 10) / 10, basis: `${(shares[k].share * 100).toFixed(0)}% of the braking and wind along, ${tuForce[k].toFixed(1)} kip temperature` } : null } };
+      }
       capVerdict = verdictOf((await designStm(capNext, nodeLpSolver)).checks);
     } catch (e) {
       capVerdict = e instanceof Error ? e.message : "the cap couldn't be built";
@@ -187,6 +248,7 @@ export async function runLoadPath(o: {
       // The column takes its loads from the cap's strut-and-tie model (linked when the cap has a design).
       colNext = columnFromBridge(b, run, k, colBefore, columnLinkFrom(c.capId ?? "", capName, capNext, girders));
       if (colNext.base === "shaft") colNext = { ...colNext, shaftCage: shaftNow ? shaftCageOf(shaftInputs(shaftNow.inputs)) : null };
+      colNext = { ...colNext, longitudinal: columnLongitudinal(b, k, colNext, shares[k].braking, stiff[k], tuForce[k]) };
       // The link's refresh time stays when its loads are the same (it isn't a change of the column).
       const [was, now] = [colBefore.link, colNext.link] as ({ refreshed?: string } | null | undefined)[];
       if (was && now && was.refreshed && changedKeys({ l: { ...was, refreshed: "" } }, { l: { ...now, refreshed: "" } }).length === 0) colNext = { ...colNext, link: { ...now, refreshed: was.refreshed } as typeof colNext.link };
@@ -217,6 +279,7 @@ export async function runLoadPath(o: {
         try {
           let cn = columnFromBridge(b, run, k, colBefore, columnLinkFrom(c.capId ?? "", capName, capNext, girders, { noIM: true }));
           if (cn.base === "shaft") cn = { ...cn, shaftCage: colNext.shaftCage };
+          cn = { ...cn, longitudinal: colNext.longitudinal };
           baseCol = designColumn(cn);
         } catch {
           baseCol = colResult;

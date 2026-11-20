@@ -107,6 +107,7 @@ export const BRIDGE_GIRDER_BASE: GirderInputs = { ...GIRDER_DEFAULTS, restraintM
 
 const rad = (d: number) => (d * Math.PI) / 180;
 const isAbutment = (t: SupportType) => t.endsWith("abutment");
+const castInAt = (s: Support | undefined) => !!s && (s.type === "integral-abutment" || s.type === "semi-integral-abutment");
 
 /** Where every girder sits and how long it spans: the Bridge's layout. */
 export function bridgeLayout(b: BridgeInputs) {
@@ -241,6 +242,10 @@ export function girderInputsFor(b: BridgeInputs, lay: BridgeLayout, group: numbe
     ...(b.rail ? { rail: b.rail } : {}),
     extraSpans: spans.slice(1).map((s, k) => ({ L: s.L, strands: base.extraSpans[k]?.strands ?? null, harped: fit(base.extraSpans[k]?.harped ?? null) })),
     pierBearingOffset: pier ? pier.bearingOffset : base.pierBearingOffset,
+    // Live load deflection (AASHTO 2.5.2.6.2, optional there): checked on the Bridge's girders, the conservative choice (L/800 unless the design sets its own limit).
+    llDeflection: true,
+    // The girders' ends cast into an integral or semi-integral abutment's diaphragm (their connection steel counts at the bearing, 5.7.3.5).
+    endsCastIn: { left: castInAt(b.supports[group[0]]), right: castInAt(b.supports[group[group.length - 1] + 1]) },
   };
   // A CDOT standard rail sets the barrier's width and its worksheet weight, as a saved girder design's do.
   return b.rail ? applyRail(out) : out;
@@ -305,9 +310,12 @@ export function runBridge(b: BridgeInputs, bases: (GirderInputs | null | undefin
       const int = side("interior");
       const ext = side("exterior");
       const pick = (key: "DC" | "DC1" | "DW" | "LL" | "LLIM" | "Lane") => Math.max(int[key], ext[key]);
-      return { support: i, name: s.name, sides, DC: pick("DC"), DC1: pick("DC1"), DW: pick("DW"), LL: pick("LL"), LLIM: pick("LLIM"), Lane: pick("Lane"), continuous };
+      const totC = (key: "DC" | "DW") => 2 * ext[key] + (b.nGirders - 2) * int[key];
+      return { support: i, name: s.name, sides, DC: pick("DC"), DC1: pick("DC1"), DW: pick("DW"), LL: pick("LL"), LLIM: pick("LLIM"), Lane: pick("Lane"), continuous, totals: { DC: totC("DC"), DW: totC("DW") } };
     }
-    return { support: i, name: s.name, sides, DC: per("DC"), DC1: per("DC1"), DW: per("DW"), LL: per("LL"), LLIM: per("LLIM"), Lane: per("Lane"), continuous };
+    // The whole line of girders: two exterior and the rest interior (the per-girder values above are the larger of the two).
+    const tot = (key: "DC" | "DW") => sides.reduce((t, x) => t + 2 * x.exterior[key] + (b.nGirders - 2) * x.interior[key], 0);
+    return { support: i, name: s.name, sides, DC: per("DC"), DC1: per("DC1"), DW: per("DW"), LL: per("LL"), LLIM: per("LLIM"), Lane: per("Lane"), continuous, totals: { DC: tot("DC"), DW: tot("DW") } };
   });
   const ok = groups.every((g) => g.result.ok);
   return { layout: lay, groups, reactions, ok };

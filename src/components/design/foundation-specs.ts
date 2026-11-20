@@ -412,6 +412,7 @@ export const FOUNDATION_SPECS: Record<FoundationKind, SectionSpec[]> = {
         { type: "number", key: "rowFront", label: "Front row from the toe", unit: "ft", step: 0.25, show: (i) => !String(i.type).startsWith("integral") && i.foundation === "piles" },
         { type: "number", key: "rowBack", label: "Back row from the toe", unit: "ft", step: 0.25, show: (i) => !String(i.type).startsWith("integral") && i.foundation === "piles" },
         { type: "number", key: "pileSpacing", label: "Pile spacing along the abutment", unit: "ft", step: 0.25, show: (i) => !String(i.type).startsWith("integral") && i.foundation === "piles" },
+        { type: "choice", key: "seatPileAxis", label: "Piles bend about", options: [{ value: "weak", label: "Their weak axis (default)" }, { value: "strong", label: "Their strong axis" }], show: (i) => !String(i.type).startsWith("integral") && i.foundation === "piles" },
         { type: "bars", key: "stemBars", label: "Stem back face bars", show: (i) => !String(i.type).startsWith("integral") },
         { type: "bars", key: "backwallBars", label: "Backwall bars", show: (i) => i.type === "seat" },
         { type: "toggle", key: "lsOmit", label: "Leave out the live load surcharge: an approach slab carries the traffic (AASHTO 3.11.6.5, CDOT BDM 11.3)", show: (i) => !String(i.type).startsWith("integral") },

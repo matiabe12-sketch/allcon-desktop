@@ -198,9 +198,13 @@ export function ColumnEditor({ design, projects }: { design: { id: string; name:
                     <Field label="Share of the bridge's braking and wind" unit="%" value={lg.share * 100} onChange={(v) => setLong({ share: Math.max(0, Math.min(100, v)) / 100 })} hint="100% where this is the bridge's only fixed support" />
                     <Field label="Temperature change (3.12.2)" unit="°F" value={lg.dT} onChange={(v) => setLong({ dT: v })} />
                     <Field label="Pier from the point of no movement" unit="ft" value={lg.distance} onChange={(v) => setLong({ distance: v })} hint="0 where this pier is the bridge's only fixed support" />
+                    <Field label="The other supports' bearings' reaction" unit="kip" value={lg.bearingForce} onChange={(v) => setLong({ bearingForce: v })} hint="Unfactored: the pads elsewhere shearing as the bridge moves, held here (the Bridge sets it)" />
                   </>
                 ) : (
-                  <Field label="Force the bearings pass along the bridge" unit="kip" value={lg.bearingForce} onChange={(v) => setLong({ bearingForce: v })} hint="Unfactored, the whole pier: an elastomeric pad's shear or a sliding bearing's friction" />
+                  <>
+                    <Field label="Force the bearings pass along the bridge" unit="kip" value={lg.bearingForce} onChange={(v) => setLong({ bearingForce: v })} hint="Unfactored, the whole pier: an elastomeric pad's shear or a sliding bearing's friction" />
+                    <Field label="Share of the bridge's braking and wind through the pads" unit="%" value={(lg.padShare ?? 0) * 100} onChange={(v) => setLong({ padShare: Math.max(0, Math.min(100, v)) / 100 })} hint="By the pads' stiffness against the other supports' (the Bridge sets it); 0 for a sliding bearing" />
+                  </>
                 )}
                 <Field label="γTU" value={lg.gammaTU} onChange={(v) => setLong({ gammaTU: v })} step={0.05} hint="0.50 for force effects (Table 3.4.1-1)" />
               </Section>

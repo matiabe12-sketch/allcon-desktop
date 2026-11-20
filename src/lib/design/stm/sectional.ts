@@ -47,7 +47,8 @@ export type SectionResult = {
   case: number;
   shear: boolean; // shear is checked here (dv or more from the face)
 };
-export type SectionalResult = { regions: CapRegion[]; sections: SectionResult[]; checks: Check[]; notes: string[]; allB: boolean };
+export type CrackResult = { region: string; Ms: number; x: number; negative: boolean; fss: number; sMax: number; s: number; dc: number; d: number; h: number; As: number; j: number; betaS: number };
+export type SectionalResult = { regions: CapRegion[]; sections: SectionResult[]; checks: Check[]; notes: string[]; allB: boolean; cracks: CrackResult[] };
 
 const PHI_V = 0.9; // 5.5.4.2, shear in normalweight concrete
 const ES = 29000;
@@ -119,6 +120,66 @@ function reactions(L: number, supports: number[], loads: { x: number; P: number 
   return supports.map((_, j) => {
     const r = fixed[j];
     return K[r].reduce((s, kv, c) => s + kv * u[c], 0) - F[r];
+  });
+}
+
+/** The same for many load sets at once: one stiffness matrix over every set's load positions, eliminated once with every set as a right-hand side. */
+function reactionsMany(L: number, supports: number[], sets: { x: number; P: number }[][]) {
+  const xs = [...new Set([0, L, ...supports, ...sets.flatMap((ls) => ls.map((l) => l.x))].map((x) => Math.round(x * 1e6) / 1e6))].sort((a, b) => a - b);
+  const n = xs.length;
+  const N = 2 * n;
+  const K = Array.from({ length: N }, () => new Float64Array(N));
+  for (let e = 0; e + 1 < n; e++) {
+    const l = xs[e + 1] - xs[e];
+    const k = [
+      [12 / l ** 3, 6 / l ** 2, -12 / l ** 3, 6 / l ** 2],
+      [6 / l ** 2, 4 / l, -6 / l ** 2, 2 / l],
+      [-12 / l ** 3, -6 / l ** 2, 12 / l ** 3, -6 / l ** 2],
+      [6 / l ** 2, 2 / l, -6 / l ** 2, 4 / l],
+    ];
+    const d = [2 * e, 2 * e + 1, 2 * e + 2, 2 * e + 3];
+    for (let p = 0; p < 4; p++) for (let q = 0; q < 4; q++) K[d[p]][d[q]] += k[p][q];
+  }
+  const index = new Map(xs.map((x, k) => [x, k]));
+  const at = (x: number) => index.get(Math.round(x * 1e6) / 1e6)!;
+  const fixed = new Set(supports.map((s) => 2 * at(s)));
+  const free = Array.from({ length: N }, (_, k) => k).filter((k) => !fixed.has(k));
+  const m = free.length;
+  const S = sets.length;
+  // [Kff | F] for every set.
+  const A = free.map((r) => {
+    const row = new Float64Array(m + S);
+    free.forEach((c, j) => (row[j] = K[r][c]));
+    return row;
+  });
+  const pos = new Map(free.map((k, j) => [k, j]));
+  sets.forEach((ls, s) => ls.forEach((l) => {
+    const j = pos.get(2 * at(l.x));
+    if (j !== undefined) A[j][m + s] -= l.P;
+  }));
+  for (let c = 0; c < m; c++) {
+    let p = c;
+    for (let r = c + 1; r < m; r++) if (Math.abs(A[r][c]) > Math.abs(A[p][c])) p = r;
+    [A[c], A[p]] = [A[p], A[c]];
+    const d = A[c][c];
+    if (Math.abs(d) < 1e-12) continue;
+    for (let r = 0; r < m; r++) {
+      if (r === c || A[r][c] === 0) continue;
+      const f = A[r][c] / d;
+      for (let k = c; k < m + S; k++) A[r][k] -= f * A[c][k];
+    }
+  }
+  return sets.map((ls, s) => {
+    const u = new Float64Array(N);
+    free.forEach((k, j) => (u[k] = Math.abs(A[j][j]) < 1e-12 ? 0 : A[j][m + s] / A[j][j]));
+    const F = new Float64Array(N);
+    for (const l of ls) F[2 * at(l.x)] -= l.P;
+    return supports.map((sx) => {
+      const r = 2 * at(sx);
+      let t = 0;
+      for (let c = 0; c < N; c++) t += K[r][c] * u[c];
+      return t - F[r];
+    });
   });
 }
 
@@ -255,9 +316,50 @@ export function sectionalDesign(i: StmInputs, r: StmResult): SectionalResult {
       if (i.grid.provided) checks.push({ id: `sec-${id}-skin-spacing`, name: `${g.label}: skin reinforcement spacing`, demand: i.grid.sh, capacity: Math.min(deep.ds / 6, 12), unit: "in", ok: i.grid.sh <= Math.min(deep.ds / 6, 12) + 1e-9, ref: "AASHTO 5.6.7" });
     }
   }
+  // Crack control by the distribution of reinforcement (5.6.7, Eq. 5.6.7-1), Service I: every service load set from the
+  // girder link (each arrangement, with and without its wind), the moment at the region's sections by the same beam;
+  // the cracked section's steel stress fss = Ms / (As j d) ≤ 0.6 fy, Class 1 exposure (γe 1.00), against the bars'
+  // spacing across the cap.
+  const sets = r.capLoads?.serviceSets ?? null;
+  const cracks: CrackResult[] = [];
+  const Ec = 120000 * 0.145 ** 2 * fc ** 0.33; // ksi, Eq. 5.4.2.4-1 (K1 1, wc 0.145)
+  const nMod = ES / Ec;
+  if (sets && sets.length) {
+    const Rs = cols.length > 1 ? reactionsMany(t.length, cols, sets) : null;
+    for (const g of regions.filter((x) => x.kind === "B")) {
+      const mine = sections.filter((q) => q.region === g.label);
+      if (!mine.length) continue;
+      const id = g.label.toLowerCase().replace(/\s+/g, "-");
+      type Crack = { Ms: number; x: number; negative: boolean; fss: number; sMax: number; s: number; dc: number; d: number; h: number; As: number; j: number; betaS: number };
+      const found: Crack[] = [];
+      for (const q of mine)
+        sets.forEach((ls, k) => {
+          const M = forcesAt(t, ls, q.x, Rs ? Rs[k] : null).M;
+          const negative = M < 0;
+          const bars = negative ? t.topBars : t.bottomBars;
+          const As = negative ? topA : botA;
+          const h = q.h;
+          const d = negative ? h - t.topCover : h - botC;
+          const dc = h - d;
+          const rho = As / (b * d);
+          const kk = Math.sqrt(2 * rho * nMod + (rho * nMod) ** 2) - rho * nMod;
+          const j = 1 - kk / 3;
+          const fss = Math.min(0.6 * fy, (Math.abs(M) * 12) / (As * j * d));
+          const betaS = 1 + dc / (0.7 * (h - dc));
+          const sMax = fss > 0 ? (700 * 1.0) / (betaS * fss) - 2 * dc : Infinity;
+          const db = bar(bars.size).db;
+          const sBars = bars.count > 1 ? (b - 2 * t.sideCover - 2 * bar(t.stirrups.size).db - db) / (bars.count - 1) : 0;
+          found.push({ Ms: Math.abs(M), x: q.x, negative, fss, sMax, s: sBars, dc, d, h, As, j, betaS });
+        });
+      if (found.length) {
+        const w = found.reduce((p, c) => (c.s - c.sMax > p.s - p.sMax ? c : p));
+        cracks.push({ region: g.label, ...w });
+        checks.push({ id: `sec-${id}-crack`, name: `${g.label}: crack control at ${w.x.toFixed(2)} ft (${w.negative ? "top" : "bottom"} bars, Service I ${w.Ms.toFixed(0)} kip·ft)`, demand: w.s, capacity: w.sMax, unit: "in", ok: w.s <= w.sMax + 1e-9, ref: "AASHTO 5.6.7 (Eq. 5.6.7-1, Class 1)" });
+      }
+    }
+  } else notes.push("Crack control by the distribution of reinforcement (Eq. 5.6.7-1) needs the Service I moments from the girder link: not checked without it.");
   const withLoads = regions.filter((g) => g.kind !== "none");
   const allB = withLoads.length > 0 && withLoads.every((g) => g.kind === "B");
   if (!r.capLoads) notes.push("The loads are the bearing loads as entered: the cap's own weight is in them only if it was entered.");
-  notes.push("Crack control by the distribution of reinforcement (Eq. 5.6.7-1) needs the Service I moments: not checked here.");
-  return { regions, sections, checks, notes, allB };
+  return { regions, sections, checks, notes, allB, cracks };
 }

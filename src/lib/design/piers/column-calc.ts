@@ -56,9 +56,11 @@ export function columnCalcLines(i: ColumnInputs, title: string, figures?: { sect
     if (link.bridge) {
       const b = link.bridge;
       text("Along the bridge:- the forces reach the pier at its bearings and are shared equally by its columns.");
-      if (i.longitudinal.bearings === "fixed") {
+      const fixedB = i.longitudinal.bearings === "fixed";
+      const eta = fixedB ? i.longitudinal.share : (i.longitudinal.padShare ?? 0);
+      if (eta > 0) {
         m(`BR\\coloneq ${num(b.braking)}\\mathrm{kip}`, `AASHTO 3.6.4: ${b.brakingBasis}`);
-        m(`\\eta_{fix}\\coloneq ${num(i.longitudinal.share)}`, "The share of the bridge's longitudinal forces this pier takes");
+        m(`\\eta_{fix}\\coloneq ${num(eta)}`, fixedB ? "The share of the bridge's longitudinal forces this pier takes" : "The share its expansion pads pass, by their stiffness against the other supports'");
         m(`n_c\\coloneq ${r.n}`, "Columns");
         m("BR_c\\coloneq\\frac{BR\\cdot\\eta_{fix}}{n_c}=", "Each column", "kip");
         m(`L_{br}\\coloneq ${num(b.length)}\\mathrm{ft}`, "The superstructure's length");
@@ -70,11 +72,16 @@ export function columnCalcLines(i: ColumnInputs, title: string, figures?: { sect
         m(`w_{V}\\coloneq ${num(b.lineV)}\\frac{\\mathrm{kip}}{\\mathrm{ft}}`, "Strength V");
         m("WS_{5}\\coloneq\\frac{c_L\\cdot w_{V}\\cdot L_{br}\\cdot\\eta_{fix}}{n_c}=", "Longitudinal, each column", "kip");
         m("WL_c\\coloneq\\frac{0.04\\frac{\\mathrm{kip}}{\\mathrm{ft}}\\cdot L_{br}\\cdot\\eta_{fix}}{n_c}=", "AASHTO 3.8.1.3", "kip");
+      }
+      if (fixedB) {
         m(`\\Delta_T\\coloneq ${num(i.longitudinal.dT)}`, "Uniform temperature change, °F, AASHTO 3.12.2");
         m(`x_T\\coloneq ${num(i.longitudinal.distance)}\\mathrm{ft}`, "The pier from the point of no movement");
         m("\\delta_T\\coloneq6\\cdot10^{-6}\\cdot\\Delta_T\\cdot x_T=", "α = 6×10⁻⁶ /°F, AASHTO 5.4.2.2", "in");
         given(`k_c\\coloneq ${num(r.long.kCol)}\\frac{\\mathrm{kip}}{\\mathrm{in}}`, "Each column: 3 EI / h³ to the bearings, EI = 0.4 Ec Ig (AASHTO Eq. 5.6.4.3-2)");
-        m("TU_c\\coloneq k_c\\cdot\\delta_T=", "Each column", "kip");
+        if (i.longitudinal.bearingForce > 0) {
+          m(`R_{TU}\\coloneq ${num(i.longitudinal.bearingForce)}\\mathrm{kip}`, "The other supports' bearings shearing as the bridge moves, held here (unfactored)");
+          m(`TU_c\\coloneq k_c\\cdot\\delta_T+\\frac{R_{TU}}{${r.n}}=`, "Each column", "kip");
+        } else m("TU_c\\coloneq k_c\\cdot\\delta_T=", "Each column", "kip");
       } else m(`TU_c\\coloneq ${num(i.longitudinal.bearingForce / r.n)}\\mathrm{kip}`, "Each column: the expansion bearings' force");
       m(`\\gamma_{TU}\\coloneq ${num(i.longitudinal.gammaTU)}`, "AASHTO Table 3.4.1-1, force effects");
       text("Each case adds its share along the bridge:- BR with the live load's factor (1.75 in Strength I, 1.35 in Strength V), WS with 1.0 in Strength III and V, WL with 1.0 in Strength V, and TU with γTU in every case.");

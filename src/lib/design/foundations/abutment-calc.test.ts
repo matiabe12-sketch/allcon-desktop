@@ -518,3 +518,79 @@ describe("the wingwalls' thrust square to a skewed abutment", () => {
       expect(c.ng.length > 0).toBe(fails > 0);
     });
 });
+
+describe("the abutment's remaining loads and checks (2026-11-20)", () => {
+  const check = (res: ReturnType<typeof designAbutment>, id: string) => res.checks.find((c) => c.id === id);
+  const integral = abutmentInputs({ type: "integral-piles" });
+  const seat = abutmentInputs({ type: "seat", foundation: "footing" });
+
+  it("integral: braking pushes the piles further at their secant stiffness, checked at the movement and that", () => {
+    const none = designAbutment({ ...integral, braking: 0 }).integral!.foundation!;
+    const r = designAbutment({ ...integral, braking: 40 }).integral!;
+    const f = r.foundation!;
+    expect(none.yBr).toBe(0);
+    close(f.kHead, Math.abs(f.lat0.H0) / r.delta, 1e-9);
+    close(f.yBr, (1.75 * 40) / (r.n * f.kHead), 1e-9);
+    expect(f.lat.Mmax).toBeGreaterThan(f.lat0.Mmax);
+  });
+
+  it("integral: the wind along the bridge governs the push where Strength V's or III's is larger", () => {
+    const r = designAbutment({ ...integral, braking: 10, windLong: { WS3: 200, WS5: 50, WL: 10, WSs: 30 } }).integral!;
+    close(r.foundation!.yBr, 200 / (r.n * r.foundation!.kHead), 1e-9);
+  });
+
+  it("integral: the cap alone carries the girders' DC1, the wet diaphragm and itself at Strength IV (1.5 DC)", () => {
+    const r = designAbutment({ ...integral, RDC1: 100 }).integral!;
+    close(r.construction.Pg1, 1.5 * 100, 1e-9);
+    close(r.construction.wDia, integral.gammaC * integral.capWidth * (integral.totalDepth - integral.capDepth), 1e-9);
+    const res = designAbutment({ ...integral, RDC1: 100 });
+    for (const id of ["cap-const-pos", "cap-const-neg", "cap-const-shear"]) expect(check(res, id), id).toBeDefined();
+  });
+
+  it("the approach slab's wearing surface and lane load, half on the abutment, no IM on the lane load", () => {
+    const base = designAbutment(integral).integral!;
+    const r = designAbutment({ ...integral, approachDW: 0.4, approachLL: 1.2 }).integral!;
+    close(r.factoredStrength - base.factoredStrength, (1.5 * 0.2 + 1.75 * 0.6) * integral.length, 1e-9);
+    close(r.wCap - base.wCap, 1.5 * 0.2 + 1.75 * 0.6, 1e-9);
+    const s0 = designAbutment(seat).seat!;
+    const s1 = designAbutment({ ...seat, approachDW: 0.4, approachLL: 1.2 }).seat!;
+    close(s1.rows[0].V - s0.rows[0].V, 1.5 * 0.2 + 1.75 * 0.6, 1e-9);
+    close(s1.rows[2].V - s0.rows[2].V, 0.2 + 0.6, 1e-9);
+  });
+
+  it("seat: braking with 1.75 in both Strength I sets (it pushes in the sliding set too), 1.0 in Service I", () => {
+    const s0 = designAbutment({ ...seat, braking: 0 }).seat!;
+    const s1 = designAbutment({ ...seat, braking: 44 }).seat!;
+    const BR = 44 / seat.length;
+    close(s1.rows[0].Hh - s0.rows[0].Hh, 1.75 * BR, 1e-9);
+    close(s1.rows[1].Hh - s0.rows[1].Hh, 1.75 * BR, 1e-9);
+    close(s1.rows[2].Hh - s0.rows[2].Hh, BR, 1e-9);
+  });
+
+  it("seat on piles: they bend about the weak axis unless set strong", () => {
+    const p = abutmentInputs({ type: "seat", foundation: "piles" });
+    expect(check(designAbutment(p), "pile-interaction")!.name).toContain("weak");
+    expect(check(designAbutment({ ...p, seatPileAxis: "strong" }), "pile-interaction")!.name).toContain("strong");
+  });
+
+  it("seat: one wingwall's push along the abutment with the sliding force; the stem's end crack control", () => {
+    const one = designAbutment({ ...seat, skew: 30, wing: { L: 20, h: 3, t: 12, count: 1 } });
+    expect(check(one, "wing-slide-along")).toBeDefined();
+    expect(check(designAbutment({ ...seat, skew: 30, wing: { L: 20, h: 3, t: 12 } }), "wing-slide-along")).toBeUndefined();
+    const st = one.seat!.wingPush!.stem!;
+    expect(check(one, "wing-push-stem-crack")!.demand).toBe(st.end ? seat.stemBars.spacing / 2 : seat.stemBars.spacing);
+  });
+
+  for (const [name, inputs] of [
+    ["integral with braking, wind and the approach slab", { ...integral, braking: 40, windLong: { WS3: 20, WS5: 15, WL: 5, WSs: 8 }, approachDW: 0.4, approachLL: 1.2, RDC1: 100, girderInside: 20, girderTotals: { DC: 6 * integral.RDC - 10, DW: 6 * integral.RDW } }],
+    ["seat with the wind and the approach slab", { ...seat, windLong: { WS3: 20, WS5: 15, WL: 5, WSs: 8 }, approachDW: 0.4, approachLL: 1.2 }],
+  ] as const)
+    it(`works the ${name} out: no errors, every line on the page, its checks as the engine's`, () => {
+      const c = workOut("abutment", inputs);
+      expect(c.errors).toEqual([]);
+      expect(c.wide).toEqual([]);
+      const res = designAbutment(inputs as AbutmentInputs);
+      const fails = res.checks.filter((x) => !x.ok && !x.advisory).length;
+      expect(c.ng.length > 0).toBe(fails > 0);
+    });
+});

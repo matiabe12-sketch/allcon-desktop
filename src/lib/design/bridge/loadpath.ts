@@ -1,9 +1,9 @@
 import type { ColumnCage, ShaftCage } from "../piers/column-shaft";
-import { type AbutmentInputs } from "../foundations/abutment";
+import { designAbutment, type AbutmentInputs } from "../foundations/abutment";
 import { type FootingInputs } from "../foundations/footing";
 import { type PileInputs } from "../foundations/piles";
 import { type ShaftInputs } from "../foundations/shaft";
-import { brakingPerLane } from "../girders/substructure-loads";
+import { brakingPerLane, SITE_WIND_DEFAULTS, superstructureWind } from "../girders/substructure-loads";
 import { girderSide } from "../stm/cap-loads";
 import type { StmInputs } from "../stm/strut-tie";
 import { bearingsFromLink, buildTemplate, HAMMERHEAD_DEFAULTS, MULTICOLUMN_DEFAULTS, type StmTemplate } from "../stm/templates";
@@ -14,7 +14,10 @@ import type { WingwallInputs } from "../walls/wingwall";
 import type { ColumnResult } from "../piers/column";
 import { GIRDER_DEFAULTS, girderShape, type GirderInputs } from "../girders/prestressed";
 import type { DeckInputs } from "../decks/deck";
-import type { BearingInputs } from "../bearings/elastomeric";
+import { BEARING_DEFAULTS, type BearingInputs, type designBearing } from "../bearings/elastomeric";
+
+/** The pad the stiffness split takes before a bearing design is linked. */
+const BEARING_PAD_DEFAULT = BEARING_DEFAULTS;
 import { spacingAt, spanGroups, type BridgeInputs, type BridgeRun, type PierShape } from "./bridge";
 
 // The load path from a Bridge run down through its linked designs (docs/bridge-model.md): each
@@ -45,14 +48,102 @@ export function unitLength(b: BridgeInputs, support: number) {
   return Math.abs(s[j].station - s[support].station);
 }
 
-export function abutmentFromBridge(b: BridgeInputs, run: BridgeRun, support: number, current: AbutmentInputs): AbutmentInputs {
+/**
+ * A support's stiffness along the bridge (kip/in): its substructure (the columns, or an integral abutment's piles) in
+ * series with its bearings (rigid where fixed, cast into a diaphragm or on leveling pads; an elastomeric pad's G A / hrt
+ * each where they slide by shearing). Infinity: rigid.
+ */
+export type LongStiffness = { kSub: number; kBear: number };
+
+/** An elastomeric bearing line's shear stiffness, kip/in: every girder's pad, G A / hrt (AASHTO 14.6.3.1). */
+export function padLineStiffness(bi: Pick<BearingInputs, "L" | "W" | "G" | "hri" | "n" | "hre" | "covers" | "pad">, nGirders: number) {
+  const steel = bi.pad !== "plain";
+  const hrt = steel ? bi.n * bi.hri + (bi.covers === 1 ? 1 : 2) * bi.hre : bi.hri;
+  return hrt > 0 ? (nGirders * bi.G * bi.L * bi.W) / hrt : Infinity;
+}
+
+/** A pier's columns along the bridge, kip/in: each a cantilever from its base to the bearings, cracked (0.4 Ec Ig, as the column design takes it, Eq. 5.6.4.3-2). */
+export function pierStiffness(p: PierShape, columnHeight: number, fc: number) {
+  const Ec = 120000 * 0.145 ** 2 * fc ** 0.33; // ksi, AASHTO Eq. 5.4.2.4-1, K1 1, wc 0.145
+  const D = p.columnSize;
+  const Ig = p.columnShape === "round" ? (Math.PI * D ** 4) / 64 : (p.columnSize * p.columnDepth ** 3) / 12; // in⁴, bending along the bridge
+  const h = (columnHeight + p.capDepth) * 12;
+  return (p.columns * 3 * 0.4 * Ec * Ig) / h ** 3;
+}
+
+/**
+ * The bridge's longitudinal forces shared once among its supports (no support takes another's part): the bridge in
+ * units between its deck joints (a simple pier's joint splits it; a simple pier takes from the units either side), each
+ * unit's braking force (AASHTO 3.6.4: every lane count with its multiple presence factor, the most) shared by the
+ * supports' stiffness along the bridge (rigid supports alone, equally, where there are any). AASHTO leaves the split to
+ * the engineer; the stiffness split is the usual one.
+ */
+export function longitudinalShares(b: BridgeInputs, k: LongStiffness[]) {
+  const s = b.supports;
+  const lanes = designLanes(b);
+  const units: number[][] = [[0]];
+  for (let j = 1; j < s.length; j++) {
+    units[units.length - 1].push(j);
+    if (j < s.length - 1 && s[j].type === "simple-pier") units.push([j]);
+  }
+  const series = (x: LongStiffness) => (!Number.isFinite(x.kSub) && !Number.isFinite(x.kBear) ? Infinity : 1 / (1 / x.kSub + 1 / x.kBear));
+  const out = s.map(() => ({ braking: 0, share: 0, k: 0, units: [] as { from: number; to: number; L: number; BR: number; share: number }[] }));
+  for (const u of units) {
+    const L = s[u[u.length - 1]].station - s[u[0]].station;
+    const per = brakingPerLane(L).perLane;
+    const BR = Math.max(...Array.from({ length: lanes }, (_, m) => (m + 1) * multiplePresence(m + 1) * per));
+    const ks = u.map((j) => series(k[j]));
+    const rigid = ks.filter((x) => !Number.isFinite(x)).length;
+    const sum = ks.reduce((t, x) => t + (Number.isFinite(x) ? x : 0), 0);
+    u.forEach((j, m) => {
+      const share = rigid ? (Number.isFinite(ks[m]) ? 0 : 1 / rigid) : sum > 0 ? ks[m] / sum : 1 / u.length;
+      out[j].braking += share * BR;
+      out[j].share = Math.max(out[j].share, share);
+      out[j].k = ks[m];
+      out[j].units.push({ from: u[0], to: u[u.length - 1], L, BR, share });
+    });
+  }
+  return out;
+}
+
+/** The stiffness a support has before its designs are linked: abutments rigid on fixed bearings or on piles, pads where they slide; piers' columns from their description. */
+export function defaultStiffness(b: BridgeInputs, run: BridgeRun, pad: Pick<BearingInputs, "L" | "W" | "G" | "hri" | "n" | "hre" | "covers" | "pad">, fc = 4): LongStiffness[] {
+  return b.supports.map((s, j) => {
+    const cast = s.type === "integral-abutment" || s.type === "continuous-pier";
+    const kBear = cast || s.bearing === "fixed" ? Infinity : padLineStiffness(pad, b.nGirders);
+    const lp = run.layout.piers[j];
+    const kSub = s.pier && lp ? pierStiffness(s.pier, lp.columnHeight, fc) : Infinity;
+    return { kSub, kBear };
+  });
+}
+
+/**
+ * What the girders' reactions at a support already carry inside a concrete block cast around their ends (an integral
+ * abutment's cap and diaphragm, a semi-integral end diaphragm), `width` ft wide on the support's line: each girder's
+ * end past its bearing and up to the block's face toward the span, and the deck and haunch from its bearing line to
+ * that face (a girder's span runs bearing to bearing). Kip, unfactored, the whole line of girders.
+ */
+export function girdersInside(b: BridgeInputs, run: BridgeRun, support: number, width: number) {
+  const s = b.supports[support];
+  const j = support === 0 ? 0 : support - 1;
+  const g = run.groups.find((x) => x.spans.includes(j));
+  if (!g) return 0;
+  const sd = g.result.spans[g.spans.indexOf(j)] ?? g.result.spans[0];
+  const a = Math.max(0, width / 2 - Math.max(0, s.bearingOffset)); // ft, the bearing line to the face
+  const one = (line: typeof sd.interior) => line.loads.wg * (s.endDistance + a) + line.loads.wDeck * a;
+  return 2 * one(sd.exterior) + (b.nGirders - 2) * one(sd.interior);
+}
+
+export function abutmentFromBridge(b: BridgeInputs, run: BridgeRun, support: number, current: AbutmentInputs, long?: { braking: number; bearingShear?: number; windLong?: AbutmentInputs["windLong"] }): AbutmentInputs {
   const s = b.supports[support];
   const lay = run.layout.supports[support];
   const r = run.reactions[support];
   const type: AbutmentInputs["type"] = s.type === "integral-abutment" ? (current.type === "integral-shafts" || current.type === "integral-micropiles" ? current.type : "integral-piles") : s.type === "semi-integral-abutment" ? "semi-integral" : "seat";
   const lanes = designLanes(b);
   const L = unitLength(b, support);
-  const braking = brakingPerLane(L).perLane * lanes * multiplePresence(lanes);
+  // Its share of its unit's braking, shared once among the unit's supports by stiffness (longitudinalShares); without
+  // the linked designs' stiffness, from the supports as described (defaultStiffness).
+  const braking = long ? long.braking : longitudinalShares(b, defaultStiffness(b, run, BEARING_PAD_DEFAULT))[support].braking;
   const width = b.leftEdge + b.rightEdge;
   return {
     ...current,
@@ -64,13 +155,19 @@ export function abutmentFromBridge(b: BridgeInputs, run: BridgeRun, support: num
     nGirders: b.nGirders,
     girderSpacing: spacingAt(b, s),
     RDC: Math.round(r.DC * 10) / 10,
+    RDC1: Math.round(r.DC1 * 10) / 10,
     RDW: Math.round(r.DW * 10) / 10,
+    // The line of girders counted once (two exterior, the rest interior), less what's inside the abutment's own concrete.
+    girderTotals: { DC: Math.round(r.totals.DC * 10) / 10, DW: Math.round(r.totals.DW * 10) / 10 },
+    girderInside: Math.round(girdersInside(b, run, support, type.startsWith("integral") ? current.capWidth : type === "semi-integral" ? current.backwallT : 0) * 10) / 10,
     RLL: Math.round(r.LL * 10) / 10,
     // The foundation's live load: the lanes on the deck with their multiple presence factors (3.6.1.1.2), one lane's reaction each.
     RLane: Math.round(r.Lane * 10) / 10,
     lanes,
     IM: 0.33,
-    braking: Math.round((braking / 2) * 10) / 10,
+    braking: Math.round(braking * 10) / 10,
+    ...(long?.windLong !== undefined ? { windLong: long.windLong } : {}),
+    ...(long?.bearingShear !== undefined && type !== "integral-piles" && type !== "integral-shafts" && type !== "integral-micropiles" ? { bearingShear: Math.round(long.bearingShear * 1000) / 1000 } : {}),
     length: Math.round((width / Math.cos((s.skew * Math.PI) / 180)) * 100) / 100,
   };
 }
@@ -183,10 +280,14 @@ export function jointFromBridge(b: BridgeInputs, support: number, approachL: num
   return { ...current, L: Math.round(L * 100) / 100, skew: Math.abs(s.skew) };
 }
 
-/** The approach slab at an abutment: the deck's width and the roadway between the barriers, the abutment's skew. */
-export function approachSlabFromBridge(b: BridgeInputs, support: number, current: ApproachSlabInputs): ApproachSlabInputs {
+/**
+ * The approach slab at an abutment: the deck's width and the roadway between the barriers, the abutment's skew; with a
+ * bridge rail, the rail carried on along the slab's edges (CDOT BDM 11.3.7), checked for its collision moment and tension
+ * at the slab (AASHTO A13.4.1 Case 1), the rail's end-zone values from the deck design (`rail`), the larger.
+ */
+export function approachSlabFromBridge(b: BridgeInputs, support: number, current: ApproachSlabInputs, rail?: { Mc: number; T: number } | null): ApproachSlabInputs {
   const width = b.leftEdge + b.rightEdge;
-  return { ...current, W: width, roadway: width - 2 * b.barrierWidth, skew: Math.abs(b.supports[support].skew) };
+  return { ...current, W: width, roadway: width - 2 * b.barrierWidth, skew: Math.abs(b.supports[support].skew), ...(rail && b.rail ? { barrier: true, Mc: Math.round(rail.Mc * 100) / 100, T: Math.round(rail.T * 100) / 100 } : {}) };
 }
 
 /** A wingwall off an abutment: its height at the abutment face (the abutment's depth), the abutment's width square to it, the skew and the backfill. */
@@ -302,7 +403,7 @@ export function deckFromBridge(b: BridgeInputs, run: BridgeRun, current: DeckInp
 /**
  * A support's bearings from the bridge. At a semi-integral abutment the end diaphragm sits on the girders' ends and
  * rides on the bearings (CDOT BDM 11.3.2): its weight, from the abutment design's diaphragm (backwallH × backwallT along
- * its length), shared by the girders, is added to their dead load (the girders' ends inside it not deducted).
+ * its length), shared by the girders, is added to their dead load, less the girders' ends and deck inside it (girdersInside).
  */
 export function bearingFromBridge(b: BridgeInputs, run: BridgeRun, support: number, current: BearingInputs, abutment?: Pick<AbutmentInputs, "type" | "backwallH" | "backwallT" | "length" | "gammaC"> | null): BearingInputs {
   const r = run.reactions[support];
@@ -310,7 +411,8 @@ export function bearingFromBridge(b: BridgeInputs, run: BridgeRun, support: numb
   const leveling = s.type === "integral-abutment" || s.type === "continuous-pier";
   // Each line of bearings carries its own span's end: at a pier with a line each side, the heavier side.
   const own = (key: "DC1" | "DC" | "DW" | "LL") => (r.sides.length > 1 && s.bearingOffset > 0 ? Math.max(...r.sides.map((x) => Math.max(x.interior[key], x.exterior[key]))) : r[key]);
-  const diaphragm = s.type === "semi-integral-abutment" && abutment ? (abutment.gammaC * abutment.backwallH * abutment.backwallT * abutment.length) / b.nGirders : 0;
+  // The diaphragm's weight shared by the girders, less what their own reactions already carry inside it (girdersInside).
+  const diaphragm = s.type === "semi-integral-abutment" && abutment ? Math.max(0, abutment.gammaC * abutment.backwallH * abutment.backwallT * abutment.length - girdersInside(b, run, support, abutment.backwallT)) / b.nGirders : 0;
   return {
     ...current,
     DL: Math.round((leveling ? own("DC1") : own("DC") + own("DW") + diaphragm) * 10) / 10,
@@ -337,4 +439,118 @@ export function deckLengthFor(b: BridgeInputs, abutments: [AbutmentInputs | null
     return d / Math.cos((s.skew * Math.PI) / 180);
   };
   return Math.round((last.station - first.station + behind(first, abutments[0]) + behind(last, abutments[1])) * 100) / 100;
+}
+
+/**
+ * An integral abutment's stiffness along the bridge, kip/in: its piles (or shafts, micropiles) pushed through the
+ * movement, their head shears over it (the p–y analysis's secant stiffness, pinned heads, CDOT BDM 11.3.1). The
+ * backfill's own help isn't counted (it would take more from the piers' share otherwise left with them). Rigid when it
+ * can't be worked out (the abutment then takes its unit's force).
+ */
+export function integralStiffness(a: AbutmentInputs) {
+  try {
+    const g = designAbutment(a).integral;
+    const f = g?.foundation;
+    if (!g || !f || !(g.delta > 0)) return Infinity;
+    const n = f.kind === "micropiles" ? f.nPiles : g.n;
+    const H0 = Math.abs(f.lat0.H0); // the movement alone
+    return H0 > 0 ? (n * H0) / g.delta : Infinity;
+  } catch {
+    return Infinity;
+  }
+}
+
+/**
+ * The force a support's bearing line passes along the bridge as it expands and contracts, unfactored, kip: every
+ * girder's pad sheared through the movement, Gmax A Δ / hrt (AASHTO Eq. 14.6.3.1-2, the pad's share of the thermal
+ * range), no more than a sliding surface's friction; none at a leveling pad (no movement).
+ */
+export function bearingLineForce(bi: BearingInputs, r: ReturnType<typeof designBearing>, nGirders: number) {
+  if (!(bi.expansionLength > 0)) return 0;
+  const d = Math.min(r.movement.thermal * bi.thermalFactor + bi.otherStatic, r.ptfe.slip);
+  return (nGirders * r.pad.G.Gmax * r.pad.A * d) / r.pad.hrt;
+}
+
+/**
+ * A pier column's loads along the bridge from the Bridge: its bearings fixed where the girders are cast into its
+ * diaphragm or the bearings are fixed, else expansion (their pads' shear, padTU, and their part of the braking and wind
+ * by stiffness); its share of the bridge's braking (longitudinalShares, as a part of the force the column's link works
+ * out); its distance from the bridge's point of no movement (fixedPoint) for the temperature force; on fixed bearings, the
+ * other supports' pads' reaction (thermalReactions) as well.
+ */
+export function columnLongitudinal(b: BridgeInputs, support: number, col: ColumnInputs, braking: number, k: LongStiffness, padTU: number): ColumnInputs["longitudinal"] {
+  const s = b.supports[support];
+  const fixed = !Number.isFinite(k.kBear);
+  const BRlink = col.link?.bridge?.braking ?? 0;
+  const part = BRlink > 0 ? Math.max(0, Math.min(1, braking / BRlink)) : 0;
+  const r3 = (v: number) => Math.round(v * 1000) / 1000;
+  return {
+    ...col.longitudinal,
+    bearings: fixed ? "fixed" : "expansion",
+    share: fixed ? r3(part) : col.longitudinal.share,
+    padShare: fixed ? 0 : r3(part),
+    bearingForce: Math.round(padTU * 10) / 10,
+    distance: Math.round(Math.abs(s.station - fixedPoint(b)) * 100) / 100,
+  };
+}
+
+/**
+ * The temperature force each support takes along the bridge, unfactored, kip: where its bearings shear or slide, their
+ * own force (padForce); a rigid support (cast in, or on fixed bearings) the reaction of its unit's other bearings,
+ * signed by their side of the point of no movement (the superstructure in equilibrium: those either side of it
+ * balance), shared equally among the unit's rigid supports. Where a unit has no rigid support its pads balance about
+ * their stiffness, each taking its own.
+ */
+export function thermalReactions(b: BridgeInputs, k: LongStiffness[], padForce: number[]) {
+  const s = b.supports;
+  const xf = fixedPoint(b);
+  const out = padForce.map((f, j) => (Number.isFinite(k[j].kBear) ? f : 0));
+  const units: number[][] = [[0]];
+  for (let j = 1; j < s.length; j++) {
+    units[units.length - 1].push(j);
+    if (j < s.length - 1 && s[j].type === "simple-pier") units.push([j]);
+  }
+  for (const u of units) {
+    const rigid = u.filter((j) => !Number.isFinite(k[j].kBear));
+    if (!rigid.length) continue;
+    const R = Math.abs(u.filter((j) => Number.isFinite(k[j].kBear)).reduce((t, j) => t + Math.sign(s[j].station - xf) * padForce[j], 0));
+    for (const j of rigid) out[j] += R / rigid.length;
+  }
+  return out;
+}
+
+/**
+ * The approach slab's loads on its abutment, the whole slab per foot of the abutment (the abutment takes half, the
+ * sleeper the rest): its weight (DC), its wearing surface (DW), and the design lane load on it, every lane with its
+ * multiple presence factor (AASHTO 3.6.1.2.4, 3.6.1.1.2). No truck: a lane carries one, and the girders' reaction already
+ * has it over the abutment.
+ */
+export function approachOnAbutment(b: BridgeInputs, ap: Pick<ApproachSlabInputs, "L" | "W" | "t" | "gammaC" | "wearing" | "gammaWS" | "barrier">, abutmentLength: number, barrierWeight = 0) {
+  const lanes = designLanes(b);
+  const len = Math.max(1e-6, abutmentLength);
+  const r3 = (v: number) => Math.round(v * 1000) / 1000;
+  return {
+    // With the rail carried on along its edges, the two rails' weight (klf each, as the girders take it) too.
+    approachDC: r3((ap.gammaC * (ap.t / 12) * ap.L * ap.W + (ap.barrier ? 2 * barrierWeight * ap.L : 0)) / len),
+    approachDW: r3((ap.gammaWS * (ap.wearing / 12) * ap.L * ap.W) / len),
+    approachLL: r3((Math.max(...Array.from({ length: lanes }, (_, m) => (m + 1) * multiplePresence(m + 1))) * 0.64 * ap.L) / len),
+  };
+}
+
+/**
+ * A support's share of the wind along the bridge, unfactored, kip (shared as its braking is: its part of each unit):
+ * on the superstructure, the transverse line load times the longitudinal coefficient (AASHTO 3.8.1.2.3a: 0.25 for the
+ * usual girder bridge, spans to 150 ft and 33 ft high; else Table 3.8.1.2.3a-1's 0.38 for girders, with the full
+ * transverse), Strength III, V and Service I; on the live load, 0.04 klf (3.8.1.3), Strength V.
+ */
+export function windAlong(run: BridgeRun, share: ReturnType<typeof longitudinalShares>[number]) {
+  const g = run.groups[0]?.inputs;
+  if (!g) return null;
+  const site = g.site ?? SITE_WIND_DEFAULTS;
+  const w = superstructureWind(g, site);
+  const maxSpan = Math.max(...run.layout.spans.map((s) => s.L));
+  const c = maxSpan <= 150 && site.Z <= 33 ? 0.25 : 0.38;
+  const along = (line: number | null) => share.units.reduce((t, u) => t + u.share * c * (line ?? 0) * u.L, 0);
+  const r1 = (v: number) => Math.round(v * 10) / 10;
+  return { WS3: r1(along(w.strengthIII?.line ?? null)), WS5: r1(along(w.strengthV.line)), WL: r1(share.units.reduce((t, u) => t + u.share * 0.04 * u.L, 0)), WSs: r1(along(w.serviceI.line)) };
 }

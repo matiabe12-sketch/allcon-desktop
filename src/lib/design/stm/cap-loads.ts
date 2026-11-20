@@ -24,7 +24,7 @@ export type GirderSide = {
   barrierWidth: number; // ft
   skew: number; // deg
   L: number; // ft, bearing to bearing
-  continuous: boolean; // the design makes its girders continuous (reactions here are as simple spans)
+  continuous: boolean; // the design makes its girders continuous: DC1 as simple spans, DC2, DW and the live load from the continuous beam (5.12.3.3)
   dc: { interior: number; exterior: number }; // kip, unfactored reaction at the pier
   /** DC1 alone: the girder, deck, haunch and diaphragms, as simple spans (on the cap before the pier diaphragm is cast). */
   dc1?: { interior: number; exterior: number };
@@ -39,6 +39,11 @@ export type GirderSide = {
   liveUnbalanceStatic?: { towardAhead: number; towardBack: number } | null;
   /** The superstructure's wind, from the girder design's site inputs (klf; heights in ft above the bearings). */
   wind?: { depth: number; arm: number; armWL: number; deckWidth: number; lineIII: number | null; lineV: number; lineService: number; V: number; exposure: string; Z: number } | null;
+  /**
+   * What the girder reaction already carries inside a pier diaphragm cast around its end (so the diaphragm's weight
+   * doesn't count it again): the girder's weight per foot, its end past the bearing (ft), and the deck and haunch per foot.
+   */
+  inDiaphragm?: { wg: number; endDist: number; wDeck: { interior: number; exterior: number } };
   /** The braking force per loaded lane (3.6.4), kip, on the girder design's whole length. */
   brakingPerLane?: number;
 };
@@ -60,6 +65,8 @@ export type GirderLink = {
    * its side, the ahead span's on the other): unequal reactions on them make a longitudinal couple on the pier.
    */
   bearingOffset?: number;
+  /** The pier's force along the bridge at the bearings (braking, wind along it and the bearings' temperature force; factored, the governing limit state), set by the Bridge from its supports' stiffness split: across the model's plane, checked apart (cap-along.ts). */
+  along?: { F: number; basis?: string } | null;
   /**
    * The live load without the dynamic load allowance: the loads a foundation entirely below ground takes from this
    * cap (AASHTO 3.6.2.1). The cap and column themselves are designed with IM.
@@ -101,12 +108,14 @@ export function girderSide(design: GirderInputs, span: number, designId: string,
   const pier = end === "end" ? span + 1 : span;
   const interiorPier = spans > 1 && pier > 0 && pier < spans;
   const share = interiorPier ? continuousEndShear(design, span, end) : i.L / 2; // per klf of load after continuity
+  const deckAt = { interior: 0, exterior: 0 };
   const at = (exterior: boolean) => {
     const trib = exterior ? i.S / 2 + i.overhang : i.S;
     const wDeck = ((i.deckT / 12) * trib + (i.haunch / 12) * (shape.topWidth / 12)) * i.wcDeck + i.otherDC1;
     const wBarrier = i.barriersOnExterior ? (exterior ? i.barrierWeight : 0) : (2 * i.barrierWeight) / i.nGirders;
     const Pdia = exterior ? i.diaphragmWeight / 2 : i.diaphragmWeight;
     const dc1 = (wg * Lg) / 2 + (wDeck * i.L) / 2 + (i.diaphragms * Pdia) / 2;
+    deckAt[exterior ? "exterior" : "interior"] = wDeck;
     const dc = dc1 + (wBarrier + i.otherDC2) * share;
     const dw = (((i.fws / 1000) * roadway) / i.nGirders) * share;
     return { dc, dc1, dw };
@@ -136,6 +145,7 @@ export function girderSide(design: GirderInputs, span: number, designId: string,
     liveUnbalanceStatic: interiorPier ? continuousLaneUnbalance(design, pier, 0) : null,
     wind: site.barrierHeight > 0 || site.V > 0 ? { depth: w.depth, arm: w.arm, armWL: w.armWL, deckWidth: w.deckWidth, lineIII: w.strengthIII?.line ?? null, lineV: w.strengthV.line, lineService: w.serviceI.line, V: site.V, exposure: site.exposure, Z: site.Z } : null,
     brakingPerLane: brakingPerLane(bridgeLength).perLane,
+    inDiaphragm: { wg, endDist: i.endDist, wDeck: deckAt },
   };
 }
 
@@ -239,7 +249,6 @@ export function capLoadCases(
   const loadNodes = link.loadNodes.map((l) => nodes.find((n) => n.label === l.trim())).filter((n): n is NonNullable<typeof n> => !!n).sort((a, c) => a.x - c.x);
   if (!loadNodes.length) throw new DesignError("Choose the nodes the girders' loads go to.");
   const warnings: string[] = [];
-  for (const s of sides) if (s.continuous) warnings.push(`${s.name}: its girders are made continuous, but the reactions here are taken as for simple spans.`);
   // Along the bridge: the continuous beam's reaction where the girders are continuous over this pier
   // (each side's end, from its own design), else the two spans as simple spans.
   const cont = [link.back, link.ahead].find((s) => s?.liveContinuous)?.liveContinuous ?? null;
@@ -329,6 +338,25 @@ export function capLoadCases(
     const n = 100;
     for (let k = 0; k < n; k++) strips.push({ x: x0 + ((k + 0.5) * (x1 - x0)) / n, P: link.diaphragm.height * (link.diaphragm.width / 12) * link.wc * ((x1 - x0) / n) });
   }
+  // A diaphragm cast around the girders' ends (the construction stage's wet diaphragm, or the completed cap that
+  // includes it): the girders' ends inside it, from their ends to the cap's face, and the deck and haunch from each
+  // bearing line to the face, are already in the girders' reactions; the diaphragm's weight counts them once, so they
+  // come off at each bearing.
+  const withDiaphragm = (construction && !!link.diaphragm && link.diaphragm.height > 0) || link.stage === "completed";
+  if (link.selfWeight && withDiaphragm) {
+    const half = b / 24; // ft, the cap's face from its centerline
+    const bo = Math.max(0, link.bearingOffset ?? 0);
+    for (const s of sides) {
+      const inD = s.inDiaphragm;
+      if (!inD) continue;
+      const a = Math.max(0, half - bo); // ft, the bearing line to the face
+      girderZ(s).forEach((z, g) => {
+        const ext = g === 0 || g === s.n - 1;
+        const P = inD.wg * (inD.endDist + a) + (ext ? inD.wDeck.exterior : inD.wDeck.interior) * a;
+        if (P > 0) strips.push({ x: capX(s, z), P: -P });
+      });
+    }
+  }
   const selfWeight = strips.reduce((s, p) => s + p.P, 0);
 
   const nodeLoads = (a: Arrangement | null, dcF: number, dwF: number, llF: number) => {
@@ -377,7 +405,7 @@ export function capLoadCases(
     const couples = [couple(1.25, 0, 0, 1, 0), couple(1.5, 0, 0, 1, 0)];
     const serviceShear = [...faces, ...spans.flatMap((sp) => [{ label: `${sp.label}, left face`, x: sp.faceA, side: 1 as const }, { label: `${sp.label}, right face`, x: sp.faceB, side: -1 as const }])].map((fc) => ({ ...fc, V: 0, a: 0, lanes: 0 }));
     const bearingLoads = bearings.map((br) => ({ x: br.x, label: br.label, dc: br.dc, dw: 0, ll: 0, strength: 1.25 * br.dc }));
-    return { cases, caseInfo, couples, serviceCouple: couple(1, 0, 0, 1, 0), deadCouple: couple(1, 0, 0, 1, 0), bearingOffset: e, unbalance, lane, lanesMax: 0, roadway: width, bearings, bearingLoads, selfWeight, arrangements: 0, serviceShear, wind: null, braking: null, warnings: [...new Set(warnings)] };
+    return { cases, caseInfo, couples, serviceCouple: couple(1, 0, 0, 1, 0), deadCouple: couple(1, 0, 0, 1, 0), bearingOffset: e, unbalance, lane, lanesMax: 0, roadway: width, bearings, bearingLoads, selfWeight, arrangements: 0, serviceShear, serviceSets: [[...bearings.map((br) => ({ x: br.x, P: br.dc + br.dw })), ...strips]], wind: null, braking: null, warnings: [...new Set(warnings)] };
   }
   const evaluated = arrangements.map((a) => ({ a, m: nodeLoads(a, 1.25, 1.5, 1.75) }));
   const pick = new Map<number, string>();
@@ -531,7 +559,9 @@ export function capLoadCases(
   // Service I's couple: the dead loads and the most unbalanced live load over the lane counts (k × m most).
   const km = Math.max(0, ...Array.from({ length: lanesMax }, (_, k) => (k + 1) * multiplePresence(k + 1)));
   const serviceCouple = couple(1, 1, km, 1, 1);
-  return { cases, caseInfo, couples, serviceCouple, deadCouple: couple(1, 1, 0, 1, 0), bearingOffset: e, unbalance, lane, lanesMax, roadway: width, bearings, bearingLoads, selfWeight, arrangements: arrangements.length, serviceShear, wind: windInfo, braking, warnings: [...new Set(warnings)] };
+  // Every Service I load set (each arrangement with and without its wind), for crack control by beam theory (5.6.7).
+  const serviceSets = [null, ...arrangements].flatMap((a) => serviceLoads(a));
+  return { cases, caseInfo, couples, serviceCouple, deadCouple: couple(1, 1, 0, 1, 0), bearingOffset: e, unbalance, lane, lanesMax, roadway: width, bearings, bearingLoads, selfWeight, arrangements: arrangements.length, serviceShear, serviceSets, wind: windInfo, braking, warnings: [...new Set(warnings)] };
 }
 
 /**

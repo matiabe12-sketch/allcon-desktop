@@ -90,7 +90,9 @@ export type ColumnInputs = {
   longitudinal: {
     bearings: "fixed" | "expansion";
     share: number; // the share (0–1) of the bridge's longitudinal forces this pier takes (fixed bearings)
-    bearingForce: number; // kip, unfactored: the longitudinal force the expansion bearings pass to the pier
+    bearingForce: number; // kip, unfactored: the force the expansion bearings pass to the pier; on fixed bearings, the other supports' pads' reaction
+    /** Expansion elastomeric pads: the share (0–1) of the bridge's braking and wind along it they pass to the pier, by their stiffness (the Bridge sets it). Default 0. */
+    padShare?: number;
     dT: number; // °F, the uniform temperature change from the setting temperature (3.12.2)
     distance: number; // ft, the pier from the point of no movement
     gammaTU: number; // 0.50 for force effects (Table 3.4.1-1)
@@ -227,12 +229,17 @@ export function designColumn(i: ColumnInputs) {
   const kCol = (3 * EIcolL) / hb ** 3; // kip/in, each column
   const tuMove = 6e-6 * lg.dT * lg.distance * 12; // in, α = 6×10⁻⁶ /°F (5.4.2.2)
   const fixed = lg.bearings === "fixed";
+  // The share through the bearings: fixed bearings their share; elastomeric expansion pads pass theirs by their
+  // stiffness (padShare, set by the Bridge from its supports' stiffness; 0 for a sliding bearing).
+  const thru = fixed ? share : Math.max(0, Math.min(1, lg.padShare ?? 0));
   const long = {
-    BR: fixed && br ? (br.braking * share) / n : 0, // per column
-    WS3: fixed && br && br.lineIII !== null ? (coefLong * br.lineIII * br.length * share) / n : 0,
-    WS5: fixed && br ? (coefLong * br.lineV * br.length * share) / n : 0,
-    WL: fixed && br ? (0.04 * br.length * share) / n : 0,
-    TU: fixed ? kCol * tuMove : lg.bearingForce / n,
+    BR: br ? (br.braking * thru) / n : 0, // per column
+    WS3: br && br.lineIII !== null ? (coefLong * br.lineIII * br.length * thru) / n : 0,
+    WS5: br ? (coefLong * br.lineV * br.length * thru) / n : 0,
+    WL: br ? (0.04 * br.length * thru) / n : 0,
+    // Fixed: its own restraint of the movement at its distance, and the other supports' pads' reaction (bearingForce,
+    // the Bridge's thermalReactions); expansion: the force its bearings pass.
+    TU: fixed ? kCol * tuMove + lg.bearingForce / n : lg.bearingForce / n,
     coefLong,
     simplified,
     kCol,
@@ -607,7 +614,7 @@ export function designColumn(i: ColumnInputs) {
   if (link && !link.wind) notes.push("The cap's load cases carry no wind: turn on wind across the bridge in the strut-and-tie design's girder loads for Strength III and V.");
   if (link && !br) notes.push("No girder design is linked to the cap: braking and wind along the bridge are left out.");
   if (fixed && br) notes.push(`Along the bridge: the pier's fixed bearings take ${(share * 100).toFixed(0)}% of the bridge's braking force (${br.brakingBasis}) and wind (${long.simplified ? "25% of the transverse, 3.8.1.2.3a, for the usual girder bridge" : `the girders' largest longitudinal skew coefficient, ${long.coefLong}, with the full transverse wind (Table 3.8.1.2.3a-1)`}), at the bearings; the overturning above them goes into the superstructure.`);
-  if (!fixed) notes.push(`Expansion bearings: the pier takes only the ${lg.bearingForce} kip the bearings pass along the bridge (factored by γTU = ${lg.gammaTU}).`);
+  if (!fixed) notes.push(`Expansion bearings: the pier takes the ${lg.bearingForce} kip the bearings pass along the bridge (factored by γTU = ${lg.gammaTU})${thru > 0 && br ? `, and ${(thru * 100).toFixed(0)}% of the bridge's braking and wind along it through the pads, by their stiffness` : ""}.`);
   const bo = link?.bearingOffset;
   if (bo && bo.e > 0) {
     const most = Math.max(0, ...link!.cases.map((c) => Math.abs(c.mLong ?? 0)));

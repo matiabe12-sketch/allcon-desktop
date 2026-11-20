@@ -320,3 +320,33 @@ and the rest were a fixed "other bars", read now as both the front and the verti
 - Claystone: CDOT's φ 0.60 for the Abu-Hejleh method (BDM 10.6.2.1); its qs and qp are entered.
 - No expansion joints in abutments (BDM 11.3), unlike AASHTO 11.6.1.6.
 - The integral abutment rules (BDM 11.3.1) are CDOT's; AASHTO leaves them to the owner.
+
+## Judgment calls settled and the remaining abutment checks (2026-11-20)
+
+The owner's rule for the open calls: CDOT BDM first, then AASHTO, else the conservative choice.
+
+- **Kept, as the BDM or AASHTO set them:** integral piles pinned at the cap (BDM 11.3.1's text) with TU's force
+  factor 0.50 (AASHTO Table 3.4.1-1); the fixed-head embedment by the BDM 10.5.3 equation; the approach slab's span at
+  50% (BDM 11.3.7's own words); the wingwall's ℓd without the excess-steel reduction (5.10.8.2.1c leaves it optional; not
+  taking it is conservative); the p–y curves (AASHTO points to them, no rule of its own).
+- **Seat piles' axis:** neither sets a seat abutment's pile orientation, so they now bend about the weak axis by
+  default (`seatPileAxis`, "strong" to change it).
+- **Integral cap and diaphragm:** cast apart (BDM 11.3.1). The cap alone is now checked before the diaphragm is cast
+  (`cap-const-*`): the girders' DC1 (`RDC1`, set by the Bridge), the wet diaphragm and itself, Strength IV (1.5 DC; no live
+  load, AASHTO Table 3.4.1-1 and 3.4.2.1), the cap's own depth.
+- **Braking on an integral abutment:** its share (the Bridge's stiffness split, docs/bridge-model.md) now pushes the
+  piles, shafts or micropiles further, at their secant stiffness under the movement: checked at δh + 1.75 BR/(n kh).
+- **Braking's factor in the seat statics:** 1.75 in both Strength I sets (it was left out of the minimum set, the one
+  sliding is checked with) and 1.0 in Service I (it was 1.75).
+- **The approach slab's loads:** the Bridge now sets its weight (`approachDC`), wearing surface (`approachDW`) and the
+  design lane load on it (`approachLL`, every lane, no IM; a lane's one truck is already over the abutment), half on the
+  abutment.
+- **Wind along the bridge:** the abutment's share (`windLong`, shared as the braking is): the force at the bearings is the
+  largest of 1.75 BR, Strength V's 1.35 BR + WS + WL and III's WS, taken with Strength I's other loads (conservative);
+  Service I adds its wind.
+- **One wingwall's push along the abutment** (`wing-slide-along`): with the sliding force across it, their resultant
+  against the footing's friction.
+- **The stem's end crack control** (`wing-push-stem-crack`): Service I with the push, all the steel at the end, against
+  the spacing there (halved by the added bars).
+- **Left as AASHTO has it:** the footing rigid along its length (10.6.1.3, 5.12.8.4), so no flexible-end check; the
+  wingwall corner's opening-joint efficiency (AASHTO has no rule).

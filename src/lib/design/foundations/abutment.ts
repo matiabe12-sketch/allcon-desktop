@@ -51,14 +51,39 @@ export type AbutmentInputs = {
   girderSpacing: number; // ft
   RDC: number; // kip per girder
   RDW: number;
+  /** kip per girder: its DC1 (girder, deck and haunch), what an integral cap carries alone before its diaphragm is cast; default RDC. The Bridge sets it. */
+  RDC1?: number;
+  /** The whole line of girders' DC and DW, kip (two exterior and the rest interior); default nGirders × RDC, RDW (the larger girder's). The Bridge sets it. */
+  girderTotals?: { DC: number; DW: number } | null;
+  /**
+   * kip, unfactored: what the girders' reactions already carry inside the abutment's solid concrete (an integral cap and
+   * diaphragm, or a semi-integral end diaphragm): their ends, and the deck and haunch from the bearing line to the
+   * concrete's face. Taken off its DC so it's counted once. The Bridge sets it; default 0.
+   */
+  girderInside?: number;
   RLL: number; // without IM
   /** One lane's reaction at the abutment, no IM (kip): with `lanes`, the foundation's live load is the lanes × their multiple presence factors (AASHTO 3.6.1.1.2), not the girders × RLL. 0: girders × RLL. */
   RLane?: number;
   lanes?: number; // design lanes on the deck
   IM: number;
   braking: number; // kip, the whole bridge's at this abutment
+  /**
+   * kip, unfactored: the abutment's share of the wind along the bridge on the superstructure (AASHTO 3.8.1.2.3a) and on
+   * the live load (3.8.1.3), at the bearings, shared as the braking is: Strength III's and V's WS, WL, and Service I's
+   * WS. The longitudinal force at the bearings is the largest of 1.75 BR (Strength I), 1.35 BR + WS + WL (V) and WS
+   * (III), taken with Strength I's other loads (the conservative choice). The Bridge sets it; default none.
+   */
+  windLong?: { WS3: number; WS5: number; WL: number; WSs: number } | null;
   bearingShear: number; // kip/ft, the bearings' shear (seat, semi-integral)
   approachDC: number; // kip/ft, the approach slab's end reaction (half carried by the abutment, BDM 11.3)
+  /** kip/ft, the approach slab's wearing surface (DW), the whole slab per foot of abutment, half carried by the abutment as its DC is; default 0. The Bridge sets it. */
+  approachDW?: number;
+  /**
+   * kip/ft, the design lane load on the approach slab (AASHTO 3.6.1.2.4, every lane with its multiple presence factor),
+   * the whole slab per foot of abutment, half on the abutment, no IM; the truck isn't added (a lane carries one, and the
+   * girders' reaction already has it over the abutment). Default 0. The Bridge sets it.
+   */
+  approachLL?: number;
   length: number; // ft, the abutment along its centerline
   // Integral geometry
   capWidth: number; // ft, along the bridge
@@ -121,6 +146,8 @@ export type AbutmentInputs = {
   /** Seat and semi-integral: the stem's other bars and the footing's bars along the abutment (all optional, CDOT's usual #5 @ 12 in). */
   stemHQty?: number; // ft, the stem's average height for quantities (a stepped footing); the design uses stemH
   stemFrontBars?: Bars; // front face, vertical
+  /** Seat or semi-integral on H-piles: the axis the piles bend about under the earth pressure (default weak: neither AASHTO nor the CDOT BDM sets it). */
+  seatPileAxis?: "strong" | "weak";
   stemHorizBars?: Bars; // horizontal, each face
   seatTop?: { bar: number; count: number }; // continuous along the top of the stem (the seat)
   seatU?: Bars; // U bars round the seat
@@ -415,7 +442,7 @@ export function designAbutment(i: AbutmentInputs) {
   const expansion = i.alpha * half * Math.max(0, i.tMax - 60);
   const contraction = i.alpha * half * Math.max(0, 60 - i.tMin) + i.csMove;
   const move = Math.max(expansion, contraction);
-  const totalGirderR = { DC: i.nGirders * i.RDC, DW: i.nGirders * i.RDW, LL: abutmentLiveLoad(i) };
+  const totalGirderR = { DC: (i.girderTotals?.DC ?? i.nGirders * i.RDC) - Math.max(0, i.girderInside ?? 0), DW: i.girderTotals?.DW ?? i.nGirders * i.RDW, LL: abutmentLiveLoad(i) };
 
   // --- the wingwalls (walls/wingwall.ts, its Section B): designed with the abutment's height, width, skew and backfill ---
   const wingIn = i.wing && i.wing.L > 0 ? i.wing : null;
@@ -522,8 +549,10 @@ export function designAbutment(i: AbutmentInputs) {
     const rowsMP = micro ? Math.max(1, Math.round(i.mpRows)) : 1;
     // Along the abutment: the piles of one row (a cap span's supports).
     const n = i.type === "integral-piles" || micro ? i.nPiles : Math.max(2, i.nPiles);
-    const factoredStrength = 1.25 * (totalGirderR.DC + (capW + apr) * i.length) + 1.5 * totalGirderR.DW + 1.75 * totalGirderR.LL;
-    const service = totalGirderR.DC + (capW + apr) * i.length + totalGirderR.DW + totalGirderR.LL;
+    const aprDW = 0.5 * (i.approachDW ?? 0); // kip/ft
+    const aprLL = 0.5 * (i.approachLL ?? 0); // kip/ft
+    const factoredStrength = 1.25 * (totalGirderR.DC + (capW + apr) * i.length) + 1.5 * (totalGirderR.DW + aprDW * i.length) + 1.75 * (totalGirderR.LL + aprLL * i.length);
+    const service = totalGirderR.DC + (capW + apr) * i.length + totalGirderR.DW + aprDW * i.length + totalGirderR.LL + aprLL * i.length;
     const Pu = factoredStrength / (n * rowsMP);
     const Ps = service / (n * rowsMP);
     // Supports along the abutment.
@@ -536,11 +565,25 @@ export function designAbutment(i: AbutmentInputs) {
     // The foundation elements under the imposed movement.
     const pea: Layer = { thickness: i.prebore, model: i.peaGravel ? { kind: "sand", phi: 40, gamma: 95, k: 300 } : { kind: "none" } };
     let foundation:
-      | { kind: "piles"; lat: ReturnType<typeof analyzeLateral>; inter: ReturnType<typeof interaction>; KL: number; Pr: number; Mry: number }
-      | { kind: "shafts"; lat: ReturnType<typeof analyzeLateral>; phiMn: number }
-      | { kind: "micropiles"; lat: ReturnType<typeof analyzeLateral>; phiMn: number; mpIn: MicropileInputs; PmaxS: number; PminS: number; Pr: number; Zc: number; value: number; nPiles: number; group: GroupPile[]; fS: number[] }
+      | { kind: "piles"; lat: ReturnType<typeof analyzeLateral>; lat0: ReturnType<typeof analyzeLateral>; yBr: number; kHead: number; inter: ReturnType<typeof interaction>; KL: number; Pr: number; Mry: number }
+      | { kind: "shafts"; lat: ReturnType<typeof analyzeLateral>; lat0: ReturnType<typeof analyzeLateral>; yBr: number; kHead: number; phiMn: number }
+      | { kind: "micropiles"; lat: ReturnType<typeof analyzeLateral>; lat0: ReturnType<typeof analyzeLateral>; yBr: number; kHead: number; phiMn: number; mpIn: MicropileInputs; PmaxS: number; PminS: number; Pr: number; Zc: number; value: number; nPiles: number; group: GroupPile[]; fS: number[] }
       | null = null;
     const delta = i.thermalForce * move;
+    // Braking along the bridge (its share, AASHTO 3.6.4, Strength I 1.75) on the abutment: the foundation elements, their
+    // heads moving with the cap, are pushed further by it, at their secant stiffness under the movement (p–y, pinned
+    // heads), and checked at the movement and that together; lat0 is the movement alone (the steel ends' pull adds
+    // the braking itself).
+    const pushed = (runAt: (y: number) => ReturnType<typeof analyzeLateral>, nF: number) => {
+      const lat0 = runAt(delta);
+      if (!(i.braking > 0) && !i.windLong) return { lat: lat0, lat0, yBr: 0, kHead: 0 };
+      const probe = delta > 0 && Math.abs(lat0.H0) > 1e-9 ? lat0 : runAt(0.1);
+      const kHead = Math.abs(probe.H0) / (delta > 0 && probe === lat0 ? delta : 0.1); // kip/in, each
+      const wl = i.windLong ?? null;
+      const Hlong = Math.max(1.75 * i.braking, wl ? 1.35 * i.braking + wl.WS5 + wl.WL : 0, wl ? wl.WS3 : 0); // kip, factored
+      const yBr = Hlong / (nF * Math.max(kHead, 1e-6));
+      return { lat: runAt(delta + yBr), lat0, yBr, kHead };
+    };
     if (i.type === "integral-piles") {
       const s = HP_SECTIONS[i.section];
       if (!s) throw new DesignError("Choose an H-pile section.");
@@ -549,7 +592,8 @@ export function designAbutment(i: AbutmentInputs) {
       add({ id: "embed", name: "Pile embedment into the cap, for information: the BDM 10.5.3 fixed-head length (the design takes a pin)", demand: Math.round(fixityEmbedment(s, i.Fy, i.fc)), capacity: i.embed, unit: "in", ref: "CDOT BDM 10.5.3, 11.3.1", advisory: true });
       const layers: Layer[] = [...(i.prebore > 0 ? [pea] : []), ...toLayers(i.soil).map((l, k) => (k === 0 && i.prebore > 0 ? { ...l, thickness: Math.max(0, l.thickness - i.prebore) } : l))];
       // BDM 11.3.1: a pin is taken to form between the cap and the pile; the pile's head moves with the cap.
-      const lat = analyzeLateral({ length: i.pileLength, D: s.bf, EI: 29000 * s.Iy, Q: Pu, head: { kind: "displaced", y: delta, pinned: true }, layers });
+      const push = pushed((y) => analyzeLateral({ length: i.pileLength, D: s.bf, EI: 29000 * s.Iy, Q: Pu, head: { kind: "displaced", y, pinned: true }, layers }), n);
+      const lat = push.lat;
       // Buckling: the length without confinement plus the depth to fixity, K = 2.1 (pinned head free to sway, fixed below).
       const unconfined = i.peaGravel ? 0 : i.prebore;
       const KL = unconfined > 0 ? 2.1 * (unconfined + (lat.zZero ?? 0)) * 12 : 0;
@@ -558,11 +602,11 @@ export function designAbutment(i: AbutmentInputs) {
       const fy = flexuralResistance(s, i.Fy, "y");
       const Mry = PHI_PILE.flexure * fy.Mn;
       const inter = interaction(Pu, Pr, 0, 1, lat.Mmax * 12, Mry, fy.compact);
-      add({ id: "pile-interaction", name: "Pile: axial with the movement's weak-axis moment", demand: inter.value, capacity: 1, unit: "", ref: `AASHTO 6.15.3.2, Eq. ${inter.eq}; CDOT BDM 11.3.1` });
+      add({ id: "pile-interaction", name: `Pile: axial with the movement's weak-axis moment${push.yBr > 0 ? ` (and braking's ${push.yBr.toFixed(2)} in more)` : ""}`, demand: inter.value, capacity: 1, unit: "", ref: `AASHTO 6.15.3.2, Eq. ${inter.eq}; CDOT BDM 11.3.1` });
       const axOnly = axialResistance(s, i.Fy, 0);
       add({ id: "pile-axial", name: "Pile: structural axial", demand: Pu, capacity: PHI_PILE.axialGood * axOnly.Pn, unit: "kip", ref: "AASHTO 6.15.3.1" });
       add({ id: "pile-geo", name: "Pile: geotechnical axial", demand: Pu, capacity: i.phiDyn * (n <= 3 ? 0.8 : 1) * i.Rn, unit: "kip", ref: "AASHTO 10.5.5.2.3, CDOT BDM 10.5.2.2" });
-      foundation = { kind: "piles", lat, inter, KL, Pr, Mry };
+      foundation = { kind: "piles", lat, lat0: push.lat0, yBr: push.yBr, kHead: push.kHead, inter, KL, Pr, Mry };
     } else if (micro) {
       // Micropiles in rows under the cap: the group's forces on a rigid cap, the moment across the rows (FHWA GEC 12 9.8,
       // as CDOT's micropile array calcs), along a battered pile's axis; each micropile by the Micropile design (AASHTO 10.9);
@@ -579,29 +623,31 @@ export function designAbutment(i: AbutmentInputs) {
       const ID = mp.casingOD - 2 * mp.casingT;
       const Ic = (Math.PI / 64) * (mp.casingOD ** 4 - ID ** 4);
       const Zc = (mp.casingOD ** 3 - ID ** 3) / 6;
-      const lat = analyzeLateral({ length: mp.cased + mp.bond, D: mp.casingOD, EI: 29000 * Ic, Q: PmaxS, head: { kind: "displaced", y: delta, pinned: true }, layers: toLayers(i.soil) });
+      const push = pushed((y) => analyzeLateral({ length: mp.cased + mp.bond, D: mp.casingOD, EI: 29000 * Ic, Q: PmaxS, head: { kind: "displaced", y, pinned: true }, layers: toLayers(i.soil) }), n * rowsMP);
+      const lat = push.lat;
       const Pr = r.checks.find((c) => c.id === "cased-comp")?.capacity ?? r.checks.find((c) => c.id === "uncased-comp")?.capacity ?? 0;
       const Mr = 1.0 * Math.min(mp.casingFy, 80) * Zc / 12; // kip·ft, the casing (AASHTO 6.12.2.2.3, φf 1.0)
       const value = (Pr > 0 ? PmaxS / Pr : 1) + (Mr > 0 ? lat.Mmax / Mr : 1);
-      add({ id: "mp-movement", name: "Micropile: axial with the movement's moment (the casing, pinned head)", demand: value, capacity: 1, unit: "", ref: "AASHTO 10.9.3.10.1, 6.9.2.2; CDOT BDM 11.3.1", note: `${PmaxS.toFixed(1)} kip on the most loaded pile (the group's moments: ${i.groupMoment} kip·ft across ${rowsMP} rows${i.groupMomentAlong ? `, ${i.groupMomentAlong} kip·ft along the abutment` : ""}); ${lat.Mmax.toFixed(1)} kip·ft from ${delta.toFixed(2)} in of movement` });
-      foundation = { kind: "micropiles", lat, phiMn: Mr, mpIn, PmaxS, PminS, Pr, Zc, value, nPiles: n * rowsMP, group, fS };
+      add({ id: "mp-movement", name: "Micropile: axial with the movement's moment (the casing, pinned head)", demand: value, capacity: 1, unit: "", ref: "AASHTO 10.9.3.10.1, 6.9.2.2; CDOT BDM 11.3.1", note: `${PmaxS.toFixed(1)} kip on the most loaded pile (the group's moments: ${i.groupMoment} kip·ft across ${rowsMP} rows${i.groupMomentAlong ? `, ${i.groupMomentAlong} kip·ft along the abutment` : ""}); ${lat.Mmax.toFixed(1)} kip·ft from ${delta.toFixed(2)} in of movement${push.yBr > 0 ? ` and ${push.yBr.toFixed(2)} in more from braking` : ""}` });
+      foundation = { kind: "micropiles", lat, lat0: push.lat0, yBr: push.yBr, kHead: push.kHead, phiMn: Mr, mpIn, PmaxS, PminS, Pr, Zc, value, nPiles: n * rowsMP, group, fS };
     } else {
       add({ id: "shaft-length", name: "Shafts at least 10 ft below the cap", demand: 10, capacity: i.shaftLength, unit: "ft", ref: "CDOT BDM 11.3" });
       add({ id: "shaft-d", name: "Shaft diameter at least 24 in", demand: 24, capacity: i.shaftD, unit: "in", ref: "CDOT BDM 10.6.1.1" });
       const Ec = ec;
       const EI = 0.5 * Ec * ((Math.PI * i.shaftD ** 4) / 64);
-      const lat = analyzeLateral({ length: i.shaftLength, D: i.shaftD, EI, Q: Pu, head: { kind: "displaced", y: delta, pinned: true }, layers: toLayers(i.soil) });
+      const push = pushed((y) => analyzeLateral({ length: i.shaftLength, D: i.shaftD, EI, Q: Pu, head: { kind: "displaced", y, pinned: true }, layers: toLayers(i.soil) }), n);
+      const lat = push.lat;
       const sec = columnSection({ shape: "round", T: i.shaftD, W: i.shaftD, cover: i.cover, bar: i.shaftBar, bars: i.shaftBars, barsT: 0, barsL: 0, barsEnd: 0, tieBar: 5, transverse: "spiral", fc: i.fc, fy: i.fy });
       const res = sec.resistance(Pu, lat.Mmax * 12, 0);
       const phiMn = res ? res.phiMn / 12 : 0;
-      add({ id: "shaft-pm", name: "Shaft: axial with the movement's moment (pinned top)", demand: lat.Mmax, capacity: phiMn, unit: "kip·ft", ref: "AASHTO 5.6.4.5; CDOT BDM 11.3.1" });
+      add({ id: "shaft-pm", name: `Shaft: axial with the movement's moment (pinned top)${push.yBr > 0 ? `, and braking's ${push.yBr.toFixed(2)} in more` : ""}`, demand: lat.Mmax, capacity: phiMn, unit: "kip·ft", ref: "AASHTO 5.6.4.5; CDOT BDM 11.3.1" });
       add({ id: "shaft-geo", name: "Shaft: axial resistance (from the Drilled Shaft tool)", demand: Pu, capacity: i.phiDyn * i.Rn, unit: "kip", ref: "AASHTO 10.8.3.5" });
-      foundation = { kind: "shafts", lat, phiMn };
+      foundation = { kind: "shafts", lat, lat0: push.lat0, yBr: push.yBr, kHead: push.kHead, phiMn };
     }
 
     // The cap: a continuous beam over the piles, the girders with IM.
-    const Pg = 1.25 * i.RDC + 1.5 * i.RDW + 1.75 * i.RLL * (1 + i.IM);
-    const wCap = 1.25 * (capW + apr);
+    const Pg = 1.25 * (i.RDC - Math.max(0, i.girderInside ?? 0) / i.nGirders) + 1.5 * i.RDW + 1.75 * i.RLL * (1 + i.IM); // the girders' ends inside the cap off (counted in its own weight)
+    const wCap = 1.25 * (capW + apr) + 1.5 * aprDW + 1.75 * aprLL; // the lane load takes no IM (3.6.2.1)
     const Pw = wing ? wing.sectionB.strength.V : 0; // kip, each wingwall's weight × γDC at the cap's end
     const wingLoads = wing ? (nWing === 2 ? [{ x: 0, P: Pw }, { x: i.length, P: Pw }] : [{ x: 0, P: Pw }]) : [];
     const beam = continuousBeam(i.length, supports, [...girders.map((x) => ({ x, P: Pg })), ...wingLoads], wCap);
@@ -623,6 +669,27 @@ export function designAbutment(i: AbutmentInputs) {
     const Vc = 0.0316 * 2 * Math.sqrt(i.fc) * b * dv;
     const Vs = (i.stirrup.legs * BARS[i.stirrup.bar].area * i.fy * dv) / i.stirrup.spacing;
     add({ id: "cap-shear", name: "Cap: shear", demand: beam.Vmax, capacity: 0.9 * Math.min(Vc + Vs, 0.25 * i.fc * b * dv), unit: "kip", ref: "AASHTO 5.7.3.3" });
+    // The cap alone before the diaphragm is cast (CDOT BDM 11.3.1: the cap poured first, the girders set on it, then the
+    // diaphragm): the girders' DC1 (girder, deck and haunch), the wet diaphragm and the cap, nothing else; with no live
+    // load Strength IV governs (1.5 DC, AASHTO Table 3.4.1-1; 3.4.2.1 keeps it at least 1.25). The cap's own depth.
+    const hc = i.capDepth * 12;
+    const wDia = i.gammaC * i.capWidth * Math.max(0, i.totalDepth - i.capDepth); // kip/ft, wet
+    const wCap1 = i.gammaC * i.capWidth * i.capDepth;
+    const Pg1 = 1.5 * Math.max(0, (i.RDC1 ?? i.RDC) - Math.max(0, i.girderInside ?? 0) / i.nGirders);
+    const beam1 = continuousBeam(i.length, supports, girders.map((x) => ({ x, P: Pg1 })), 1.5 * (wCap1 + wDia));
+    const dC = hc - i.cover - BARS[i.stirrup.bar].dia - BARS[i.capBot.bar].dia / 2;
+    const dT = hc - 2 - BARS[i.stirrup.bar].dia - BARS[i.capTop.bar].dia / 2;
+    const Mr1 = (As: number, d: number) => {
+      const a = (As * i.fy) / (0.85 * i.fc * b);
+      return (0.9 * As * i.fy * (d - a / 2)) / 12;
+    };
+    add({ id: "cap-const-pos", name: "Cap alone, before the diaphragm (Strength IV): positive moment", demand: beam1.Mpos, capacity: Mr1(asBot, dC), unit: "kip·ft", ref: "AASHTO 3.4.1, 3.4.2.1, 5.6.3.2; CDOT BDM 11.3.1" });
+    add({ id: "cap-const-neg", name: "Cap alone, before the diaphragm (Strength IV): negative moment", demand: beam1.Mneg, capacity: Mr1(asTop, dT), unit: "kip·ft", ref: "AASHTO 3.4.1, 3.4.2.1, 5.6.3.2; CDOT BDM 11.3.1" });
+    const dv1 = Math.max(0.9 * dC, 0.72 * hc);
+    const Vc1 = 0.0316 * 2 * Math.sqrt(i.fc) * b * dv1;
+    const Vs1 = (i.stirrup.legs * BARS[i.stirrup.bar].area * i.fy * dv1) / i.stirrup.spacing;
+    add({ id: "cap-const-shear", name: "Cap alone, before the diaphragm (Strength IV): shear", demand: beam1.Vmax, capacity: 0.9 * Math.min(Vc1 + Vs1, 0.25 * i.fc * b * dv1), unit: "kip", ref: "AASHTO 5.7.3.3" });
+    const construction = { Pg1, wDia, wCap1, beam: beam1, dC, dT, dv1, Vc1, Vs1 };
 
     // The end diaphragm under passive pressure, spanning between girders (per foot of height at its bottom).
     const Kp = Math.tan(rad(45 + i.backfillPhi / 2)) ** 2;
@@ -638,7 +705,7 @@ export function designAbutment(i: AbutmentInputs) {
     let steelEnds: SteelEndsResult | null = null;
     if (i.girderMaterial === "steel") {
       const se = { ...STEEL_ENDS_DEFAULTS, ...(i.steelEnds ?? {}) };
-      const lat = foundation?.lat;
+      const lat = foundation?.lat0; // the movement alone: the braking is added below
       const nFound = foundation?.kind === "micropiles" ? foundation.nPiles : n;
       const piles = lat ? Math.abs(lat.H0) * nFound : 0; // kip, all the foundation elements' head shears at the movement
       const brake = 1.75 * i.braking;
@@ -712,7 +779,7 @@ export function designAbutment(i: AbutmentInputs) {
       }
       wingOut = { Pw, PuEnd, lever, end, push };
     }
-    return { capW, apr, n, Pu, Ps, supports, girders, beam, foundation, delta, Kp, pBottom, Mdia, Pg, factoredStrength, service, wCap, dCap, asTop, asBot, dv, rowsMP, steelEnds, wing: wingOut };
+    return { capW, apr, aprDW, aprLL, n, Pu, Ps, supports, girders, beam, foundation, delta, Kp, pBottom, Mdia, Pg, factoredStrength, service, wCap, dCap, asTop, asBot, dv, rowsMP, steelEnds, wing: wingOut, construction };
   }
 
   function seatDesign() {
@@ -741,6 +808,9 @@ export function designAbutment(i: AbutmentInputs) {
       DC: { V: perFt(totalGirderR.DC) + 0.5 * i.approachDC, x: (perFt(totalGirderR.DC) * xBear + 0.5 * i.approachDC * (i.type === "seat" ? xBack : xBear)) / Math.max(1e-9, perFt(totalGirderR.DC) + 0.5 * i.approachDC) },
       DW: { V: perFt(totalGirderR.DW), x: xBear },
       LL: { V: perFt(totalGirderR.LL), x: xBear },
+      // The approach slab's wearing surface and lane load, half on the abutment where its DC is.
+      apDW: { V: 0.5 * (i.approachDW ?? 0), x: i.type === "seat" ? xBack : xBear },
+      apLL: { V: 0.5 * (i.approachLL ?? 0), x: i.type === "seat" ? xBack : xBear },
       // The wingwalls' weight, spread along the abutment, at their middle behind the stem (DC).
       wings: { V: wing ? perFt(nWing * wing.wall.Vs) : 0, x: i.toe + i.stemT + (wingIn ? (wingIn.L / 2) * Math.cos(rad(Math.abs(i.skew))) : 0) },
     };
@@ -755,12 +825,20 @@ export function designAbutment(i: AbutmentInputs) {
     const LSv = g * heqW * i.heel; // kip/ft on the heel
     const BR = perFt(i.braking);
     const yBR = i.footT + Hs + (i.type === "semi-integral" ? Hb : 0);
+    // The force along the bridge at the bearings: braking with the live load's factor, or the wind along the bridge's
+    // Strength V (1.35 BR + WS + WL) or III (WS) where larger, taken with Strength I's other loads; Service I adds its wind.
+    const wl = i.windLong ?? null;
+    const lonU = Math.max(1.75 * BR, wl ? perFt(1.35 * i.braking + wl.WS5 + wl.WL) : 0, wl ? perFt(wl.WS3) : 0);
+    const lonS = BR + (wl ? perFt(wl.WSs) : 0);
+    const lonF = (c: { name: string }) => (c.name.startsWith("Service") ? lonS : lonU);
     const TU = i.bearingShear;
     // Strength I, two sets: the most vertical (bearing) and the least (sliding, eccentricity).
     const combos = [
-      { name: "Strength I, maximum", dc: 1.25, dw: 1.5, ev: 1.35, eh: gEH.max, ll: 1.75, tu: 0.5, ls: 1.75, lsv: 1.75 },
-      { name: "Strength I, minimum", dc: 0.9, dw: 0.65, ev: 1.0, eh: gEH.max, ll: 0, tu: 0.5, ls: 1.75, lsv: 0 },
-      { name: "Service I", dc: 1, dw: 1, ev: 1, eh: 1, ll: 1, tu: 1, ls: 1, lsv: 1 },
+      // br: braking with the live load's factor; kept in the minimum set (it pushes the abutment, though the vertical live load
+      // that helps is left off), the conservative choice.
+      { name: "Strength I, maximum", dc: 1.25, dw: 1.5, ev: 1.35, eh: gEH.max, ll: 1.75, br: 1.75, tu: 0.5, ls: 1.75, lsv: 1.75 },
+      { name: "Strength I, minimum", dc: 0.9, dw: 0.65, ev: 1.0, eh: gEH.max, ll: 0, br: 1.75, tu: 0.5, ls: 1.75, lsv: 0 },
+      { name: "Service I", dc: 1, dw: 1, ev: 1, eh: 1, ll: 1, br: 1, tu: 1, ls: 1, lsv: 1 },
     ];
     // The wingwalls' thrusts square to the abutment (P sin θ at their ends, already factored in Section B): two push
     // opposite ways, a couple T = P sin θ · L about the vertical axis; one is a net force F = P sin θ, off the middle by
@@ -779,12 +857,12 @@ export function designAbutment(i: AbutmentInputs) {
     const yWs = i.footT + (sq?.ys ?? 0);
     const endStrip = qWu > 0 ? ", with the wingwall's push" : "";
     const rows = combos.map((c) => {
-      const V = c.dc * (items.stem.V + items.backwall.V + items.footing.V + items.DC.V + items.wings.V) + c.dw * items.DW.V + c.ev * items.soil.V + c.ll * items.LL.V + c.lsv * LSv;
-      const Mr = c.dc * (items.stem.V * items.stem.x + items.backwall.V * items.backwall.x + items.footing.V * items.footing.x + items.DC.V * items.DC.x + items.wings.V * items.wings.x) + c.dw * items.DW.V * items.DW.x + c.ev * items.soil.V * items.soil.x + c.ll * items.LL.V * items.LL.x + c.lsv * LSv * items.soil.x;
+      const V = c.dc * (items.stem.V + items.backwall.V + items.footing.V + items.DC.V + items.wings.V) + c.dw * (items.DW.V + items.apDW.V) + c.ev * items.soil.V + c.ll * (items.LL.V + items.apLL.V) + c.lsv * LSv;
+      const Mr = c.dc * (items.stem.V * items.stem.x + items.backwall.V * items.backwall.x + items.footing.V * items.footing.x + items.DC.V * items.DC.x + items.wings.V * items.wings.x) + c.dw * (items.DW.V * items.DW.x + items.apDW.V * items.apDW.x) + c.ev * items.soil.V * items.soil.x + c.ll * (items.LL.V * items.LL.x + items.apLL.V * items.apLL.x) + c.lsv * LSv * items.soil.x;
       const sv = c.name.startsWith("Service");
       const qW = sv ? qWs : qWu;
-      const Hh = c.eh * EH + (c.ll > 0 ? 1.75 : 0) * BR + c.tu * TU + c.ls * LSh + qW;
-      const Mo = c.eh * EH * (H / 3) + (c.ll > 0 ? 1.75 : 0) * BR * yBR + c.tu * TU * yBR + c.ls * LSh * (H / 2) + qW * (sv ? yWs : yWu);
+      const Hh = c.eh * EH + lonF(c) + c.tu * TU + c.ls * LSh + qW;
+      const Mo = c.eh * EH * (H / 3) + lonF(c) * yBR + c.tu * TU * yBR + c.ls * LSh * (H / 2) + qW * (sv ? yWs : yWu);
       const xR = (Mr - Mo) / V;
       const e = B / 2 - xR;
       return { c, V, Mr, Mo, Hh, xR, e };
@@ -876,6 +954,12 @@ export function designAbutment(i: AbutmentInputs) {
       const smin = strength[1];
       const RR = i.phiTau * smin.V * Math.tan(rad(i.phi));
       add({ id: "sliding", name: `Sliding (${smin.c.name}${endStrip})`, demand: smin.Hh, capacity: RR, unit: "kip/ft", ref: "AASHTO 10.6.3.4, 11.6.3.6" });
+      // One wingwall alone also pushes the abutment along its length by P cos θ (two balance): with the force across it,
+      // their resultant per foot against the same friction.
+      if (sq && wing && nWing === 1) {
+        const along = (sq.Pu * sq.cos) / L;
+        add({ id: "wing-slide-along", name: `Sliding with the one wingwall's push along the abutment, ${(sq.Pu * sq.cos).toFixed(1)} kip (${smin.c.name})`, demand: Math.hypot(smin.Hh, along), capacity: RR, unit: "kip/ft", ref: "AASHTO 10.6.3.4" });
+      }
       // Sliding with the wingwalls' twist: the footing slides and turns as a rigid body, the friction at its limit RR per
       // foot everywhere, reversed over a length x at one end; that length's couple r x (L − x) takes T, and what is left,
       // RR √(1 − 4T/(RR L²)) per foot on average, the sliding force (a rigid-plastic base).
@@ -911,12 +995,15 @@ export function designAbutment(i: AbutmentInputs) {
       const Hp = (r.Hh * i.pileSpacing) / 2;
       const ratio = ((xb - xf) * 12) / s.bf;
       const pm = (pMultiplier(1, ratio) + pMultiplier(2, ratio)) / 2;
-      // The piles' strong axis bends under the earth pressure along the bridge; the head fixed in the footing.
-      const lat = analyzeLateral({ length: i.pileLength, D: s.bf, EI: 29000 * s.Ix, Q: Math.max(Pfront, Pback), pm, head: { kind: "fixed", H: Hp }, layers: toLayers(i.soil) });
+      // The piles bend under the earth pressure along the bridge, the head fixed in the footing; about their weak axis
+      // unless set strong (`seatPileAxis`): neither AASHTO nor the CDOT BDM sets a seat abutment's pile orientation, so
+      // the weak axis is the default (the conservative choice; the owner's rule, 2026-11-20).
+      const strong = i.seatPileAxis === "strong";
+      const lat = analyzeLateral({ length: i.pileLength, D: strong ? s.bf : s.d, EI: 29000 * (strong ? s.Ix : s.Iy), Q: Math.max(Pfront, Pback), pm, head: { kind: "fixed", H: Hp }, layers: toLayers(i.soil) });
       const ax = axialResistance(s, i.Fy, 0);
-      const fxx = flexuralResistance(s, i.Fy, "x");
-      const inter = interaction(Math.max(Pfront, Pback), PHI_PILE.combinedAxial * ax.Pn, lat.Mmax * 12, fxx.Mn, 0, 1, fxx.compact);
-      add({ id: "pile-interaction", name: "Pile: axial with flexure", demand: inter.value, capacity: 1, unit: "", ref: `AASHTO 6.15.3.2, Eq. ${inter.eq}` });
+      const fxx = flexuralResistance(s, i.Fy, strong ? "x" : "y");
+      const inter = strong ? interaction(Math.max(Pfront, Pback), PHI_PILE.combinedAxial * ax.Pn, lat.Mmax * 12, fxx.Mn, 0, 1, fxx.compact) : interaction(Math.max(Pfront, Pback), PHI_PILE.combinedAxial * ax.Pn, 0, 1, lat.Mmax * 12, fxx.Mn, fxx.compact);
+      add({ id: "pile-interaction", name: `Pile: axial with flexure (${strong ? "strong" : "weak"} axis)`, demand: inter.value, capacity: 1, unit: "", ref: `AASHTO 6.15.3.2, Eq. ${inter.eq}` });
       piles = { Pfront, Pback, Hp, inter, lat };
     }
     // The stem at the footing's top: earth over Hs + Hb, braking and the bearings' shear at the seat.
@@ -927,13 +1014,15 @@ export function designAbutment(i: AbutmentInputs) {
     const arm = (x: number) => xStem - x;
     const vertM = (gDC: number, gDW: number, gLL: number) => {
       const dc = (gx: number, V: number, x: number) => (arm(x) >= 0 ? gx : Math.min(gx, 0.9)) * V * arm(x);
-      return dc(gDC, perFt(totalGirderR.DC), xBear) + dc(gDC, 0.5 * i.approachDC, i.type === "seat" ? xBack : xBear) + dc(gDC, items.backwall.V, xBack) + gDW * perFt(totalGirderR.DW) * arm(xBear) + gLL * perFt(totalGirderR.LL) * (1 + i.IM) * arm(xBear);
+      // The approach slab's DW and lane load where its DC is (the lane load without IM, 3.6.2.1).
+      const ap = (gx: number, V: number) => (arm(items.apDW.x) >= 0 ? gx : 0) * V * arm(items.apDW.x);
+      return dc(gDC, perFt(totalGirderR.DC), xBear) + dc(gDC, 0.5 * i.approachDC, i.type === "seat" ? xBack : xBear) + dc(gDC, items.backwall.V, xBack) + gDW * perFt(totalGirderR.DW) * arm(xBear) + gLL * perFt(totalGirderR.LL) * (1 + i.IM) * arm(xBear) + ap(gDW, items.apDW.V) + ap(gLL, items.apLL.V);
     };
     const MstemV = vertM(1.25, 1.5, 1.75);
     const MstemVs = vertM(1, 1, 1);
-    const Mstem = gEH.max * K * g * Hst ** 3 / 6 + 1.75 * BR * (yBR - i.footT) + 0.5 * TU * (yBR - i.footT) + (1.75 * dpLS * Hst ** 2) / 2 + MstemV;
-    const Mstem_s = K * g * Hst ** 3 / 6 + BR * (yBR - i.footT) + TU * (yBR - i.footT) + (dpLS * Hst ** 2) / 2 + MstemVs;
-    const Vstem = gEH.max * 0.5 * K * g * Hst ** 2 + 1.75 * BR + 0.5 * TU + 1.75 * dpLS * Hst;
+    const Mstem = gEH.max * K * g * Hst ** 3 / 6 + lonU * (yBR - i.footT) + 0.5 * TU * (yBR - i.footT) + (1.75 * dpLS * Hst ** 2) / 2 + MstemV;
+    const Mstem_s = K * g * Hst ** 3 / 6 + lonS * (yBR - i.footT) + TU * (yBR - i.footT) + (dpLS * Hst ** 2) / 2 + MstemVs;
+    const Vstem = gEH.max * 0.5 * K * g * Hst ** 2 + lonU + 0.5 * TU + 1.75 * dpLS * Hst;
     const fs = flexure({ ...common, Mu: Mstem, Ms: Mstem_s, h: i.stemT * 12, cover: wallCover, bars: i.stemBars });
     add({ id: "stem-flex", name: "Stem: flexure at the footing", demand: Mstem, capacity: fs.MR, unit: "kip·ft/ft", ref: "AASHTO 5.6.3.2" });
     add({ id: "stem-min", name: "Stem: minimum reinforcement", demand: fs.minRequired, capacity: fs.MR, unit: "kip·ft/ft", ref: "AASHTO 5.6.3.3" });
@@ -952,7 +1041,7 @@ export function designAbutment(i: AbutmentInputs) {
     // Where the stem's own bars fall short there, added back-face bars at its ends (stemEndBars): between the main bars
     // (at their spacing) over the spread width from each wingwall's end, hooked into the footing like them; the smallest
     // that's enough when not given (null: none).
-    let stemPush: { Hu: number; y: number; dM: number; dV: number; end: StemEndBars | null; As: number; MR: number } | null = null;
+    let stemPush: { Hu: number; y: number; dM: number; dV: number; end: StemEndBars | null; As: number; MR: number; MsEnd: number; sAt: number; sMax: number; fss: number } | null = null;
     if (sq && sq.sin > 1e-6) {
       const y = Math.min(Hst, Math.max(1, sq.yu));
       const dM = sq.Hu;
@@ -972,7 +1061,15 @@ export function designAbutment(i: AbutmentInputs) {
       add({ id: "wing-push-stem", name: `Stem's end at the wingwall: flexure at the footing with the wingwall's push ${sq.Hu.toFixed(1)} kip square to it${end ? `, with #${end.bar} added between the bars over ${end.width} ft` : ""}`, demand: Mu, capacity: MR, unit: "kip·ft/ft", ref: "AASHTO 5.6.3.2" });
       if (end && end.width < y - 1e-9) add({ id: "wing-push-stem-width", name: "Stem's end bars: over the push's spread width at the base", demand: y, capacity: end.width, unit: "ft", ref: "AASHTO 5.6.3.2 (45° spread)" });
       add({ id: "wing-push-stem-shear", name: "Stem's end at the wingwall: shear at the footing with the wingwall's push", demand: Vstem + dV, capacity: 0.9 * 0.0316 * 2 * Math.sqrt(i.fc) * 12 * dvS, unit: "kip/ft", ref: "AASHTO 5.7.3.3" });
-      stemPush = { Hu: sq.Hu, y, dM, dV, end, As, MR };
+      // Crack control at the end (5.6.7), Service I with the push (P sin θ per foot, as at strength): the steel there as
+      // the main bars at the spacing that gives its area; against the clear spacing of the bars there (halved where the
+      // added ones sit between them).
+      const MsEnd = Mstem_s + sq.Hs;
+      const sEq = (BARS[i.stemBars.bar].area * 12) / As;
+      const fe = flexure({ ...common, Mu, Ms: MsEnd, h: i.stemT * 12, cover: wallCover, bars: { bar: i.stemBars.bar, spacing: sEq } });
+      const sAt = end && end.width >= y - 1e-9 ? i.stemBars.spacing / 2 : i.stemBars.spacing;
+      add({ id: "wing-push-stem-crack", name: "Stem's end at the wingwall: crack control with the push (Service I)", demand: sAt, capacity: fe.sMax, unit: "in", ref: "AASHTO 5.6.7" });
+      stemPush = { Hu: sq.Hu, y, dM, dV, end, As, MR, MsEnd, sAt, sMax: fe.sMax, fss: fe.fss };
     }
     const wingPush = sq && sq.sin > 1e-6 ? { qWu, qWs, yWu, yWs, stem: stemPush, sin: sq.sin, Pu: sq.Pu, Ps: sq.Ps, Hu: sq.Hu, Hs: sq.Hs, Myu: sq.Myu, Mys: sq.Mys, Tu: wingT(sq.Pu, sq.Myu), Ts: wingT(sq.Ps, sq.Mys), onPiles, nWing } : null;
     // The backwall (seat type, BDM 11.3.3), a cantilever from the seat per foot: earth pressure at H/3 (3.11.5), the

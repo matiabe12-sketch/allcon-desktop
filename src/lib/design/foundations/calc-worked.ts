@@ -282,6 +282,18 @@ export function abutmentWorked(w: Writer, i: AbutmentInputs, r: AbutmentResult) 
   m(`n_{g}\\coloneq ${i.nGirders}`, "Girders");
   m(`R_{DC}\\coloneq ${num(i.RDC)}\\mathrm{kip}`, "Each girder's DC reaction");
   m(`R_{DW}\\coloneq ${num(i.RDW)}\\mathrm{kip}`, "DW");
+  // The whole line of girders, counted once: two exterior and the rest interior, less what's inside the abutment's own concrete.
+  if (i.girderTotals) {
+    m(`R_{DCt}\\coloneq ${num(i.girderTotals.DC)}\\mathrm{kip}`, "The line of girders' DC: two exterior girders and the rest interior");
+    m(`R_{DWt}\\coloneq ${num(i.girderTotals.DW)}\\mathrm{kip}`, "Their DW");
+  } else {
+    m("R_{DCt}\\coloneq n_{g}\\cdot R_{DC}=", "The line of girders' DC", "kip");
+    m("R_{DWt}\\coloneq n_{g}\\cdot R_{DW}=", "Their DW", "kip");
+  }
+  if ((i.girderInside ?? 0) > 0) {
+    m(`R_{in}\\coloneq ${num(i.girderInside!)}\\mathrm{kip}`, `Already in the girders' reactions and inside the ${integral ? "cap and diaphragm" : "end diaphragm"}: the girders' ends and the deck from the bearing line to its face (its own weight counts them)`);
+    m("R_{DCn}\\coloneq R_{DCt}-R_{in}=", "The girders' DC, counted once", "kip");
+  } else m("R_{DCn}\\coloneq R_{DCt}", "The girders' DC");
   const LL = abutmentLiveLoad(i);
   m(`LL_{t}\\coloneq ${num(LL)}\\mathrm{kip}`, (i.RLane ?? 0) > 0 && (i.lanes ?? 0) >= 1 ? `The live load on the abutment, no IM: the most of k lanes × multiple presence × ${num(i.RLane ?? 0)} kip a lane (AASHTO 3.6.1.1.2, 3.6.2.1)` : `The girders × ${num(i.RLL)} kip each, no IM (AASHTO 3.6.2.1)`);
 
@@ -315,10 +327,32 @@ function integralWorked(w: Writer, i: AbutmentInputs, r: AbutmentResult, g: NonN
   m(`D_{t}\\coloneq ${num(i.totalDepth)}\\mathrm{ft}`, "Top of deck to the cap's bottom (cap and diaphragm)");
   m("w_{cap}\\coloneq\\gamma_{c}\\cdot W_{cap}\\cdot D_{t}=", "Cap and diaphragm, solid", "kip/ft");
   m(`w_{ap}\\coloneq0.5\\cdot${num(i.approachDC)}\\frac{\\mathrm{kip}}{\\mathrm{ft}}=`, "Half the approach slab", "kip/ft");
-  m("W_{DC}\\coloneq n_{g}\\cdot R_{DC}+\\left(w_{cap}+w_{ap}\\right)\\cdot L_{a}=", "DC on the foundation", "kip");
-  m("V_{u}\\coloneq1.25\\cdot W_{DC}+1.5\\cdot n_{g}\\cdot R_{DW}+1.75\\cdot LL_{t}=", "Strength I, the whole abutment", "kip");
-  m("V_{s}\\coloneq W_{DC}+n_{g}\\cdot R_{DW}+LL_{t}=", "Service I", "kip");
+  m("W_{DC}\\coloneq R_{DCn}+\\left(w_{cap}+w_{ap}\\right)\\cdot L_{a}=", "DC on the foundation", "kip");
+  const apx = g.aprDW > 0 || g.aprLL > 0;
+  if (apx) {
+    m(`w_{apw}\\coloneq ${num(g.aprDW, 3)}\\frac{\\mathrm{kip}}{\\mathrm{ft}}`, "Half the approach slab's wearing surface (DW)");
+    m(`w_{apl}\\coloneq ${num(g.aprLL, 3)}\\frac{\\mathrm{kip}}{\\mathrm{ft}}`, "Half the design lane load on it, every lane, no IM (a lane's one truck is already over the abutment)");
+    m("W_{DWa}\\coloneq R_{DWt}+w_{apw}\\cdot L_{a}=", "DW on the foundation", "kip");
+    m("W_{LLa}\\coloneq LL_{t}+w_{apl}\\cdot L_{a}=", "LL on the foundation", "kip");
+    m("V_{u}\\coloneq1.25\\cdot W_{DC}+1.5\\cdot W_{DWa}+1.75\\cdot W_{LLa}=", "Strength I, the whole abutment", "kip");
+    m("V_{s}\\coloneq W_{DC}+R_{DWt}+LL_{t}+\\left(w_{apw}+w_{apl}\\right)\\cdot L_{a}=", "Service I", "kip");
+  } else {
+    m("V_{u}\\coloneq1.25\\cdot W_{DC}+1.5\\cdot R_{DWt}+1.75\\cdot LL_{t}=", "Strength I, the whole abutment", "kip");
+    m("V_{s}\\coloneq W_{DC}+R_{DWt}+LL_{t}=", "Service I", "kip");
+  }
   m(`\\delta_{h}\\coloneq ${num(i.thermalForce)}\\cdot\\max\\left(\\Delta_{e},\\Delta_{c}\\right)=`, "The movement the foundation is pushed through (its force factor on the thermal movement)", "in");
+  const fb = g.foundation;
+  if (fb && fb.yBr > 0) {
+    const nF = fb.kind === "micropiles" ? fb.nPiles : g.n;
+    text("Braking on the abutment:- its share of the bridge's braking (AASHTO 3.6.4, shared by the supports' stiffness), Strength I, pushes the abutment further: the foundation elements at their secant stiffness under the movement (p–y).", undefined, { keepWithNext: true });
+    m(`BR_{a}\\coloneq ${num(i.braking)}\\mathrm{kip}`, "The abutment's share");
+    const wl = i.windLong;
+    if (wl) m(`H_{L}\\coloneq\\max\\left(1.75\\cdot BR_{a},1.35\\cdot BR_{a}+${num(wl.WS5 + wl.WL, 3)}\\mathrm{kip},${num(wl.WS3, 3)}\\mathrm{kip}\\right)=`, "Braking, or the wind along the bridge's Strength V (WS + WL) or III, its share", "kip");
+    else m("H_{L}\\coloneq1.75\\cdot BR_{a}=", "Strength I", "kip");
+    m(`k_{h}\\coloneq ${num(fb.kHead, 3)}\\frac{\\mathrm{kip}}{\\mathrm{in}}`, "Each element's head shear over its head's movement, p–y");
+    m(`\\delta_{br}\\coloneq\\frac{H_{L}}{${nF}\\cdot k_{h}}=`, `Over the ${nF} elements`, "in");
+    m("\\delta_{u}\\coloneq\\delta_{h}+\\delta_{br}=", "The movement they're checked at", "in");
+  }
 
   const f = g.foundation;
   if (f?.kind === "piles") {
@@ -375,8 +409,10 @@ function integralWorked(w: Writer, i: AbutmentInputs, r: AbutmentResult, g: NonN
   text("Method:- the cap and diaphragm (cast together) as a beam on point supports at the piles, the girders' factored reactions with IM as point loads, its own weight and half the approach slab spread; solved by the stiffness method.");
   m(`R_{LL}\\coloneq ${num(i.RLL)}\\mathrm{kip}`, "Each girder's live load reaction");
   m(`I_{M}\\coloneq ${num(i.IM)}`, "Dynamic load allowance");
-  m("P_{g}\\coloneq1.25\\cdot R_{DC}+1.5\\cdot R_{DW}+1.75\\cdot R_{LL}\\cdot\\left(1+I_{M}\\right)=", "Each girder, Strength I", "kip");
-  m("w_{u}\\coloneq1.25\\cdot\\left(w_{cap}+w_{ap}\\right)=", undefined, "kip/ft");
+  if ((i.girderInside ?? 0) > 0) m("P_{g}\\coloneq1.25\\cdot\\left(R_{DC}-\\frac{R_{in}}{n_{g}}\\right)+1.5\\cdot R_{DW}+1.75\\cdot R_{LL}\\cdot\\left(1+I_{M}\\right)=", "Each girder, Strength I (its end inside the cap off: in the cap's own weight)", "kip");
+  else m("P_{g}\\coloneq1.25\\cdot R_{DC}+1.5\\cdot R_{DW}+1.75\\cdot R_{LL}\\cdot\\left(1+I_{M}\\right)=", "Each girder, Strength I", "kip");
+  if (g.aprDW > 0 || g.aprLL > 0) m("w_{u}\\coloneq1.25\\cdot\\left(w_{cap}+w_{ap}\\right)+1.5\\cdot w_{apw}+1.75\\cdot w_{apl}=", "With the approach slab's DW and lane load (no IM)", "kip/ft");
+  else m("w_{u}\\coloneq1.25\\cdot\\left(w_{cap}+w_{ap}\\right)=", undefined, "kip/ft");
   m(`M_{pos}\\coloneq ${num(g.beam.Mpos)}\\mathrm{kip}\\cdot\\mathrm{ft}`, "Largest positive moment, the beam");
   m(`M_{neg}\\coloneq ${num(g.beam.Mneg)}\\mathrm{kip}\\cdot\\mathrm{ft}`, "Largest negative moment");
   m(`V_{cap}\\coloneq ${num(g.beam.Vmax)}\\mathrm{kip}`, "Largest shear");
@@ -395,6 +431,28 @@ function integralWorked(w: Writer, i: AbutmentInputs, r: AbutmentResult, g: NonN
   m("V_{cc}\\coloneq0.0316\\cdot2\\cdot\\sqrt{\\frac{f'_{c}}{\\mathrm{ksi}}}\\cdot\\mathrm{ksi}\\cdot b_{c}\\cdot d_{vc}=", "AASHTO Eq. 5.7.3.3-3, β 2", "kip");
   m(`V_{sc}\\coloneq\\frac{${i.stirrup.legs}\\cdot${num(BARS[i.stirrup.bar].area)}\\mathrm{in}^{2}\\cdot f_{y}\\cdot d_{vc}}{${num(i.stirrup.spacing)}\\mathrm{in}}=`, `${i.stirrup.legs} legs of #${i.stirrup.bar} @ ${num(i.stirrup.spacing)} in, AASHTO Eq. 5.7.3.3-4`, "kip");
   m(ok("V_{cap}", "\\phi_{v}\\cdot\\min\\left(V_{cc}+V_{sc},0.25\\cdot f'_{c}\\cdot b_{c}\\cdot d_{vc}\\right)"), "Shear, AASHTO 5.7.3.3");
+  const k1 = g.construction;
+  text("The cap alone, before the diaphragm is cast", "subheading", { keepWithNext: true });
+  text("Method:- the cap is poured first and the girders set on it, then the diaphragm cast (CDOT BDM 11.3.1). Until then the cap alone, its own depth, carries the girders' DC1 (girder, deck and haunch), the wet diaphragm and itself. With no live load Strength IV governs, 1.5 DC (AASHTO Table 3.4.1-1, 3.4.2.1).", undefined, { keepWithNext: true });
+  m(`R_{DC1}\\coloneq ${num(i.RDC1 ?? i.RDC)}\\mathrm{kip}`, "Each girder's DC1");
+  if ((i.girderInside ?? 0) > 0) m("P_{g1}\\coloneq1.5\\cdot\\left(R_{DC1}-\\frac{R_{in}}{n_{g}}\\right)=", "Each girder, its end inside the cap off", "kip");
+  else m("P_{g1}\\coloneq1.5\\cdot R_{DC1}=", "Each girder", "kip");
+  m(`h_{c1}\\coloneq ${num(i.capDepth)}\\mathrm{ft}`, "The cap's depth");
+  m(`D_{d}\\coloneq ${num(Math.max(0, i.totalDepth - i.capDepth))}\\mathrm{ft}`, "The diaphragm above it");
+  m(`w_{u1}\\coloneq1.5\\cdot${num(i.gammaC)}\\mathrm{kcf}\\cdot W_{cap}\\cdot\\left(h_{c1}+D_{d}\\right)=`, "The cap and the wet diaphragm", "kip/ft");
+  m(`M_{pos1}\\coloneq ${num(k1.beam.Mpos)}\\mathrm{kip}\\cdot\\mathrm{ft}`, "Largest positive moment, the same beam");
+  m(`M_{neg1}\\coloneq ${num(k1.beam.Mneg)}\\mathrm{kip}\\cdot\\mathrm{ft}`, "Largest negative moment");
+  m(`V_{c1}\\coloneq ${num(k1.beam.Vmax)}\\mathrm{kip}`, "Largest shear");
+  m(`d_{b1}\\coloneq ${num(k1.dC, 3)}\\mathrm{in}`, "To the bottom bars, in the cap");
+  m(`d_{t1}\\coloneq ${num(k1.dT, 3)}\\mathrm{in}`, "To the top bars");
+  m("M_{rb1}\\coloneq\\phi_{f}\\cdot A_{sb}\\cdot f_{y}\\cdot\\left(d_{b1}-\\frac{A_{sb}\\cdot f_{y}}{2\\cdot0.85\\cdot f'_{c}\\cdot b_{c}}\\right)=", "AASHTO 5.6.3.2", "kip*ft");
+  m("M_{rt1}\\coloneq\\phi_{f}\\cdot A_{st}\\cdot f_{y}\\cdot\\left(d_{t1}-\\frac{A_{st}\\cdot f_{y}}{2\\cdot0.85\\cdot f'_{c}\\cdot b_{c}}\\right)=", undefined, "kip*ft");
+  m(ok("M_{pos1}", "M_{rb1}"), "Positive moment, the cap alone");
+  m(ok("M_{neg1}", "M_{rt1}"), "Negative moment, the cap alone");
+  m("d_{v1}\\coloneq\\max\\left(0.9\\cdot d_{b1},0.72\\cdot h_{c1}\\right)=", "AASHTO 5.7.2.8", "in");
+  m("V_{cc1}\\coloneq0.0316\\cdot2\\cdot\\sqrt{\\frac{f'_{c}}{\\mathrm{ksi}}}\\cdot\\mathrm{ksi}\\cdot b_{c}\\cdot d_{v1}=", "AASHTO Eq. 5.7.3.3-3, β 2", "kip");
+  m(`V_{sc1}\\coloneq\\frac{${i.stirrup.legs}\\cdot${num(BARS[i.stirrup.bar].area)}\\mathrm{in}^{2}\\cdot f_{y}\\cdot d_{v1}}{${num(i.stirrup.spacing)}\\mathrm{in}}=`, "AASHTO Eq. 5.7.3.3-4", "kip");
+  m(ok("V_{c1}", "\\phi_{v}\\cdot\\min\\left(V_{cc1}+V_{sc1},0.25\\cdot f'_{c}\\cdot b_{c}\\cdot d_{v1}\\right)"), "Shear, the cap alone, AASHTO 5.7.3.3");
   if (g.wing) {
     const gw = g.wing;
     text("The wingwalls on the cap's ends", "subheading", { keepWithNext: true });
@@ -482,8 +540,8 @@ function seatWorked(w: Writer, i: AbutmentInputs, r: AbutmentResult, s: NonNulla
   m("DC_{bw}\\coloneq\\gamma_{c}\\cdot T_{b}\\cdot H_{b}=", semi ? "End diaphragm" : "Backwall", "kip/ft");
   m("DC_{ft}\\coloneq\\gamma_{c}\\cdot B\\cdot t_{f}=", "Footing", "kip/ft");
   m("EV_{h}\\coloneq\\gamma_{s}\\cdot T_{h}\\cdot\\left(H_{s}+H_{b}\\right)=", "Soil on the heel", "kip/ft");
-  m(`DC_{g}\\coloneq\\frac{n_{g}\\cdot R_{DC}}{L_{a}}+0.5\\cdot${num(i.approachDC)}\\frac{\\mathrm{kip}}{\\mathrm{ft}}=`, "The girders' DC and half the approach slab", "kip/ft");
-  m("DW_{g}\\coloneq\\frac{n_{g}\\cdot R_{DW}}{L_{a}}=", undefined, "kip/ft");
+  m(`DC_{g}\\coloneq\\frac{R_{DCn}}{L_{a}}+0.5\\cdot${num(i.approachDC)}\\frac{\\mathrm{kip}}{\\mathrm{ft}}=`, "The girders' DC and half the approach slab", "kip/ft");
+  m("DW_{g}\\coloneq\\frac{R_{DWt}}{L_{a}}=", undefined, "kip/ft");
   m("LL_{g}\\coloneq\\frac{LL_{t}}{L_{a}}=", "No IM below ground", "kip/ft");
   m("x_{st}\\coloneq T_{t}+\\frac{T_{s}}{2}=", "The stem's arm", "ft");
   m(`e_{b}\\coloneq ${num(s.ecc, 3)}\\mathrm{ft}`, "The bearings from the stem's centerline, toward the span");
@@ -493,7 +551,14 @@ function seatWorked(w: Writer, i: AbutmentInputs, r: AbutmentResult, s: NonNulla
   m("x_{ft}\\coloneq\\frac{B}{2}=", undefined, "ft");
   m("x_{h}\\coloneq T_{t}+T_{s}+\\frac{T_{h}}{2}=", undefined, "ft");
   m("EH\\coloneq0.5\\cdot K\\cdot\\gamma_{s}\\cdot H^{2}=", "Earth pressure, at H/3", "kip/ft");
-  m(`BR\\coloneq\\frac{${num(i.braking)}\\mathrm{kip}}{L_{a}}=`, "Braking (AASHTO 3.6.4)", "kip/ft");
+  m(`BR\\coloneq\\frac{${num(i.braking)}\\mathrm{kip}}{L_{a}}=`, "Braking (AASHTO 3.6.4), the abutment's share", "kip/ft");
+  const wl = i.windLong ?? null;
+  if (wl) {
+    text("Along the bridge at the bearings:- braking with the live load's factor, or the wind along the bridge's Strength V (1.35 BR + WS + WL) or III (WS), the abutment's share (AASHTO 3.8.1.2.3a, 3.8.1.3), the largest taken with Strength I's other loads.", undefined, { keepWithNext: true });
+    m(`H_{w5}\\coloneq\\frac{1.35\\cdot${num(i.braking)}\\mathrm{kip}+${num(wl.WS5, 3)}\\mathrm{kip}+${num(wl.WL, 3)}\\mathrm{kip}}{L_{a}}=`, "Strength V", "kip/ft");
+    m(`BR_{u}\\coloneq\\max\\left(1.75\\cdot BR,H_{w5},\\frac{${num(wl.WS3, 3)}\\mathrm{kip}}{L_{a}}\\right)=`, "Strength I, or V, or III", "kip/ft");
+    m(`BR_{s}\\coloneq BR+\\frac{${num(wl.WSs, 3)}\\mathrm{kip}}{L_{a}}=`, "Service I, with its wind", "kip/ft");
+  }
   m(`TU\\coloneq ${num(i.bearingShear)}\\frac{\\mathrm{kip}}{\\mathrm{ft}}`, "The bearings' shear (uniform temperature)");
   m(semi ? "y_{BR}\\coloneq t_{f}+H_{s}+H_{b}=" : "y_{BR}\\coloneq t_{f}+H_{s}=", semi ? "At the deck, through the end diaphragm" : "At the seat", "ft");
   const ls = s.heqW > 0;
@@ -545,24 +610,34 @@ function seatWorked(w: Writer, i: AbutmentInputs, r: AbutmentResult, s: NonNulla
       m(`y_{Ws}\\coloneq ${num(wp.yWs, 3)}\\mathrm{ft}`, "Service I");
     }
   }
+  const apr = (s.items.apDW.V > 0 || s.items.apLL.V > 0);
+  if (apr) {
+    m(`DW_{ap}\\coloneq ${num(s.items.apDW.V, 3)}\\frac{\\mathrm{kip}}{\\mathrm{ft}}`, "Half the approach slab's wearing surface");
+    m(`LL_{ap}\\coloneq ${num(s.items.apLL.V, 3)}\\frac{\\mathrm{kip}}{\\mathrm{ft}}`, "Half the design lane load on it, every lane (AASHTO 3.6.1.2.4, 3.6.1.1.2), no IM; a lane's one truck is already over the abutment");
+    m(`x_{ap}\\coloneq ${num(s.items.apDW.x, 3)}\\mathrm{ft}`, i.type === "seat" ? "On the backwall" : "At the bearings");
+  }
   for (const c of combos) {
     const f = (v: number) => (v === 1 ? "" : `${v}\\cdot `);
     const llV = c.ll > 0 ? `+${f(c.ll)}LL_{g}` : "";
+    const brF = c.k === "c" ? 1 : 1.75; // braking with the live load's factor, in both Strength I sets
+    if (apr) m(`A_{p${c.k}}\\coloneq ${f(c.dw)}DW_{ap}${c.ll > 0 ? `+${f(c.ll)}LL_{ap}` : ""}=`, "The approach slab's DW and lane load", "kip/ft");
+    const apV = apr ? `+A_{p${c.k}}` : "";
     // The surcharge's factored parts, named so each line fits the page.
     if (ls && c.lsv > 0) m(`W_{l${c.k}}\\coloneq ${f(c.lsv)}LS_{v}=`, "The surcharge on the heel (bearing)", "kip/ft");
     if (ls) m(`H_{l${c.k}}\\coloneq ${f(c.lsh)}LS_{h}=`, "The surcharge, horizontal", "kip/ft");
     const lsvV = ls && c.lsv > 0 ? `+W_{l${c.k}}` : "";
-    m(`V_{${c.k}}\\coloneq ${f(c.dc)}DC_{t}+${f(c.dw)}DW_{g}+${f(c.ev)}EV_{h}${llV}${lsvV}=`, c.name, "kip/ft");
+    m(`V_{${c.k}}\\coloneq ${f(c.dc)}DC_{t}+${f(c.dw)}DW_{g}+${f(c.ev)}EV_{h}${llV}${lsvV}${apV}=`, c.name, "kip/ft");
     m(`P_{s${c.k}}\\coloneq ${f(c.dw)}DW_{g}${llV}=`, "DW and LL at the bearings", "kip/ft");
-    m(`M_{R${c.k}}\\coloneq ${f(c.dc)}M_{DC}+P_{s${c.k}}\\cdot x_{br}+\\left(${f(c.ev)}EV_{h}${lsvV}\\right)\\cdot x_{h}=`, "Resisting", "kip*ft/ft");
-    const br = c.ll > 0 ? "+1.75\\cdot BR" : "";
+    m(`M_{R${c.k}}\\coloneq ${f(c.dc)}M_{DC}+P_{s${c.k}}\\cdot x_{br}+\\left(${f(c.ev)}EV_{h}${lsvV}\\right)\\cdot x_{h}${apr ? `+A_{p${c.k}}\\cdot x_{ap}` : ""}=`, "Resisting", "kip*ft/ft");
+    const brT = i.windLong ? (c.k === "c" ? "BR_{s}" : "BR_{u}") : `${f(brF)}BR`;
+    const br = `+${brT}`;
     const lsH = ls ? `+H_{l${c.k}}` : "";
     const wk = c.k === "c" ? "s" : "u";
     const qH = qW ? `+q_{W${wk}}` : "";
     if (qW) m(`M_{W${c.k}}\\coloneq q_{W${wk}}\\cdot y_{W${wk}}=`, "The wingwall's push, overturning", "kip*ft/ft");
     const qM = qW ? `+M_{W${c.k}}` : "";
     m(`F_{h${c.k}}\\coloneq ${f(c.eh)}EH${br}+${f(c.tu)}TU${lsH}${qH}=`, "Horizontal", "kip/ft");
-    m(`M_{O${c.k}}\\coloneq ${f(c.eh)}EH\\cdot\\frac{H}{3}${c.ll > 0 ? "+1.75\\cdot BR\\cdot y_{BR}" : ""}+${f(c.tu)}TU\\cdot y_{BR}${lsH ? `${lsH}\\cdot\\frac{H}{2}` : ""}${qM}=`, "Overturning", "kip*ft/ft");
+    m(`M_{O${c.k}}\\coloneq ${f(c.eh)}EH\\cdot\\frac{H}{3}+${brT}\\cdot y_{BR}+${f(c.tu)}TU\\cdot y_{BR}${lsH ? `${lsH}\\cdot\\frac{H}{2}` : ""}${qM}=`, "Overturning", "kip*ft/ft");
     m(`x_{R${c.k}}\\coloneq\\frac{M_{R${c.k}}-M_{O${c.k}}}{V_{${c.k}}}=`, "The resultant from the toe", "ft");
     m(`e_{${c.k}}\\coloneq\\frac{B}{2}-x_{R${c.k}}=`, "Eccentricity", "ft");
   }
@@ -638,7 +713,7 @@ function seatWorked(w: Writer, i: AbutmentInputs, r: AbutmentResult, s: NonNulla
       m(`\\Delta_{Pe}\\coloneq\\frac{M_{Lp}\\cdot${num(ew.xmax!, 3)}\\mathrm{ft}}{2\\cdot${num(ew.S2!, 3)}\\mathrm{ft}^{2}}=`, `The end pile's share, ${ew.n} piles a row, Σx² of a row`, "kip");
       m(ok("\\max\\left(P_{f},P_{bk}\\right)+\\Delta_{Pe}", "\\phi_{dyn}\\cdot R_{n}"), "End pile, geotechnical axial, AASHTO 10.5.5.2.3");
     }
-    m(`M_{py}\\coloneq ${num(s.piles.lat.Mmax)}\\mathrm{kip}\\cdot\\mathrm{ft}`, "Largest moment, strong axis, p–y with the group's p-multipliers, head fixed");
+    m(`M_{py}\\coloneq ${num(s.piles.lat.Mmax)}\\mathrm{kip}\\cdot\\mathrm{ft}`, `Largest moment, ${i.seatPileAxis === "strong" ? "strong" : "weak"} axis, p–y with the group's p-multipliers, head fixed`);
     m(`I_{xp}\\coloneq ${num(s.piles.inter.value)}`, `Axial with flexure, AASHTO Eq. ${s.piles.inter.eq} (φc 0.70 Pn, φf 1.0 Mn)`);
     m(ok("I_{xp}", "1"), "AASHTO 6.15.3.2");
   }
@@ -651,8 +726,8 @@ function seatWorked(w: Writer, i: AbutmentInputs, r: AbutmentResult, s: NonNulla
   m(`M_{vu}\\coloneq ${num(s.MstemV, 3)}\\frac{\\mathrm{kip}\\cdot\\mathrm{ft}}{\\mathrm{ft}}`, "The vertical loads about the stem's base, Strength I: the girders' DC, DW and LL with IM at e_b (the stem above ground, AASHTO 3.6.2.1), the approach slab and backwall where they sit, any behind the centerline at 0.9");
   m(`M_{vs}\\coloneq ${num(s.MstemVs, 3)}\\frac{\\mathrm{kip}\\cdot\\mathrm{ft}}{\\mathrm{ft}}`, "The same, Service I");
   m("M_{eh}\\coloneq K\\cdot\\gamma_{s}\\cdot\\frac{H_{st}^{3}}{6}=", "The earth pressure's moment, unfactored", "kip*ft/ft");
-  m("M_{hu}\\coloneq\\left(1.75\\cdot BR+0.5\\cdot TU\\right)\\cdot y_{s}=", "Braking and the bearings' temperature force, Strength I", "kip*ft/ft");
-  m("M_{hs}\\coloneq\\left(BR+TU\\right)\\cdot y_{s}=", "The same, Service I", "kip*ft/ft");
+  m(`M_{hu}\\coloneq\\left(${i.windLong ? "BR_{u}" : "1.75\\cdot BR"}+0.5\\cdot TU\\right)\\cdot y_{s}=`, "Braking (or the wind along) and the bearings' temperature force, Strength I", "kip*ft/ft");
+  m(`M_{hs}\\coloneq\\left(${i.windLong ? "BR_{s}" : "BR"}+TU\\right)\\cdot y_{s}=`, "The same, Service I", "kip*ft/ft");
   member(w, "st", "Stem", {
     Mu: `\\gamma_{EH}\\cdot M_{eh}+M_{hu}${ls ? "+1.75\\cdot M_{ls}" : ""}+M_{vu}=`,
     Ms: `M_{eh}+M_{hs}${ls ? "+M_{ls}" : ""}+M_{vs}=`,
@@ -664,7 +739,7 @@ function seatWorked(w: Writer, i: AbutmentInputs, r: AbutmentResult, s: NonNulla
     exposure: i.exposure,
   });
   if (ls) m("V_{lst}\\coloneq1.75\\cdot\\Delta_{p}\\cdot H_{st}=", "The surcharge's shear on the stem", "kip/ft");
-  shear(w, "st", `\\gamma_{EH}\\cdot0.5\\cdot K\\cdot\\gamma_{s}\\cdot H_{st}^{2}+1.75\\cdot BR+0.5\\cdot TU${ls ? "+V_{lst}" : ""}=`, "st", "Stem shear, AASHTO 5.7.3.3");
+  shear(w, "st", `\\gamma_{EH}\\cdot0.5\\cdot K\\cdot\\gamma_{s}\\cdot H_{st}^{2}+${i.windLong ? "BR_{u}" : "1.75\\cdot BR"}+0.5\\cdot TU${ls ? "+V_{lst}" : ""}=`, "st", "Stem shear, AASHTO 5.7.3.3");
   if (s.wingStem) wingEndWorked(w, s.wingStem, "s");
   if (s.wingPush?.stem) {
     const sp = s.wingPush.stem;
@@ -680,6 +755,10 @@ function seatWorked(w: Writer, i: AbutmentInputs, r: AbutmentResult, s: NonNulla
       m(ok("M_{pst}", "M_{rep}"), "Flexure at the end, AASHTO 5.6.3.2");
       if (eb.width < sp.y) m(ok(`${num(sp.y, 3)}\\mathrm{ft}`, `${num(eb.width)}\\mathrm{ft}`), "Over the spread width at the base");
     } else m(ok("M_{pst}", "M_{rst}"), "Flexure at the end, AASHTO 5.6.3.2");
+    m("M_{sps}\\coloneq M_{sst}+\\frac{H_{ws}\\cdot y_{wp}}{y_{wp}}=", "Service I at the end, with the push", "kip*ft/ft");
+    m(`f_{sep}\\coloneq ${num(sp.fss, 3)}\\mathrm{ksi}`, "The bars' service stress there (all the steel at the end), AASHTO 5.6.7");
+    m(`s_{mep}\\coloneq ${num(sp.sMax, 3)}\\mathrm{in}`, "Crack control's largest spacing for it, AASHTO Eq. 5.6.7-1");
+    m(ok(`${num(sp.sAt, 3)}\\mathrm{in}`, "s_{mep}"), sp.end ? "The bars' spacing at the end (halved by the added ones)" : "The bars' spacing at the end");
     m("V_{pst}\\coloneq V_{ust}+\\frac{H_{wu}}{y_{wp}}=", "Its shear at the end", "kip/ft");
     m(ok("V_{pst}", "V_{rst}"), "Shear at the end, AASHTO 5.7.3.3");
   }

@@ -124,6 +124,12 @@ export type GirderInputs = {
   stirrups: StirrupZone[];
   /** Vertical bars at each girder end besides the stirrups (CDOT's 2 #6 end bars), in the splitting resistance (5.9.4.4.1). */
   endBars?: { count: number; bar: number };
+  /**
+   * The girder's ends cast into a diaphragm at an abutment (integral or semi-integral; the Bridge sets them): there the
+   * positive moment connection's bars and extended strands, anchored in the diaphragm, count in the longitudinal
+   * reinforcement at the bearing (5.7.3.5) at their pullout capacity, as the connection takes them.
+   */
+  endsCastIn?: { left: boolean; right: boolean };
   stirrupsIntoDeck: boolean;
   fy: number; // ksi
   // Factors and options
@@ -1255,6 +1261,10 @@ function designGirderLine(i: GirderInputs, exterior: boolean, ctx: SpanContext |
   // Longitudinal reinforcement at the inside edge of the bearing (5.7.3.5-2), at a simple end support
   // (an abutment), with the critical section's shear there.
   const simpleEnd: "left" | "right" | null = !full ? "left" : !ctx!.contLeft ? "left" : !ctx!.contRight ? "right" : null;
+  // At an end cast into a diaphragm, the connection's bars and extended strands, anchored in it, count too.
+  const castIn = !!simpleEnd && !!i.endsCastIn?.[simpleEnd];
+  const connEdge = castIn ? positiveConnection(i, comp, Ecd) : null;
+  const castInEdge = connEdge ? connEdge.As * i.fy + connEdge.Aps * connEdge.fpul : 0;
   const withShear = stations.filter((s) => s.shear);
   const crit = simpleEnd === "right" ? withShear[withShear.length - 1] : withShear[0];
   const edgeFromEnd = i.endDist + i.bearingLength / 24; // ft from the girder's end
@@ -1268,7 +1278,8 @@ function designGirderLine(i: GirderInputs, exterior: boolean, ctx: SpanContext |
         const c = cap(m.lpx, m.k.kappa);
         return s + m.k.A * (c === null ? edgeFlex.fpsRaw : Math.min(edgeFlex.fpsRaw, c));
       }, 0) +
-    As * i.fy;
+    As * i.fy +
+    castInEdge;
   const critPhi = crit.phiVn! / crit.shear!.Vn;
   const critVp = prestress(crit.x + i.endDist, fpe).Vp;
   const edgeDemand = Math.max(0, crit.Vu / critPhi - 0.5 * Math.min(crit.shear!.Vs, crit.Vu / critPhi) - critVp) / Math.tan(rad(crit.shear!.theta));
@@ -1517,7 +1528,7 @@ function designGirderLine(i: GirderInputs, exterior: boolean, ctx: SpanContext |
   add({ id: "s-max", name: "Maximum stirrup spacing", demand: smx.shear!.s, capacity: sCap(smx), unit: "in", ref: cdot ? "5.7.2.6; CDOT BDM 5.5.1.6" : "5.7.2.6", note: atS(smx) });
   const lg = worst(sh, (s) => s.longitudinal!.demand / Math.max(s.longitudinal!.capacity, 1e-9));
   add({ id: "long", name: "Longitudinal reinforcement for shear", demand: lg.longitudinal!.demand, capacity: lg.longitudinal!.capacity, unit: "kip", ref: "5.7.3.5-1", note: `${atS(lg)}${lg.longitudinal!.side === "top" ? "; the deck's bars (negative moment)" : ""}` });
-  if (simpleEnd) add({ id: "long-brg", name: "Longitudinal reinforcement at the bearing's inside edge", demand: edgeDemand, capacity: edgeCap, unit: "kip", ref: "5.7.3.5-2", note: `${(edgeFromEnd - i.endDist).toFixed(2)} ft from the ${full ? `${simpleEnd} ` : ""}bearing centerline` });
+  if (simpleEnd) add({ id: "long-brg", name: "Longitudinal reinforcement at the bearing's inside edge", demand: edgeDemand, capacity: edgeCap, unit: "kip", ref: "5.7.3.5-2", note: `${(edgeFromEnd - i.endDist).toFixed(2)} ft from the ${full ? `${simpleEnd} ` : ""}bearing centerline${castInEdge > 0 ? `; the end cast into the diaphragm: ${connEdge!.label}, ${castInEdge.toFixed(0)} kip included` : ""}` });
   const ifs = worst(sh, (s) => s.shear!.interface.Vui / s.shear!.interface.phiVni);
   add({ id: "interface", name: "Interface shear, girder to deck", demand: ifs.shear!.interface.Vui, capacity: ifs.shear!.interface.phiVni, unit: "kip/ft", ref: "5.7.4", note: atS(ifs) });
   const ifm = sh.filter((s) => s.shear!.interface.needsMin);

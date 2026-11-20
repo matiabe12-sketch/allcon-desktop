@@ -1,3 +1,4 @@
+import { capAlongChecks, type CapAlongResult } from "./cap-along";
 import { DesignError, type Check } from "../walls/cip";
 import { bar, crackGrid, nodeFace, rcTie, type Confinement, type FaceType, type NodeType } from "./aashto";
 import { development, type Coating } from "./anchorage";
@@ -161,6 +162,7 @@ function girderLinkOf(v: unknown): GirderLink | null {
     wc: numOr(g.wc, 0.15),
     bearingOffset: Math.max(0, numOr(g.bearingOffset, 0)),
     ...(g.noIM === true ? { noIM: true } : {}),
+    ...(g.along && typeof g.along === "object" && numOr((g.along as { F?: unknown }).F, 0) > 0 ? { along: { F: numOr((g.along as { F?: unknown }).F, 0), ...(typeof (g.along as { basis?: unknown }).basis === "string" ? { basis: (g.along as { basis: string }).basis } : {}) } } : {}),
   };
 }
 
@@ -303,13 +305,40 @@ export function roleOf(entry: string) {
 const keyOf = (labels: string[], a: number, b: number) => `${labels[a]}-${labels[b]}`;
 
 /**
+ * The loads along the bridge on a standard cap with its girder link (`girders.along`, set by the Bridge): its bending
+ * about the vertical axis, shear across and torsion (stm/cap-along.ts), added to the model's checks.
+ */
+function withAlong(i: StmInputs, r: StmResult): StmResult {
+  const t = i.template;
+  const along = i.girders?.along;
+  if (!t || !along || !(along.F > 0) || !r.capLoads || i.girders?.stage === "construction") return r;
+  const bl = r.capLoads.bearingLoads;
+  const cols = [...t.columns].sort((p, q) => p - q);
+  const half = t.columnWidth / 2;
+  // The gravity shear at a column face: the bearings' Strength I loads between it and the arm's tip or the span's middle.
+  const sides = [
+    bl.filter((b) => b.x < cols[0] - half),
+    bl.filter((b) => b.x > cols[cols.length - 1] + half),
+    ...cols.slice(0, -1).flatMap((c, k) => {
+      const mid = (c + cols[k + 1]) / 2;
+      return [bl.filter((b) => b.x > c && b.x <= mid), bl.filter((b) => b.x > mid && b.x < cols[k + 1])];
+    }),
+  ];
+  const Vg = Math.max(0, ...sides.map((s) => s.reduce((v, b) => v + b.strength, 0)));
+  const out = capAlongChecks(t, along, bl.map((b) => b.x), i.grid, i.fc, i.fy, Vg);
+  if (!out) return r;
+  const checks = [...r.checks, ...out.checks];
+  return { ...r, checks, ok: checks.every((c) => c.ok), along: out.result };
+}
+
+/**
  * The strut-and-tie design: one model, or, for a cap built in two stages (`stages`), the first-stage cap
  * under the construction loads and the completed member under every load, with both stages' checks. The
  * completed member's model is returned (its members, ties and nodes), the construction stage under `stages`.
  */
 export async function designStm(i: StmInputs, solve: LpSolver): Promise<StmResult> {
   const st = i.stages;
-  if (!st?.enabled || !i.template || !i.girders?.enabled || !(st.diaphragmHeight > 0) || i.girders.stage) return designStmModel(i, solve);
+  if (!st?.enabled || !i.template || !i.girders?.enabled || !(st.diaphragmHeight > 0) || i.girders.stage) return withAlong(i, await designStmModel(i, solve));
   const t = i.template;
   const link = i.girders;
   const construction = await designStmModel({ ...i, stages: null, girders: { ...link, stage: "construction", diaphragm: { height: st.diaphragmHeight, width: t.capWidth } } }, solve);
@@ -318,13 +347,18 @@ export async function designStm(i: StmInputs, solve: LpSolver): Promise<StmResul
   const completed = await designStmModel(deep, solve);
   const tag = (prefix: string, r: StmModelResult) => r.checks.map((c) => ({ ...c, id: `${prefix.toLowerCase()}-${c.id}`, name: `${prefix}: ${c.name}` }));
   const checks = [...tag("Construction", construction), ...tag("Completed", completed)];
-  return {
+  const staged: StmResult = {
     ...completed,
     ok: checks.every((c) => c.ok),
     checks,
     warnings: [...new Set([...construction.warnings, ...completed.warnings])],
     stages: { diaphragmHeight: h, construction, completed },
   };
+  // The loads along the bridge on the completed member (none in construction: no traffic, no wind design).
+  const al = withAlong(deep, completed);
+  if (!al.along) return staged;
+  const more = al.checks.filter((c) => c.id.startsWith("along-")).map((c) => ({ ...c, id: `completed-${c.id}`, name: `Completed: ${c.name}` }));
+  return { ...staged, checks: [...checks, ...more], ok: [...checks, ...more].every((c) => c.ok), along: al.along };
 }
 
 async function designStmModel(i: StmInputs, solve: LpSolver) {
@@ -1038,4 +1072,4 @@ async function designStmModel(i: StmInputs, solve: LpSolver) {
 }
 
 type StmModelResult = Awaited<ReturnType<typeof designStmModel>>;
-export type StmResult = StmModelResult & { stages?: { diaphragmHeight: number; construction: StmModelResult; completed: StmModelResult } };
+export type StmResult = StmModelResult & { stages?: { diaphragmHeight: number; construction: StmModelResult; completed: StmModelResult }; along?: CapAlongResult };

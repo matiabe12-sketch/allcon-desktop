@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { abutmentInputs } from "../foundations/kinds";
 import { designAbutment, type AbutmentInputs } from "../foundations/abutment";
 import { buildChain, workOut } from "./chain.testkit";
-import { abutmentFromBridge, bearingFromBridge, fixedPoint, jointFromBridge } from "./loadpath";
+import { abutmentFromBridge, bearingFromBridge, fixedPoint, girdersInside, jointFromBridge } from "./loadpath";
 import { bearingInputs, stripSealInputs } from "../kinds";
 import { F15E, F15E_ABUTMENT, F15E_APPROACH, F15E_CALC, F15E_GIRDER, F15E_PAD } from "./f15e.fixture";
 
@@ -94,10 +94,16 @@ describe("F-15-E (Bridge X) through the Bridge, end to end", async () => {
     expect(punch.demand / punch.capacity).toBeLessThan(0.5); // the calcs: 391 / 1,216 kip
   });
 
-  it("micropiles: Abutment 2's most loaded within 8 % of the plans' 213 kip; Abutment 1's above the pile group program's 256 kip (a rigid footing here)", () => {
+  it("micropiles: Abutment 2's most loaded above the plans' 213 kip (its fixed bearings take the unit's braking), Abutment 1's above the pile group program's 256 kip (a rigid footing here)", () => {
     const p1 = abut[0].seat!.micropiles!.Pmax;
     const p2 = abut[1].seat!.micropiles!.Pmax;
-    expect(Math.abs(p2 / F15E_CALC.micropile.abut2.factored - 1)).toBeLessThan(0.08);
+    // The braking goes to the fixed abutment alone (the stiffness split: fixed bearings are rigid against the other
+    // end's pads); the plans share it between the two, which put Abutment 2 within 8 % of their 213 kip.
+    const br = [0, 1].map((k) => abutmentFromBridge(F15E, r.run, k, abutmentInputs({})).braking);
+    expect(br[0]).toBe(0);
+    expect(br[1]).toBeGreaterThan(0);
+    expect(p2 / F15E_CALC.micropile.abut2.factored).toBeGreaterThan(1);
+    expect(p2 / F15E_CALC.micropile.abut2.factored).toBeLessThan(1.2);
     expect(p1 / F15E_CALC.micropile.abut1.factored).toBeGreaterThan(1);
     expect(p1 / F15E_CALC.micropile.abut1.factored).toBeLessThan(1.25);
     // The bond: 20 ksf × π × 11 in × 10 ft = 576 kip nominal, φ 0.70 (the calcs' 575.96 and 403.17).
@@ -154,10 +160,14 @@ describe("F-15-E (Bridge X) through the Bridge, end to end", async () => {
     const a1 = { ...abutmentFromBridge(F15E, r.run, 0, abutmentInputs({})), ...F15E_ABUTMENT(0) } as AbutmentInputs;
     const without = bearingFromBridge(F15E, r.run, 0, bearingInputs({}));
     const withD = bearingFromBridge(F15E, r.run, 0, bearingInputs({}), a1);
-    expect(withD.DL - without.DL).toBeCloseTo((a1.gammaC * 7.83 * 4 * a1.length) / 7, 0);
-    // With the plans' 4 ft diaphragm (BX15) the dead load is within 3 % of the calcs' (the girders' ends not deducted).
+    // The diaphragm less the girders' ends and deck inside it, which their own reactions carry (counted once).
+    const inside = girdersInside(F15E, r.run, 0, 4);
+    expect(inside).toBeGreaterThan(0);
+    expect(withD.DL - without.DL).toBeCloseTo((a1.gammaC * 7.83 * 4 * a1.length - inside) / 7, 0);
+    // With the plans' 4 ft diaphragm (BX15) the dead load is within 3 % of the calcs' (which don't take the girders' ends out).
     const calc = F15E_CALC.bearing1.DC + F15E_CALC.bearing1.DW;
-    expect(Math.abs(withD.DL / calc - 1)).toBeLessThan(0.03);
+    expect(Math.abs((withD.DL + inside / 7) / calc - 1)).toBeLessThan(0.03); // with the ends put back, as the calcs count them
+    expect(withD.DL).toBeLessThan(calc);
   });
 });
 

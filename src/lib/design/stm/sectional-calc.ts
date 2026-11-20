@@ -50,6 +50,20 @@ export function sectionalCalcLines(i: StmInputs, s: SectionalResult): Line[] {
     m(ok(`M_{ux${n}}`, `\\phi_{fx${n}}\\cdot M_{nx${n}}`), "AASHTO 5.6.3.2");
     m(`M_{crx${n}}\\coloneq 0.67\\cdot 1.6\\cdot 0.24\\cdot\\sqrt{\\frac{f'_{c}}{\\mathrm{ksi}}}\\cdot\\mathrm{ksi}\\cdot\\frac{b_w\\cdot h_{x${n}}^{2}}{6}=`, "AASHTO Eq. 5.6.3.3-1, fr by 5.4.2.6", "kip*ft");
     m(ok(`\\min\\left(M_{crx${n}},1.33\\cdot M_{ux${n}}\\right)`, `\\phi_{fx${n}}\\cdot M_{nx${n}}`), "AASHTO 5.6.3.3");
+    const ck = (s.cracks ?? []).find((c) => c.region === g.label);
+    if (ck) {
+      const cb = ck.negative ? t.topBars : t.bottomBars;
+      text(`${g.label}: crack control at ${num(ck.x)} ft, ${ck.negative ? "top" : "bottom"} bars (Service I, every arrangement from the girder link, with and without its wind)`, undefined, { keepWithNext: true });
+      m(`M_{sc${n}}\\coloneq ${num(ck.Ms)}\\mathrm{kip}\\cdot\\mathrm{ft}`, "Service I moment, from the analysis");
+      m(`A_{sc${n}}\\coloneq ${cb.count}\\cdot ${num(bar(cb.size).area)}\\mathrm{in}^{2}=`, `${cb.count} #${cb.size}`, "in^2");
+      m(`d_{sc${n}}\\coloneq ${num(ck.d, 3)}\\mathrm{in}`, "To the bars");
+      m(`d_{cc${n}}\\coloneq ${num(ck.dc, 3)}\\mathrm{in}`, "The tension face to the bars");
+      m(`j_{c${n}}\\coloneq ${num(ck.j, 4)}`, "The cracked section's lever arm over d (n = Es/Ec, Ec by Eq. 5.4.2.4-1)");
+      m(`f_{sc${n}}\\coloneq\\min\\left(0.6\\cdot f_y,\\frac{M_{sc${n}}}{A_{sc${n}}\\cdot j_{c${n}}\\cdot d_{sc${n}}}\\right)=`, "Service steel stress", "ksi");
+      m(`\\beta_{sc${n}}\\coloneq1+\\frac{d_{cc${n}}}{0.7\\cdot\\left(${num(ck.h, 3)}\\mathrm{in}-d_{cc${n}}\\right)}=`, "AASHTO 5.6.7");
+      m(`s_{mc${n}}\\coloneq\\frac{700\\cdot1.00\\cdot\\frac{\\mathrm{kip}}{\\mathrm{in}}}{\\beta_{sc${n}}\\cdot f_{sc${n}}}-2\\cdot d_{cc${n}}=`, "AASHTO Eq. 5.6.7-1, Class 1", "in");
+      m(ok(`${num(ck.s, 3)}\\mathrm{in}`, `s_{mc${n}}`), "The bars' spacing across the cap");
+    }
     const sh = mine.filter((q) => q.shear);
     if (!sh.length) return;
     const v: SectionResult = sh.reduce((p, q) => (q.Vu / q.Vr > p.Vu / p.Vr ? q : p));

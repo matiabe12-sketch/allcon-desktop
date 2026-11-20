@@ -240,3 +240,59 @@ Also: a *Live load distribution* choice in the girder editor (AASHTO's tables or
 I-18-BC girders 3 (longitudinal reinforcement at the bearing, 5.7.3.5, strands into the diaphragm not
 counted); I-05-VA girders 12, abutment cap depth, pier cap construction tie 1.21; F-19-AGA girders 10
 (debonding and splitting, on assumed details), pile geotechnical 1.05 (assumed soils).
+
+## Loads counted once (load-path audit, 2026-11-20)
+
+The owner asked that no load be counted twice as it passes down the load path. What the audit found and fixed:
+
+- **Braking (AASHTO 3.6.4).** Each abutment took half the bridge's braking and every pier column took all of it
+  (its `longitudinal.share` defaulted to 1 and the Bridge never set it): up to twice the force. Now
+  `longitudinalShares` (loadpath.ts) splits the bridge into units at its deck joints (a simple pier's joint splits
+  it; that pier takes from both), works out each unit's force (every lane count with its multiple presence factor,
+  the most) and shares it once by the supports' stiffness along the bridge: each support's bearings (rigid where
+  fixed, cast in or on leveling pads; every girder's pad G A / hrt where they shear; a sliding bearing at its pad's
+  stiffness, as it sticks below friction) in series with its substructure (the columns' 3 · 0.4 Ec Ig / h³, an
+  integral abutment's piles at the movement by their p–y secant stiffness, a seat abutment rigid). Rigid supports
+  take it alone, equally. AASHTO leaves the split to the engineer; the stiffness split is the usual one. The backfill's
+  help to an integral abutment isn't counted (the piers keep more). The column takes its part as `share` (fixed) or
+  the new `padShare` (expansion pads), the same part of the wind along the bridge.
+- **Temperature (3.12.2).** The piers' distance from the point of no movement wasn't set (0: no force) and
+  expansion piers had no bearing force. Now each support takes its bearings' force as the bridge moves (every pad's
+  Gmax A Δ / hrt, no more than a sliding surface's friction, `bearingLineForce`), and a fixed support the reaction of
+  its unit's other bearings, those either side of the point of no movement balancing (`thermalReactions`): the
+  column's `bearingForce` (added to its own restraint, kc δT, when fixed) and a seat or semi-integral abutment's
+  `bearingShear`.
+- **The girders inside cast concrete.** An integral abutment's cap and diaphragm, a semi-integral end diaphragm
+  and a continuous pier's diaphragm were weighed solid, so the girders' ends inside them, and the deck and haunch
+  from each bearing line to the concrete's face, counted twice (once in the girders' reactions). Now taken off:
+  `girdersInside` for the abutments (`girderInside`, off the girders' DC and each girder's load on the integral
+  cap) and the semi-integral diaphragm on the bearings; `inDiaphragm` on each girder side for the pier cap, off its
+  self-weight at each bearing in the construction stage (the wet diaphragm) and the completed one.
+- **The line of girders.** The abutment took n × the larger of the interior and exterior reactions. Now the Bridge
+  hands it the line's total (`girderTotals`: two exterior girders and the rest interior), the per-girder value kept
+  for each girder's own load.
+- **Checked and found counted once:** the cap's self-weight and the column's (the column adds only its own); the
+  footing's from the column's base forces; a pier's intermediate diaphragms (inside the spans only); the live load
+  on an abutment's foundation (lanes, not girders); the wingwalls' weight and thrust (on the abutment only, the
+  wingwall itself designed apart).
+- **Tests:** load-share.test.ts; f15e-chain.test.ts now expects Abutment 2's micropiles above the plans' (its
+  fixed bearings take the unit's braking; the plans share it) and the bearings' diaphragm load below the calcs'
+  by the girders' ends (the calcs keep them).
+
+## The Bridge's girders, approach slabs and the AASHTO 10th check (2026-11-20)
+
+- **Live load deflection** (2.5.2.6.2, optional in AASHTO): checked on the Bridge's girders (`llDeflection` on, L/800
+  unless the design sets its own limit), the conservative choice under the owner's rule.
+- **Girder ends cast into an abutment's diaphragm** (`endsCastIn`, set from the supports): at an integral or
+  semi-integral abutment the positive moment connection's bars and extended strands, anchored in the diaphragm, count
+  in the longitudinal reinforcement at the bearing (5.7.3.5) at their pullout capacity (C5.12.3.3.8b), as the
+  connection takes them (I-18-BC's open item).
+- **The rail on the approach slabs** (CDOT BDM 11.3.7): with a bridge rail, the approach slab carries it on along its
+  edges, checked for Case 1 (A13.4.1) with the rail's end-zone Mc and T from the deck design; its weight goes to the
+  abutment with the slab's.
+- **AASHTO 10th:** the checks' citations follow the current numbering (Section 5's 8th-edition reorganization:
+  flexure 5.6, shear 5.7, strut-and-tie 5.8, anchors 5.13). The load factors were checked against Table 3.4.1-1, with
+  two fixes in the seat abutment's statics: braking in Service I was 1.75 (now 1.0), and it was missing from Strength I's
+  minimum set.
+- **Not changed:** sidewalks (no pedestrian load or sidewalk on the Bridge yet) and curved girders (chorded) remain to
+  be built as features.

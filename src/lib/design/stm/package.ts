@@ -9,6 +9,7 @@ import { sectionalDesign } from "./sectional";
 import { sectionalCalcLines } from "./sectional-calc";
 import type { StmInputs, StmResult } from "./strut-tie";
 import { stmCalcLines } from "./strut-tie-calc";
+import { capAlongLines } from "./cap-along";
 
 // A strut-and-tie design's calc package: the STM calculations, then for a standard cap the
 // sectional design of its B-Regions (when asked for) and its reinforcement details and bar
@@ -28,6 +29,7 @@ export function stmPackageLines(i: StmInputs, r: StmResult, title: string, figur
   const lines = stmCalcLines(i, r, title, figures);
   const sectional = i.template && i.sectional ? sectionalDesign(i, r) : null;
   if (sectional) lines.push(...sectionalCalcLines(i, sectional));
+  if (r.along && i.template) lines.push(...(capAlongLines(r.stages ? { ...i.template, depth: i.template.depth + r.stages.diaphragmHeight, tipDepth: i.template.tipDepth + r.stages.diaphragmHeight } : i.template, r.along, i.fc, i.fy) as Line[]));
   // The summary of the checks, after the details appendix (pushed below).
   const summary = checksSummary([{ title: sectional ? "Strut-and-tie model" : undefined, checks: r.checks }, ...(sectional ? [{ title: "Sectional design of the B-Regions", checks: sectional.checks }] : [])]);
   const d = capDetailOrNull(i);

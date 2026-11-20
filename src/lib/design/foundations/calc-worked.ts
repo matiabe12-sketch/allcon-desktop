@@ -585,12 +585,29 @@ function seatWorked(w: Writer, i: AbutmentInputs, r: AbutmentResult, s: NonNulla
     for (const c of ["a", "b"]) mp.rows.forEach((_, k) => m(`P_{${c}${k + 1}}\\coloneq\\frac{${share(c, k)}\\cdot s_{p}}{\\cos\\left(\\beta_{${k + 1}}\\right)}=`, `Row ${k + 1}, ${c === "a" ? "Strength I, maximum" : "Strength I, minimum"}`, "kip"));
     m("F_{mp}\\coloneq\\frac{F_{ha}\\cdot L_{a}}{n_{r}\\cdot" + mp.perRow + "}=", "Shear on each micropile (the batter's help not counted)", "kip");
     micropileWorked(w, mp.mpIn, mp.result);
+    const ew = s.endWing;
+    if (ew && ew.dP !== undefined) {
+      text("The one wingwall's weight along the abutment:- off the group's middle, a moment along it; the footing rigid, the end micropiles take P/n ± M x/Σx².", undefined, { keepWithNext: true });
+      m(`M_{Lm}\\coloneq ${num(ew.M, 3)}\\mathrm{kip}\\cdot\\mathrm{ft}`, `The weight (${num(ew.W, 3)} kip) × γDC × ${num(ew.lever, 3)} ft`);
+      m(`\\Delta_{Pm}\\coloneq\\frac{M_{Lm}\\cdot${num(ew.xmax!, 3)}\\mathrm{ft}}{${ew.rows}\\cdot${num(ew.S2!, 3)}\\mathrm{ft}^{2}}=`, `The end micropile's share, ${ew.n} a row, Σx² of a row`, "kip");
+      m(`P_{me}\\coloneq ${num(ew.P! - ew.dP, 3)}\\mathrm{kip}+\\Delta_{Pm}=`, "With the most loaded micropile's", "kip");
+      m(ok("P_{me}", `${num(ew.R!, 3)}\\mathrm{kip}`), "End micropile, compression (the least of its resistances)");
+    }
   } else if (s.footing) {
     text("Spread footing (AASHTO 10.6.3, 11.6.3)", "subheading", { keepWithNext: true });
     const worst = Math.abs(s.rows[0].e) >= Math.abs(s.rows[1].e) ? "a" : "b";
     m(ok(`\\max\\left(e_{${worst}},-e_{${worst}}\\right)`, "\\frac{B}{3}"), "Eccentricity, AASHTO 11.6.3.3");
     m("B_{e}\\coloneq B-2\\cdot\\max\\left(e_{a},-e_{a}\\right)=", "Effective width", "ft");
-    m("q_{eq}\\coloneq\\frac{V_{a}}{B_{e}}=", "Uniform pressure on B′", "ksf");
+    const ew = s.endWing;
+    if (ew && ew.Lp !== undefined) {
+      text("The one wingwall's weight along the abutment:- off its middle by L/2 and its centroid's reach past the end, (Lw/2) sin θ; the footing rigid, so it's an eccentricity along the abutment (AASHTO 10.6.1.3).", undefined, { keepWithNext: true });
+      m(`M_{La}\\coloneq1.25\\cdot${num(ew.W, 3)}\\mathrm{kip}\\cdot${num(ew.lever, 3)}\\mathrm{ft}=`, "The weight × 1.25 × its lever, Strength I, maximum", "kip*ft");
+      m(`L_{ft}\\coloneq ${num(i.length)}\\mathrm{ft}`, "The footing's length");
+      m("e_{La}\\coloneq\\frac{M_{La}}{V_{a}\\cdot L_{ft}}=", "Along the abutment", "ft");
+      m(ok("e_{La}", "\\frac{L_{ft}}{3}"), "Eccentricity, AASHTO 10.6.3.3");
+      m("L_{e}\\coloneq L_{ft}-2\\cdot e_{La}=", "Effective length", "ft");
+      m("q_{eq}\\coloneq\\frac{V_{a}\\cdot L_{ft}}{B_{e}\\cdot L_{e}}=", "Uniform pressure on B′ × L′", "ksf");
+    } else m("q_{eq}\\coloneq\\frac{V_{a}}{B_{e}}=", "Uniform pressure on B′", "ksf");
     m(`q_{n}\\coloneq ${num(s.footing.nb.qn)}\\mathrm{ksf}`, "Nominal bearing resistance, AASHTO Eq. 10.6.3.1.2a-1 on B′ (strip)");
     m(`\\phi_{b}\\coloneq ${num(i.phiB)}`, "AASHTO Table 10.5.5.2.2-1");
     m(ok("q_{eq}", "\\phi_{b}\\cdot q_{n}"), "Bearing");
@@ -614,6 +631,13 @@ function seatWorked(w: Writer, i: AbutmentInputs, r: AbutmentResult, s: NonNulla
     m(`R_{n}\\coloneq ${num(i.Rn)}\\mathrm{kip}`, "Geotechnical report");
     m(`\\phi_{dyn}\\coloneq ${num(i.phiDyn)}`);
     m(ok("\\max\\left(P_{f},P_{bk}\\right)", "\\phi_{dyn}\\cdot R_{n}"), "Geotechnical axial, AASHTO 10.5.5.2.3");
+    const ew = s.endWing;
+    if (ew && ew.dP !== undefined) {
+      text("The one wingwall's weight along the abutment:- off the group's middle, a moment along it; the cap rigid, the end piles take P/n ± M x/Σx².", undefined, { keepWithNext: true });
+      m(`M_{Lp}\\coloneq1.25\\cdot${num(ew.W, 3)}\\mathrm{kip}\\cdot${num(ew.lever, 3)}\\mathrm{ft}=`, "The weight × 1.25 × its lever", "kip*ft");
+      m(`\\Delta_{Pe}\\coloneq\\frac{M_{Lp}\\cdot${num(ew.xmax!, 3)}\\mathrm{ft}}{2\\cdot${num(ew.S2!, 3)}\\mathrm{ft}^{2}}=`, `The end pile's share, ${ew.n} piles a row, Σx² of a row`, "kip");
+      m(ok("\\max\\left(P_{f},P_{bk}\\right)+\\Delta_{Pe}", "\\phi_{dyn}\\cdot R_{n}"), "End pile, geotechnical axial, AASHTO 10.5.5.2.3");
+    }
     m(`M_{py}\\coloneq ${num(s.piles.lat.Mmax)}\\mathrm{kip}\\cdot\\mathrm{ft}`, "Largest moment, strong axis, p–y with the group's p-multipliers, head fixed");
     m(`I_{xp}\\coloneq ${num(s.piles.inter.value)}`, `Axial with flexure, AASHTO Eq. ${s.piles.inter.eq} (φc 0.70 Pn, φf 1.0 Mn)`);
     m(ok("I_{xp}", "1"), "AASHTO 6.15.3.2");

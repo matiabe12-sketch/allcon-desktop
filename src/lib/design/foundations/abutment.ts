@@ -791,6 +791,19 @@ export function designAbutment(i: AbutmentInputs) {
     });
     const strength = rows.filter((r) => r.c.name.startsWith("Strength"));
     const worstE = strength.reduce((a, b) => (Math.abs(b.e) > Math.abs(a.e) ? b : a));
+    // The wingwalls' weight along the abutment: the footing (or pile cap) is rigid (AASHTO 10.6.1.3, 5.12.8.4), so two
+    // wingwalls balance and their weight is spread evenly along it (above). One alone is off the middle by L/2 plus
+    // its centroid's reach past the end along the abutment, (Lw/2) sin θ: a moment along the abutment, by B′ × L′ on a
+    // footing (10.6.1.3) and P/n ± M x/Σx² on a pile group, the end piles the most.
+    const oneWing = wing && wingIn && nWing === 1 ? wing.wall.Vs : 0; // kip, unfactored
+    const leverL = L / 2 + (wingIn ? (wingIn.L / 2) * Math.sin(rad(Math.min(89, Math.abs(i.skew)))) : 0); // ft
+    const Mlong = (c: (typeof combos)[number]) => c.dc * oneWing * leverL; // kip·ft, about the middle
+    const alongL = (s: number) => {
+      const n = Math.max(2, Math.round(L / s));
+      const xs = Array.from({ length: n }, (_, k) => (k - (n - 1) / 2) * s);
+      return { n, xmax: xs[n - 1], S2: xs.reduce((t, x) => t + x * x, 0) };
+    };
+    let endWing: { W: number; lever: number; M: number; eL?: number; Lp?: number; dP?: number; P?: number; R?: number; n?: number; xmax?: number; S2?: number; rows?: number } | null = null;
     let footing: null | { qeq: number; qR: number; slide: number; RR: number; nb: ReturnType<typeof nominalBearing>; twist: { T: number; k: number; RT: number } | null } = null;
     let piles: null | { Pfront: number; Pback: number; Hp: number; inter: ReturnType<typeof interaction>; lat: ReturnType<typeof analyzeLateral> } = null;
     let micropiles: null | { rows: { x: number; batter: number; P: number[] }[]; s: number; H: number; Pmax: number; Pmin: number; result: ReturnType<typeof designMicropile>; forceOf: (r: (typeof rows)[number]) => number[]; plate: number; mpIn: MicropileInputs; xc: number; S2: number; perRow: number; onRows: ReturnType<typeof footingOnRows> | null } = null;
@@ -833,14 +846,33 @@ export function designAbutment(i: AbutmentInputs) {
       for (const ch of result.checks) checks.push({ ...ch, id: `mp-${ch.id}`, name: `Micropile: ${ch.name}` });
       if (Pmin < 0 && strength.every((r) => r.V < 0)) add({ id: "mp-group-uplift", name: "The group in uplift", demand: -Pmin, capacity: 0.5 * result.Rs, unit: "kip", ref: "AASHTO 10.7.3.11" });
       micropileResult = result;
+      if (oneWing > 0) {
+        const g = alongL(s);
+        const worst = all.reduce((a, b) => (Math.max(...b.P) > Math.max(...a.P) ? b : a));
+        const M = Mlong(worst.r.c);
+        const dP = (M * g.xmax) / (nr * g.S2);
+        const P = Math.max(...worst.P) + dP;
+        const R = Math.min(...result.checks.filter((c) => /^(bond-comp|cased-comp|uncased-comp)$/.test(c.id)).map((c) => c.capacity));
+        add({ id: "wing-pile-end", name: "End micropile with the one wingwall's weight off the middle: compression", demand: P, capacity: R, unit: "kip", ref: "AASHTO 10.9.3.5, 10.9.3.10 (a rigid cap)" });
+        endWing = { W: oneWing, lever: leverL, M, dP, P, R, ...g, rows: nr };
+      }
       micropiles = { rows: xs.map((x, k) => ({ x, batter: list[k].batter ?? 0, P: all.map((a) => a.P[k]) })), s, H, Pmax, Pmin, result, forceOf: forces, plate: mp.plate?.size ?? mp.casingOD, mpIn, xc, S2, perRow, onRows: null as ReturnType<typeof footingOnRows> | null };
     } else if (i.foundation === "footing") {
       add({ id: "ecc", name: `Eccentricity (${worstE.c.name}${endStrip})`, demand: Math.abs(worstE.e), capacity: B / 3, unit: "ft", ref: "AASHTO 10.6.3.3, 11.6.3.3" });
       const bmax = strength[0];
       const Bp = Math.max(0.01, B - 2 * Math.abs(bmax.e));
       const nb = nominalBearing({ c: i.c, phi: i.phi, gammaAbove: i.backfillGamma, gammaBelow: i.gammaBelow, Df: i.Df, Dw: i.Dw, B: Bp, L: 1e6, depthFactor: false });
-      const qeq = bmax.V / Bp;
-      add({ id: "bearing", name: `Bearing on B′ (${bmax.c.name}${endStrip})`, demand: qeq, capacity: i.phiB * nb.qn, unit: "ksf", ref: "AASHTO 10.6.3.1.2a, 11.6.3.2" });
+      let qeq = bmax.V / Bp;
+      if (oneWing > 0) {
+        const M = Mlong(bmax.c);
+        const eL = M / (bmax.V * L);
+        const Lp = L - 2 * eL;
+        qeq = (bmax.V * L) / (Bp * Lp);
+        const eMax = Math.max(...strength.map((r) => Mlong(r.c) / (r.V * L)));
+        add({ id: "wing-ecc-long", name: "Eccentricity along the abutment from the one wingwall's weight", demand: eMax, capacity: L / 3, unit: "ft", ref: "AASHTO 10.6.3.3, 11.6.3.3" });
+        endWing = { W: oneWing, lever: leverL, M, eL, Lp };
+      }
+      add({ id: "bearing", name: `Bearing on B′${oneWing > 0 ? " × L′" : ""} (${bmax.c.name}${endStrip})`, demand: qeq, capacity: i.phiB * nb.qn, unit: "ksf", ref: "AASHTO 10.6.3.1.2a, 11.6.3.2" });
       const smin = strength[1];
       const RR = i.phiTau * smin.V * Math.tan(rad(i.phi));
       add({ id: "sliding", name: `Sliding (${smin.c.name}${endStrip})`, demand: smin.Hh, capacity: RR, unit: "kip/ft", ref: "AASHTO 10.6.3.4, 11.6.3.6" });
@@ -867,6 +899,14 @@ export function designAbutment(i: AbutmentInputs) {
       const Pfront = perRow(1);
       const Pback = perRow(-1);
       add({ id: "pile-geo", name: "Front row pile: geotechnical axial", demand: Math.max(Pfront, Pback), capacity: i.phiDyn * i.Rn, unit: "kip", ref: "AASHTO 10.5.5.2.3" });
+      if (oneWing > 0) {
+        const g = alongL(i.pileSpacing);
+        const M = Mlong(r.c);
+        const dP = (M * g.xmax) / (2 * g.S2); // two rows
+        const P = Math.max(Pfront, Pback) + dP;
+        add({ id: "wing-pile-end", name: "End pile with the one wingwall's weight off the middle: geotechnical axial", demand: P, capacity: i.phiDyn * i.Rn, unit: "kip", ref: "AASHTO 10.5.5.2.3, 10.7.1 (a rigid cap)" });
+        endWing = { W: oneWing, lever: leverL, M, dP, P, R: i.phiDyn * i.Rn, ...g, rows: 2 };
+      }
       if (Math.min(Pfront, Pback) < 0) add({ id: "pile-uplift", name: "Back row pile in uplift: check it against the uplift resistance from the geotechnical report", demand: -Math.min(Pfront, Pback), capacity: 0, unit: "kip", ref: "AASHTO 10.7.3.10", advisory: true });
       const Hp = (r.Hh * i.pileSpacing) / 2;
       const ratio = ((xb - xf) * 12) / s.bf;
@@ -1027,7 +1067,7 @@ export function designAbutment(i: AbutmentInputs) {
     }
     if (micropiles) {
       micropiles.onRows = footingOnRows(micropiles);
-      return { H, B, K, EH, BR, rows, footing, piles, micropiles, Mstem, Vstem, Mbw, MbwEH, REHbw, RLSbw, RLLbw, heqBw, eLL, Vbw, heqW, dpLS, LSh, LSv, ecc, MstemV, MstemVs, Mtoe: 0, Mheel: 0, items, semi: semiOut, wingStem, wingPush };
+      return { H, B, K, EH, BR, rows, footing, piles, micropiles, Mstem, Vstem, Mbw, MbwEH, REHbw, RLSbw, RLLbw, heqBw, eLL, Vbw, heqW, dpLS, LSh, LSv, ecc, MstemV, MstemVs, Mtoe: 0, Mheel: 0, items, semi: semiOut, wingStem, wingPush, endWing };
     }
     // The footing (or pile cap) as cantilevers from the stem: the toe under the bearing pressure.
     const r0 = strength[0];
@@ -1042,7 +1082,7 @@ export function designAbutment(i: AbutmentInputs) {
     const Mheel = 1.35 * g * (Hs + Hb) * i.heel ** 2 / 2 + 1.25 * i.gammaC * i.footT * i.heel ** 2 / 2 + (1.75 * g * heqW * i.heel ** 2) / 2; // with the surcharge on it (3.11.6.4.1)
     const fh = flexure({ ...common, Mu: Mheel, Ms: Mheel / 1.3, h: i.footT * 12, cover: 2, bars: i.heelBars });
     add({ id: "heel", name: "Footing heel: flexure at the stem (soil, footing and the live load surcharge, no pressure under it)", demand: Mheel, capacity: fh.MR, unit: "kip·ft/ft", ref: "AASHTO 5.6.3.2" });
-    return { H, B, K, EH, BR, rows, footing, piles, micropiles, Mstem, Vstem, Mbw, MbwEH, REHbw, RLSbw, RLLbw, heqBw, eLL, Vbw, heqW, dpLS, LSh, LSv, ecc, MstemV, MstemVs, Mtoe, Mheel, items, semi: semiOut, wingStem, wingPush };
+    return { H, B, K, EH, BR, rows, footing, piles, micropiles, Mstem, Vstem, Mbw, MbwEH, REHbw, RLSbw, RLLbw, heqBw, eLL, Vbw, heqW, dpLS, LSh, LSv, ecc, MstemV, MstemVs, Mtoe, Mheel, items, semi: semiOut, wingStem, wingPush, endWing };
 
     /**
      * The footing across its width as a beam on the rows of micropiles (per foot of abutment): each row's reaction its

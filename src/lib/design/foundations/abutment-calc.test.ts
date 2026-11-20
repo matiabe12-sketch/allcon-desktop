@@ -472,6 +472,27 @@ describe("the wingwalls' thrust square to a skewed abutment", () => {
     expect(designAbutment({ ...seat, skew: 5 }).seat!.wingPush!.stem!.end).toBeNull();
   });
 
+  it("the wingwalls' weight along the abutment: two balance (a rigid footing), one is an eccentricity along it", () => {
+    expect(designAbutment(seat).seat!.endWing).toBeNull();
+    const one = { ...seat, wing: { ...wing, count: 1 } };
+    const r = designAbutment(one);
+    const s = r.seat!;
+    const ew = s.endWing!;
+    close(ew.lever, seat.length / 2 + 10 * Math.sin(th), 1e-9);
+    const a = s.rows[0];
+    close(ew.M, 1.25 * ew.W * ew.lever, 1e-9);
+    close(ew.eL!, ew.M / (a.V * seat.length), 1e-9);
+    const Bp = (seat.toe + seat.stemT + seat.heel) - 2 * Math.abs(a.e);
+    close(check(r, "bearing")!.demand, (a.V * seat.length) / (Bp * (seat.length - 2 * ew.eL!)), 1e-9);
+    expect(check(r, "wing-ecc-long")!.ok).toBe(true);
+    // on piles: the end pile takes P/n ± M x/Σx²
+    const piles = { ...abutmentInputs({ type: "seat", foundation: "piles", skew: 30, wing }), wing: { ...wing, count: 1 } };
+    const rp = designAbutment(piles);
+    const ep = rp.seat!.endWing!;
+    close(ep.dP!, (ep.M * ep.xmax!) / (2 * ep.S2!), 1e-9);
+    close(check(rp, "wing-pile-end")!.demand, Math.max(rp.seat!.piles!.Pfront, rp.seat!.piles!.Pback) + ep.dP!, 1e-9);
+  });
+
   it("seat: the end bars in the bar schedule and the Bridge's 3D stem", () => {
     const e = stemEndBarsOf(seat)!;
     const g = abutmentTakeoff(seat).schedule.groups.find((x) => x.use === "Stem, back face, added at the ends")!;
@@ -487,7 +508,7 @@ describe("the wingwalls' thrust square to a skewed abutment", () => {
     expect(added.at.length).toBeGreaterThan(0);
   });
 
-  for (const [name, inputs] of [["integral", integral], ["seat", seat], ["seat on piles", abutmentInputs({ type: "seat", foundation: "piles", skew: 30, wing })], ["seat, one wingwall", { ...seat, wing: { ...wing, count: 1 } }]] as const)
+  for (const [name, inputs] of [["integral", integral], ["seat", seat], ["seat on piles", abutmentInputs({ type: "seat", foundation: "piles", skew: 30, wing })], ["seat, one wingwall", { ...seat, wing: { ...wing, count: 1 } }], ["seat on piles, one wingwall", { ...abutmentInputs({ type: "seat", foundation: "piles", skew: 30, wing }), wing: { ...wing, count: 1 } }], ["seat on micropiles, one wingwall", { ...abutmentInputs({ type: "seat", foundation: "micropiles", skew: 30, wing }), wing: { ...wing, count: 1 } }]] as const)
     it(`works the skewed ${name} abutment with its wingwalls' push out: no errors, every line on the page, its checks as the engine's`, () => {
       const c = workOut("abutment", inputs);
       expect(c.errors).toEqual([]);

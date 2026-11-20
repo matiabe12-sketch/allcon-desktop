@@ -216,8 +216,13 @@ its own height, width, skew and backfill and applies that design's Section B (St
     friction reversed over a length x at one end, leaves R √(1 − 4T/(R L²)) per foot for the sliding force. On piles
     or micropiles, the group shares the couple elastically (6T/L² per foot at the ends), so the piles are designed
     for the end strip, F/L + 6T/L² per foot at the thrust's height.
-- **Not applied:** the end region's footing pressure from the weight's moment (it's averaged along the abutment), and
-  on one wingwall, its net force P cos θ along the abutment (sliding along it).
+- **The wingwalls' weight along the footing (2026-11-20):** the footing or pile cap is rigid (AASHTO 10.6.1.3,
+  5.12.8.4), so two wingwalls balance and spreading their weight along it is exact for the bearing, sliding and the
+  piles. One alone is off the middle by L/2 plus its centroid's reach past the end, (Lw/2) sin θ: on a footing, an
+  eccentricity along the abutment (`wing-ecc-long`, ≤ L/3) and bearing on B′ × L′; on piles or micropiles,
+  P/n ± M x/Σx², the end pile against its geotechnical resistance or the end micropile against the least of its
+  compression resistances (`wing-pile-end`). A local check of a long footing's end as a flexible beam isn't made.
+- **Not applied:** on one wingwall, its net force P cos θ along the abutment (sliding along it).
 
 Seat abutment's backwall (BDM 11.3.3): a cantilever from the seat, per foot.
 

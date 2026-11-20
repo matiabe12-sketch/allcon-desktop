@@ -39,11 +39,12 @@ import { TAKEOFF_KINDS, takeoffSettings } from "./takeoff/types";
 import { CIP_DEFAULTS, DEFAULT_FACTORS, type CipInputs, type Combo } from "./walls/cip";
 import { MSE_DEFAULTS, MSE_FACTORS, type MseInputs } from "./walls/mse";
 import { WINGWALL_DEFAULTS, type WingwallInputs } from "./walls/wingwall";
+import { steelGirderInputs } from "./girders/steel";
 
 // The Design section's categories and design types: highway structures to AASHTO LRFD, grouped
 // by element. What can be designed, and what's coming next.
 
-export type DesignKind = "lrfd-girder-check" | "dt-load-rating" | "stm-d-region" | "cip-cantilever-wall" | "mse-wall" | "cantilever-wingwall" | "box-culvert" | "deck-slab" | "seismic-zone1" | "pier-column" | "camber-haunch" | "sign-cantilever" | "elastomeric-bearing" | "ptfe-bearing" | "strip-seal-joint" | "approach-slab" | "spread-footing" | "pile-foundation" | "drilled-shaft" | "micropile" | "abutment";
+export type DesignKind = "lrfd-girder-check" | "steel-girder-check" | "dt-load-rating" | "stm-d-region" | "cip-cantilever-wall" | "mse-wall" | "cantilever-wingwall" | "box-culvert" | "deck-slab" | "seismic-zone1" | "pier-column" | "camber-haunch" | "sign-cantilever" | "elastomeric-bearing" | "ptfe-bearing" | "strip-seal-joint" | "approach-slab" | "spread-footing" | "pile-foundation" | "drilled-shaft" | "micropile" | "abutment";
 
 export const CATEGORIES: { id: string; name: string; kinds: { id: DesignKind; name: string; short: string; description: string; available: boolean }[] }[] = [
   {
@@ -51,6 +52,7 @@ export const CATEGORIES: { id: string; name: string; kinds: { id: DesignKind; na
     name: "Superstructures",
     kinds: [
       { id: "lrfd-girder-check", name: "LRFD Bridge Design Check", short: "Precast prestressed girders: DFs, stresses, flexure, shear, camber", description: "A simple-span precast, pretensioned girder bridge with a composite deck (AASHTO I-beams, AASHTO-PCI bulb-tees, CDOT Colorado Bulb Tees or a custom section): live load distribution factors, HL-93 envelopes, prestress losses, stresses at release and service, flexure and shear at Strength I, interface shear, and camber, for the interior and exterior girders. AASHTO LRFD 4.6.2.2, 5.6, 5.7 and 5.9.", available: true },
+      { id: "steel-girder-check", name: "Steel Girder Design Check", short: "Rolled and plate composite I-girders: flexure, shear, constructibility, service", description: "A straight composite steel I-girder line, simple or continuous over up to six spans: welded plate girders or rolled W shapes, AASHTO LRFD 10th Edition Article 6.10 (constructibility, service, positive and negative flexure, shear, ductility, proportions) with the girder's own stiffness along it and HL-93 by influence lines.", available: true },
       { id: "dt-load-rating", name: "Double-Tee Load Rating (LFR)", short: "Existing double-tee bridges, with or without plans: CDOT vehicles, posting", description: "Load Factor Rating of a simple-span bridge of adjacent precast, prestressed double tees, as AASHTOWare BrR rates one: CDOT's 13 vehicles moved along the span, every girder rated at the points of interest for flexure, service stresses and (optionally) shear, inventory and operating, and the posting check. Without plans the prestress is back-calculated so HS-20 rates 1.0 at inventory (CDOT BRM 1.7.2(A)). With the BrR input sheet and a comparison of BrR's results. AASHTO Standard Specifications (17th ed.), MBE 6B and the CDOT Bridge Rating Manual.", available: true },
     ],
   },
@@ -319,6 +321,7 @@ export function designInputs(kind: string, saved: unknown) {
 function parseInputs(kind: string, saved: unknown) {
   if ((FOUNDATION_KINDS as readonly string[]).includes(kind)) return foundationInputs(kind, saved)!;
   if (kind === "lrfd-girder-check") return girderInputs(saved);
+  if (kind === "steel-girder-check") return steelGirderInputs(saved);
   if (kind === "dt-load-rating") return dtRatingInputs(saved);
   if (kind === "stm-d-region") return stmInputs(saved);
   if (kind === "pier-column") return columnInputs(saved);

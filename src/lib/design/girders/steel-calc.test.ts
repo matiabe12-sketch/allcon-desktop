@@ -1,0 +1,101 @@
+import type { Unit } from "mathjs";
+import { describe, expect, it } from "vitest";
+import { DEFAULT_SETTINGS, evaluateSheet, type SheetItem, type Value } from "@/lib/calcs/evaluate";
+import { layout } from "@/lib/calcs/library/templates";
+import { readingOrder } from "@/lib/calcs/types";
+import { designSteelGirder, STEEL_DEFAULTS, type SteelGirderInputs } from "./steel";
+import { steelCalcLines } from "./steel-calc";
+
+// The calc package, worked out by Calcs, agrees with the design engine: no errors, its worked values are
+// the engine's, and a worked check fails only where the engine's check fails.
+
+const IF = String.raw`\operatorname{if}`;
+
+function workOut(inputs: SteelGirderInputs) {
+  const regions = readingOrder(layout(steelCalcLines(inputs, "Test girder"), { x: 0, y: 0 }));
+  const items = regions.flatMap((r): SheetItem[] => (r.kind === "text" || r.kind === "image" ? [] : [r as SheetItem]));
+  const values = new Map<string, Value>();
+  const results = evaluateSheet(items, DEFAULT_SETTINGS, values);
+  const errors = regions.flatMap((r) => (results.get(r.id)?.kind === "error" ? [`${r.kind === "math" ? r.latex : r.kind}: ${(results.get(r.id) as { message: string }).message}`] : []));
+  const checks = regions.filter((r) => r.kind === "math" && r.latex.startsWith(IF)).map((r) => ({ latex: r.kind === "math" ? r.latex : "", result: (results.get(r.id) as { result?: string }).result ?? "" }));
+  const value = (start: string, unit?: string) => {
+    const r = regions.find((x) => x.kind === "math" && x.latex.startsWith(start));
+    if (!r) throw new Error(`No region ${start}`);
+    const v = values.get(r.id);
+    return unit ? (v as Unit).toNumber(unit) : (v as number);
+  };
+  return { errors, checks, value };
+}
+
+const close = (a: number, b: number) => expect(Math.abs(a - b)).toBeLessThanOrEqual(0.002 * Math.max(1, Math.abs(b)));
+
+describe("steel girder calc package", { timeout: 60000 }, () => {
+  it("works out FHWA Example 2A without Appendices A6 and B6: the pier's bottom flange fails as the engine finds", () => {
+    const plain: SteelGirderInputs = { ...STEEL_DEFAULTS, appendixA6: false, redistribution: false };
+    const r = designSteelGirder(plain);
+    const c = workOut(plain);
+    expect(c.errors).toEqual([]);
+    expect(c.checks.length).toBeGreaterThan(20);
+    const ng = c.checks.filter((x) => x.result.includes("NG"));
+    expect(r.checks.find((x) => x.id === "flex-neg-c")?.ok).toBe(false);
+    expect(ng.some((x) => x.latex.includes("f_{bu}"))).toBe(true);
+    // The NGs are the engine's failing checks.
+    expect(ng.length).toBe(r.checks.filter((x) => !x.ok && !x.advisory).length);
+  });
+
+  it("works out Example 2A as designed, with A6 and B6, with no errors and no NG, its worked values the engine's", () => {
+    const r = designSteelGirder(STEEL_DEFAULTS);
+    const c = workOut(STEEL_DEFAULTS);
+    expect(c.errors).toEqual([]);
+    expect(c.checks.filter((x) => x.result.includes("NG"))).toEqual([]);
+    const q = r.b6.piers[0];
+    close(c.value(String.raw`R_{pc1}\coloneq`), q.a6.Rpc);
+    close(c.value(String.raw`M_{rd1}\coloneq`, "kip ft"), q.Mrd);
+    const cf = r.crossFrames!;
+    const g = cf.cases.reduce((b, x) => (x.req / x.act > b.req / b.act ? x : b), cf.cases[0]);
+    close(c.value(String.raw`\beta_{Tact}\coloneq`, "kip inch"), g.act);
+    close(c.value(String.raw`\beta_{Treq}\coloneq`, "kip inch"), g.req);
+    close(c.value(String.raw`P_{nst}\coloneq`, "kip"), cf.strut.Pn);
+  });
+
+  it("works out a pour sequence with no errors", () => {
+    const i: SteelGirderInputs = { ...STEEL_DEFAULTS, pours: [{ from: 0, to: 70, order: 1 }, { from: 110, to: 180, order: 2 }, { from: 70, to: 110, order: 3 }] };
+    const r = designSteelGirder(i);
+    const c = workOut(i);
+    expect(c.errors).toEqual([]);
+    expect(c.checks.filter((x) => x.result.includes("NG")).length).toBe(r.checks.filter((x) => !x.ok && !x.advisory).length);
+  });
+
+  it("works out the details as the engine does: fatigue, studs and the governing bearing stiffeners", () => {
+    const r = designSteelGirder(STEEL_DEFAULTS);
+    const c = workOut(STEEL_DEFAULTS);
+    const fat = [r.checks.find((x) => x.id === "fat-bot")!, r.checks.find((x) => x.id === "fat-top")!].sort((a, b) => b.demand / b.capacity - a.demand / a.capacity)[0];
+    close(c.value(String.raw`\Delta_{Fn}\coloneq`, "ksi"), fat.capacity);
+    close(c.value(String.raw`p_{max}\coloneq`, "inch"), r.checks.find((x) => x.id === "stud-fat")!.capacity);
+    const pier = r.bearings.find((b) => b.support === 1)!;
+    close(c.value(String.raw`P_{n}\coloneq`, "kip"), pier.stiffened!.Pn);
+    close(c.value(String.raw`R_{sbr}\coloneq`, "kip"), pier.stiffened!.Rr);
+  });
+
+  it("works out a stiffened zone's stiffeners and a rolled beam's web at its bearings", () => {
+    const stiff: SteelGirderInputs = { ...STEEL_DEFAULTS, stiffeners: [{ from: 70, to: 110, spacing: 84 }] };
+    const r = designSteelGirder(stiff);
+    const c = workOut(stiff);
+    expect(c.errors).toEqual([]);
+    close(c.value(String.raw`I_{treq}\coloneq`, "inch^4"), r.stiffenerChecks[0].required);
+    expect(c.checks.filter((x) => x.result.includes("NG")).length).toBe(r.checks.filter((x) => !x.ok).length);
+
+    const rolled: SteelGirderInputs = { ...STEEL_DEFAULTS, spans: [60], segments: [{ length: 60, kind: "rolled", shape: "W36X150", D: 0, tw: 0, top: { b: 0, t: 0 }, bottom: { b: 0, t: 0 } }], bearing: { ...STEEL_DEFAULTS.bearing, use: false } };
+    const rr = designSteelGirder(rolled);
+    const cr = workOut(rolled);
+    expect(cr.errors).toEqual([]);
+    expect(cr.checks.filter((x) => x.result.includes("NG")).length).toBe(rr.checks.filter((x) => !x.ok && !x.advisory).length);
+  });
+
+  it("works out a single span with Fatigue II (low traffic) with no errors", () => {
+    const i: SteelGirderInputs = { ...STEEL_DEFAULTS, spans: [100], segments: [{ ...STEEL_DEFAULTS.segments[0], length: 100 }], stiffeners: [], fatigue: { ...STEEL_DEFAULTS.fatigue, adttSL: 300 } };
+    const c = workOut(i);
+    expect(c.errors).toEqual([]);
+    expect(c.checks.length).toBeGreaterThan(10);
+  });
+});

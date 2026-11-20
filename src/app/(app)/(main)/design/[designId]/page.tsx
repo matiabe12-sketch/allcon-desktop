@@ -14,6 +14,8 @@ import { HaunchEditor } from "@/components/design/haunch-editor";
 import { MseEditor } from "@/components/design/mse-editor";
 import { SignEditor } from "@/components/design/sign-editor";
 import { StmEditor } from "@/components/design/stm-editor";
+import { SteelGirderEditor } from "@/components/design/steel-girder-editor";
+import { steelGirderInputs } from "@/lib/design/girders/steel";
 import { stmInputs } from "@/lib/design/stm/strut-tie";
 import { StripSealEditor } from "@/components/design/strip-seal-editor";
 import { WingwallEditor } from "@/components/design/wingwall-editor";
@@ -43,6 +45,12 @@ export default async function DesignEditorPage({ params }: PageProps<"/design/[d
     return (
       <PageBody>
         <GirderEditor design={{ ...base, inputs: girderInputs(design.inputs) }} projects={projects} />
+      </PageBody>
+    );
+  if (design.kind === "steel-girder-check")
+    return (
+      <PageBody>
+        <SteelGirderEditor design={{ ...base, inputs: steelGirderInputs(design.inputs) }} projects={projects} />
       </PageBody>
     );
   if (design.kind === "stm-d-region")

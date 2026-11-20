@@ -1,0 +1,1345 @@
+import { DesignError, type Check } from "../walls/cip";
+import { modulus, distributionFactors, type DistFactors, type GirderInputs } from "./prestressed";
+import { appendixA6, effectivePlasticMoment, negativeYieldMoments, redistributionMoment } from "./steel-appendix";
+import { nonprismaticBeam } from "./steel-beam";
+import { L_SHAPE_NAMES, singleAngle, stabilityBracing, type CrossFrame } from "./steel-crossframe";
+import { windPressure } from "./substructure-loads";
+import { ES, plasticMoment, plates, sectionProps, selfWeight, type DeckSection, type Plate, type SectionProps, type SteelSegment, type Stage } from "./steel-section";
+import { W_SHAPES } from "./w-shapes";
+import {
+  bearingStiffener,
+  cyclesPerTruck,
+  FATIGUE_CATEGORIES,
+  FATIGUE_I,
+  FATIGUE_IM,
+  fatigueResistance,
+  studPitchForFatigue,
+  studPitchLimits,
+  studResistance,
+  studsAcross,
+  transverseStiffener,
+  webAtBearing,
+  type BearingStiffeners,
+  type FatigueCategory,
+  type StiffenerPlate,
+  type Studs,
+} from "./steel-details";
+
+// Steel Girder Design Check: a straight, continuous (or simple-span) composite steel I-girder line, welded
+// plate girders or rolled W shapes, to AASHTO LRFD 10th Edition Article 6.10, checked as a line girder:
+// the girder's own stiffness along it (steel alone for DC1, long-term 3n for DC2 and DW, short-term n for
+// live load, 6.10.1.5), HL-93 placed by influence lines (with 90% of two trucks for negative moment,
+// 3.6.1.3.1), distribution factors by 4.6.2.2 (with the rigid cross-section check for the exterior girder);
+// cross-section proportions (6.10.2), constructibility (6.10.3), service (6.10.4), the strength limit state
+// in positive flexure (6.10.7), negative flexure (6.10.8) and shear (6.10.9), ductility (6.10.7.3), the
+// minimum negative-flexure deck reinforcement (6.10.1.7) and the optional live-load deflection
+// (2.5.2.6.2); and the details: load-induced fatigue of the flanges' welded attachments (6.6.1.2) and the web
+// (6.10.5.3), the shear connectors (6.10.10), the intermediate and bearing stiffeners (6.10.11), and the
+// dead load deflections for camber (6.7.2). Cross-frames are not designed here.
+// Feet and kips for the girder line, inches and ksi for sections and stresses.
+
+export type StiffenerZone = { from: number; to: number; spacing: number }; // ft from the girder's start; in
+
+export type SteelGirderInputs = {
+  spans: number[]; // ft, bearing to bearing (a pier's bearings at its centerline)
+  nGirders: number;
+  S: number; // ft
+  overhang: number; // ft, exterior girder to the deck's edge
+  barrierWidth: number; // ft, the deck's edge to the barrier's face
+  skew: number; // degrees
+  // Deck
+  deckT: number; // in, as cast
+  sacrificial: number; // in, integral wearing surface (not in the composite section)
+  haunch: number; // in, the deck's bottom to the top of the web or of the top flange (haunchTo)
+  haunchTo: "web" | "flange";
+  fcDeck: number; // ksi
+  wcDeck: number; // kcf
+  n: number; // modular ratio; 0 to compute it from the deck's modulus (5.4.2.4)
+  bars: { pct: number; top: number; topCover: number; bottomCover: number; fy: number }; // % of the deck's area in the effective width; the top layer's share; centroids from the deck's top and bottom (in)
+  // Steel
+  Fyw: number; // ksi
+  Fyf: number; // ksi
+  segments: SteelSegment[]; // along the girder from its start; lengths add up to the bridge's length
+  crossFrames: number; // ft, the most spacing between cross-frames (brace points) within a span
+  pours: { from: number; to: number; order: number }[]; // the deck placed in this order (ft along the girder); empty: one pour
+  braces: number[]; // ft along the girder: the cross-frames where given (the supports are braced too); empty: equally spaced by crossFrames
+  appendixA6: boolean; // negative flexure by Appendix A6 where it applies (compact and noncompact webs)
+  redistribution: boolean; // moment redistribution from the interior piers (Appendix B6, simplified method)
+  stiffeners: StiffenerZone[]; // transverse stiffeners; none: unstiffened web
+  studsThroughout: boolean; // shear connectors along the whole girder (6.10.4.2.1: the deck effective in negative flexure at service)
+  // Loads
+  loads: {
+    mode: "computed" | "entered";
+    dc1: number; // klf per girder, entered: DC1 other than the girder's steel
+    dc2: number; // klf
+    dw: number; // klf
+    sip: number; // psf, stay-in-place forms between flanges
+    misc: number; // plf, cross-frames, stiffeners and other steel
+    otherDC1: number; // klf
+    barrierWeight: number; // klf, each barrier (shared equally by the girders)
+    otherDC2: number; // klf
+    fws: number; // psf, future wearing surface over the roadway
+  };
+  girder: "both" | "interior" | "exterior"; // which girder's distribution factor and effective width; both: the larger factor and the smaller width
+  rigidMethod: boolean; // exterior girder not less than the rigid cross-section (4.6.2.2.2d), required with cross-frames
+  skewShearInterior: boolean;
+  IM: number; // dynamic load allowance on the truck and tandem
+  constructionLL: number; // psf, on the deck while it's placed
+  flConstruction: number; // ksi, flange lateral bending during construction (overhang brackets)
+  deflection: { check: boolean; limit: number }; // L / limit under the live load (2.5.2.6.2)
+  eta: number; // ηD ηR ηI
+  // Details (phase 2)
+  fatigue: { check: boolean; adttSL: number; life: number; flange: FatigueCategory; flangeNeg: FatigueCategory }; // single-lane ADTT (3.6.1.4.2); the category of the attachments on the flanges (connection plates, stiffeners) in positive and in negative moment regions
+  studs: Studs & { check: boolean; zones: { from: number; to: number; pitch: number }[] }; // stud shear connectors: diameter, studs across, pitch (in), height (in), Fu (ksi); zones of other pitches along the girder (ft, in)
+  stiffener: StiffenerPlate; // the intermediate transverse stiffeners in the stiffened zones
+  bearing: BearingStiffeners & { use: boolean; N: number; weld: number };
+  crossFrame: CrossFrame & { check: boolean }; // intermediate cross-frames: stability bracing (6.7.4.2.2) and wind (4.6.2.7.1)
+  wind: { V: number; exposure: "B" | "C" | "D"; Z: number }; // Strength III design wind speed (mph, 0: none), exposure, height (ft); Strength V uses 80 mph // plate bearing stiffeners at the supports; without them the web at the bearing (D6.5): bearing length N, flange-to-web weld or fillet (in)
+};
+
+const plate = (b: number, t: number): Plate => ({ b, t });
+
+/** FHWA Steel Bridge Design Handbook Design Example 2A's bridge: two 90 ft spans, four plate girders at 10 ft. */
+export const STEEL_DEFAULTS: SteelGirderInputs = {
+  spans: [90, 90],
+  nGirders: 4,
+  S: 10,
+  overhang: 3.5,
+  barrierWidth: 1.5,
+  skew: 0,
+  deckT: 8.5,
+  sacrificial: 0.5,
+  haunch: 2,
+  haunchTo: "web",
+  fcDeck: 4,
+  wcDeck: 0.15,
+  n: 8,
+  bars: { pct: 1, top: 1 / 3, topCover: 2.5, bottomCover: 1.75, fy: 60 },
+  Fyw: 50,
+  Fyf: 50,
+  segments: [
+    { length: 63, kind: "plate", D: 42, tw: 0.4375, top: plate(14, 0.75), bottom: plate(16, 1.25) },
+    { length: 54, kind: "plate", D: 42, tw: 0.5, top: plate(14, 1.125), bottom: plate(16, 1.25) },
+    { length: 63, kind: "plate", D: 42, tw: 0.4375, top: plate(14, 0.75), bottom: plate(16, 1.25) },
+  ],
+  crossFrames: 22.5,
+  pours: [],
+  braces: [20, 40, 60, 80, 100, 120, 140, 160], // 2A: 20 ft bays, 10 ft each side of the pier
+  appendixA6: true,
+  redistribution: true, // 2A redistributes 937 kip·ft from the pier (Appendix B6)
+  stiffeners: [],
+  studsThroughout: true,
+  loads: { mode: "computed", dc1: 0, dc2: 0, dw: 0, sip: 15, misc: 15, otherDC1: 0, barrierWeight: 0.52, otherDC2: 0, fws: 25 },
+  girder: "both",
+  rigidMethod: true,
+  skewShearInterior: false,
+  IM: 0.33,
+  constructionLL: 0,
+  flConstruction: 0,
+  deflection: { check: true, limit: 800 },
+  eta: 1,
+  fatigue: { check: true, adttSL: 1000, life: 75, flange: "B", flangeNeg: "C'" }, // 2A: bolted connection plates in positive moment, welded near the pier
+  studs: { check: true, d: 0.875, perRow: 3, pitch: 10, height: 6, Fu: 60, zones: [] },
+  stiffener: { bt: 5.5, tp: 0.5, Fys: 50, pair: false },
+  bearing: { use: true, bt: 6, tp: 0.625, Fys: 50, clip: 1.5, pairsEnd: 1, pairsPier: 2, gap: 8, N: 10, weld: 0.3125 },
+  crossFrame: { check: true, type: "X", diagonal: "L5X5X1/2", strut: "L5X5X1/2", hb: 36, Fy: 50, fullDepthPlates: true, plateWidth: 10, plateThickness: 0.5 },
+  wind: { V: 0, exposure: "C", Z: 33 },
+};
+
+// --- inputs as saved ----------------------------------------------------------------------------------
+
+const num = (v: unknown, d: number) => (typeof v === "number" && Number.isFinite(v) ? v : d);
+const segOf = (v: unknown): SteelSegment => {
+  const s = (v && typeof v === "object" ? v : {}) as Record<string, unknown>;
+  const pl = (x: unknown, d: Plate): Plate => {
+    const o = (x && typeof x === "object" ? x : {}) as Record<string, unknown>;
+    return { b: num(o.b, d.b), t: num(o.t, d.t) };
+  };
+  const d = STEEL_DEFAULTS.segments[0];
+  return { length: num(s.length, 0), kind: s.kind === "rolled" ? "rolled" : "plate", ...(typeof s.shape === "string" ? { shape: s.shape } : {}), D: num(s.D, d.D), tw: num(s.tw, d.tw), top: pl(s.top, d.top), bottom: pl(s.bottom, d.bottom) };
+};
+
+/** A steel girder check's inputs as saved, filled in from the defaults. */
+export function steelGirderInputs(saved: unknown): SteelGirderInputs {
+  const s = (saved && typeof saved === "object" ? saved : {}) as Record<string, unknown>;
+  if (Object.keys(s).length === 0) return structuredClone(STEEL_DEFAULTS);
+  const d = STEEL_DEFAULTS;
+  const o = <T extends object>(x: unknown, def: T) => ({ ...def, ...((x && typeof x === "object" ? x : {}) as Partial<T>) });
+  return {
+    ...d,
+    ...(s as Partial<SteelGirderInputs>),
+    spans: Array.isArray(s.spans) ? (s.spans as unknown[]).map((x) => num(x, 0)).filter((x) => x > 0).slice(0, 6) : d.spans,
+    segments: Array.isArray(s.segments) ? (s.segments as unknown[]).slice(0, 30).map(segOf) : d.segments,
+    // Designs saved before these inputs existed keep their equal spacing and no Appendix A6 or B6.
+    braces: Array.isArray(s.braces) ? (s.braces as unknown[]).map((x) => num(x, -1)).filter((x) => x > 0).slice(0, 200) : [],
+    appendixA6: s.appendixA6 === true,
+    pours: Array.isArray(s.pours) ? (s.pours as unknown[]).slice(0, 20).map((z) => o(z, { from: 0, to: 0, order: 1 })) : [],
+    redistribution: s.redistribution === true,
+    stiffeners: Array.isArray(s.stiffeners) ? (s.stiffeners as unknown[]).slice(0, 30).map((z) => o(z, { from: 0, to: 0, spacing: 0 })) : [],
+    bars: o(s.bars, d.bars),
+    loads: o(s.loads, d.loads),
+    deflection: o(s.deflection, d.deflection),
+    fatigue: (() => {
+      const f = o(s.fatigue, d.fatigue);
+      return { ...f, flange: f.flange in FATIGUE_CATEGORIES ? f.flange : d.fatigue.flange, flangeNeg: f.flangeNeg in FATIGUE_CATEGORIES ? f.flangeNeg : d.fatigue.flangeNeg };
+    })(),
+    studs: (() => {
+      const st = o(s.studs, d.studs);
+      return { ...st, zones: Array.isArray(st.zones) ? st.zones.slice(0, 30).map((z) => o(z, { from: 0, to: 0, pitch: 0 })) : [] };
+    })(),
+    stiffener: o(s.stiffener, d.stiffener),
+    bearing: o(s.bearing, d.bearing),
+    crossFrame: (() => {
+      const c = o(s.crossFrame, d.crossFrame);
+      return { ...c, type: c.type === "K" ? "K" : "X", diagonal: L_SHAPE_NAMES.includes(c.diagonal) ? c.diagonal : d.crossFrame.diagonal, strut: L_SHAPE_NAMES.includes(c.strut) ? c.strut : d.crossFrame.strut } as SteelGirderInputs["crossFrame"];
+    })(),
+    wind: (() => {
+      const w = o(s.wind, d.wind);
+      return { ...w, exposure: w.exposure === "B" || w.exposure === "D" ? w.exposure : "C" } as SteelGirderInputs["wind"];
+    })(),
+    haunchTo: s.haunchTo === "flange" ? "flange" : "web",
+    girder: s.girder === "interior" || s.girder === "exterior" ? s.girder : "both",
+  };
+}
+
+export const W_SHAPE_NAMES = W_SHAPES.map((r) => r[0]);
+
+// --- the design -------------------------------------------------------------------------------------------
+
+const PHI_F = 1.0; // 6.5.4.2, flexure
+const PHI_V = 1.0; // shear
+
+/** The ratio of shear buckling to shear yield, C (Eqs. 6.10.9.3.2-4 to -6). */
+export function shearC(D: number, tw: number, Fyw: number, k: number) {
+  const r = D / tw;
+  const a = Math.sqrt((ES * k) / Fyw);
+  if (r <= 1.12 * a) return 1;
+  if (r <= 1.4 * a) return (1.12 / r) * a;
+  return (1.57 / r ** 2) * ((ES * k) / Fyw);
+}
+
+/** The hybrid factor Rh (6.10.1.10.1): 1.0 for a homogeneous section. */
+export function hybridRh(Aw: number, Afn: number, Dn: number, tw: number, Fyw: number, fn: number) {
+  if (Fyw >= fn) return 1;
+  const beta = (2 * Dn * tw) / Afn;
+  const rho = Math.min(1, Fyw / fn);
+  return (12 + beta * (3 * rho - rho ** 3)) / (12 + 2 * beta);
+}
+
+/** The web load-shedding factor Rb (6.10.1.10.2, Eqs. -3, -5, -8, -9), webs without longitudinal stiffeners. */
+export function webRb(Dc: number, tw: number, bfc: number, tfc: number, Fyc: number) {
+  const awc = (2 * Dc * tw) / (bfc * tfc);
+  const crw = Math.min(5.7, Math.max(4.6, 3.1 + 5.0 / awc));
+  const lrw = crw * Math.sqrt(ES / Fyc);
+  const r = (2 * Dc) / tw;
+  if (r <= lrw) return 1;
+  return Math.min(1, 1 - (awc / (1200 + 300 * awc)) * (r - lrw));
+}
+
+/** The compression flange's nominal resistance Fnc (6.10.8.2): the lesser of local buckling and LTB. */
+export function flangeFnc(p: { bfc: number; tfc: number; Dc: number; tw: number; Fyc: number; Fyw: number; Lb: number; Cb: number; Rb: number; Rh: number }) {
+  const { bfc, tfc, Dc, tw, Fyc, Fyw, Lb, Cb, Rb, Rh } = p;
+  // Local buckling (6.10.8.2.2): Fyr the smaller of 0.7Fyc and Fyw, at least 0.5Fyc.
+  const lf = bfc / (2 * tfc);
+  const lpf = 0.38 * Math.sqrt(ES / Fyc);
+  const FyrF = Math.max(0.5 * Fyc, Math.min(0.7 * Fyc, Fyw));
+  const lrf = 0.56 * Math.sqrt(ES / FyrF);
+  const flb = lf <= lpf ? Rb * Rh * Fyc : (1 - (1 - FyrF / (Rh * Fyc)) * ((lf - lpf) / (lrf - lpf))) * Rb * Rh * Fyc;
+  // LTB (6.10.8.2.3a, b): Fyr = 0.5Fyc for webs without longitudinal stiffeners; rt by Eq. 6.10.8.2.3b-3.
+  const rt = bfc / Math.sqrt(12 * (1 + (Dc * tw) / (3 * bfc * tfc)));
+  const Lp = 1.1 * rt * Math.sqrt(ES / Fyc);
+  const FyrL = 0.5 * Fyc;
+  const Lr = Math.PI * rt * Math.sqrt(ES / FyrL);
+  let ltb: number;
+  if (Lb <= Lp) ltb = Rb * Rh * Fyc;
+  else if (Lb <= Lr) ltb = Math.min(Rb * Rh * Fyc, Cb * (1 - (1 - FyrL / (Rh * Fyc)) * ((Lb - Lp) / (Lr - Lp))) * Rb * Rh * Fyc);
+  else {
+    const Fe = (Cb * Math.PI ** 2 * ES) / (Lb / rt) ** 2;
+    ltb = Math.min(Rb * Rh * Fyc, Rb * Fe);
+  }
+  return { Fnc: Math.min(flb, ltb), flb, ltb, lf, lpf, lrf, rt, Lp, Lr, governs: flb <= ltb ? "local buckling" : "lateral-torsional buckling" };
+}
+
+/** Cb from the moments at a quarter, half and three-quarters of the unbraced length (Eq. 6.10.8.2.3b-1). */
+export function momentGradientCb(Mmax: number, MA: number, MB: number, MC: number) {
+  const m = Math.abs(Mmax);
+  if (!(m > 0)) return 1;
+  return Math.max(1, (12.5 * m) / (2.5 * m + 3 * Math.abs(MA) + 4 * Math.abs(MB) + 3 * Math.abs(MC)));
+}
+
+/** The web's elastic bend-buckling resistance (6.10.1.9.1). */
+export function webFcrw(D: number, tw: number, Dc: number, Rh: number, Fyc: number, Fyw: number) {
+  if (!(Dc > 0)) return Math.min(Rh * Fyc, Fyw / 0.7);
+  const k = 9 / (Dc / D) ** 2;
+  return Math.min((0.9 * ES * k) / (D / tw) ** 2, Rh * Fyc, Fyw / 0.7);
+}
+
+export type SteelStation = {
+  X: number; // ft from the girder's start
+  span: number;
+  x: number; // ft in the span
+  seg: number;
+  M: { dc1: number; dc2: number; dw: number; llPos: number; llNeg: number }; // kip·ft per girder (live load distributed, with IM)
+  V: { dc1: number; dc2: number; dw: number; ll: number }; // kip
+  dfM: number;
+  dfV: number;
+  negativeRegion: boolean;
+  Mpos: number; // Strength I, kip·ft
+  Mneg: number;
+  Vu: number; // kip
+  ratios: Record<string, number>;
+  shear?: { Vcr: number; Vn: number; zone: number; interiorPanel: boolean }; // kip
+  fatigue?: {
+    Mmax: number; // the fatigue truck per girder with IM, unfactored
+    Mmin: number;
+    Vmax: number;
+    Vmin: number;
+    cycles: number;
+    bot?: { fMax: number; fMin: number; cat: FatigueCategory }; // ksi at the flange's inner face, tension +
+    top?: { fMax: number; fMin: number; cat: FatigueCategory };
+    stud?: { Q: number; I: number }; // in³, in⁴ on the short-term section
+  };
+};
+
+export function designSteelGirder(i: SteelGirderInputs) {
+  const spans = i.spans;
+  if (!spans.length || spans.some((L) => !(L > 0))) throw new DesignError("Give the spans.");
+  if (spans.length > 6) throw new DesignError("Up to six spans.");
+  if (!(i.nGirders >= 2)) throw new DesignError("At least two girders.");
+  if (!(i.S > 0)) throw new DesignError("Give the girder spacing.");
+  const total = spans.reduce((s, L) => s + L, 0);
+  const segLen = i.segments.reduce((s, x) => s + x.length, 0);
+  if (!i.segments.length) throw new DesignError("Give the girder's cross-sections along it.");
+  if (Math.abs(segLen - total) > 0.5) throw new DesignError(`The girder's sections add up to ${segLen.toFixed(2)} ft; the spans to ${total.toFixed(2)} ft.`);
+  if (!(i.Fyw > 0 && i.Fyf > 0)) throw new DesignError("Give the steel's yield strengths.");
+  for (const s of i.segments) plates(s); // validates every segment
+  /** The stud pitch at X (in): a zone's, or the girder's. */
+  const pitchAt = (X: number) => {
+    const z = i.studs.zones.find((q) => q.pitch > 0 && X >= q.from - 1e-9 && X <= q.to + 1e-9);
+    return Math.max(0.1, z ? z.pitch : i.studs.pitch);
+  };
+  /** Rows of studs over a length of girder, at the pitch along it. */
+  const rowsOver = (a: number, b: number) => {
+    const N = 400;
+    const h = (b - a) / N;
+    let rows = 0;
+    for (let q = 0; q < N; q++) rows += (h * 12) / pitchAt(a + (q + 0.5) * h);
+    return Math.floor(rows + 1e-6);
+  };
+  const starts: number[] = [];
+  spans.reduce((a, L) => (starts.push(a), a + L), 0);
+  const segStart: number[] = [];
+  i.segments.reduce((a, s) => (segStart.push(a), a + s.length), 0);
+  const segAt = (X: number) => {
+    let k = 0;
+    while (k + 1 < i.segments.length && X >= segStart[k + 1] - 1e-9) k++;
+    return k;
+  };
+
+  // The deck and its effective width (4.6.2.6.1): interior, half the spacing each side; exterior, half the spacing and the overhang.
+  const Ec = modulus(1, i.wcDeck, i.fcDeck);
+  const n = i.n > 0 ? i.n : ES / Ec;
+  const ts = i.deckT - i.sacrificial;
+  if (!(ts > 0)) throw new DesignError("The deck's structural thickness must be positive.");
+  const beffInt = i.S * 12;
+  const beffExt = (i.S / 2 + i.overhang) * 12;
+  const beff = i.girder === "interior" ? beffInt : i.girder === "exterior" ? beffExt : Math.min(beffInt, beffExt);
+  const deckFor = (seg: SteelSegment): DeckSection => {
+    const p = plates(seg);
+    const haunch = Math.max(0, i.haunchTo === "web" ? i.haunch - p.top.t : i.haunch);
+    const As = (i.bars.pct / 100) * beff * i.deckT;
+    const top = Math.min(1, Math.max(0, i.bars.top));
+    return { beff, ts, tGross: i.deckT, haunch, n, fc: i.fcDeck, fy: i.bars.fy, bars: [{ A: As * top, y: ts - i.bars.topCover }, { A: As * (1 - top), y: i.bars.bottomCover }] };
+  };
+  const props = new Map<string, SectionProps>();
+  const prop = (k: number, stage: Stage) => {
+    const key = `${k}:${stage}`;
+    let p = props.get(key);
+    if (!p) props.set(key, (p = sectionProps(i.segments[k], stage, deckFor(i.segments[k]), i.Fyw, i.Fyf)));
+    return p;
+  };
+
+  // The girder line, three ways: steel alone (DC1), long-term composite (DC2, DW), short-term composite (live load).
+  const stiff = (stage: Stage) => (X: number) => (ES * prop(segAt(X), stage).I) / 144;
+  const deflectAt = i.deflection.check ? spans.flatMap((L, j) => [starts[j] + 0.4 * L, starts[j] + 0.5 * L, starts[j] + 0.6 * L]) : [];
+  // Camber (6.7.2): the dead load deflections at the tenth points of every span.
+  const camberAt = spans.flatMap((Ls, j) => Array.from({ length: 9 }, (_, q) => starts[j] + ((q + 1) * Ls) / 10));
+  const steelLine = nonprismaticBeam(spans, stiff("steel"), 80, camberAt);
+  const longLine = nonprismaticBeam(spans, stiff("3n"), 80, camberAt);
+  const shortLine = nonprismaticBeam(spans, stiff("n"), 80, deflectAt);
+
+  // Loads per girder (klf).
+  const L = i.loads;
+  const roadway = (i.nGirders - 1) * i.S + 2 * i.overhang - 2 * i.barrierWidth;
+  const deckWidth = (i.nGirders - 1) * i.S + 2 * i.overhang;
+  const avgTop = i.segments.reduce((s, x) => s + plates(x).top.b * x.length, 0) / total; // in
+  const dc1Deck =
+    L.mode === "entered"
+      ? L.dc1
+      : (i.deckT / 12) * deckWidth * i.wcDeck / i.nGirders + ((i.haunch / 12) * (avgTop / 12) * i.wcDeck) + ((L.sip / 1000) * Math.max(0, i.S - avgTop / 12) * (i.nGirders - 1)) / i.nGirders + L.misc / 1000 + L.otherDC1;
+  const dc2 = L.mode === "entered" ? L.dc2 : (2 * L.barrierWeight) / i.nGirders + L.otherDC2;
+  const dw = L.mode === "entered" ? L.dw : ((L.fws / 1000) * roadway) / i.nGirders;
+  const wSteel = (X: number) => selfWeight(i.segments[segAt(X)]);
+
+  /** A load's moment and shear at x in span s: uniform loads exactly, the steel's varying weight by its influence line. */
+  const deadAt = (line: typeof steelLine, s: number, x: number, w: number, varying?: (X: number) => number) => {
+    const u = line.beam.uniformAll(s, x, w);
+    if (!varying) return { M: u.M, V: u.V };
+    const X = starts[s] + x;
+    const ilM = line.beam.influence(s, x, "M");
+    const ilV = line.beam.influence(s, x, "V");
+    const N = 600;
+    let M = 0;
+    let V = 0;
+    for (const [a, b] of [[0, X], [X, total]]) {
+      const h = (b - a) / N;
+      if (h <= 0) continue;
+      for (let q = 0; q < N; q++) {
+        const Xq = a + (q + 0.5) * h;
+        M += ilM(Xq) * varying(Xq) * h;
+        V += ilV(Xq) * varying(Xq) * h;
+      }
+    }
+    return { M: u.M + M, V: u.V + V };
+  };
+
+  // Distribution factors (4.6.2.2): positive moment and shear per span from its own section and length; negative
+  // moment at each pier from the pier's section and the two spans' average length (Table C4.6.2.2.1-1).
+  const dfBase = { S: i.S, nGirders: i.nGirders, overhang: i.overhang, barrierWidth: i.barrierWidth, skew: i.skew, distribution: "aashto", rigidMethod: i.rigidMethod, skewShearInterior: i.skewShearInterior, shape: "steel" } as unknown as GirderInputs;
+  const dfFor = (Lspan: number, k: number) => {
+    const g = prop(k, "steel");
+    const deck = deckFor(i.segments[k]);
+    const deckCg = g.depth + deck.haunch + ts / 2;
+    const geo = { A: g.A, I: g.I, yb: g.yNA } as unknown as Parameters<typeof distributionFactors>[1];
+    const one = (exterior: boolean): DistFactors => distributionFactors({ ...dfBase, L: Lspan }, geo, ts, n, deckCg, exterior);
+    const int = one(false);
+    const ext = one(true);
+    const pick = (f: (d: DistFactors) => number) => (i.girder === "interior" ? f(int) : i.girder === "exterior" ? f(ext) : Math.max(f(int), f(ext)));
+    // The fatigue truck's factors: one lane without the multiple presence factor (3.6.1.4.3b).
+    return { moment: pick((d) => d.moment), shear: pick((d) => d.shear), fatigueM: pick((d) => d.fatigue), fatigueV: pick((d) => (d.shearOne * d.skewShear) / 1.2), interior: int, exterior: ext };
+  };
+  const spanDF = spans.map((Ls, j) => dfFor(Ls, segAt(starts[j] + (j === 0 ? 0.4 : j === spans.length - 1 ? 0.6 : 0.5) * Ls)));
+  const pierDF = spans.slice(1).map((_, k) => dfFor((spans[k] + spans[k + 1]) / 2, segAt(starts[k + 1])));
+
+  // Stations: twentieths of each span, the sections' ends (each side), and the supports.
+  const pts = new Set<number>();
+  spans.forEach((Ls, j) => {
+    for (let q = 0; q <= 20; q++) pts.add(Math.round((starts[j] + (Ls * q) / 20) * 1e6) / 1e6);
+  });
+  segStart.slice(1).forEach((X) => {
+    pts.add(X - 0.01);
+    pts.add(X + 0.01);
+  });
+  const located = (X: number) => {
+    let s = 0;
+    while (s + 1 < spans.length && X > starts[s + 1] - 1e-9 && !(Math.abs(X - starts[s + 1]) < 1e-9 && s + 1 === spans.length)) s++;
+    // A support belongs to the span on its left, except the first.
+    if (s > 0 && Math.abs(X - starts[s]) < 1e-9) s--;
+    return { s, x: Math.min(spans[s], Math.max(0, X - starts[s])) };
+  };
+
+  const eta = i.eta;
+  /** The unfactored effects at a point. */
+  const effectsCache = new Map<number, ReturnType<typeof effectsRaw>>();
+  const effects = (X: number) => {
+    const key = Math.round(X * 1e4);
+    let e = effectsCache.get(key);
+    if (!e) effectsCache.set(key, (e = effectsRaw(X)));
+    return e;
+  };
+  function effectsRaw(X: number, at?: { s: number; x: number }) {
+    const { s, x } = at ?? located(X);
+    const k = segAt(Math.min(Math.max(X, 1e-6), total - 1e-6));
+    const d1 = deadAt(steelLine, s, x, dc1Deck, wSteel);
+    const d2 = deadAt(longLine, s, x, dc2);
+    const dW = deadAt(longLine, s, x, dw);
+    const env = shortLine.beam.liveEnvelope(s, x, i.IM);
+    const negativeRegion = longLine.beam.uniformAll(s, x).M < 0;
+    const pier = x > spans[s] / 2 ? s : s - 1; // the nearer interior pier
+    const dfM = negativeRegion && pier >= 0 && pier < pierDF.length ? pierDF[pier].moment : spanDF[s].moment;
+    const dfV = spanDF[s].shear;
+    return { s, x, k, M: { dc1: d1.M, dc2: d2.M, dw: dW.M, llPos: dfM * env.Mpos, llNeg: dfM * env.Mneg }, V: { dc1: d1.V, dc2: d2.V, dw: dW.V, ll: dfV * env.V }, dfM, dfV, negativeRegion };
+  }
+  /** The fatigue truck (3.6.1.4.1: 8, 32 and 32 kip axles, 14 and 30 ft apart) on the short-term girder line: per girder, with its factors and 15% IM, unfactored. */
+  const fatigueAt = (X: number) => {
+    const e = effects(X);
+    const ilM = shortLine.beam.influence(e.s, e.x, "M");
+    const ilV = shortLine.beam.influence(e.s, e.x, "V");
+    const axles = [
+      [8, 0],
+      [32, 14],
+      [32, 44],
+    ];
+    let Mmax = 0;
+    let Mmin = 0;
+    let Vmax = 0;
+    let Vmin = 0;
+    for (let pos = -50; pos <= total + 50; pos += 0.5)
+      for (const dir of [1, -1]) {
+        let M = 0;
+        let V = 0;
+        for (const [P, d] of axles) {
+          const Xq = pos + dir * d;
+          if (Xq < 0 || Xq > total) continue;
+          M += P * ilM(Xq);
+          V += P * ilV(Xq);
+        }
+        Mmax = Math.max(Mmax, M);
+        Mmin = Math.min(Mmin, M);
+        Vmax = Math.max(Vmax, V);
+        Vmin = Math.min(Vmin, V);
+      }
+    const pier = e.x > spans[e.s] / 2 ? e.s : e.s - 1;
+    const dfM = e.negativeRegion && pier >= 0 && pier < pierDF.length ? pierDF[pier].fatigueM : spanDF[e.s].fatigueM;
+    const dfV = spanDF[e.s].fatigueV;
+    const im = 1 + FATIGUE_IM;
+    return { Mmax: Mmax * dfM * im, Mmin: Mmin * dfM * im, Vmax: Vmax * dfV * im, Vmin: Vmin * dfV * im, dfM, dfV };
+  };
+  const g = (m: number, positive: boolean, up: number, down: number) => ((positive ? m >= 0 : m <= 0) ? up : down);
+  /** Strength I moments, the dead loads' factors chosen for the extreme (Table 3.4.1-2). */
+  const strength = (e: ReturnType<typeof effects>) => {
+    const pos = eta * (g(e.M.dc1, true, 1.25, 0.9) * e.M.dc1 + g(e.M.dc2, true, 1.25, 0.9) * e.M.dc2 + g(e.M.dw, true, 1.5, 0.65) * e.M.dw + 1.75 * e.M.llPos);
+    const neg = eta * (g(e.M.dc1, false, 1.25, 0.9) * e.M.dc1 + g(e.M.dc2, false, 1.25, 0.9) * e.M.dc2 + g(e.M.dw, false, 1.5, 0.65) * e.M.dw + 1.75 * e.M.llNeg);
+    const Vu = eta * (1.25 * Math.abs(e.V.dc1 + e.V.dc2) + 1.5 * Math.abs(e.V.dw) + 1.75 * e.V.ll);
+    return { pos, neg, Vu };
+  };
+  /** Flange stresses (ksi, compression positive at the flange that M compresses) from staged moments (kip·ft) on their sections. */
+  const stress = (k: number, parts: { M: number; stage: Stage }[]) => {
+    let top = 0;
+    let bot = 0;
+    for (const p of parts) {
+      const sp = prop(k, p.stage);
+      top += (p.M * 12) / sp.Stop; // compression at the top for sagging moment
+      bot -= (p.M * 12) / sp.Sbot;
+    }
+    return { top, bot }; // + compression, − tension
+  };
+
+  // Brace points: the supports and cross-frames at equal spacing no more than the given one in each span.
+  const braces: number[] = [];
+  if (i.braces.length) {
+    // Cross-frames where given, and at every support.
+    braces.push(...starts, total, ...i.braces.filter((b) => b > 1e-6 && b < total - 1e-6));
+  } else
+    spans.forEach((Ls, j) => {
+      const nb = Math.max(1, Math.ceil(Ls / Math.max(1, i.crossFrames) - 1e-9));
+      for (let q = 0; q <= nb; q++) braces.push(starts[j] + (Ls * q) / nb);
+    });
+  const bracesU = [...new Set(braces.map((b) => Math.round(b * 1e6) / 1e6))].sort((a, b) => a - b);
+  const unbraced = (X: number) => {
+    let a = 0;
+    while (a + 1 < bracesU.length && bracesU[a + 1] <= X + 1e-9) a++;
+    const b = Math.min(a + 1, bracesU.length - 1);
+    if (Math.abs(bracesU[a] - X) < 1e-6 && a > 0) {
+      // At a brace: the longer adjacent unbraced length governs; take the one on the side of larger compression later.
+      return [bracesU[a - 1], bracesU[a]] as [number, number];
+    }
+    return [bracesU[a], bracesU[b]] as [number, number];
+  };
+
+  // --- Negative flexure by Appendix A6 at a point, where it applies and the unbraced length is prismatic ---
+  const MuNegAt = (Xq: number) => strength(effects(Math.min(total, Math.max(0, Xq)))).neg;
+  const cbNeg = (a: number, b: number, at: number) => {
+    const Mends = [MuNegAt(a + 1e-3), MuNegAt(b - 1e-3)];
+    const Mq = [MuNegAt(a + (b - a) / 4), MuNegAt(a + (b - a) / 2), MuNegAt(a + (3 * (b - a)) / 4)];
+    return momentGradientCb(Math.min(...Mends, ...Mq, MuNegAt(at)), Mq[0], Mq[1], Mq[2]);
+  };
+  const negSection = (k: number, X: number, a: number, b: number) => {
+    const seg = i.segments[k];
+    const p = plates(seg);
+    const steel = prop(k, "steel");
+    const bars = prop(k, "bars");
+    const deck = deckFor(seg);
+    const e = effects(X);
+    const MD1 = Math.abs(g(e.M.dc1, false, 1.25, 0.9) * e.M.dc1 * eta) * 12;
+    const As = deck.bars.reduce((s, x) => s + x.A, 0);
+    const yBars = deck.bars.reduce((s, x) => s + x.A * (p.D + p.top.t + p.bottom.t + deck.haunch + x.y), 0) / Math.max(1e-9, As);
+    const ym = negativeYieldMoments({ MD1, steel, bars: { Stop: bars.Stop, Sbot: bars.Sbot, Sbars: bars.I / Math.max(1e-9, yBars - bars.yNA) }, Fyc: i.Fyf, Fyt: i.Fyf, fyBars: i.bars.fy });
+    const pm = plasticMoment(seg, deck, false, i.Fyw, i.Fyf);
+    const Dc = Math.max(0, bars.yNA - p.bottom.t);
+    const Rh = hybridRh(p.D * p.tw, Math.min(p.top.b * p.top.t, p.bottom.b * p.bottom.t), Math.max(steel.yNA - p.bottom.t, steel.depth - p.top.t - steel.yNA), p.tw, i.Fyw, i.Fyf);
+    const Cb = cbNeg(a, b, X);
+    const a6 = appendixA6({ D: p.D, tw: p.tw, bfc: p.bottom.b, tfc: p.bottom.t, bft: p.top.b, tft: p.top.t, Dc, Dcp: pm.Dcp, Mp: pm.Mp, Myc: ym.Myc, Myt: ym.Myt, SxcElastic: bars.Sbot, Fyc: i.Fyf, Fyt: i.Fyf, Fyw: i.Fyw, Rh, Lb: (b - a) * 12, Cb, rolled: seg.kind === "rolled" });
+    const prismatic = segAt(a + 1e-3) === segAt(b - 1e-3);
+    return { p, ym, pm, Dc, Rh, Cb, a6, prismatic, MD1 };
+  };
+
+  // --- Moment redistribution from the interior piers (Appendix B6, the simplified method) ---
+  const vcrAt = (X: number) => {
+    const p = plates(i.segments[segAt(Math.min(Math.max(X, 1e-6), total - 1e-6))]);
+    const zone = i.stiffeners.find((z) => X >= z.from - 1e-9 && X <= z.to + 1e-9 && z.spacing > 0 && z.spacing <= 3 * p.D);
+    return shearC(p.D, p.tw, i.Fyw, zone ? 5 + 5 / (zone.spacing / p.D) ** 2 : 5) * 0.58 * i.Fyw * p.D * p.tw;
+  };
+  const piersB6 = spans.slice(1).map((_, q) => {
+    const pier = q + 1;
+    const X = starts[pier];
+    const ia = bracesU.findIndex((b) => Math.abs(b - X) < 1e-6);
+    const a = bracesU[Math.max(0, ia - 1)];
+    const b = bracesU[Math.min(bracesU.length - 1, ia + 1)];
+    const k = segAt(X);
+    const ns = negSection(k, X, X - a >= b - X ? a : X, X - a >= b - X ? X : b);
+    const { p, pm, Dc, a6 } = ns;
+    const e = effectsRaw(X, { s: pier - 1, x: spans[pier - 1] });
+    const Me = strength(e).neg; // kip·ft
+    const MeSvc = e.M.dc1 + e.M.dc2 + e.M.dw + 1.3 * e.M.llNeg;
+    const sq = Math.sqrt(ES / i.Fyf);
+    const reqs: { name: string; demand: number; capacity: number; unit: string; ref: string }[] = [];
+    const req = (name: string, demand: number, capacity: number, unit: string, ref: string) => reqs.push({ name, demand, capacity, unit, ref });
+    req("Skew of the supports", Math.abs(i.skew), 10, "°", "AASHTO B6.2");
+    req("Yield strengths", Math.max(i.Fyf, i.Fyw), 70, "ksi", "AASHTO B6.2");
+    req("Web D/tw", p.D / p.tw, 150, "", "AASHTO Eq. B6.2.1-1");
+    req("Web 2Dc/tw ≤ 6.8√(E/Fyc)", (2 * Dc) / p.tw, 6.8 * sq, "", "AASHTO Eq. B6.2.1-2");
+    req("Dcp ≤ 0.75D", pm.Dcp, 0.75 * p.D, "in", "AASHTO Eq. B6.2.1-3");
+    req("Compression flange bfc/2tfc ≤ 0.38√(E/Fyc)", p.bottom.b / (2 * p.bottom.t), 0.38 * sq, "", "AASHTO Eq. B6.2.2-1");
+    req("D/bfc ≤ 4.25", p.D / p.bottom.b, 4.25, "", "AASHTO Eq. B6.2.2-2");
+    for (const [from, to, far] of [[a, X, a], [X, b, b]] as const) {
+      req(`Prismatic from ${from.toFixed(1)} to ${to.toFixed(1)} ft (section changes)`, segAt(from + 1e-3) === segAt(to - 1e-3) ? 0 : 1, 0, "", "AASHTO B6.2.3");
+      const ratio = Math.max(-1, Math.min(1, MuNegAt(far) / Me)); // + single curvature
+      const rt = ns.a6.rt;
+      req(`Unbraced length ${from.toFixed(1)}–${to.toFixed(1)} ft ≤ (0.1 − 0.06 M1/M2) rt E/Fyc`, (to - from) * 12, (0.1 - 0.06 * ratio) * rt * (ES / i.Fyf), "in", "AASHTO Eq. B6.2.4-1");
+      let vu = 0;
+      let vcr = Infinity;
+      for (let q2 = 0; q2 <= 10; q2++) {
+        const Xq = from + ((to - from) * q2) / 10;
+        vu = Math.max(vu, strength(effects(Xq)).Vu);
+        vcr = Math.min(vcr, vcrAt(Xq));
+      }
+      req(`Shear from ${from.toFixed(1)} to ${to.toFixed(1)} ft, Vu ≤ φv Vcr`, vu, PHI_V * vcr, "kip", "AASHTO Eq. B6.2.5-1");
+    }
+    req("Bearing stiffeners at the pier", i.bearing.use ? 0 : 1, 0, "", "AASHTO B6.2.6");
+    const qualifies = reqs.every((r) => r.demand <= r.capacity + 1e-9);
+    // Mn: Appendix A6 where it applies, else Fnc Sxc and Fnt Sxt by 6.10.8 (B6.5).
+    const Sxc = ns.ym.Myc / i.Fyf;
+    const Sxt = ns.ym.Myt / i.Fyf;
+    const f = flangeFnc({ bfc: p.bottom.b, tfc: p.bottom.t, Dc, tw: p.tw, Fyc: i.Fyf, Fyw: i.Fyw, Lb: (Math.max(X - a, b - X)) * 12, Cb: ns.Cb, Rb: webRb(Dc, p.tw, p.bottom.b, p.bottom.t, i.Fyf), Rh: ns.Rh });
+    const useA6 = i.appendixA6 && a6.applicable;
+    const Mn = useA6 ? Math.min(a6.Mnc, a6.Mnt) : Math.min(f.Fnc * Sxc, ns.Rh * i.Fyf * Sxt); // kip·in
+    const stiffClose = i.stiffeners.some((z) => z.spacing > 0 && z.spacing <= p.D / 2 && z.from * 12 <= X * 12 - p.D / 2 && z.to * 12 >= X * 12 + p.D / 2);
+    const enhanced = stiffClose || (2 * pm.Dcp) / p.tw <= 2.3 * sq;
+    const Mpe = effectivePlasticMoment({ Mn, D: p.D, bfc: p.bottom.b, tfc: p.bottom.t, Fyc: i.Fyf, enhanced });
+    const rd = redistributionMoment(Me * 12, Mpe.strength, PHI_F);
+    const rdSvc = redistributionMoment(MeSvc * 12, Mpe.service, 1);
+    // Service II regions not checked: from the pier to the nearest flange transition or permanent-load contraflexure, each side.
+    const towards = (dir: -1 | 1) => {
+      let Xq = X;
+      for (let q2 = 0; q2 < 400; q2++) {
+        const nx = Xq + dir * 0.25;
+        if (nx <= 0 || nx >= total || segAt(nx) !== k || longLine.beam.uniformAll(located(nx).s, located(nx).x).M >= 0) break;
+        Xq = nx;
+      }
+      return Xq;
+    };
+    return { pier, X, a, b, bfc: p.bottom.b, tfc: p.bottom.t, D: p.D, Me, MeSvc, reqs, qualifies, useA6, a6, Mn, enhanced, Mpe, Mrd: rd.Mrd / 12, MrdRaw: rd.raw / 12, MrdSvc: rdSvc.Mrd / 12, serviceRegion: [towards(-1), towards(1)] as [number, number], Myc: ns.ym.Myc / 12, Myt: ns.ym.Myt / 12, Mp: pm.Mp / 12, Dc, Dcp: pm.Dcp };
+  });
+  const b6Active = i.redistribution && piersB6.length > 0 && piersB6.every((q) => q.qualifies);
+  /** The redistribution moment at X (kip·ft, sagging +): straight lines between the piers' values, zero at the abutments (B6.3.3.2, B6.4.2.2). */
+  const mrdAt = (X: number, svc = false) => {
+    if (!b6Active) return 0;
+    const v = [0, ...piersB6.map((q) => (svc ? q.MrdSvc : q.Mrd)), 0];
+    const { s, x } = located(X);
+    return v[s] + ((v[s + 1] - v[s]) * x) / spans[s];
+  };
+  const nearPier = (X: number) => b6Active && piersB6.some((q) => X >= q.a - 1e-6 && X <= q.b + 1e-6);
+  const inServiceRegion = (X: number) => b6Active && piersB6.some((q) => q.MrdSvc > 0 && X >= q.serviceRegion[0] - 1e-6 && X <= q.serviceRegion[1] + 1e-6);
+
+  // --- The deck's pour sequence (6.10.3.4): each pour's wet concrete on the girder as it then is, steel where
+  // the deck is still wet, short-term composite (n) where earlier pours have hardened (6.10.1.1.1d) ---
+  const pours = [...i.pours].filter((q) => q.to > q.from).sort((a, b) => a.order - b.order);
+  const wetDeck = L.mode === "entered" ? dc1Deck : ((i.deckT / 12) * deckWidth * i.wcDeck) / i.nGirders + (i.haunch / 12) * (avgTop / 12) * i.wcDeck; // klf
+  const pourStages = pours.map((q, n) => {
+    const hardened = (X: number) => pours.slice(0, n).some((h) => X >= h.from - 1e-9 && X <= h.to + 1e-9);
+    const line = nonprismaticBeam(spans, (X: number) => (ES * prop(segAt(Math.min(Math.max(X, 1e-6), total - 1e-6)), hardened(X) ? "n" : "steel").I) / 144, 80, camberAt);
+    const w = (X: number) => (X >= q.from - 1e-9 && X <= q.to + 1e-9 ? wetDeck : 0);
+    return { pour: q, n, hardened, line, w };
+  });
+
+  const stations: SteelStation[] = [];
+  const worst: Record<string, { ratio: number; at: SteelStation | null; demand: number; capacity: number; note: string }> = {};
+  const record = (id: string, st: SteelStation, demand: number, capacity: number, note = "") => {
+    const ratio = capacity > 0 ? demand / capacity : demand > 0 ? Infinity : 0;
+    st.ratios[id] = ratio;
+    if (!worst[id] || ratio > worst[id].ratio) worst[id] = { ratio, at: st, demand, capacity, note };
+  };
+
+  for (const X of [...pts].sort((a, b) => a - b)) {
+    const e = effects(X);
+    const k = e.k;
+    const seg = i.segments[k];
+    const p = plates(seg);
+    const sf = strength(e);
+    const st: SteelStation = { X, span: e.s, x: e.x, seg: k, M: e.M, V: e.V, dfM: e.dfM, dfV: e.dfV, negativeRegion: e.negativeRegion, Mpos: sf.pos, Mneg: sf.neg, Vu: sf.Vu, ratios: {} };
+    stations.push(st);
+    const deck = deckFor(seg);
+    const steel = prop(k, "steel");
+    const Rh = hybridRh(p.D * p.tw, Math.min(p.top.b * p.top.t, p.bottom.b * p.bottom.t), Math.max(steel.yNA - p.bottom.t, steel.depth - p.top.t - steel.yNA), p.tw, i.Fyw, i.Fyf);
+
+    // --- Strength I, positive flexure (6.10.7), with any redistribution moment (B6.4.1.2) ---
+    const mrd = mrdAt(X);
+    if (sf.pos + mrd > 0 && e.M.llPos > 0) {
+      const MuPos = sf.pos + mrd;
+      const pm = plasticMoment(seg, deck, true, i.Fyw, i.Fyf);
+      const compact = i.Fyf <= 70 && p.D / p.tw <= 150 && (2 * pm.Dcp) / p.tw <= 3.76 * Math.sqrt(ES / i.Fyf);
+      // Yield moment (D6.2.2): the factored dead loads on their sections, the live load the rest, the first flange to yield.
+      const M1 = g(e.M.dc1, true, 1.25, 0.9) * e.M.dc1 * 12;
+      const M2 = (g(e.M.dc2, true, 1.25, 0.9) * e.M.dc2 + g(e.M.dw, true, 1.5, 0.65) * e.M.dw) * 12;
+      const nc = prop(k, "steel");
+      const lt = prop(k, "3n");
+      const sh = prop(k, "n");
+      const MAD = Math.min((i.Fyf - M1 / nc.Sbot - M2 / lt.Sbot) * sh.Sbot, (i.Fyf - M1 / nc.Stop - M2 / lt.Stop) * sh.Stop);
+      const My = (M1 + M2 + MAD) / 12;
+      if (compact) {
+        const Mp = pm.Mp / 12;
+        let Mn = pm.Dp <= 0.1 * pm.Dt ? Mp : Mp * (1.07 - (0.7 * pm.Dp) / pm.Dt);
+        const capped = spans.length > 1 && !b6Active && Mn > 1.3 * Rh * My;
+        if (capped) Mn = 1.3 * Rh * My; // 6.10.7.1.2-3 (no moment redistribution)
+        record("flex-pos", st, MuPos, PHI_F * Mn, `compact; Mp ${Mp.toFixed(0)} kip·ft, Dp/Dt ${(pm.Dp / pm.Dt).toFixed(3)}${capped ? ", limited to 1.3RhMy" : ""}${mrd > 0 ? `; Mrd ${mrd.toFixed(0)} kip·ft added (B6.4.1.2)` : ""}`);
+      } else {
+        const fs = stress(k, [
+          { M: g(e.M.dc1, true, 1.25, 0.9) * e.M.dc1 * eta, stage: "steel" },
+          { M: (g(e.M.dc2, true, 1.25, 0.9) * e.M.dc2 + g(e.M.dw, true, 1.5, 0.65) * e.M.dw) * eta + mrd, stage: "3n" },
+          { M: 1.75 * e.M.llPos * eta, stage: "n" },
+        ]);
+        record("flex-pos-c", st, fs.top, PHI_F * Rh * i.Fyf, "noncompact: compression flange, Rb = 1");
+        record("flex-pos-t", st, -fs.bot, PHI_F * Rh * i.Fyf, "noncompact: tension flange");
+      }
+      record("ductility", st, pm.Dp, 0.42 * pm.Dt, "Dp ≤ 0.42 Dt");
+    }
+
+    // --- Strength I, negative flexure (6.10.8): the bottom flange discretely braced, the top continuously by the deck ---
+    // Within the unbraced lengths next to a pier whose moment is redistributed, flexure isn't checked (B6.4.1.1).
+    if (sf.neg + mrd < 0 && e.M.llNeg < 0 && !nearPier(X)) {
+      const [a, b] = unbraced(X);
+      const Lb = (b - a) * 12;
+      const ns = i.appendixA6 ? negSection(k, X, a, b) : null;
+      if (ns && ns.a6.applicable && ns.prismatic) {
+        // Appendix A6: the moment format, Mu ≤ φf Mnc (A6.1.1) and, the top flange braced by the deck, Mu ≤ φf Rpt Myt (A6.1.4).
+        const Mu = Math.abs(sf.neg + mrd);
+        record("flex-neg-a6c", st, Mu, (PHI_F * ns.a6.Mnc) / 12, `Mnc by ${ns.a6.governs}; ${ns.a6.compact ? "compact" : "noncompact"} web, Rpc ${ns.a6.Rpc.toFixed(3)}; Lb ${(Lb / 12).toFixed(1)} ft, Cb ${ns.Cb.toFixed(2)}${mrd > 0 ? `; Mrd ${mrd.toFixed(0)} kip·ft` : ""}`);
+        record("flex-neg-a6t", st, Mu, (PHI_F * ns.a6.Mnt) / 12, `Rpt ${ns.a6.Rpt.toFixed(3)}, Myt ${(ns.ym.Myt / 12).toFixed(0)} kip·ft`);
+      } else {
+        const parts = [
+          { M: g(e.M.dc1, false, 1.25, 0.9) * e.M.dc1 * eta, stage: "steel" as Stage },
+          { M: (g(e.M.dc2, false, 1.25, 0.9) * e.M.dc2 + g(e.M.dw, false, 1.5, 0.65) * e.M.dw + 1.75 * e.M.llNeg) * eta + mrd, stage: "bars" as Stage },
+        ];
+        const fs = stress(k, parts);
+        const fbu = fs.bot; // compression in the bottom flange
+        const bars = prop(k, "bars");
+        const Dc = Math.max(0, bars.yNA - p.bottom.t);
+        const Rb = webRb(Dc, p.tw, p.bottom.b, p.bottom.t, i.Fyf);
+        const Cb = cbNeg(a, b, X);
+        const f = flangeFnc({ bfc: p.bottom.b, tfc: p.bottom.t, Dc, tw: p.tw, Fyc: i.Fyf, Fyw: i.Fyw, Lb, Cb, Rb, Rh });
+        const why = i.appendixA6 && ns ? (!ns.a6.applicable ? `; Appendix A6 doesn't apply: ${ns.a6.reasons.join(", ")}` : "; Appendix A6 not used: the unbraced length isn't prismatic") : "";
+        record("flex-neg-c", st, fbu, PHI_F * f.Fnc, `Fnc by ${f.governs}; Lb ${(Lb / 12).toFixed(1)} ft, Cb ${Cb.toFixed(2)}, Rb ${Rb.toFixed(3)}${mrd > 0 ? `; Mrd ${mrd.toFixed(0)} kip·ft` : ""}${why}`);
+        record("flex-neg-t", st, -fs.top, PHI_F * Rh * i.Fyf, "tension flange (continuously braced by the deck), Eq. 6.10.8.1.3-1");
+      }
+    }
+
+    // --- Strength I, shear (6.10.9) ---
+    {
+      const Vp = 0.58 * i.Fyw * p.D * p.tw;
+      const zone = i.stiffeners.find((z) => X >= z.from - 1e-9 && X <= z.to + 1e-9 && z.spacing > 0 && z.spacing <= 3 * p.D);
+      let Vn: number;
+      let note: string;
+      let Vcr: number;
+      let interiorPanel = false;
+      if (!zone) {
+        const C = shearC(p.D, p.tw, i.Fyw, 5);
+        Vn = C * Vp;
+        Vcr = Vn;
+        note = `unstiffened, C ${C.toFixed(3)}`;
+      } else {
+        const d0 = zone.spacing;
+        const kk = 5 + 5 / (d0 / p.D) ** 2;
+        const C = shearC(p.D, p.tw, i.Fyw, kk);
+        Vcr = C * Vp;
+        const endPanel = X * 12 <= d0 + 1e-6 || (total - X) * 12 <= d0 + 1e-6;
+        interiorPanel = !endPanel;
+        if (endPanel) {
+          Vn = C * Vp;
+          note = `end panel, do ${d0} in, C ${C.toFixed(3)}`;
+        } else {
+          const ratio = (2 * p.D * p.tw) / (p.top.b * p.top.t + p.bottom.b * p.bottom.t);
+          Vn = ratio <= 2.5 ? Vp * (C + (0.87 * (1 - C)) / Math.sqrt(1 + (d0 / p.D) ** 2)) : Vp * (C + (0.87 * (1 - C)) / (Math.sqrt(1 + (d0 / p.D) ** 2) + d0 / p.D));
+          note = `stiffened interior panel, do ${d0} in, ${ratio <= 2.5 ? "Eq. 6.10.9.3.2-2" : "Eq. 6.10.9.3.2-8"}`;
+        }
+      }
+      record("shear", st, sf.Vu, PHI_V * Vn, note);
+      st.shear = { Vcr, Vn, zone: zone ? i.stiffeners.indexOf(zone) : -1, interiorPanel };
+    }
+
+    // --- Fatigue (6.10.5, 6.6.1.2): the welded attachments at the flanges' inner faces; the web (6.10.5.3) ---
+    if (i.fatigue.check || i.studs.check) {
+      const fat = fatigueAt(X);
+      const cycles = cyclesPerTruck(spans, e.s, e.x);
+      st.fatigue = { Mmax: fat.Mmax, Mmin: fat.Mmin, Vmax: fat.Vmax, Vmin: fat.Vmin, cycles };
+      if (i.fatigue.check) {
+        // Deck effective in negative flexure too where studs run throughout with the 6.10.1.7 bars (6.6.1.2.1).
+        const negStage: Stage = i.studsThroughout && i.bars.pct >= 1 ? "n" : "bars";
+        const permNeg: Stage = i.studsThroughout && i.bars.pct >= 1 ? "3n" : "bars";
+        /** Tension (+) at a flange's inner face from a moment on a section. */
+        const faceStress = (M: number, stage: Stage, face: "top" | "bot") => {
+          const sp = prop(k, stage);
+          const c = face === "bot" ? sp.yNA - p.bottom.t : -(sp.depth - p.top.t - sp.yNA);
+          return (M * 12 * c) / sp.I;
+        };
+        const live = (M: number, face: "top" | "bot") => faceStress(M, M >= 0 ? "n" : negStage, face);
+        for (const face of ["bot", "top"] as const) {
+          const fMax = live(fat.Mmax, face);
+          const fMin = live(fat.Mmin, face);
+          const range = Math.abs(fMax - fMin);
+          const perm = faceStress(e.M.dc1, "steel", face) + faceStress(e.M.dc2 + e.M.dw, e.M.dc2 + e.M.dw >= 0 ? "3n" : permNeg, face);
+          const llTension = FATIGUE_I * Math.max(0, fMax, fMin);
+          if (perm < 0 && -perm >= llTension) continue; // net compression: no fatigue (6.6.1.2.1)
+          const attach = e.negativeRegion ? i.fatigue.flangeNeg : i.fatigue.flange;
+          const cats: FatigueCategory[] = face === "top" && i.studs.check ? [attach, "C"] : [attach];
+          let worstHere: { demand: number; capacity: number; note: string; cat: FatigueCategory } | null = null;
+          for (const cat of cats) {
+            const r = fatigueResistance(FATIGUE_CATEGORIES[cat], i.fatigue.adttSL, cycles, i.fatigue.life);
+            const cand = { demand: r.gamma * range, capacity: r.Fn, cat, note: `category ${cat}${cat === "C" && cats.length > 1 ? " (studs)" : ""}, ${r.combo}, n ${cycles}` };
+            if (!worstHere || cand.demand / cand.capacity > worstHere.demand / worstHere.capacity) worstHere = cand;
+          }
+          st.fatigue![face] = { fMax, fMin, cat: worstHere!.cat };
+          record(face === "bot" ? "fat-bot" : "fat-top", st, worstHere!.demand, worstHere!.capacity, worstHere!.note);
+        }
+        // The web's special fatigue requirement (6.10.5.3): interior panels of stiffened webs, Vu ≤ Vcr.
+        if (st.shear?.interiorPanel) {
+          const Vperm = e.V.dc1 + e.V.dc2 + e.V.dw;
+          const Vu = Math.abs(Vperm) + FATIGUE_I * (Vperm >= 0 ? fat.Vmax : -fat.Vmin);
+          record("fat-web", st, Vu, st.shear.Vcr, "Eq. 6.10.5.3-1");
+        }
+      }
+      // Stud pitch for fatigue (6.10.10.1.2): the shear range on the short-term composite section.
+      if (i.studs.check) {
+        const sr = studResistance(i.studs, i.fatigue.adttSL, cycles, i.fatigue.life);
+        const sp = prop(k, "n");
+        const deck = deckFor(seg);
+        const Ad = (deck.beff * ts) / n;
+        const Q = Ad * (sp.depth + deck.haunch + ts / 2 - sp.yNA);
+        const Vf = sr.gamma * (fat.Vmax - fat.Vmin);
+        const pf = studPitchForFatigue(i.studs.perRow, sr.Zr, Vf, Q, sp.I);
+        st.fatigue.stud = { Q, I: sp.I };
+        record("stud-fat", st, pitchAt(X), pf.pitch, `${sr.combo}, Zr ${sr.Zr.toFixed(2)} kip, Vsr ${pf.Vsr.toFixed(3)} kip/in, n ${cycles}`);
+      }
+    }
+
+    // --- Constructibility (6.10.3): the deck placed on the steel girder, Strength I (with any construction live load) or IV ---
+    {
+      const cll = (i.constructionLL / 1000) * i.S;
+      const MDC1 = e.M.dc1;
+      const MC = cll > 0 ? steelLine.beam.uniformAll(e.s, e.x, cll).M : 0;
+      const VC = cll > 0 ? steelLine.beam.uniformAll(e.s, e.x, cll).V : 0;
+      const Mc = Math.abs(1.25 * MDC1 + 1.5 * MC) > Math.abs(1.5 * MDC1) ? 1.25 * MDC1 + 1.5 * MC : 1.5 * MDC1;
+      const Vc = Math.max(Math.abs(1.25 * e.V.dc1 + 1.5 * VC), Math.abs(1.5 * e.V.dc1));
+      const fs = stress(k, [{ M: Mc * eta, stage: "steel" }]);
+      const topComp = Mc >= 0;
+      const fbu = topComp ? fs.top : fs.bot;
+      const fbt = topComp ? -fs.bot : -fs.top;
+      const flc = i.flConstruction;
+      const cf = topComp ? p.top : p.bottom;
+      const Dc = topComp ? Math.max(0, steel.depth - p.top.t - steel.yNA) : Math.max(0, steel.yNA - p.bottom.t);
+      const [a, b] = unbraced(X);
+      const Lb = (b - a) * 12;
+      const McAt = (Xq: number) => {
+        const q = effects(Math.min(total, Math.max(0, Xq)));
+        return 1.5 * q.M.dc1;
+      };
+      const Mq = [McAt(a + (b - a) / 4), McAt(a + (b - a) / 2), McAt(a + (3 * (b - a)) / 4)];
+      const sameSign = (m: number) => (topComp ? Math.max(0, m) : Math.min(0, m));
+      const Mmax = [McAt(a + 1e-3), McAt(b - 1e-3), ...Mq, Mc].reduce((m, v) => (Math.abs(sameSign(v)) > Math.abs(m) ? sameSign(v) : m), 0);
+      const Cb = momentGradientCb(Mmax, sameSign(Mq[0]), sameSign(Mq[1]), sameSign(Mq[2]));
+      const f = flangeFnc({ bfc: cf.b, tfc: cf.t, Dc, tw: p.tw, Fyc: i.Fyf, Fyw: i.Fyw, Lb, Cb, Rb: 1, Rh });
+      if (fbu > 0) {
+        if (!pours.length) record("con-yield", st, fbu + flc, PHI_F * Rh * i.Fyf, `${topComp ? "top" : "bottom"} flange, Eq. 6.10.3.2.1-1`);
+        if (!pours.length) record("con-fnc", st, fbu + flc / 3, PHI_F * f.Fnc, `${topComp ? "top" : "bottom"} flange, Fnc by ${f.governs}; Lb ${(Lb / 12).toFixed(1)} ft, Cb ${Cb.toFixed(2)}`);
+        record("con-web", st, fbu, PHI_F * webFcrw(p.D, p.tw, Dc, Rh, i.Fyf, i.Fyw), "web bend-buckling, Eq. 6.10.3.2.1-3");
+      }
+      if (fbt > 0 && !pours.length) record("con-tension", st, fbt + flc, PHI_F * Rh * i.Fyf, `${topComp ? "bottom" : "top"} flange, Eq. 6.10.3.2.2-1`);
+      const Vcr = shearC(p.D, p.tw, i.Fyw, (() => {
+        const zone = i.stiffeners.find((z) => X >= z.from - 1e-9 && X <= z.to + 1e-9 && z.spacing > 0 && z.spacing <= 3 * p.D);
+        return zone ? 5 + 5 / (zone.spacing / p.D) ** 2 : 5;
+      })()) * 0.58 * i.Fyw * p.D * p.tw;
+      record("con-shear", st, Vc * eta, PHI_V * Vcr, "Eq. 6.10.3.3-1");
+    }
+
+    // --- Service II (6.10.4.2): 1.0 DC + 1.0 DW + 1.3 LL ---
+    for (const sign of [1, -1] as const) {
+      const ll = sign > 0 ? e.M.llPos : e.M.llNeg;
+      if (!(Math.abs(ll) > 0)) continue;
+      const negative = sign < 0;
+      const composite: Stage = negative && !i.studsThroughout ? "bars" : "3n";
+      const short: Stage = negative && !i.studsThroughout ? "bars" : "n";
+      const fs = stress(k, [
+        { M: e.M.dc1, stage: "steel" },
+        { M: e.M.dc2 + e.M.dw, stage: composite },
+        { M: 1.3 * ll, stage: short },
+      ]);
+      // Redistribution at service (B6.3.2): the flange limits not checked from a pier to the nearest flange
+      // transition or permanent-load contraflexure; elsewhere the redistribution moment is added, on the long-term section.
+      const mrdS = mrdAt(X, true);
+      const fr = mrdS ? stress(k, [{ M: mrdS, stage: composite }]) : { top: 0, bot: 0 };
+      if (!inServiceRegion(X)) {
+        record("svc-top", st, Math.abs(fs.top + fr.top), 0.95 * Rh * i.Fyf, `${negative ? "negative" : "positive"} moment, Eq. 6.10.4.2.2-1${mrdS ? `; Mrd ${mrdS.toFixed(0)} kip·ft` : ""}`);
+        record("svc-bot", st, Math.abs(fs.bot + fr.bot), 0.95 * Rh * i.Fyf, `${negative ? "negative" : "positive"} moment, Eq. 6.10.4.2.2-2${mrdS ? `; Mrd ${mrdS.toFixed(0)} kip·ft` : ""}`);
+      }
+      // Web bend-buckling at service (Eq. 6.10.4.2.2-4): all sections but composite ones in positive flexure with D/tw ≤ 150.
+      if (negative || p.D / p.tw > 150) {
+        const fc = negative ? fs.bot : fs.top; // compression flange
+        const ft = negative ? -fs.top : -fs.bot;
+        if (fc > 0) {
+          const Dc = Math.max(0, (fc / (fc + Math.max(0, ft))) * steel.depth - (negative ? p.bottom.t : p.top.t)); // D6.3.1
+          record("svc-web", st, fc, webFcrw(p.D, p.tw, Dc, Rh, i.Fyf, i.Fyw), "web bend-buckling, Eq. 6.10.4.2.2-4");
+        }
+      }
+    }
+  }
+
+  // --- Cross-section proportions (6.10.2) and the deck's negative-flexure bars (6.10.1.7) ---
+  const proportions = i.segments.map((s, k) => {
+    const p = plates(s);
+    const Iyt = (p.top.t * p.top.b ** 3) / 12;
+    const Iyb = (p.bottom.t * p.bottom.b ** 3) / 12;
+    return {
+      k,
+      Dtw: p.D / p.tw,
+      bf2tf: Math.max(p.top.b / (2 * p.top.t), p.bottom.b / (2 * p.bottom.t)),
+      bfMin: Math.min(p.top.b, p.bottom.b),
+      tfMin: Math.min(p.top.t, p.bottom.t),
+      Iy: Math.min(Iyt / Iyb, Iyb / Iyt),
+      D: p.D,
+      tw: p.tw,
+    };
+  });
+
+  // --- Live load deflection (2.5.2.6.2): all lanes loaded, the girders deflecting equally; the truck, or 25% of it with the lane ---
+  const lanes = Math.max(1, Math.floor(roadway / 12));
+  const mpf = lanes <= 1 ? 1.2 : lanes === 2 ? 1 : lanes === 3 ? 0.85 : 0.65;
+  const dfDefl = (lanes * mpf) / i.nGirders;
+  const deflections = i.deflection.check
+    ? spans.map((Ls, j) => {
+        let best = 0;
+        for (let r = 3 * j; r < 3 * j + 3; r++) {
+          const il = (X: number) => shortLine.deflectionIL(r, X) * 12; // in per kip
+          let truck = 0;
+          for (const rear of [14, 30])
+            for (let pos = -50; pos <= total + 50; pos += 0.5)
+              for (const dir of [1, -1]) {
+                const ax = [
+                  [8, 0],
+                  [32, 14],
+                  [32, 14 + rear],
+                ];
+                let d = 0;
+                for (const [P, dd] of ax) {
+                  const at = pos + dir * dd;
+                  if (at > 0 && at < total) d += P * il(at);
+                }
+                truck = Math.max(truck, d);
+              }
+          let lane = 0;
+          const h = total / 1200;
+          for (let q = 0; q < 1200; q++) lane += Math.max(0, il((q + 0.5) * h)) * 0.64 * h;
+          const d = dfDefl * Math.max(truck * (1 + i.IM), 0.25 * truck * (1 + i.IM) + lane);
+          best = Math.max(best, d);
+        }
+        return { span: j, deflection: best, limit: (Ls * 12) / i.deflection.limit };
+      })
+    : [];
+
+  // --- Reactions per girder: the dead loads from the supports' shears; the live load from each support's
+  // reaction influence line (the truck or tandem with IM, the lane where the line is positive, and at a pier
+  // 90% of two trucks with 90% of the lane, 3.6.1.3.1), by the span's shear distribution factor ---
+  const reactions = Array.from({ length: spans.length + 1 }, (_, sup) => {
+    const left = sup > 0 ? effectsRaw(starts[sup - 1] + spans[sup - 1], { s: sup - 1, x: spans[sup - 1] }) : null;
+    const right = sup < spans.length ? effectsRaw(starts[sup], { s: sup, x: 0 }) : null;
+    const dead = (f: (e: ReturnType<typeof effectsRaw>) => number) => (left ? -f(left) : 0) + (right ? f(right) : 0);
+    const ilL = sup > 0 ? shortLine.beam.influence(sup - 1, spans[sup - 1], "V") : null;
+    const ilR = sup < spans.length ? shortLine.beam.influence(sup, 0, "V") : null;
+    const il = (X: number) => (ilR ? ilR(X, -1) : 0) - (ilL ? ilL(X, 1) : 0);
+    const df = Math.max(sup > 0 ? spanDF[sup - 1].shear : 0, sup < spans.length ? spanDF[sup].shear : 0);
+    const groups: [number, number][][] = [];
+    for (const rear of [14, 16, 18, 20, 22, 24, 26, 28, 30]) groups.push([[8, 0], [32, 14], [32, 14 + rear]]);
+    groups.push([[25, 0], [25, 4]]);
+    const best = (axles: [number, number][]) => {
+      let top = 0;
+      for (let pos = -80; pos <= total + 80; pos += 0.5)
+        for (const dir of [1, -1]) {
+          let r = 0;
+          for (const [P, d] of axles) {
+            const Xq = pos + dir * d;
+            if (Xq >= 0 && Xq <= total) r += P * il(Xq);
+          }
+          top = Math.max(top, r);
+        }
+      return top;
+    };
+    let truck = Math.max(...groups.map(best));
+    let lane = 0;
+    const h = total / 2000;
+    for (let q = 0; q < 2000; q++) lane += Math.max(0, il((q + 0.5) * h)) * 0.64 * h;
+    if (sup > 0 && sup < spans.length) {
+      let pair = 0;
+      for (let gap = 50; gap <= Math.min(250, total); gap += 2) pair = Math.max(pair, best([[8, 0], [32, 14], [32, 28], [8, 28 + gap], [32, 42 + gap], [32, 56 + gap]]));
+      if (0.9 * (pair * (1 + i.IM) + lane) > truck * (1 + i.IM) + lane) {
+        truck = 0.9 * pair;
+        lane = 0.9 * lane;
+      }
+    }
+    return { support: sup, dc: dead((e) => e.V.dc1 + e.V.dc2), dw: dead((e) => e.V.dw), truck: df * truck * (1 + i.IM), lane: df * lane, df };
+  });
+
+  // --- Camber (6.7.2): downward deflections (in) of each dead load on the section that carries it ---
+  const deflect = (line: typeof steelLine, r: number, w: (X: number) => number) => {
+    const N = 900;
+    const h = total / N;
+    let d = 0;
+    for (let q = 0; q < N; q++) {
+      const X = (q + 0.5) * h;
+      d += w(X) * line.deflectionIL(r, X) * h;
+    }
+    return d * 12;
+  };
+  // --- The deck's pour sequence: the flanges and the hardened deck at each stage ---
+  const pourResults: { stage: number; X: number; top: number; bot: number; deck: number }[] = [];
+  if (pours.length) {
+    const fr = 0.24 * Math.sqrt(i.fcDeck); // 5.4.2.6
+    const gamma = 1.5; // the deck placed: 1.5 DC on the noncomposite girder, as for the single pour above
+    for (const st of stations) {
+      const k = st.seg;
+      const p = plates(i.segments[k]);
+      const sSteel = prop(k, "steel");
+      const sN = prop(k, "n");
+      const { s, x } = { s: st.span, x: st.x };
+      // Stage 0: the steel and the forms, stay-in-place forms and other DC1 besides the wet deck, on the steel.
+      const m0 = deadAt(steelLine, s, x, Math.max(0, dc1Deck - wetDeck), wSteel).M * gamma;
+      let top = (m0 * 12) / sSteel.Stop; // + compression in the top flange
+      let bot = (-m0 * 12) / sSteel.Sbot;
+      let deckT = 0; // ksi, + tension at the deck's top where it has hardened
+      for (const sg of pourStages) {
+        const M = deadAt(sg.line, s, x, 0, sg.w).M * gamma;
+        const sec = sg.hardened(st.X) ? sN : sSteel;
+        top += (M * 12) / sec.Stop;
+        bot -= (M * 12) / sec.Sbot;
+        if (sg.hardened(st.X)) deckT += (-M * 12 * (sN.depth - sN.yNA)) / (sN.I * n);
+        pourResults.push({ stage: sg.n + 1, X: st.X, top, bot, deck: deckT });
+        // Constructibility of the noncomposite flanges at this stage (6.10.3.4.1): the steel section's resistance.
+        const wet = !sg.hardened(st.X); // the top flange still bare or under wet concrete
+        const [a, b] = unbraced(st.X);
+        const Lb = (b - a) * 12;
+        const Dc = top > 0 ? Math.max(0, sSteel.depth - p.top.t - sSteel.yNA) : Math.max(0, sSteel.yNA - p.bottom.t);
+        const tag = `pour ${sg.n + 1} (${sg.pour.from}–${sg.pour.to} ft)`;
+        if (top > 0 && wet) {
+          const f = flangeFnc({ bfc: p.top.b, tfc: p.top.t, Dc, tw: p.tw, Fyc: i.Fyf, Fyw: i.Fyw, Lb, Cb: 1, Rb: 1, Rh: 1 });
+          record("pour-yield", st, top + i.flConstruction, PHI_F * i.Fyf, `top flange, ${tag}`);
+          record("pour-fnc", st, top + i.flConstruction / 3, PHI_F * f.Fnc, `top flange, ${tag}; Fnc by ${f.governs}, Lb ${(Lb / 12).toFixed(1)} ft, Cb 1`);
+        }
+        if (bot > 0) {
+          const f = flangeFnc({ bfc: p.bottom.b, tfc: p.bottom.t, Dc, tw: p.tw, Fyc: i.Fyf, Fyw: i.Fyw, Lb, Cb: 1, Rb: 1, Rh: 1 });
+          record("pour-yield", st, bot, PHI_F * i.Fyf, `bottom flange, ${tag}`);
+          record("pour-fnc", st, bot, PHI_F * f.Fnc, `bottom flange, ${tag}; Fnc by ${f.governs}, Lb ${(Lb / 12).toFixed(1)} ft, Cb 1`);
+        }
+        record("pour-tension", st, Math.max(-top, -bot, 0), PHI_F * i.Fyf, `tension flange, ${tag}`);
+        if (deckT > 0) record("pour-deck", st, deckT, fr, `hardened deck, ${tag}; fr = 0.24√f'c`);
+      }
+    }
+  }
+
+  const camber = camberAt.map((X, r) => {
+    const { s, x } = located(X);
+    const steelW = deflect(steelLine, r, wSteel);
+    // The deck's deflection: all at once on the steel, or pour by pour on the girder as it then is.
+    const deck = pours.length ? deflect(steelLine, r, () => Math.max(0, dc1Deck - wetDeck)) + pourStages.reduce((d, sg) => d + deflect(sg.line, r, sg.w), 0) : deflect(steelLine, r, () => dc1Deck);
+    const dc2D = deflect(longLine, r, () => dc2);
+    const dwD = deflect(longLine, r, () => dw);
+    return { X, span: s, at: x / spans[s], steel: steelW, deck, dc2: dc2D, dw: dwD, total: steelW + deck + dc2D };
+  });
+
+  // --- Shear connectors for strength (6.10.10.4): from each span's point of the most positive live load
+  // moment to the adjacent end (Pp) or pier centerline (Pp + Pn, the deck composite in negative flexure) ---
+  const studStrength: { span: number; side: "left" | "right"; length: number; P: number; required: number; provided: number }[] = [];
+  const studGeometry: { name: string; demand: number; capacity: number; unit: string; ref: string; advisory?: boolean }[] = [];
+  if (i.studs.check) {
+    const Qr = studResistance(i.studs, i.fatigue.adttSL, 1, i.fatigue.life).Qr;
+    const steelForce = (k: number) => {
+      const p = plates(i.segments[k]);
+      return i.Fyw * p.D * p.tw + i.Fyf * (p.top.b * p.top.t + p.bottom.b * p.bottom.t);
+    };
+    spans.forEach((Ls, j) => {
+      const inSpan = stations.filter((s) => s.span === j);
+      const best = inSpan.reduce((b, s) => (s.M.llPos > b.M.llPos ? s : b), inSpan[0]);
+      const Pp = Math.min(0.85 * i.fcDeck * beff * ts, steelForce(best.seg));
+      for (const side of ["left", "right"] as const) {
+        const pier = side === "left" ? j > 0 : j < spans.length - 1;
+        const length = side === "left" ? best.x : Ls - best.x; // ft
+        let P = Pp;
+        if (pier && i.studsThroughout) {
+          const k = segAt(side === "left" ? starts[j] : starts[j] + Ls);
+          P = Pp + Math.min(steelForce(k), 0.45 * i.fcDeck * beff * ts);
+        }
+        const from = side === "left" ? starts[j] : starts[j] + best.x;
+        const provided = i.studs.perRow * rowsOver(from, from + length);
+        studStrength.push({ span: j, side, length, P, required: P / Qr, provided });
+      }
+    });
+    const lim = studPitchLimits(i.studs.d, Math.min(...i.segments.map((s) => plates(s).D)));
+    const pitches = [i.studs.pitch, ...i.studs.zones.filter((z) => z.pitch > 0).map((z) => z.pitch)];
+    studGeometry.push({ name: "Shear connectors: pitch at most the limit", demand: Math.max(...pitches), capacity: lim.max, unit: "in", ref: "AASHTO 6.10.10.1.2" });
+    studGeometry.push({ name: "Shear connectors: pitch at least 4 diameters", demand: lim.min, capacity: Math.min(...pitches), unit: "in", ref: "AASHTO 6.10.10.1.2" });
+    // Where the deck isn't composite over the piers: extra connectors at the points of permanent-load
+    // contraflexure to develop the bars' fatigue force, nac = As fsr / Zr (6.10.10.3).
+    if (!i.studsThroughout && spans.length > 1)
+      for (let p = 1; p < spans.length; p++) {
+        const X = starts[p];
+        const st = stations.reduce((b, s) => (Math.abs(s.X - X) < Math.abs(b.X - X) ? s : b), stations[0]);
+        if (!st.fatigue) continue;
+        const k = st.seg;
+        const sb = prop(k, "bars");
+        const deck = deckFor(i.segments[k]);
+        const As = deck.bars.reduce((s, b) => s + b.A, 0);
+        const pk = plates(i.segments[k]);
+        const yBars = deck.bars.reduce((s, b) => s + b.A * (pk.D + pk.top.t + pk.bottom.t + deck.haunch + b.y), 0) / Math.max(1e-9, As); // from the steel's bottom
+        const sr = studResistance(i.studs, i.fatigue.adttSL, st.fatigue.cycles, i.fatigue.life);
+        const fsr = (sr.gamma * (st.fatigue.Mmax - st.fatigue.Mmin) * 12 * Math.max(0, yBars - sb.yNA)) / sb.I;
+        const nac = (As * fsr) / sr.Zr;
+        const fit = i.studs.perRow * Math.floor(((2 * beff) / 3) / (4 * i.studs.d));
+        studGeometry.push({ name: `Shear connectors: extra at pier ${p}'s permanent-load contraflexure points, nac = As fsr / Zr, each within beff/3 of the point`, demand: nac, capacity: fit, unit: "studs", ref: "AASHTO Eq. 6.10.10.3-1", advisory: true });
+      }
+    const narrow = Math.min(...i.segments.map((s) => plates(s).top.b));
+    studGeometry.push({ name: "Shear connectors: studs across the narrowest top flange (4d apart, 1 in clear of its edges)", demand: i.studs.perRow, capacity: studsAcross(narrow, i.studs.d), unit: "", ref: "AASHTO 6.10.10.1.3" });
+    studGeometry.push({ name: "Shear connectors: height at least 5 diameters", demand: 5 * i.studs.d, capacity: i.studs.height, unit: "in", ref: "AASHTO 6.10.10.1.1" });
+    const above = Math.max(...i.segments.map((s) => deckFor(s).haunch)); // the deck's bottom above the top flange
+    const below = Math.min(...i.segments.map((s) => deckFor(s).haunch));
+    studGeometry.push({ name: "Shear connectors: penetration into the deck at least 2 in", demand: 2, capacity: i.studs.height - above, unit: "in", ref: "AASHTO 6.10.10.1.4", advisory: true });
+    studGeometry.push({ name: "Shear connectors: cover over the studs at least 2 in", demand: 2, capacity: i.deckT - (i.studs.height - below), unit: "in", ref: "AASHTO 6.10.10.1.4", advisory: true });
+  }
+
+  // --- Intermediate transverse stiffeners (6.10.11.1), per stiffened zone ---
+  const stiffenerChecks = i.stiffeners
+    .map((z, zi) => {
+      if (!(z.spacing > 0)) return null;
+      const inZone = stations.filter((s) => s.shear?.zone === zi);
+      if (!inZone.length) return null;
+      const segs = [...new Set(inZone.map((s) => s.seg))];
+      const ps = segs.map((k) => plates(i.segments[k]));
+      const D = Math.max(...ps.map((p) => p.D));
+      const tw = Math.min(...ps.map((p) => p.tw));
+      const bfMax = Math.max(...ps.flatMap((p) => [p.top.b, p.bottom.b]));
+      let rhoW = 0;
+      let tensionField = false;
+      for (const s of inZone) {
+        const sh = s.shear!;
+        if (s.Vu > PHI_V * sh.Vcr + 1e-9 && sh.Vn > sh.Vcr) {
+          tensionField = true;
+          rhoW = Math.max(rhoW, (s.Vu - PHI_V * sh.Vcr) / (PHI_V * sh.Vn - PHI_V * sh.Vcr));
+        }
+      }
+      return { zone: zi, from: z.from, to: z.to, spacing: z.spacing, tensionField, rhoW, D, tw, bfMax, ...transverseStiffener({ st: i.stiffener, D, tw, do: z.spacing, bfMax, Fyw: i.Fyw, rhoW, tensionField }) };
+    })
+    .filter((x): x is NonNullable<typeof x> => !!x);
+
+  // --- Bearing stiffeners at the supports (6.10.11.2), or the web at the bearing (D6.5) ---
+  const bearings = reactions.map((rc) => {
+    const X = rc.support === 0 ? 0 : starts[rc.support - 1] + spans[rc.support - 1];
+    const k = segAt(Math.min(Math.max(X, 1e-6), total - 1e-6));
+    const p = plates(i.segments[k]);
+    const end = rc.support === 0 || rc.support === spans.length;
+    const Ru = eta * (1.25 * rc.dc + 1.5 * rc.dw + 1.75 * (rc.truck + rc.lane));
+    const b = i.bearing;
+    const stiffened = b.use ? bearingStiffener(b, end ? b.pairsEnd : b.pairsPier, p.D, p.tw) : null;
+    const web = !b.use ? webAtBearing({ N: b.N, k: p.bottom.t + b.weld, tw: p.tw, tf: p.bottom.t, d: p.D + p.top.t + p.bottom.t, Fyw: i.Fyw, end }) : null;
+    return { support: rc.support, end, Ru, plate: i.segments[k].kind === "plate", D: p.D, tw: p.tw, stiffened, web };
+  });
+
+  // --- Intermediate cross-frames (6.7.4.2.2, 4.6.2.7.1): each span's positive moment region and each pier,
+  // stability bracing for the deck's placement on the steel (1.5 DC1, Cb = 1); the wind on the bottom flange ---
+  const crossFrames = (() => {
+    if (!i.crossFrame.check) return null;
+    const cf = i.crossFrame;
+    const Sin = i.S * 12;
+    const steelOf = (k: number) => {
+      const p = plates(i.segments[k]);
+      const sp = prop(k, "steel");
+      return { p, sp, depth: sp.depth, ho: sp.depth - (p.top.t + p.bottom.t) / 2 };
+    };
+    const Iyeff = (k: number, topComp: boolean) => {
+      const { p, sp } = steelOf(k);
+      const Iyt = (p.top.t * p.top.b ** 3) / 12;
+      const Iyb = (p.bottom.t * p.bottom.b ** 3) / 12;
+      const cTop = sp.depth - p.top.t / 2 - sp.yNA;
+      const cBot = sp.yNA - p.bottom.t / 2;
+      return topComp ? Iyt + (cBot / cTop) * Iyb : Iyb + (cTop / cBot) * Iyt; // Eqs. 6.7.4.2.2-4, -5
+    };
+    const inner = (a: number, b: number) => bracesU.filter((x) => x > a + 1e-6 && x < b - 1e-6);
+    const bays = (a: number, b: number) => {
+      const pts = [a, ...inner(a, b), b];
+      return Math.max(...pts.slice(1).map((x, q) => x - pts[q]));
+    };
+    const cases = [
+      ...spans.map((Ls, j) => {
+        const inSpan = stations.filter((s) => s.span === j);
+        const best = inSpan.reduce((b, s) => (s.M.dc1 > b.M.dc1 ? s : b), inSpan[0]);
+        return { label: `span ${j + 1}`, L: Ls, n: inner(starts[j], starts[j] + Ls).length, Mu: 1.5 * Math.max(0, best.M.dc1), k: best.seg, topComp: true, Lb: bays(starts[j], starts[j] + Ls) };
+      }),
+      ...spans.slice(1).map((_, q) => {
+        const X = starts[q + 1];
+        const e = effectsRaw(X, { s: q, x: spans[q] });
+        return { label: `pier ${q + 1}`, L: (spans[q] + spans[q + 1]) / 2, n: Math.max(inner(starts[q], X).length, inner(X, X + spans[q + 1]).length), Mu: 1.5 * Math.abs(Math.min(0, e.M.dc1)), k: segAt(X), topComp: false, Lb: Math.max(bays(starts[q], X), bays(X, X + spans[q + 1])) };
+      }),
+    ].map((c) => {
+      const { p, sp, depth, ho } = steelOf(c.k);
+      const sb = stabilityBracing({ cf, S: Sin, ng: i.nGirders, L: c.L * 12, n: c.n, Mu: c.Mu * 12, Iyeff: Iyeff(c.k, c.topComp), Ix: sp.I, Cb: 1, Lb: c.Lb * 12, ho, D: p.D, tw: p.tw, girderDepth: depth });
+      return { ...c, ...sb, Iyeff: Iyeff(c.k, c.topComp), Ix: sp.I };
+    });
+    // The wind on the lower half of the fascia girder goes to the bottom flange and on to the cross-frames: W = γ PD d / 2 (C4.6.2.7.1-1).
+    const depthFt = Math.max(...i.segments.map((s) => plates(s).D + plates(s).top.t + plates(s).bottom.t)) / 12;
+    const LbMax = Math.max(...bracesU.slice(1).map((x, q) => x - bracesU[q]));
+    const winds = (["Strength III", "Strength V"] as const)
+      .filter((c) => c === "Strength V" || i.wind.V > 0)
+      .map((c) => {
+        const pz = windPressure(c, i.wind);
+        const W = eta * 1.0 * pz.PZ * depthFt / 2; // klf
+        return { combination: c, PZ: pz.PZ, W, F: W * LbMax };
+      });
+    const Fwind = Math.max(0, ...winds.map((w) => w.F));
+    const strutForce = Math.max(Fwind, ...cases.map((c) => c.Fstrut));
+    const diagForce = Math.max(...cases.map((c) => c.Fdiag));
+    const Ld = cases[0].Ld;
+    const strut = singleAngle(cf.strut, cf.type === "K" ? Sin / 2 : Sin, cf.Fy);
+    const diag = singleAngle(cf.diagonal, Ld, cf.Fy);
+    return { cases, winds, Fwind, strutForce, diagForce, strut, diag, depthFt, LbMax };
+  })();
+
+  // --- Checks ---
+  const checks: Check[] = [];
+  const at = (s: SteelStation | null) => (s ? ` at ${s.X.toFixed(1)} ft (span ${s.span + 1}, ${(s.x / spans[s.span]).toFixed(2)}L)` : "");
+  const add = (id: string, name: string, unit: string, ref: string, extra?: (w: (typeof worst)[string]) => string) => {
+    const w = worst[id];
+    if (!w) return;
+    checks.push({ id, name: `${name}${at(w.at)}`, demand: w.demand, capacity: w.capacity, unit, ok: w.demand <= w.capacity * (1 + 1e-9), ref, note: [w.note, extra?.(w)].filter(Boolean).join("; ") || undefined });
+  };
+  add("flex-pos", "Strength I, positive flexure: Mu ≤ φf Mn", "kip·ft", "AASHTO 6.10.7.1");
+  add("flex-pos-c", "Strength I, positive flexure (noncompact): compression flange", "ksi", "AASHTO Eq. 6.10.7.2.1-1");
+  add("flex-pos-t", "Strength I, positive flexure (noncompact): tension flange", "ksi", "AASHTO Eq. 6.10.7.2.1-2");
+  add("ductility", "Ductility: Dp ≤ 0.42 Dt", "in", "AASHTO Eq. 6.10.7.3-1");
+  add("flex-neg-c", "Strength I, negative flexure: bottom flange fbu ≤ φf Fnc", "ksi", "AASHTO 6.10.8.1.1, 6.10.8.2");
+  add("flex-neg-t", "Strength I, negative flexure: top flange", "ksi", "AASHTO Eq. 6.10.8.1.3-1");
+  add("flex-neg-a6c", "Strength I, negative flexure (Appendix A6): Mu ≤ φf Mnc", "kip·ft", "AASHTO Eq. A6.1.1-1");
+  add("flex-neg-a6t", "Strength I, negative flexure (Appendix A6): Mu ≤ φf Rpt Myt", "kip·ft", "AASHTO Eq. A6.1.4-1");
+  // Moment redistribution (Appendix B6): the pier sections' requirements, and the 20% limit.
+  if (i.redistribution)
+    for (const q of piersB6) {
+      // A pier missing one of these isn't redistributed (its flexure is checked as usual): for information.
+      q.reqs.forEach((r, n) => checks.push({ id: `b6-req-${q.pier}-${n}`, name: `Redistribution at pier ${q.pier}: ${r.name}`, demand: r.demand, capacity: r.capacity, unit: r.unit, ok: r.demand <= r.capacity + 1e-9, ref: r.ref, advisory: true }));
+      if (b6Active) {
+        checks.push({ id: `b6-mrd-${q.pier}`, name: `Redistribution at pier ${q.pier}: Mrd = |Me| − φf Mpe ≤ 0.2|Me| (Me ${Math.abs(q.Me).toFixed(0)}, Mpe ${(q.Mpe.strength / 12).toFixed(0)} kip·ft)`, demand: q.Mrd, capacity: 0.2 * Math.abs(q.Me), unit: "kip·ft", ok: q.MrdRaw <= 0.2 * Math.abs(q.Me) + 1e-9, ref: "AASHTO Eqs. B6.4.2.1-1, -3" });
+        checks.push({ id: `b6-svc-${q.pier}`, name: `Redistribution at pier ${q.pier}, Service II: Mrd ≤ 0.2|Me| (Me ${Math.abs(q.MeSvc).toFixed(0)}, Mpe ${(q.Mpe.service / 12).toFixed(0)} kip·ft)`, demand: q.MrdSvc, capacity: 0.2 * Math.abs(q.MeSvc), unit: "kip·ft", ok: Math.abs(q.MeSvc) - q.Mpe.service / 12 <= 0.2 * Math.abs(q.MeSvc) + 1e-9, ref: "AASHTO Eqs. B6.3.3.1-1, -2" });
+      }
+    }
+  add("shear", "Strength I, shear: Vu ≤ φv Vn", "kip", "AASHTO 6.10.9");
+  add("con-yield", "Constructibility: compression flange fbu + fℓ ≤ φf Rh Fyc", "ksi", "AASHTO Eq. 6.10.3.2.1-1");
+  add("con-fnc", "Constructibility: compression flange fbu + fℓ/3 ≤ φf Fnc", "ksi", "AASHTO Eq. 6.10.3.2.1-2");
+  add("con-web", "Constructibility: web bend-buckling fbu ≤ φf Fcrw", "ksi", "AASHTO Eq. 6.10.3.2.1-3");
+  add("con-tension", "Constructibility: tension flange", "ksi", "AASHTO Eq. 6.10.3.2.2-1");
+  add("con-shear", "Constructibility: shear Vu ≤ φv Vcr", "kip", "AASHTO Eq. 6.10.3.3-1");
+  add("pour-yield", "Deck placement, pour by pour: flange fbu + fℓ ≤ φf Fyc", "ksi", "AASHTO 6.10.3.4.1, Eq. 6.10.3.2.1-1");
+  add("pour-fnc", "Deck placement, pour by pour: compression flange fbu + fℓ/3 ≤ φf Fnc", "ksi", "AASHTO 6.10.3.4.1, Eq. 6.10.3.2.1-2");
+  add("pour-tension", "Deck placement, pour by pour: tension flange ≤ φf Fyt", "ksi", "AASHTO 6.10.3.4.1, Eq. 6.10.3.2.2-1");
+  if (worst["pour-deck"]) {
+    const w = worst["pour-deck"];
+    // Above fr the 6.10.1.7 bars are required; with them the check is for information.
+    const bars = i.bars.pct >= 1;
+    checks.push({ id: "pour-deck", name: `Deck placement: hardened deck's tension ≤ fr, or the 6.10.1.7 bars${at(w.at)}`, demand: w.demand, capacity: w.capacity, unit: "ksi", ok: w.demand <= w.capacity || bars, ref: "AASHTO 6.10.3.2.4", note: `${w.note}${w.demand > w.capacity ? (bars ? "; over fr, the 1% bars are there" : "; over fr: provide the 6.10.1.7 bars") : ""}`, ...(bars ? { advisory: true } : {}) });
+  }
+  add("svc-top", "Service II: top flange ≤ 0.95 Rh Fyf", "ksi", "AASHTO Eq. 6.10.4.2.2-1");
+  add("svc-bot", "Service II: bottom flange ≤ 0.95 Rh Fyf", "ksi", "AASHTO Eq. 6.10.4.2.2-2");
+  add("svc-web", "Service II: web bend-buckling fc ≤ Fcrw", "ksi", "AASHTO Eq. 6.10.4.2.2-4");
+  for (const pr of proportions) {
+    const label = `section ${pr.k + 1}`;
+    checks.push({ id: `prop-dtw-${pr.k}`, name: `Web D/tw ≤ 150, ${label}`, demand: pr.Dtw, capacity: 150, unit: "", ok: pr.Dtw <= 150, ref: "AASHTO Eq. 6.10.2.1.1-1" });
+    checks.push({ id: `prop-bf-${pr.k}`, name: `Flanges bf/2tf ≤ 12, ${label}`, demand: pr.bf2tf, capacity: 12, unit: "", ok: pr.bf2tf <= 12, ref: "AASHTO Eq. 6.10.2.2-1" });
+    checks.push({ id: `prop-bfd-${pr.k}`, name: `Flanges bf ≥ D/6, ${label}`, demand: pr.D / 6, capacity: pr.bfMin, unit: "in", ok: pr.bfMin >= pr.D / 6 - 1e-9, ref: "AASHTO Eq. 6.10.2.2-2" });
+    checks.push({ id: `prop-tf-${pr.k}`, name: `Flanges tf ≥ 1.1 tw, ${label}`, demand: 1.1 * pr.tw, capacity: pr.tfMin, unit: "in", ok: pr.tfMin >= 1.1 * pr.tw - 1e-9, ref: "AASHTO Eq. 6.10.2.2-3" });
+    checks.push({ id: `prop-iy-${pr.k}`, name: `Flanges 0.1 ≤ Iyc/Iyt ≤ 10, ${label}`, demand: 0.1, capacity: pr.Iy, unit: "", ok: pr.Iy >= 0.1, ref: "AASHTO Eq. 6.10.2.2-4" });
+  }
+  if (spans.length > 1) checks.push({ id: "deck-bars", name: "Deck's longitudinal bars in negative flexure: at least 1% of the deck", demand: 1, capacity: i.bars.pct, unit: "%", ok: i.bars.pct >= 1 - 1e-9, ref: "AASHTO 6.10.1.7" });
+  for (const d of deflections) checks.push({ id: `defl-${d.span}`, name: `Live load deflection, span ${d.span + 1} (L/${i.deflection.limit})`, demand: d.deflection, capacity: d.limit, unit: "in", ok: d.deflection <= d.limit, ref: "AASHTO 2.5.2.6.2" });
+
+  // Fatigue and the shear connectors.
+  add("fat-bot", "Fatigue: bottom flange at its attachments, γ(Δf) ≤ (ΔF)n", "ksi", "AASHTO 6.6.1.2.2, 6.10.5.1");
+  add("fat-top", "Fatigue: top flange at its attachments and studs, γ(Δf) ≤ (ΔF)n", "ksi", "AASHTO 6.6.1.2.2, 6.10.5.1");
+  add("fat-web", "Fatigue: web of a stiffened interior panel, Vu ≤ Vcr", "kip", "AASHTO Eq. 6.10.5.3-1");
+  add("stud-fat", "Shear connectors: pitch ≤ n Zr / Vsr (fatigue)", "in", "AASHTO Eq. 6.10.10.1.2-1");
+  for (const s of studStrength)
+    checks.push({
+      id: `stud-str-${s.span}-${s.side}`,
+      name: `Shear connectors for strength, span ${s.span + 1} ${s.side === "left" ? "from its start" : "to its end"} to the most positive moment (${s.length.toFixed(1)} ft, P ${s.P.toFixed(0)} kip)`,
+      demand: s.required,
+      capacity: s.provided,
+      unit: "studs",
+      ok: s.provided >= s.required - 1e-9,
+      ref: "AASHTO Eqs. 6.10.10.4.1-2, 6.10.10.4.2",
+    });
+  studGeometry.forEach((g, q) => checks.push({ id: `stud-geo-${q}`, name: g.name, demand: g.demand, capacity: g.capacity, unit: g.unit, ok: g.demand <= g.capacity + 1e-9, ref: g.ref, ...(g.advisory ? { advisory: true } : {}) }));
+  // Stiffeners.
+  for (const z of stiffenerChecks) {
+    const label = `zone ${z.from}–${z.to} ft at ${z.spacing} in`;
+    checks.push({ id: `stf-w-${z.zone}`, name: `Transverse stiffeners: projecting width at least 2 + D/30 and bf/4, ${label}`, demand: z.widthMin, capacity: i.stiffener.bt, unit: "in", ok: i.stiffener.bt >= z.widthMin - 1e-9, ref: "AASHTO Eqs. 6.10.11.1.2-1, -2" });
+    checks.push({ id: `stf-t-${z.zone}`, name: `Transverse stiffeners: projecting width at most 16 tp, ${label}`, demand: i.stiffener.bt, capacity: z.widthMax, unit: "in", ok: i.stiffener.bt <= z.widthMax + 1e-9, ref: "AASHTO Eq. 6.10.11.1.2-2" });
+    checks.push({ id: `stf-i-${z.zone}`, name: `Transverse stiffeners: moment of inertia, ${label}${z.tensionField ? " (tension field)" : ""}`, demand: z.required, capacity: z.It, unit: "in⁴", ok: z.It >= z.required - 1e-9, ref: z.tensionField ? "AASHTO Eqs. 6.10.11.1.3-7, -8" : "AASHTO Eqs. 6.10.11.1.3-1, -2" });
+  }
+  for (const b of bearings) {
+    const where = b.end ? `abutment ${b.support === 0 ? 1 : 2}` : `pier ${b.support}`;
+    if (b.stiffened) {
+      const s = b.stiffened;
+      checks.push({ id: `brg-w-${b.support}`, name: `Bearing stiffeners at ${where}: width at most 0.48 tp √(E/Fys)`, demand: i.bearing.bt, capacity: s.btMax, unit: "in", ok: i.bearing.bt <= s.btMax + 1e-9, ref: "AASHTO Eq. 6.10.11.2.2-1" });
+      checks.push({ id: `brg-b-${b.support}`, name: `Bearing stiffeners at ${where}: bearing, Ru ≤ 1.4 Apn Fys`, demand: b.Ru, capacity: s.Rr, unit: "kip", ok: b.Ru <= s.Rr + 1e-9, ref: "AASHTO Eqs. 6.10.11.2.3-1, -2" });
+      checks.push({ id: `brg-a-${b.support}`, name: `Bearing stiffeners at ${where}: axial, Ru ≤ φc Pn (KL = 0.75D)`, demand: b.Ru, capacity: s.Pr, unit: "kip", ok: b.Ru <= s.Pr + 1e-9, ref: "AASHTO 6.10.11.2.4, 6.9.4.1.1" });
+    } else if (b.web) {
+      if (b.plate) checks.push({ id: `brg-req-${b.support}`, name: `Bearing stiffeners at ${where}: required on a built-up girder`, demand: 1, capacity: 0, unit: "", ok: false, ref: "AASHTO 6.10.11.2.1" });
+      checks.push({ id: `brg-y-${b.support}`, name: `Web local yielding at ${where} (no bearing stiffeners)`, demand: b.Ru, capacity: b.web.yielding, unit: "kip", ok: b.Ru <= b.web.yielding + 1e-9, ref: "AASHTO D6.5.2" });
+      checks.push({ id: `brg-c-${b.support}`, name: `Web crippling at ${where} (no bearing stiffeners)`, demand: b.Ru, capacity: b.web.phiCrippling, unit: "kip", ok: b.Ru <= b.web.phiCrippling + 1e-9, ref: "AASHTO D6.5.3" });
+    }
+  }
+
+  // Cross-frames.
+  if (crossFrames) {
+    const cf = crossFrames;
+    for (const c of cf.cases)
+      checks.push({ id: `cf-stiff-${c.label}`, name: `Cross-frames, ${c.label}: stability bracing stiffness (βT)act ≥ (βT)req (Mu ${(c.Mu).toFixed(0)} kip·ft, n ${c.n})`, demand: c.req, capacity: c.act, unit: "kip·in/rad", ok: c.act >= c.req, ref: `AASHTO Eqs. 6.7.4.2.2-1, ${c.full ? "-2" : "-3"}, -6` });
+    checks.push({ id: "cf-strut", name: `Cross-frames: strut ${cf.strut.name} in compression (stability ${Math.max(...cf.cases.map((c) => c.Fstrut)).toFixed(1)} kip, wind ${cf.Fwind.toFixed(1)} kip)`, demand: cf.strutForce, capacity: cf.strut.Pr, unit: "kip", ok: cf.strutForce <= cf.strut.Pr, ref: "AASHTO 6.9.4.4, Eq. 6.7.4.2.2-14, C4.6.2.7.1" });
+    checks.push({ id: "cf-diag", name: `Cross-frames: diagonal ${cf.diag.name} in compression (stability bracing)`, demand: cf.diagForce, capacity: cf.diag.Pr, unit: "kip", ok: cf.diagForce <= cf.diag.Pr, ref: "AASHTO 6.9.4.4, Eq. 6.7.4.2.2-14" });
+    checks.push({ id: "cf-sl-strut", name: `Cross-frames: strut slenderness ℓ/rz ≤ 140`, demand: cf.strut.slenderness, capacity: 140, unit: "", ok: cf.strut.slenderness <= 140, ref: "AASHTO 6.9.3" });
+    checks.push({ id: "cf-sl-diag", name: `Cross-frames: diagonal slenderness ℓ/rz ≤ 140`, demand: cf.diag.slenderness, capacity: 140, unit: "", ok: cf.diag.slenderness <= 140, ref: "AASHTO 6.9.3" });
+    for (const [m, label] of [[cf.strut, "strut"], [cf.diag, "diagonal"]] as const)
+      if (m.slenderLeg) checks.push({ id: `cf-leg-${label}`, name: `Cross-frames: ${label}'s legs b/t ≤ 0.45√(E/Fy) (else reduce for local buckling)`, demand: m.b / m.t, capacity: 0.45 * Math.sqrt(ES / i.crossFrame.Fy), unit: "", ok: false, ref: "AASHTO Table 6.9.4.2.1-1" });
+  }
+
+  // Every check reads demand ≤ capacity: the governing ratio is the largest demand/capacity.
+  const governing = checks.reduce((m, c) => (c.advisory ? m : Math.max(m, c.capacity > 0 ? c.demand / c.capacity : 0)), 0);
+  return {
+    ok: checks.every((c) => c.ok || c.advisory),
+    checks,
+    stations,
+    spans,
+    total,
+    n,
+    Ec,
+    beff: { interior: beffInt, exterior: beffExt, used: beff },
+    loads: { dc1Deck, dc2, dw, steel: i.segments.map((s) => selfWeight(s)) },
+    df: { spans: spanDF, piers: pierDF },
+    sections: i.segments.map((s, k) => ({ k, name: plates(s).name, steel: prop(k, "steel"), short: prop(k, "n"), long: prop(k, "3n"), bars: prop(k, "bars"), weight: selfWeight(s) * 1000 })),
+    deflections,
+    reactions,
+    governing,
+    braces: bracesU,
+    segmentStarts: segStart,
+    camber,
+    crossFrames,
+    pourResults,
+    b6: { active: b6Active, piers: piersB6 },
+    studStrength,
+    stiffenerChecks,
+    bearings,
+  };
+}
+
+export type SteelGirderResult = ReturnType<typeof designSteelGirder>;

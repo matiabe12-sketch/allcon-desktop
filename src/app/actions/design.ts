@@ -15,6 +15,8 @@ import { haunchCalcLines } from "@/lib/design/girders/haunch-calc";
 import { toConfirm } from "@/lib/design/girders/from-plans";
 import { girderCalcLines } from "@/lib/design/girders/prestressed-calc";
 import { approachSlabCalcLines } from "@/lib/design/approach/approach-slab-calc";
+import { steelCalcLines } from "@/lib/design/girders/steel-calc";
+import { steelGirderInputs } from "@/lib/design/girders/steel";
 import { foundationCalcLines } from "@/lib/design/foundations/calc";
 import { FOUNDATION_KINDS, foundationInputs, type FoundationKind } from "@/lib/design/foundations/kinds";
 import { stripSealCalcLines } from "@/lib/design/joints/strip-seal-calc";
@@ -290,6 +292,8 @@ export async function createCalcFromDesign(designId: string, variant?: "asd" | "
       ? dtRatingCalcLines(dtRatingInputs(design.inputs), design.name, figures(() => dtFigures(dtRatingInputs(design.inputs))))
       : design.kind === "lrfd-girder-check"
       ? girderCalcLines(girderInputs(design.inputs), design.name, figures(() => girderFigures(girderInputs(design.inputs))))
+      : design.kind === "steel-girder-check"
+      ? steelCalcLines(steelGirderInputs(design.inputs), design.name)
       : design.kind === "cip-cantilever-wall"
       ? cipCalcLines(cipInputs(design.inputs), design.name, figures(() => cipFigures(cipInputs(design.inputs))))
       : design.kind === "mse-wall"

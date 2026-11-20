@@ -127,7 +127,7 @@ export function deckCalcLines(i: DeckInputs, title: string, figures?: { section?
   given(`h_1\\coloneq ${num(case1.h, 8)}\\mathrm{in}`, "Overhang depth at the barrier face");
   given(`M_{DC1}\\coloneq ${num(case1.MDC, 8)}${kft}`, "Barrier and slab, about the barrier face");
   given(`M_{DW1}\\coloneq ${num(case1.MDW, 8)}${kft}`);
-  m("M_{u1}\\coloneq M_{DC1}+M_{DW1}+M_c=", "Case 1, Extreme Event II", "kip*ft/ft");
+  m("M_{u1}\\coloneq1.25\\cdot M_{DC1}+1.5\\cdot M_{DW1}+M_c=", "Case 1, Extreme Event II, γp (T. 3.4.1-1)", "kip*ft/ft");
   const oh = a.overhangBars;
   if (oh) m(`A_{so}\\coloneq ${area(oh)}=`, `#${oh.bar} @ ${num(oh.spacing)} in more in the overhang`, "in^2/ft");
   const Ast = oh ? "\\left(A_{st}+A_{so}\\right)" : "A_{st}";
@@ -139,7 +139,7 @@ export function deckCalcLines(i: DeckInputs, title: string, figures?: { section?
   m(`F_v\\coloneq ${num(a.Fv)}\\mathrm{kip}`, "Vertical design force, T. A13.2-1");
   m(`L_v\\coloneq ${num(a.Lv)}\\mathrm{ft}`);
   m(`l_a\\coloneq ${num(a.la)}\\mathrm{ft}`, "Its lever arm, the rail's top to its traffic face");
-  m("M_{u2}\\coloneq M_{DC1}+\\frac{F_v\\cdot l_a}{L_v}=", "Case 2, Extreme Event II", "kip*ft/ft");
+  m("M_{u2}\\coloneq1.25\\cdot M_{DC1}+1.5\\cdot M_{DW1}+\\frac{F_v\\cdot l_a}{L_v}=", "Case 2, Extreme Event II, γp (T. 3.4.1-1)", "kip*ft/ft");
   m(`M_{r2}\\coloneq1.0\\cdot ${Ast}\\cdot f_y\\cdot\\left(d_1-\\frac{${Ast}\\cdot f_y}{2\\cdot0.85\\cdot f'_{c}}\\right)=`, undefined, "kip*ft/ft");
   m(ok("M_{u2}", "M_{r2}"), "Case 2: vertical collision");
   given(`h_3\\coloneq ${num(case3.h, 8)}\\mathrm{in}`, "Overhang depth at the design section by the girder");

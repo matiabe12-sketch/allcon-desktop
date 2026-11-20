@@ -53,10 +53,11 @@ describe("deck: a DOT worked example", () => {
   });
   it("overhang, Cases 1–3", () => {
     const { case1, case2, case3 } = r.overhang;
-    near(case1.Mu, 19.9156, 0.002);
+    // Dead load at γp = 1.25 in Extreme Event II (Table 3.4.1-1); the DOT example takes it at 1.0 (19.9156, 0.7984).
+    near(case1.Mu, 19.9725, 0.002);
     near(case1.As, 0.6835);
     near(case1.MR, 21.3276);
-    near(case2.Mu, 0.7984, 0.01);
+    near(case2.Mu, 0.8553, 0.01);
     near(case3.MDC, 1.0495, 0.002);
     near(case3.MDW, 0.0413);
     near(case3.Mu, 2.5376, 0.002);

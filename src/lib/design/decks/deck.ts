@@ -326,14 +326,16 @@ export function designDeck(entered: DeckInputs) {
     const a = (As * i.fy) / (0.85 * i.fc * 12);
     return (phi * As * i.fy * (dTop - a / 2)) / 12;
   };
+  // Extreme Event II takes the permanent loads at γp (Table 3.4.1-1): Table 3.4.1-2's larger factors, as they add to the collision.
+  const ee = (x: number) => 1.25 * dcAt(x) + 1.5 * dwAt(x);
   // Case 1: transverse collision at the barrier face, the barrier's moment with the axial tension.
   const h1 = thickness(bw);
   const asOH = asTop + (i.overhangBars ? area(i.overhangBars) : 0); // the top bars where the collision cases act
-  const case1 = { x: bw, h: h1, MDC: dcAt(bw), MDW: dwAt(bw), Mu: dcAt(bw) + dwAt(bw) + i.Mc, As: asOH - (0.5 * i.T) / i.fy, MR: 0 };
+  const case1 = { x: bw, h: h1, MDC: dcAt(bw), MDW: dwAt(bw), Mu: ee(bw) + i.Mc, As: asOH - (0.5 * i.T) / i.fy, MR: 0 };
   case1.MR = capacity(h1, case1.As, 1.0);
   add({ id: "oh-case1", name: "Overhang, Case 1: transverse collision at the barrier face", demand: case1.Mu, capacity: case1.MR, unit: "kip·ft/ft", ref: "AASHTO A13.4.1" });
   // Case 2: vertical collision.
-  const case2 = { Mv: (i.Fv * i.la) / i.Lv, Mu: dcAt(bw) + (i.Fv * i.la) / i.Lv, MR: capacity(h1, asOH, 1.0) };
+  const case2 = { Mv: (i.Fv * i.la) / i.Lv, Mu: ee(bw) + (i.Fv * i.la) / i.Lv, MR: capacity(h1, asOH, 1.0) };
   add({ id: "oh-case2", name: "Overhang, Case 2: vertical collision", demand: case2.Mu, capacity: case2.MR, unit: "kip·ft/ft", ref: "AASHTO A13.4.1" });
   // Case 3: Strength I at the design section by the exterior girder.
   const x3 = i.overhang - d;
@@ -359,7 +361,7 @@ export function designDeck(entered: DeckInputs) {
       // At the rail's ends (its end zones' closer bars): the deck there carries the larger Mc and T.
       const McE = p.end.Mc;
       const AsE = asOH - (0.5 * p.end.T) / i.fy;
-      endCase1 = { Mc: McE, T: p.end.T, Mu: dcAt(bw) + dwAt(bw) + McE, MR: capacity(h1, AsE, 1.0) };
+      endCase1 = { Mc: McE, T: p.end.T, Mu: ee(bw) + McE, MR: capacity(h1, AsE, 1.0) };
       add({ id: "oh-case1-end", name: "Overhang, Case 1 at the rail's ends and joints (its end zones)", demand: endCase1.Mu, capacity: endCase1.MR, unit: "kip·ft/ft", ref: "AASHTO A13.4.2", advisory: true, ok: endCase1.Mu <= endCase1.MR });
     }
   }
@@ -375,6 +377,8 @@ export function designDeck(entered: DeckInputs) {
     moments: { DC: mDC, DW: mDW },
     pos,
     neg,
+    /** The live load moment per foot, with IM, at any section (sign 1 sagging, −1 hogging), over its strip. */
+    live: (x: number, sign: 1 | -1) => ((1 + IM) * truckEffect(x, sign)) / (sign > 0 ? stripPos : stripNeg),
     bottom,
     top,
     long: { tempRequired, topLong, pct, distRequired, botLong: area(i.botLong) },

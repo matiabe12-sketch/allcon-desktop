@@ -69,6 +69,7 @@ export type SteelGirderInputs = {
   analysis: "line" | "grid"; // the loads' effects: a line girder with distribution factors (4.6.2.2), or a grid of the whole bridge (4.6.3.3)
   redistribution: boolean; // moment redistribution from the interior piers (Appendix B6)
   redistributionMethod: "simplified" | "refined"; // B6.3–B6.5 (effective plastic moment) or B6.6 (rotational continuity)
+  endDistance: number; // ft, the girder's ends beyond the abutments' bearings (the plan sheets)
   radius: number; // ft, the girder's horizontal radius; 0: straight (curved: within 4.6.1.2.4b, flange lateral bending by Eq. C4.6.1.2.4b-1)
   stiffeners: StiffenerZone[]; // transverse stiffeners; none: unstiffened web
   studsThroughout: boolean; // shear connectors along the whole girder (6.10.4.2.1: the deck effective in negative flexure at service)
@@ -135,6 +136,7 @@ export const STEEL_DEFAULTS: SteelGirderInputs = {
   redistributionMethod: "simplified",
   radius: 0,
   analysis: "line",
+  endDistance: 0.75,
   stiffeners: [],
   studsThroughout: true,
   loads: { mode: "computed", dc1: 0, dc2: 0, dw: 0, sip: 15, misc: 15, otherDC1: 0, barrierWeight: 0.52, otherDC2: 0, fws: 25 },
@@ -186,6 +188,7 @@ export function steelGirderInputs(saved: unknown): SteelGirderInputs {
     redistributionMethod: s.redistributionMethod === "refined" ? "refined" : "simplified",
     analysis: s.analysis === "grid" ? "grid" : "line",
     radius: Math.max(0, num(s.radius, 0)),
+    endDistance: Math.max(0, num(s.endDistance, 0.75)),
     stiffeners: Array.isArray(s.stiffeners) ? (s.stiffeners as unknown[]).slice(0, 30).map((z) => o(z, { from: 0, to: 0, spacing: 0 })) : [],
     bars: o(s.bars, d.bars),
     loads: o(s.loads, d.loads),

@@ -38,13 +38,50 @@ const letterOf = (k: number) => (k < 26 ? String.fromCharCode(65 + k) : `${Strin
 
 /** The girder's field sections (one per segment), with their plates and their weight (kip, plates only). */
 export function fieldSections(i: SteelGirderInputs, r: SteelGirderResult): FieldSection[] {
+  const e = Math.max(0, i.endDistance);
   return i.segments.map((s, k) => {
     const p = plates(s);
-    const from = r.segmentStarts[k];
-    const to = k + 1 < r.segmentStarts.length ? r.segmentStarts[k + 1] : r.total;
+    // The end sections run past the abutments' bearings to the girder's ends.
+    const from = k === 0 ? (e > 0 ? -e : 0) : r.segmentStarts[k];
+    const to = k + 1 < r.segmentStarts.length ? r.segmentStarts[k + 1] : r.total + e;
     const area = p.top.b * p.top.t + p.D * p.tw + p.bottom.b * p.bottom.t + p.fillet; // in²
     return { letter: letterOf(k), k, from, to, name: p.name, rolled: s.kind === "rolled", D: p.D, tw: p.tw, top: p.top, bottom: p.bottom, weight: ((area / 144) * STEEL_PCF * (to - from)) / 1000 };
   });
+}
+
+export type FlangeZone = { from: number; to: number; tension: boolean };
+
+/**
+ * Each flange's tension and compression zones along the girder (ft), from the Strength I envelope: the bottom flange
+ * in tension wherever the positive moment is, the top flange wherever the negative moment is (the deck's bars with it),
+ * the boundaries where the envelope crosses zero. Tension zones need the fracture-toughness (CVN) requirement
+ * (6.6.2.1); on a bridge of two girders they're fracture-critical (a nonredundant system).
+ */
+export function flangeZones(i: SteelGirderInputs, r: SteelGirderResult) {
+  const st = [...r.stations].sort((a, b) => a.X - b.X);
+  const e = Math.max(0, i.endDistance);
+  const zonesOf = (v: (s: (typeof st)[number]) => number) => {
+    // Stations where the envelope is nil (the abutments) take their neighbours' zone.
+    const tol = 1e-6 * Math.max(1, ...st.map((s) => Math.abs(v(s))));
+    const pts = st.filter((s) => Math.abs(v(s)) > tol);
+    const out: FlangeZone[] = [];
+    if (!pts.length) return [{ from: e > 0 ? -e : 0, to: r.total + e, tension: false }];
+    let start = e > 0 ? -e : 0;
+    let state = v(pts[0]) > 0;
+    for (let k = 1; k < pts.length; k++) {
+      const now = v(pts[k]) > 0;
+      if (now === state) continue;
+      const a = v(pts[k - 1]);
+      const b = v(pts[k]);
+      const x = pts[k - 1].X + ((pts[k].X - pts[k - 1].X) * a) / (a - b);
+      out.push({ from: start, to: x, tension: state });
+      start = x;
+      state = now;
+    }
+    out.push({ from: start, to: r.total + e, tension: state });
+    return out;
+  };
+  return { top: zonesOf((s) => -s.Mneg), bottom: zonesOf((s) => s.Mpos), fractureCritical: i.nGirders <= 2 };
 }
 
 /** The splices between field sections: where the plates change. */
@@ -111,14 +148,18 @@ export function studZones(i: SteelGirderInputs, r: SteelGirderResult) {
   return zones;
 }
 
-export type CamberRow = { span: number; at: number; X: number; steel: number; deck: number; dc2: number; dw: number; camber: number };
+export type CamberRow = { span: number; at: number; X: number; steel: number; deck: number; dc2: number; dw: number; camber: number; screed: number };
 
-/** The camber table: every span's tenth points, the supports at zero. The camber is the DC1 and DC2 deflection (the future wearing surface listed, not included). */
+/**
+ * The camber table: every span's tenth points, the supports at zero. The web camber (cut into the web) is the steel's,
+ * the deck's and DC2's deflection; the screed camber, what is still to come once the steel is erected (the deck and
+ * DC2), sets the screed. The future wearing surface is listed, not included; the vertical profile is added to both.
+ */
 export function camberRows(r: SteelGirderResult): CamberRow[] {
   const sup = supportLocations(r);
   return r.spans.flatMap((_, j) => {
-    const zero = (X: number, at: number): CamberRow => ({ span: j, at, X, steel: 0, deck: 0, dc2: 0, dw: 0, camber: 0 });
-    const inner = r.camber.filter((c) => c.span === j).map((c): CamberRow => ({ span: j, at: c.at, X: c.X, steel: c.steel, deck: c.deck, dc2: c.dc2, dw: c.dw, camber: c.total }));
+    const zero = (X: number, at: number): CamberRow => ({ span: j, at, X, steel: 0, deck: 0, dc2: 0, dw: 0, camber: 0, screed: 0 });
+    const inner = r.camber.filter((c) => c.span === j).map((c): CamberRow => ({ span: j, at: c.at, X: c.X, steel: c.steel, deck: c.deck, dc2: c.dc2, dw: c.dw, camber: c.total, screed: c.deck + c.dc2 }));
     return [zero(sup[j], 0), ...inner, zero(sup[j + 1], 1)];
   });
 }

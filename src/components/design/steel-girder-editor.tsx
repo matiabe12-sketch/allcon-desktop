@@ -11,7 +11,7 @@ import type { SteelSegment } from "@/lib/design/girders/steel-section";
 import { DesignError } from "@/lib/design/walls/cip";
 import { ChecksBanner, ChecksTable, Choice, DesignErrorCard, DesignHeader, Field, fmt, KeyValues, Section, Toggle } from "./design-kit";
 import { SteelGirderSketch } from "./steel-girder-sketch";
-import { SteelCamberDiagram, SteelCamberTable, SteelGirderElevationSheet, SteelPlateSchedule } from "./steel-girder-sheet";
+import { SteelCamberDiagram, SteelCamberTable, SteelCrossFrameDetail, SteelGirderElevationSheet, SteelPlateSchedule } from "./steel-girder-sheet";
 
 // Checking a steel I-girder line: the spans, deck and girder's sections along it on the left, the
 // envelopes, checks and properties on the right, worked out as the inputs change and saved as you go.
@@ -132,6 +132,7 @@ export function SteelGirderEditor({ design, projects }: { design: { id: string; 
               <Field label="Deck edge to barrier face" unit="ft" value={inputs.barrierWidth} onChange={set("barrierWidth")} step={0.25} />
               <Field label="Skew" unit="°" value={inputs.skew} onChange={set("skew")} hint={inputs.radius > 0 ? "Of the bearing lines from radial" : undefined} />
               <Field label="Horizontal radius (0: straight)" unit="ft" value={inputs.radius} onChange={set("radius")} step={100} hint={inputs.analysis === "grid" ? "Curved: spans as arc lengths along the centerline, by the grid" : "Curved: spans as arc lengths; within 4.6.1.2.4b, else use the grid"} />
+              <Field label="Girder end beyond the abutment bearings" unit="ft" value={inputs.endDistance} onChange={set("endDistance")} step={0.25} hint="For the plan sheets" />
             </Section>
 
             <Section title="Deck" open>
@@ -531,7 +532,7 @@ export function SteelGirderEditor({ design, projects }: { design: { id: string; 
                     </div>
                     <SteelPlateSchedule inputs={inputs} result={r} />
                     <p className="text-[11px] text-muted-foreground">
-                      Field sections are taken at the plate transitions (FS, orange); their splices aren&apos;t designed here. DL c.f.: dead load contraflexure. Flanges in tension need the fracture-toughness (CVN) requirement for the owner&apos;s temperature zone.
+                      Field sections are taken at the plate transitions (FS, orange); their splices aren&apos;t designed here. DL c.f.: dead load contraflexure. The flange bands mark each flange&apos;s tension (T) and compression (C) zones from the Strength I envelope; tension zones need the fracture-toughness (CVN) requirement for the owner&apos;s temperature zone{inputs.nGirders <= 2 ? ", and with two girders they're fracture-critical members (FCM)" : ""}.
                     </p>
                   </CardContent>
                 </Card>
@@ -541,14 +542,30 @@ export function SteelGirderEditor({ design, projects }: { design: { id: string; 
                     <div className="overflow-x-auto">
                       <div className="min-w-[640px]">
                         <SteelCamberDiagram result={r} />
+                        <div className="pt-1 text-[11px] font-medium">Screed camber</div>
+                        <SteelCamberDiagram result={r} kind="screed" />
                       </div>
                     </div>
                     <SteelCamberTable result={r} />
                     <p className="text-[11px] text-muted-foreground">
-                      The steel and the deck (DC1) on the steel{inputs.pours.length ? ", the deck pour by pour on the girder as it then is" : ", one deck pour"}; DC2 on the long-term composite section. The camber leaves out DW (the future wearing surface) and the vertical profile, whose ordinates are added to it.
+                      The steel and the deck (DC1) on the steel{inputs.pours.length ? ", the deck pour by pour on the girder as it then is" : ", one deck pour"}; DC2 on the long-term composite section. The web camber is cut into the web; the screed camber, the deck&apos;s and DC2&apos;s deflection still to come once the steel is erected, sets the screed. Both leave out DW (the future wearing surface) and the vertical profile, whose ordinates are added to them.
                     </p>
                   </CardContent>
                 </Card>
+                {r.crossFrames && (
+                  <Card>
+                    <CardContent className="space-y-2 py-3">
+                      <div className="text-sm font-medium">
+                        Cross-frame detail <span className="font-normal text-muted-foreground">· intermediate cross-frames, to scale across, the members&apos; end connections</span>
+                      </div>
+                      <div className="overflow-x-auto">
+                        <div className="min-w-[640px]">
+                          <SteelCrossFrameDetail inputs={inputs} result={r} />
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
                 {r.b6.piers.length > 0 && (inputs.appendixA6 || inputs.redistribution) && (
                   <KeyValues
                     title={`Pier sections (Appendices A6${inputs.redistribution ? ", B6" : ""}): kip·ft`}

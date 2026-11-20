@@ -21,7 +21,7 @@ export type GridInput = {
   skew: number; // degrees, the supports from normal (radial)
   braces: number[]; // ft, the intermediate cross-frame lines along the centerline
   extraStations: number[]; // ft, stations to include (section changes)
-  section: (X: number, stage: GridStage) => { I: number; J: number; Cw: number }; // in⁴, in⁴, in⁶ of a girder at X
+  section: (X: number, stage: GridStage, j: number) => { I: number; J: number; Cw: number }; // in⁴, in⁴, in⁶ of girder j at X (along the centerline)
   cf: { type: "X" | "K"; Ad: number; As: number; hb: number }; // in², effective areas of a diagonal and a strut; in, between the struts
   deck: { ts: number; Ec: number }; // in, ksi
   E: number; // ksi, steel
@@ -304,7 +304,7 @@ export function gridModel(g: GridInput, geo: GridGeometry, stage: GridStage) {
         const ex = (x2 - x1) / (L / ft);
         const ey = (y2 - y1) / (L / ft);
         const mid = (A.X + X) / 2;
-        const sp = g.section(mid, stage);
+        const sp = g.section(mid, stage, j);
         const EI = g.E * sp.I;
         const GJ = g.G * jEquivalent(sp.J, sp.Cw, unbracedAt(mid), g.E, g.G);
         const kb = beamK(EI, L);
@@ -492,23 +492,44 @@ export function gridModel(g: GridInput, geo: GridGeometry, stage: GridStage) {
   };
   const apply = (r: Sparse, u: Float64Array) => r.val.reduce((s, v, p) => s + v * u[r.idx[p]], 0);
   /** Line loads (klf along each girder, down +) as nodal forces (kip, up +), lumped. */
+  /** Line loads (klf along each girder, down +) as consistent nodal loads (kip, kip·in; up +), with each element's load kept for its fixed-end forces. */
   const lineLoads = (w: (j: number, X: number) => number) => {
     const f = new Float64Array(N);
+    const per = new Map<El, number>();
     for (const e of girderEls) {
       const A = nodes[e.a];
       const B = nodes[e.b];
-      const W = w(e.j, (A.X + B.X) / 2) * (e.L / ft);
-      f[e.a * 3] -= W / 2;
-      f[e.b * 3] -= W / 2;
+      const q = w(e.j, (A.X + B.X) / 2) / ft; // kip/in, down
+      per.set(e, q);
+      const L = e.L;
+      // Local [w1, θt1, φ1, w2, θt2, φ2]: −qL/2, 0, −qL²/12, −qL/2, 0, +qL²/12; to the global dofs by Tᵀ.
+      const local = [-(q * L) / 2, 0, -(q * L * L) / 12, -(q * L) / 2, 0, (q * L * L) / 12];
+      for (let p = 0; p < 6; p++) f[e.dofs[p]] += local.reduce((sum, l, m) => sum + l * e.T[m][p], 0);
     }
-    return f;
+    return { f, per };
+  };
+  /** A girder's dead load moment (kip·ft) or shear (kip) at station k: the element ends' from the displacements and their own load's fixed-end forces. */
+  const deadAt = (u: Float64Array, per: Map<El, number>, j: number, k: number, what: "M" | "V") => {
+    const end = (e: El, side: 0 | 1) => {
+      const q = per.get(e) ?? 0;
+      const L = e.L;
+      if (what === "M") return apply(endRow(e, side, "M"), u) - (q * L * L) / 12;
+      return apply(endRow(e, side, "V"), u) + (side === 0 ? (q * L) / 2 : -(q * L) / 2);
+    };
+    const r = elAt(j, k, 1);
+    const l = elAt(j, k, -1);
+    if (what === "M") {
+      if (r && l) return (end(r, 0) + end(l, 1)) / 24;
+      return r ? end(r, 0) / 12 : l ? end(l, 1) / 12 : 0;
+    }
+    return r ? end(r, 0) : l ? end(l, 1) : 0;
   };
   const adjoint = (r: Sparse) => {
     const c = new Float64Array(N);
     r.idx.forEach((d, p) => (c[d] += r.val[p]));
     return solve(c);
   };
-  return { N, els, frameModels, solve, momentRow, shearRow, memberRow, apply, lineLoads, adjoint, nodes };
+  return { N, els, frameModels, solve, momentRow, shearRow, memberRow, apply, lineLoads, deadAt, adjoint, nodes };
 }
 
 export type GridModel = ReturnType<typeof gridModel>;
@@ -740,15 +761,10 @@ export function liveExtremes(g: GridInput, geo: GridGeometry, infl: Float64Array
 
 /** Each girder's moments (kip·ft) and shears (kip) at every station, and each cross-frame member's force (kip), under line loads on one stage. */
 export function deadEffects(geo: GridGeometry, model: GridModel, w: (j: number, X: number) => number) {
-  const u = model.solve(model.lineLoads(w));
-  const M = geo.ys.map((_, j) => geo.stations.map((__, k) => {
-    const r = model.momentRow(j, k);
-    return r ? model.apply(r, u) / 12 : 0;
-  }));
-  const V = geo.ys.map((_, j) => geo.stations.map((__, k) => {
-    const r = model.shearRow(j, k);
-    return r ? model.apply(r, u) : 0;
-  }));
+  const { f, per } = model.lineLoads(w);
+  const u = model.solve(f);
+  const M = geo.ys.map((_, j) => geo.stations.map((__, k) => model.deadAt(u, per, j, k, "M")));
+  const V = geo.ys.map((_, j) => geo.stations.map((__, k) => model.deadAt(u, per, j, k, "V")));
   const frames = model.frameModels.map((fm, fi) => fm.names.map((_, m) => model.apply(model.memberRow(fi, m), u)));
   return { M, V, frames, u };
 }

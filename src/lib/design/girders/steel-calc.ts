@@ -17,7 +17,7 @@ const unitTex = (u: string) => ({ kip: "\\mathrm{kip}", ksi: "\\mathrm{ksi}", "k
 
 const ok = (demand: string, capacity: string) => `\\operatorname{if}\\left(${demand}\\le ${capacity},\\text{OK},\\text{NG}\\right)=`;
 
-export function steelCalcLines(i: SteelGirderInputs, title: string, result?: SteelGirderResult, figures?: { elevation?: Figure; camber?: Figure }): Line[] {
+export function steelCalcLines(i: SteelGirderInputs, title: string, result?: SteelGirderResult, figures?: { elevation?: Figure; camber?: Figure; screed?: Figure; crossFrame?: Figure }): Line[] {
   const r = result ?? designSteelGirder(i);
   const lines: Line[] = [];
   const text = (t: string, style?: "heading" | "subheading" | "note", extra?: { newPage?: boolean; keepWithNext?: boolean }) => lines.push({ text: t, ...(style ? { style } : {}), ...(extra ?? {}) });
@@ -42,7 +42,7 @@ export function steelCalcLines(i: SteelGirderInputs, title: string, result?: Ste
 
   if (figures?.elevation) {
     text("Girder elevation", "subheading", { newPage: true, keepWithNext: true });
-    text("The girder's field sections, taken at the plate transitions (their splices aren't designed here), with its studs, connection plates and stiffeners; flange thicknesses exaggerated.", undefined, { keepWithNext: true });
+    text("The girder's field sections, taken at the plate transitions (their splices aren't designed here), with its studs, connection plates and stiffeners, each flange's tension (T) and compression (C) zones from the Strength I envelope, and the girder's ends beyond the bearings; flange thicknesses exaggerated. Tension zones need the fracture-toughness (CVN) requirement (AASHTO 6.6.2.1).", undefined, { keepWithNext: true });
     lines.push({ region: figures.elevation });
   }
 
@@ -407,12 +407,17 @@ export function steelCalcLines(i: SteelGirderInputs, title: string, result?: Ste
       given(`V_{cv}\\coloneq ${num(cv.V, 3)}\\mathrm{kip}`, `The largest bay's shear: ${i.nGirders} girders' torques by equilibrium across the cross-section`);
       m(`F_{cv}\\coloneq\\frac{V_{cv}}{2}\\cdot\\frac{L_{d}}{h_{b}}=`, "Each diagonal's share", "kip");
     }
+    if (figures?.crossFrame) {
+      text("Cross-frame detail", "subheading", { newPage: true, keepWithNext: true });
+      text("The intermediate cross-frame between two girders, to scale across: its members, connection plates, the members' end connections and the working points.", undefined, { keepWithNext: true });
+      lines.push({ region: figures.crossFrame });
+    }
     // --- The members' end connections ---
     const cons = cfr.connections;
     if (cons.length) {
       const cn = i.crossFrame.connection;
       const g = cons.reduce((b, x) => (Math.max(...x.checks.map((k) => k.demand / Math.max(1e-9, k.capacity))) > Math.max(...b.checks.map((k) => k.demand / Math.max(1e-9, k.capacity))) ? x : b), cons[0]);
-      text("Cross-frame connections (AASHTO 6.13)", "subheading", { newPage: true, keepWithNext: true });
+      text("Cross-frame connections (AASHTO 6.13)", "subheading", { newPage: !figures?.crossFrame, keepWithNext: true });
       text(
         `Method:- ${cn.kind === "bolted" ? `Each angle bolted through one leg to the connection plate with ${cn.bolts} – ${num(cn.d, 3)} in ${cn.grade} bolts in a line, pretensioned, slip-critical (AASHTO 6.13.2.1.1), holes ${cn.holes} full size` : `Each angle welded along both edges of one leg to the connection plate, 2 × ${num(cn.weld, 3)} in fillets ${num(cn.weldLength)} in long`}. The members' forces either way (the diagonals and the wind reverse)${r.curved ? "; on a curved girder the cross-frames are primary members, so the connections take the larger of the average of the force and the member's resistance, and 75% of the resistance (AASHTO 6.13.1)" : ""}. Worked: the ${g.label}; the other member's checks are listed.`,
         undefined,
@@ -690,6 +695,10 @@ export function steelCalcLines(i: SteelGirderInputs, title: string, result?: Ste
     text("Camber (AASHTO 6.7.2)", "subheading", { newPage: true, keepWithNext: true });
     text(`Method:- Downward deflections of the dead loads on the sections that carry them: the steel's weight and the deck (DC1) on the steel, DC2 and DW on the long-term composite section; ${i.pours.length ? "the deck pour by pour on the girder as it then is" : "one deck pour"}. The camber to detail is the total plus the vertical profile's own ordinates.`, undefined, { keepWithNext: true });
     if (figures?.camber) lines.push({ region: figures.camber });
+    if (figures?.screed) {
+      text("Screed camber:- The deck's and DC2's deflection, still to come once the steel is erected; it sets the screed.", undefined, { keepWithNext: true });
+      lines.push({ region: figures.screed });
+    }
     for (const c of r.camber.filter((x) => [0.2, 0.4, 0.5, 0.6, 0.8].some((t) => Math.abs(x.at - t) < 1e-6)))
       text(`Span ${c.span + 1} at ${num(c.at, 1)}L:- steel ${num(c.steel, 3)} in, deck ${num(c.deck, 3)} in, DC2 ${num(c.dc2, 3)} in; total ${num(c.total, 3)} in (DW ${num(c.dw, 3)} in more).`);
   }

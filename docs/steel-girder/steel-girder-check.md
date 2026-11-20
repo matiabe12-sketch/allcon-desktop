@@ -183,17 +183,68 @@ Article 6.10, and its details (phase 2).
       (outside girder 1 + 0.104 x n L² / (R Σx²) of the average): within 3%.
     - Example 2A: DC1 within 3% of the line girder's, the live load 7% below AASHTO's distribution
       factors, and every check passing.
-  - FHWA's curved Design Example 3 couldn't be reached (ROSAP blocks automated downloads; AISC's link is
-    gone).
+  - Dead loads use consistent nodal loads with the elements' fixed-end forces, so the support shears are
+    exact.
+  - **FHWA Design Example 3 (curved, R 700 ft, 160-210-160 ft), against its 3D finite element results**
+    (steel-benchmarks.test.ts, data in steel-ex3.fixture.ts, each girder's own plates from Figure 3):
+    - Abutment reactions per girder within 5% (or 1 kip) for the deck, railings and FWS.
+    - The curve's sharing, G4 (outside) over G1 (inside), within 5% for the deck and live load and 8% for
+      the railings.
+    - Its moments are 5–16% higher than the grid's, for the inside and outside girders alike, while its
+      reactions agree with ours. A girder line with its own reactions gives our moments, so its moments
+      can't be squared with statics from the published numbers. Its live load also includes centrifugal
+      force, which isn't modeled here. Until that's explained, treat the grid's curved-bridge moments as
+      possibly up to about 15% low against a 3D analysis.
+
+## More benchmarks (steel-benchmarks.test.ts)
+
+- **Caltrans BDP 6.2 (October 2022), 110-165-125 ft, 78 × 5/8 in web.**
+  - Constant-stiffness dead and one-lane HL-93 moments within 1%; the abutment's live load shear within
+    2.5%.
+  - The engine's interior distribution factors 0.900, 0.805, 0.869 (moment) and 1.082 (shear) from its own
+    section (Kg 3,026,891 in⁴).
+  - Mp 21,203 kip·ft and Dp 12.75 in; My 15,274 and the 1.3 Rh My cap 19,856 kip·ft (the California Mn
+    formula gives the same here, as the cap governs).
+  - Appendix A6 at bent 3: Rpc 1.033, Mnc 14,690 kip·ft.
+  - Not used: the P15 permit truck and the other California amendments.
+- **FHWA/NHI-04-041, two 120 ft spans.**
+  - Tables 3-4 and 3-5 section properties exactly.
+  - Positive section: Mp 7,419 kip·ft with the plastic neutral axis 6.85 in into the slab; My 4,592 from its
+    factored dead loads; Mn = 1.3 Rh My = 5,970 kip·ft (the same cap under the 10th Edition).
+  - Pier shear: C by the 10th Edition's 1.57 (the example's 2nd Edition 1.52 gives its 0.378).
+  - Abutment bearing stiffeners, 5.5 × 11/16 in: Is 87.22 in⁴, r 2.69 in, Pn 593.3 kip; bearing now 1.4 Apn Fys
+    (the example's 309.4 kip has no 1.4).
+  - LL+IM with its 0.696 factor: 0.4L within 1%, the pier within 3.5%.
+  - Its dead load moments come from an analysis whose stiffness isn't given. Per klf on the girder alone they
+    solve to 843 at 0.4L and −2,213 at the pier, against 770 and −2,396 here with the same properties. Not
+    used.
 
 ## Plan sheets
 
-The editor and the calc package draw the girder elevation and camber as plan sheets show them (`src/components/design/steel-girder-sheet.tsx`, helpers in `src/lib/design/girders/steel-sheet.ts`, tests in `steel-sheet.test.ts`):
+The editor and the calc package draw the plan sheets (`src/components/design/steel-girder-sheet.tsx`, helpers in
+`src/lib/design/girders/steel-sheet.ts`), following the usual US content (as Caltrans' Bridge Design Details 11.1
+lists it):
 
-- **Girder elevation:** one per girder line, flange thicknesses exaggerated. It shows field sections A, B, … taken at the plate transitions, the studs by zone, connection plates at the cross-frames, transverse and bearing stiffeners, splices at the transitions (marked FS, not designed), and the dead load contraflexure points (from the DC1 + DC2 + DW moments, parabolic between stations). Below it are the cross-frame, field section and span dimension strings.
-- **Plate schedule:** each field section's plates, from–to, length and plate weight at 490 pcf.
-- **Camber diagram and table:** every span's tenth points with the steel, deck and DC2 deflections; the camber is their sum. DW is listed but left out, as is the vertical profile.
-
+- **Girder elevation:** one per girder line, flange thicknesses exaggerated.
+  - Field sections A, B, … at the plate transitions, their splices marked FS (not designed).
+  - Studs by zone, connection plates, transverse and bearing stiffeners, dead load contraflexure points.
+  - Each flange's **tension (T) and compression (C) zones** from the Strength I envelope. Tension zones need
+    the CVN requirement (6.6.2.1); on a two-girder bridge they're marked fracture-critical (FCM).
+  - The **girder's ends beyond the abutment bearings** (input "girder end beyond the abutment bearings",
+    default 9 in), the end field sections running to them.
+  - Cross-frame, field section and span dimensions.
+- **Plate schedule:** each field section's plates, from–to (to the girder's ends), length and weight.
+- **Camber:** the **web camber** (steel, deck and DC2 deflections, cut into the web) and the **screed camber**
+  (deck and DC2, still to come once the steel is erected; it sets the screed), two diagrams on one scale, and
+  a table of the components with both. DW and the vertical profile are left out (the profile's ordinates are
+  added to both).
+- **Cross-frame detail:**
+  - The intermediate frame between two girders, to scale across, with the deck above.
+  - The X or K members with their angle sizes, and the connection plates.
+  - Each member end's bolts at their spacing and end distance, or the welds.
+  - The working points and girder spacing dimensioned.
+  - Notes: members, fasteners, plates, the fit (no-load for straight framing, steel dead load fit for curved
+    or skewed over 20°), and the members' forces against their resistances.
 ## Benchmarks (tests)
 
 See `benchmarks.md`.
@@ -237,5 +288,5 @@ See `benchmarks.md`.
 - deflection, camber and bearing reactions by the grid (the line girder's are used);
 - a 3D finite element model (the grid is the 2D refined analysis; NCHRP 725 warns 2D grids can
   underestimate cross-frame forces in sharply skewed or curved bridges);
-- a benchmark against FHWA's curved Design Example 3 (not reachable from here);
+- the 5–16% gap to Design Example 3's 3D moments, and centrifugal force (3.6.3) on the live load;
 - the descending branch of the B6.6.2 moment-rotation curve past θRL.

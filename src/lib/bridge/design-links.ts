@@ -22,7 +22,7 @@ export function designTargets(d: BridgeDefinition): DesignTarget[] {
         { key: "girders", label: "Girders", tool: "LRFD Bridge Design Check", kind: "lrfd-girder-check", from: "Spans, girders, deck and loads" },
         { key: "deck", label: "Deck", tool: "Deck Slab", kind: "deck-slab", from: "Girder spacing, overhang, deck, barrier" },
       ];
-  d.supports.forEach((_, k) => out.push({ key: `bearing-${k}`, label: `${lineName(d, k)} bearings`, tool: "Elastomeric Bearing", kind: "elastomeric-bearing", from: "The largest bearing reaction on the line, dead and live; the expansion length" }));
+  d.supports.forEach((sl, k) => out.push(sl.bearingKind === "pot" || sl.bearingKind === "disc" ? { key: `bearing-${k}`, label: `${lineName(d, k)} ${sl.bearingKind} bearings`, tool: "Pot or Disc Bearing", kind: "pot-disc-bearing", from: "The service loads on the line, its share of the forces along the bridge, the movement" } : { key: `bearing-${k}`, label: `${lineName(d, k)} bearings`, tool: "Elastomeric Bearing", kind: "elastomeric-bearing", from: "The largest bearing reaction on the line, dead and live; the expansion length" }));
   if (d.piers.model) for (let k = 1; k < d.supports.length - 1; k++) out.push({ key: `column-${k}`, label: `${lineName(d, k)} columns`, tool: "Pier Column", kind: "pier-column", from: "Strength I forces at the top of the hardest-worked column, with their concurrent forces" });
   // The substructure and the load path (src/lib/design/bridge/load-path.server.ts): a second group of
   // girders past a joint, each abutment with its approach slab and wingwall, each pier's cap and foundation.

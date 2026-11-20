@@ -1,3 +1,6 @@
+import { hlmrCalcLines } from "../bearings/pot-disc-calc";
+import { hlmrTakeoff } from "../bearings/pot-disc-detail";
+import { designHlmr } from "../bearings/pot-disc";
 import { slabBridgeCalcLines } from "../slabs/slab-bridge-calc";
 import { designSlabBridge } from "../slabs/slab-bridge";
 import "server-only";
@@ -10,13 +13,13 @@ import { bearingCalcLines } from "../bearings/elastomeric-calc";
 import type { SummaryGroup } from "../checks-summary";
 import { designDeck } from "../decks/deck";
 import { deckCalcLines } from "../decks/deck-calc";
-import { approachSlabFigures, bearingFigures, bridgeFigures, capDetailFigures, columnFigures, deckFigures, foundationFigures, girderFigures, stmFigures, wingwallFigures, type Figure } from "../figures";
+import { approachSlabFigures, bearingFigures, bridgeFigures, capDetailFigures, columnFigures, deckFigures, foundationFigures, girderFigures, stmFigures, takeoffFigures, wingwallFigures, type Figure } from "../figures";
 import { foundationCalcLines } from "../foundations/calc";
 import { foundationInputs, type FoundationKind } from "../foundations/kinds";
 import { runFoundation } from "../foundations/run";
 import { designGirder, type GirderInputs } from "../girders/prestressed";
 import { girderCalcLines } from "../girders/prestressed-calc";
-import { approachSlabInputs, bearingInputs, deckInputs, girderInputs, slabBridgeInputs, wingwallInputs } from "../kinds";
+import { approachSlabInputs, bearingInputs, deckInputs, girderInputs, hlmrInputs, slabBridgeInputs, wingwallInputs } from "../kinds";
 import { columnInputs, designColumn } from "../piers/column";
 import { columnCalcLines } from "../piers/column-calc";
 import { roundFor, type PayLine } from "../rebar/pay-lines";
@@ -136,6 +139,14 @@ async function gather(design: { id: string; name: string; inputs: unknown }, org
       const i = bearingInputs(bd.inputs);
       if (full) parts.push({ label: "Bearings", name: bd.name, lines: bearingCalcLines(i, bd.name, tryFig(() => bearingFigures(i))), checks: [{ checks: designBearing(i).checks.map(aashto) }] });
       sPay.push(...quantities("elastomeric-bearing", i, `${bd.name}`, { length: b.nGirders * (k === 0 || k === b.supports.length - 1 ? 1 : 2) }));
+    } else if (s.bearingKind === "pot" || s.bearingKind === "disc") {
+      // Pot or disc bearings: their calc and each bearing a pay item.
+      const hd = await load(c.bearingId, "pot-disc-bearing");
+      if (hd) {
+        const i = hlmrInputs(hd.inputs);
+        if (full) parts.push({ label: "Bearings", name: hd.name, lines: hlmrCalcLines(i, hd.name, tryFig(() => takeoffFigures(hlmrTakeoff(i)))), checks: [{ checks: designHlmr(i).checks.map(aashto) }] });
+        sPay.push(...quantities("pot-disc-bearing", i, `${hd.name}`, { length: b.nGirders * (k === 0 || k === b.supports.length - 1 ? 1 : 2) }));
+      } else missing.push(`${s.name} bearings`);
     } else missing.push(`${s.name} bearings`);
     if (s.type.endsWith("abutment")) {
       const ad = await load(c.abutmentId, "abutment");

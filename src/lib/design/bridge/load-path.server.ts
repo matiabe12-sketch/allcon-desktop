@@ -3,11 +3,12 @@ import { Prisma } from "@/generated/prisma/client";
 import { db } from "@/lib/db";
 import { designApproachSlab } from "../approach/approach-slab";
 import { designBearing } from "../bearings/elastomeric";
+import { designHlmr } from "../bearings/pot-disc";
 import { designDeck } from "../decks/deck";
 import { abutmentInputs, footingInputs, pileFoundationInputs, shaftInputs } from "../foundations/kinds";
 import { runFoundation } from "../foundations/run";
 import type { GirderInputs } from "../girders/prestressed";
-import { approachSlabInputs, bearingInputs, deckInputs, designInputs, girderInputs, kindInfo, slabBridgeInputs, stripSealInputs, wingwallInputs } from "../kinds";
+import { approachSlabInputs, bearingInputs, deckInputs, designInputs, girderInputs, hlmrInputs, kindInfo, slabBridgeInputs, stripSealInputs, wingwallInputs } from "../kinds";
 import { designStripSeal } from "../joints/strip-seal";
 import { columnInputs, designColumn } from "../piers/column";
 import { columnLinkFrom } from "../piers/column-link";
@@ -15,7 +16,7 @@ import { nodeLpSolver } from "../stm/lp-node";
 import { designStm, stmInputs } from "../stm/strut-tie";
 import { designWingwall } from "../walls/wingwall";
 import { BRIDGE_GIRDER_BASE, girderInputsFor, runBridge, spanGroups, type BridgeInputs } from "./bridge";
-import { abutmentFromBridge, approachSlabFromBridge, bearingFromBridge, bearingLineForce, capFromBridge, changedKeys, columnFromBridge, columnLongitudinal, deckFromBridge, footingFromColumn, integralStiffness, jointFromBridge, longitudinalShares, thermalReactions, approachOnAbutment, windAlong, padLineStiffness, pierStiffness, pilesFromColumn, shaftCageOf, shaftFromColumn, wingwallFromBridge, type LongStiffness } from "./loadpath";
+import { abutmentFromBridge, approachSlabFromBridge, bearingFromBridge, bearingLineForce, capFromBridge, changedKeys, columnFromBridge, columnLongitudinal, deckFromBridge, footingFromColumn, hlmrFromBridge, integralStiffness, jointFromBridge, longitudinalShares, thermalReactions, approachOnAbutment, windAlong, padLineStiffness, pierStiffness, pilesFromColumn, shaftCageOf, shaftFromColumn, wingwallFromBridge, type LongStiffness } from "./loadpath";
 
 // A bridge's load path through its linked designs (docs/bridge-model.md): each linked design's inputs
 // brought up to date from the bridge, top to bottom (girders, deck, bearings; abutments, approach slabs
@@ -158,7 +159,9 @@ export async function runLoadPath(o: {
     const pad = bearingInputs(bd0?.inputs ?? {});
     const cast = s.type === "integral-abutment" || s.type === "continuous-pier";
     // A sliding bearing sticks until friction's overcome: its pad's stiffness below that.
-    const kBear = cast || s.bearing === "fixed" ? Infinity : padLineStiffness(pad, b.nGirders);
+    // Pot or disc bearings: fixed, rigid; guided or free, they slide on PTFE (friction only).
+    const hlmr = !cast && (s.bearingKind === "pot" || s.bearingKind === "disc");
+    const kBear = cast || s.bearing === "fixed" ? Infinity : hlmr ? 0 : padLineStiffness(pad, b.nGirders);
     let kSub = Infinity;
     const a0 = s.type.endsWith("abutment") ? await load(c.abutmentId, "abutment") : null;
     const aIn = a0 || s.type.endsWith("abutment") ? abutmentFromBridge(b, run, c.support, abutmentInputs(a0?.inputs ?? {}), { braking: 0 }) : null;
@@ -171,7 +174,7 @@ export async function runLoadPath(o: {
     let f = 0;
     try {
       const bi = bearingFromBridge(b, run, c.support, pad, aIn);
-      f = bearingLineForce(bi, designBearing(bi), b.nGirders);
+      f = hlmr ? (s.bearing === "fixed" ? 0 : hlmrInputs((await load(c.bearingId, "pot-disc-bearing"))?.inputs ?? {}).ptfe.mu * bi.DL * b.nGirders) : bearingLineForce(bi, designBearing(bi), b.nGirders);
     } catch {
       f = 0;
     }
@@ -196,15 +199,26 @@ export async function runLoadPath(o: {
       const wi = wingwallInputs(wdPre.inputs);
       abutNext.wing = { L: wi.L, h: wi.h, t: wi.t, count: abutBefore.wing?.count ?? 2, heq: wi.heq, bars: wi.bars, ...(wi.cornerBars ? { cornerBars: wi.cornerBars } : {}) };
     }
-    const bNext = bearingFromBridge(b, run, k, bBefore, abutNext);
-    c.bearingId = await upsert(`bearing-${k}`, `${s.name}, bearings`, "elastomeric-bearing", bd, bBefore, bNext, verdictTry(() => designBearing(bNext).checks), `${prefix}, ${s.name} bearings`);
-    // The force the bearings pass along the bridge as it expands and contracts (unfactored): the pads' shear, or a
-    // sliding bearing's friction; none where cast in or fixed.
+    // The bearings: elastomeric pads, or pot or disc bearings (the Pot or Disc Bearing design), as the support line says.
+    const isHlmr = !(s.type === "integral-abutment" || s.type === "continuous-pier") && (s.bearingKind === "pot" || s.bearingKind === "disc");
     let padTU = 0;
-    try {
-      padTU = bearingLineForce(bNext, designBearing(bNext), b.nGirders);
-    } catch {
-      padTU = 0;
+    if (isHlmr) {
+      const hd = await load(c.bearingId, "pot-disc-bearing");
+      const hBefore = hlmrInputs(hd?.inputs ?? {});
+      const hNext = hlmrFromBridge(b, run, k, hBefore, { braking: shares[k].braking, tu: tuForce[k], wind: windAlong(run, shares[k]) }, abutNext);
+      c.bearingId = await upsert(`bearing-${k}`, `${s.name}, ${hNext.kind} bearings`, "pot-disc-bearing", hd, hBefore, hNext, verdictTry(() => designHlmr(hNext).checks), `${prefix}, ${s.name} ${hNext.kind} bearings`);
+      // Sliding on PTFE they pass friction on the permanent load; fixed, none of their own.
+      padTU = hNext.fixity === "fixed" ? 0 : hNext.ptfe.mu * hNext.DL * b.nGirders;
+    } else {
+      const bNext = bearingFromBridge(b, run, k, bBefore, abutNext);
+      c.bearingId = await upsert(`bearing-${k}`, `${s.name}, bearings`, "elastomeric-bearing", bd, bBefore, bNext, verdictTry(() => designBearing(bNext).checks), `${prefix}, ${s.name} bearings`);
+      // The force the bearings pass along the bridge as it expands and contracts (unfactored): the pads' shear, or a
+      // sliding bearing's friction; none where cast in or fixed.
+      try {
+        padTU = bearingLineForce(bNext, designBearing(bNext), b.nGirders);
+      } catch {
+        padTU = 0;
+      }
     }
     if (Number.isFinite(stiff[k].kBear)) tuForce[k] = padTU;
     if (abutNext && abutNext.type !== "integral-piles" && abutNext.type !== "integral-shafts" && abutNext.type !== "integral-micropiles") abutNext.bearingShear = Math.round((tuForce[k] / abutNext.length) * 1000) / 1000;

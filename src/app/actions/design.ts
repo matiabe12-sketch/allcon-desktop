@@ -16,6 +16,9 @@ import { toConfirm } from "@/lib/design/girders/from-plans";
 import { girderCalcLines } from "@/lib/design/girders/prestressed-calc";
 import { approachSlabCalcLines } from "@/lib/design/approach/approach-slab-calc";
 import { slabBridgeCalcLines } from "@/lib/design/slabs/slab-bridge-calc";
+import { hlmrCalcLines } from "@/lib/design/bearings/pot-disc-calc";
+import { hlmrTakeoff } from "@/lib/design/bearings/pot-disc-detail";
+import { hlmrInputs } from "@/lib/design/kinds";
 import { slabBridgeInputs } from "@/lib/design/kinds";
 import { steelCalcLines } from "@/lib/design/girders/steel-calc";
 import { steelGirderInputs } from "@/lib/design/girders/steel";
@@ -320,6 +323,8 @@ export async function createCalcFromDesign(designId: string, variant?: "asd" | "
                           ? bearingCalcLines(ptfeInputs(design.inputs), design.name, figures(() => bearingFigures(ptfeInputs(design.inputs))))
                           : design.kind === "approach-slab"
                             ? approachSlabCalcLines(approachSlabInputs(design.inputs), design.name, figures(() => approachSlabFigures(approachSlabInputs(design.inputs))))
+                            : design.kind === "pot-disc-bearing"
+                            ? hlmrCalcLines(hlmrInputs(design.inputs), design.name, figures(() => takeoffFigures(hlmrTakeoff(hlmrInputs(design.inputs)))))
                             : design.kind === "slab-bridge"
                             ? slabBridgeCalcLines(slabBridgeInputs(design.inputs), design.name)
                             : design.kind === "strip-seal-joint"

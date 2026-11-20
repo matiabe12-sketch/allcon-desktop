@@ -15,6 +15,7 @@ import type { ColumnResult } from "../piers/column";
 import { GIRDER_DEFAULTS, girderShape, type GirderInputs } from "../girders/prestressed";
 import type { DeckInputs } from "../decks/deck";
 import { BEARING_DEFAULTS, type BearingInputs, type designBearing } from "../bearings/elastomeric";
+import type { HlmrInputs } from "../bearings/pot-disc";
 
 /** The pad the stiffness split takes before a bearing design is linked. */
 const BEARING_PAD_DEFAULT = BEARING_DEFAULTS;
@@ -612,5 +613,37 @@ export function slabSide(b: BridgeInputs, run: BridgeRun, support: number, span:
     liveUnbalanceStatic: null,
     wind: null,
     brakingPerLane: brakingPerLane(total).perLane,
+  };
+}
+
+/**
+ * A support's pot or disc bearings from the Bridge, each girder line's: the service loads as the plans give them
+ * (DC + DW and LL with IM; WisDOT 27.2.2.3), the least (DC alone, no uplift), the horizontal forces its share of the
+ * longitudinal ones over its lines (factored: the governing of 1.75 BR and the wind's Strength V or III, with 0.50 TU; at
+ * service BR + TU), fixed where the support is, else guided along the bridge; the movement each way from the bridge's
+ * point of no movement (α 6.0e-6 /°F over a 120 °F range, half each way, ½ in more); a semi-integral end diaphragm's
+ * weight on it (as on pads). The bearing's own sizes and rotation kept as designed.
+ */
+export function hlmrFromBridge(b: BridgeInputs, run: BridgeRun, support: number, current: HlmrInputs, long: { braking: number; tu: number; wind: ReturnType<typeof windAlong> | null }, abutment?: Pick<AbutmentInputs, "type" | "backwallH" | "backwallT" | "length" | "gammaC"> | null): HlmrInputs {
+  const s = b.supports[support];
+  const pads = bearingFromBridge(b, run, support, BEARING_DEFAULTS, abutment);
+  const r = run.reactions[support];
+  const own = (key: "DC" | "LLIM") => (r.sides.length > 1 && s.bearingOffset > 0 ? Math.max(...r.sides.map((x) => Math.max(x.interior[key], x.exterior[key]))) : r[key]);
+  const n = Math.max(1, b.nGirders);
+  const w = long.wind;
+  const Hu = (Math.max(1.75 * long.braking, w ? 1.35 * long.braking + w.WS5 + w.WL : 0, w ? w.WS3 : 0) + 0.5 * long.tu) / n;
+  const Hs = (long.braking + long.tu) / n;
+  const dist = Math.abs(s.station - fixedPoint(b));
+  const r1 = (v: number) => Math.round(v * 10) / 10;
+  return {
+    ...current,
+    kind: s.bearingKind === "disc" ? "disc" : "pot",
+    fixity: s.bearing === "fixed" ? "fixed" : current.fixity === "free" ? "free" : "guided",
+    DL: r1(pads.DL),
+    LL: r1(own("LLIM")),
+    minLoad: r1(own("DC") * 0.9),
+    Hu: r1(Hu),
+    Hs: r1(Hs),
+    ptfe: { ...current.ptfe, movement: Math.round((6e-6 * 120 * dist * 12 * 0.5 + 0.5) * 8) / 8 },
   };
 }

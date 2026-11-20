@@ -44,7 +44,9 @@ export function linksFrom(b: BridgeInputs, before: DesignLink[], kinds: Record<s
   for (const c of b.components)
     for (const [field, prefix] of Object.entries(COMPONENT_KEYS) as [ComponentIdKey, string][]) {
       const key = `${prefix}-${c.support}`;
-      add(key, c[field], field === "foundationId" ? (c.foundationKind ?? undefined) : kinds[prefix]);
+      const sp = b.supports[c.support];
+      const hlmr = field === "bearingId" && (sp?.bearingKind === "pot" || sp?.bearingKind === "disc") && sp.type !== "integral-abutment" && sp.type !== "continuous-pier";
+      add(key, c[field], field === "foundationId" ? (c.foundationKind ?? undefined) : hlmr ? "pot-disc-bearing" : kinds[prefix]);
     }
   return out;
 }

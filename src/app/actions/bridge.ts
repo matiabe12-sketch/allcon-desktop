@@ -11,12 +11,13 @@ import { abutmentInputs, foundationInputs, footingInputs, pileFoundationInputs, 
 import { runFoundation } from "@/lib/design/foundations/run";
 import { designGirder, girderShape, type GirderInputs, type HarpedStrands, type StrandRow } from "@/lib/design/girders/prestressed";
 import type { GirderShape } from "@/lib/design/girders/sections";
-import { approachSlabInputs, bearingInputs, deckInputs, designInputs, girderInputs, slabBridgeInputs, stripSealInputs, wingwallInputs } from "@/lib/design/kinds";
+import { approachSlabInputs, bearingInputs, deckInputs, designInputs, girderInputs, hlmrInputs, slabBridgeInputs, stripSealInputs, wingwallInputs } from "@/lib/design/kinds";
 import { designWingwall } from "@/lib/design/walls/wingwall";
 import { columnInputs, designColumn } from "@/lib/design/piers/column";
 import { designStm, stmInputs } from "@/lib/design/stm/strut-tie";
 import { nodeLpSolver } from "@/lib/design/stm/lp-node";
 import { db } from "@/lib/db";
+import { designHlmr } from "@/lib/design/bearings/pot-disc";
 import { bridgeIfc, type BridgeComponents } from "@/lib/design/bridge/ifc";
 import { runLoadPath, verdictOf, type SyncRow } from "@/lib/design/bridge/load-path.server";
 import { attachRebar, rebarSources, type RebarDesigns } from "@/lib/design/bridge/ifc-rebar";
@@ -83,6 +84,15 @@ async function describeBridgeModel(orgId: string, b: BridgeInputs, name: string)
   // The designs whose bars go in the model besides those comps carries.
   const rebar: RebarDesigns = { deck: deck ? { id: deck.id, inputs: deckInputs(deck.inputs) } : null, caps: {}, columns: {} };
   for (const c of b.components) {
+    // Pot or disc bearings, drawn as their parts in the model.
+    if (b.supports[c.support]?.bearingKind === "pot" || b.supports[c.support]?.bearingKind === "disc") {
+      const hd = await load(c.bearingId, "pot-disc-bearing");
+      if (hd) {
+        const hi = hlmrInputs(hd.inputs);
+        comps.hlmr = { ...(comps.hlmr ?? {}), [c.support]: hi };
+        verdictTry(hd.id, () => designHlmr(hi).checks);
+      }
+    }
     const s = b.supports[c.support];
     if (!s) continue;
     if (s.type.endsWith("abutment")) {

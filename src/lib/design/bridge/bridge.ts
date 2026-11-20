@@ -28,6 +28,8 @@ export type Support = {
   pier?: PierShape;
   /** Fixed bearings hold the girders along the bridge; expansion bearings let them slide (the Bridge section's support lines). */
   bearing?: "fixed" | "expansion";
+  /** The bearings' type: elastomeric pads (default), or pot or disc bearings (the Pot or Disc Bearing design). */
+  bearingKind?: "elastomeric" | "pot" | "disc";
 };
 
 export type PierShape = {

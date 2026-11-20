@@ -100,7 +100,20 @@ export function BridgeForm({ form, def, setDef: setRaw }: Props & { form: FormKe
               { value: "fixed", label: "Fixed" },
               { value: "expansion", label: "Expansion" },
             ]}
-            onChange={(v) => set("supports")(def.supports.map((x, j) => (j === k ? { bearing: v } : x)))}
+            onChange={(v) => set("supports")(def.supports.map((x, j) => (j === k ? { ...x, bearing: v } : x)))}
+          />
+        ))}
+        {def.supports.map((s, k) => (
+          <Choice
+            key={`t${k}`}
+            label={`${lineName(k)}: type`}
+            value={s.bearingKind ?? "elastomeric"}
+            options={[
+              { value: "elastomeric", label: "Elastomeric pads" },
+              { value: "pot", label: "Pot bearings (14.7.4)" },
+              { value: "disc", label: "Disc bearings (14.7.8)" },
+            ]}
+            onChange={(v) => set("supports")(def.supports.map((x, j) => (j === k ? { ...x, bearingKind: v as "elastomeric" | "pot" | "disc" } : x)))}
           />
         ))}
         <Field label="Bearing height" unit="in" value={def.piers.bearingHeight} onChange={part("piers")("bearingHeight")} step={0.5} />

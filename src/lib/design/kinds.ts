@@ -23,6 +23,7 @@ function cleanExtension(v: unknown): CbcInputs["extension"] {
 }
 import { APPROACH_SLAB_DEFAULTS, type ApproachSlabInputs } from "./approach/approach-slab";
 import { SLAB_BRIDGE_DEFAULTS, type SlabBridgeInputs } from "./slabs/slab-bridge";
+import { HLMR_DEFAULTS, type HlmrInputs } from "./bearings/pot-disc";
 import { FOUNDATION_INFO, FOUNDATION_KINDS, foundationInputs } from "./foundations/kinds";
 import { DECK_DEFAULTS, RAIL_DEFAULT, type DeckInputs } from "./decks/deck";
 import { STRIP_SEAL_DEFAULTS, type StripSealInputs } from "./joints/strip-seal";
@@ -45,7 +46,7 @@ import { steelGirderInputs } from "./girders/steel";
 // The Design section's categories and design types: highway structures to AASHTO LRFD, grouped
 // by element. What can be designed, and what's coming next.
 
-export type DesignKind = "lrfd-girder-check" | "steel-girder-check" | "slab-bridge" | "dt-load-rating" | "stm-d-region" | "cip-cantilever-wall" | "mse-wall" | "cantilever-wingwall" | "box-culvert" | "deck-slab" | "seismic-zone1" | "pier-column" | "camber-haunch" | "sign-cantilever" | "elastomeric-bearing" | "ptfe-bearing" | "strip-seal-joint" | "approach-slab" | "spread-footing" | "pile-foundation" | "drilled-shaft" | "micropile" | "abutment";
+export type DesignKind = "lrfd-girder-check" | "steel-girder-check" | "slab-bridge" | "dt-load-rating" | "stm-d-region" | "cip-cantilever-wall" | "mse-wall" | "cantilever-wingwall" | "box-culvert" | "deck-slab" | "seismic-zone1" | "pier-column" | "camber-haunch" | "sign-cantilever" | "elastomeric-bearing" | "ptfe-bearing" | "pot-disc-bearing" | "strip-seal-joint" | "approach-slab" | "spread-footing" | "pile-foundation" | "drilled-shaft" | "micropile" | "abutment";
 
 export const CATEGORIES: { id: string; name: string; kinds: { id: DesignKind; name: string; short: string; description: string; available: boolean }[] }[] = [
   {
@@ -97,6 +98,7 @@ export const CATEGORIES: { id: string; name: string; kinds: { id: DesignKind; na
       { id: "camber-haunch", name: "Camber and Haunch", short: "Haunch at supports and midspan, camber tolerances", description: "A girder span's haunch (or adjacent box beams' deck thickness) at the supports and midspan, from the deck's profile over the girder (vertical curve, chorded girders on a horizontal curve, cross-slope) and the girder's camber and dead load deflection, with over- and under-camber tolerances.", available: true },
       { id: "elastomeric-bearing", name: "Elastomeric Bearing", short: "Plain or steel-reinforced pads", description: "Elastomeric bearing pads, plain or steel-reinforced, by Method A or B: compression, shear strains, deflection, stability, shims and anchorage. AASHTO LRFD 14.7.5 and 14.7.6.", available: true },
       { id: "ptfe-bearing", name: "PTFE Sliding Bearing", short: "Sliding surface on an elastomeric pad", description: "A steel-reinforced elastomeric pad with a PTFE sliding surface: contact stresses (average and edge), the pad's deformation to the first slip and the sliding beyond, with the pad's own checks. AASHTO LRFD 14.7.2 and 14.7.5.", available: true },
+      { id: "pot-disc-bearing", name: "Pot or Disc Bearing", short: "High-load multirotational: pot or urethane disc, fixed, guided or free", description: "A pot bearing (AASHTO 14.7.4) or a disc bearing (14.7.8), fixed, guided or free: the design rotation (14.4.2.1), the elastomeric pad, sealing rings, pot wall, base and piston, or the urethane disc, its lift-off, deflection, shear pin and plates; the PTFE sliding surface (14.7.2) and guides (14.7.9); the masonry plate on the concrete (5.6.5), the anchor rods (14.8.3) and the sole plate. Sized from the loads, with its section and plan drawn and its parts in the Bridge's 3D model.", available: true },
       { id: "strip-seal-joint", name: "Strip Seal Expansion Joint", short: "Movement and seal size", description: "A strip seal deck joint: the movement from temperature, creep and shrinkage normal to the skewed joint against the seal's range, and the gap to set at each installation temperature. AASHTO LRFD 3.12.2 and 14.5.3.", available: true },
     ],
   },
@@ -191,6 +193,13 @@ export function approachSlabInputs(saved: unknown): ApproachSlabInputs {
   const was = (s as { joint?: string }).joint;
   const joint = was === "none" || was === "silicone" ? "none" : "device";
   return { ...APPROACH_SLAB_DEFAULTS, ...s, joint, sleeper: s.sleeper !== false, barrier: s.barrier === true };
+}
+
+/** A pot or disc bearing's inputs as saved, filled in from the defaults (each part's fields kept as saved). */
+export function hlmrInputs(saved: unknown): HlmrInputs {
+  const s = (saved && typeof saved === "object" ? saved : {}) as Partial<HlmrInputs>;
+  const d = HLMR_DEFAULTS;
+  return { ...d, ...s, kind: s.kind === "disc" ? "disc" : "pot", fixity: s.fixity === "fixed" || s.fixity === "free" ? s.fixity : "guided", pot: { ...d.pot, ...(s.pot ?? {}), rings: { ...d.pot.rings, ...(s.pot?.rings ?? {}) } }, disc: { ...d.disc, ...(s.disc ?? {}) }, ptfe: { ...d.ptfe, ...(s.ptfe ?? {}) }, guides: { ...d.guides, ...(s.guides ?? {}) }, masonry: { ...d.masonry, ...(s.masonry ?? {}) }, sole: { ...d.sole, ...(s.sole ?? {}) }, anchors: { ...d.anchors, ...(s.anchors ?? {}) } };
 }
 
 /** A slab bridge's inputs as saved, filled in from the defaults. */
@@ -335,5 +344,5 @@ function parseInputs(kind: string, saved: unknown) {
   if (kind === "dt-load-rating") return dtRatingInputs(saved);
   if (kind === "stm-d-region") return stmInputs(saved);
   if (kind === "pier-column") return columnInputs(saved);
-  return kind === "mse-wall" ? mseInputs(saved) : kind === "box-culvert" ? cbcInputs(saved) : kind === "elastomeric-bearing" ? bearingInputs(saved) : kind === "cantilever-wingwall" ? wingwallInputs(saved) : kind === "deck-slab" ? deckInputs(saved) : kind === "seismic-zone1" ? zone1Inputs(saved) : kind === "camber-haunch" ? haunchInputs(saved) : kind === "sign-cantilever" ? signInputs(saved) : kind === "ptfe-bearing" ? ptfeInputs(saved) : kind === "strip-seal-joint" ? stripSealInputs(saved) : kind === "approach-slab" ? approachSlabInputs(saved) : kind === "slab-bridge" ? slabBridgeInputs(saved) : cipInputs(saved);
+  return kind === "mse-wall" ? mseInputs(saved) : kind === "box-culvert" ? cbcInputs(saved) : kind === "elastomeric-bearing" ? bearingInputs(saved) : kind === "cantilever-wingwall" ? wingwallInputs(saved) : kind === "deck-slab" ? deckInputs(saved) : kind === "seismic-zone1" ? zone1Inputs(saved) : kind === "camber-haunch" ? haunchInputs(saved) : kind === "sign-cantilever" ? signInputs(saved) : kind === "ptfe-bearing" ? ptfeInputs(saved) : kind === "strip-seal-joint" ? stripSealInputs(saved) : kind === "approach-slab" ? approachSlabInputs(saved) : kind === "slab-bridge" ? slabBridgeInputs(saved) : kind === "pot-disc-bearing" ? hlmrInputs(saved) : cipInputs(saved);
 }

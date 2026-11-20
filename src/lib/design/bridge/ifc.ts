@@ -1,3 +1,5 @@
+import { bearingParts } from "../bearings/pot-disc-detail";
+import type { HlmrInputs } from "../bearings/pot-disc";
 import type { AbutmentInputs } from "../foundations/abutment";
 import { ABUTMENT_DEFAULTS } from "../foundations/abutment";
 import type { FootingInputs } from "../foundations/footing";
@@ -94,6 +96,8 @@ export type BridgeComponents = {
   foundations?: Record<number, { id?: string | null; kind: "spread-footing" | "pile-foundation" | "drilled-shaft"; inputs?: FootingInputs | PileInputs | ShaftInputs } | undefined>;
   deckId?: string | null;
   ids?: { girders?: (string | null)[]; caps?: Record<number, string | null>; columns?: Record<number, string | null> };
+  /** Each support's pot or disc bearing design, drawn as its parts where the support line takes them. */
+  hlmr?: Record<number, HlmrInputs | undefined>;
 };
 
 const sub = (a: V3, b: V3): V3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
@@ -292,6 +296,33 @@ export function bridgeIfc(b: BridgeInputs, run: BridgeRun, c: BridgeComponents =
         psets: designPset("lrfd-girder-check", gid, { Section: shape.name, SpanBearingToBearing: r6(g.L), PayItem: "618 (prestressed girder)" }),
       });
       for (const [pt, z, s, end] of [[A, zA, sa, "start"], [B, zB, sb, "end"]] as const) {
+        const k = s === sa ? span.index : span.index + 1;
+        const hl = c.hlmr?.[k];
+        if (hl && (b.supports[k]?.bearingKind === "pot" || b.supports[k]?.bearingKind === "disc")) {
+          // A pot or disc bearing drawn as its parts (bearings/pot-disc-detail.ts), x along the girder, y across it.
+          const ax = unit([along[0], along[1], 0]);
+          const ay: V3 = [-ax[1], ax[0], 0];
+          const base: V3 = [pt[0], pt[1], z - s.bearingHeight / 12];
+          for (const p of bearingParts(hl)) {
+            const o: V3 = [base[0] + (ax[0] * p.x + ay[0] * p.y) / 12, base[1] + (ax[1] * p.x + ay[1] * p.y) / 12, base[2] + p.z0 / 12];
+            const profile: Profile = p.shape.kind === "box" ? { kind: "rect", x: p.shape.B / 12, y: p.shape.L / 12 } : p.shape.kind === "cyl" ? { kind: "circle", r: p.shape.D / 24 } : { kind: "mesh", ...ringMesh(p.shape.D / 12, p.shape.d / 12, p.h / 12) };
+            els.push({
+              cls: "IfcBearing",
+              type: hl.kind === "pot" ? "POT" : "DISK",
+              name: `${p.name}, ${hl.kind} bearing, girder ${g.k + 1}, span ${span.index + 1} ${end}`,
+              part: "super",
+              origin: v3(o),
+              xdir: v3(ax),
+              zdir: UP,
+              profile,
+              depth: r6(p.h / 12),
+              material: p.material,
+              color: [...(/Elastomer|urethane|PTFE|Brass/.test(p.material) ? COLORS.bearing : COLORS.steel)],
+              psets: designPset("pot-disc-bearing", null, { Part: p.name, PayItem: "512-00118 Bearing Device (Special)" }),
+            });
+          }
+          continue;
+        }
         els.push({
           cls: "IfcBearing",
           type: "ELASTOMERIC",
@@ -636,4 +667,20 @@ export function flaredColumn(wB: number, wT: number, d: number, h: number): Prof
   ].map((p) => v3(p as V3));
   const tris: [number, number, number][] = [[0, 2, 1], [0, 3, 2], [4, 5, 6], [4, 6, 7], [0, 1, 5], [0, 5, 4], [1, 2, 6], [1, 6, 5], [2, 3, 7], [2, 7, 6], [3, 0, 4], [3, 4, 7]];
   return { kind: "mesh", ...outward({ pts, tris }) };
+}
+
+/** A ring (a pot's wall, a disc with its pin's hole) as a closed mesh in its own frame: D outside, d inside, h high (ft). */
+export function ringMesh(D: number, d: number, h: number, n = 32) {
+  const pts: V3[] = [];
+  for (const [r, z] of [[D / 2, 0], [D / 2, h], [d / 2, 0], [d / 2, h]] as const) for (let k = 0; k < n; k++) pts.push([r * Math.cos((2 * Math.PI * k) / n), r * Math.sin((2 * Math.PI * k) / n), z]);
+  const ob = 0, ot = n, ib = 2 * n, it = 3 * n;
+  const tris: [number, number, number][] = [];
+  for (let k = 0; k < n; k++) {
+    const k1 = (k + 1) % n;
+    tris.push([ob + k, ob + k1, ot + k1], [ob + k, ot + k1, ot + k]); // outside
+    tris.push([ib + k, it + k1, ib + k1], [ib + k, it + k, it + k1]); // inside
+    tris.push([ot + k, ot + k1, it + k1], [ot + k, it + k1, it + k]); // top
+    tris.push([ob + k, ib + k1, ob + k1], [ob + k, ib + k, ib + k1]); // bottom
+  }
+  return { pts, tris };
 }

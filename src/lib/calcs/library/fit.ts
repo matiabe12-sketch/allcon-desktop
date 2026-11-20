@@ -77,5 +77,9 @@ export function sumLines(base: string, sub: string, terms: string[], o: { wrap?:
     else chunks.push([t]);
   }
   const names = chunks.map((_, k) => `${base}_{${part}${String.fromCharCode(97 + k)}}`);
-  return [...chunks.map((c, k): Line => ({ math: line(names[k], c), wide: true, ...unit })), { math: `${nameOf(base, sub)}\\coloneq ${names.join("+")}=`, ...(o.ref ? { ref: o.ref } : {}), ...unit }];
+  const parts = chunks.map((c, k): Line => ({ math: line(names[k], c), wide: true, ...unit }));
+  const total = `${nameOf(base, sub)}\\coloneq ${names.join("+")}=`;
+  // Too many parts to name on one line: their names summed in groups the same way.
+  if (!fitsAcross(total) && names.length > 2) return [...parts, ...sumLines(base, sub, names, { ref: o.ref, unit: o.unit, partSub: `${part}s` })];
+  return [...parts, { math: total, ...(o.ref ? { ref: o.ref } : {}), ...unit }];
 }

@@ -162,3 +162,50 @@ describe("horizontally curved girders within AASHTO 4.6.1.2.4b", { timeout: 6000
     expect(old.redistributionMethod).toBe("simplified");
   });
 });
+
+describe("the web's shear panels (6.10.9.1) and the deck at service in negative flexure (6.10.4.2.1)", () => {
+  const tight = { ...STEEL_DEFAULTS, braces: Array.from({ length: 17 }, (_, n) => 10 * (n + 1)) };
+  it("full-depth connection plates 10 ft apart bound stiffened panels (120 in ≤ 3D); without them the web is unstiffened", () => {
+    const withPlates = designSteelGirder(tight).checks.find((c) => c.id === "shear")!;
+    const without = designSteelGirder({ ...tight, crossFrame: { ...tight.crossFrame, fullDepthPlates: false } }).checks.find((c) => c.id === "shear")!;
+    expect(withPlates.note).toMatch(/stiffened|end panel/);
+    expect(withPlates.capacity).toBeGreaterThan(without.capacity);
+    expect(without.capacity).toBeCloseTo(263.2, 0);
+  });
+  it("a stiffener zone and a single stiffener both split panels", () => {
+    const one = designSteelGirder({ ...STEEL_DEFAULTS, stiffeners: [{ from: 84, to: 84, spacing: 1 }, { from: 96, to: 96, spacing: 1 }] });
+    const pier = one.stations.find((s) => Math.abs(s.X - 90) < 1e-6)!;
+    expect(pier.shear!.Vn).toBeGreaterThan(designSteelGirder(STEEL_DEFAULTS).stations.find((s) => Math.abs(s.X - 90) < 1e-6)!.shear!.Vn);
+  });
+  it("Example 2A's deck at the pier is past 2fr at Service II, so the steel and bars carry it; B6.3.2.1 leaves the pier's flange checks out", () => {
+    const r = designSteelGirder(STEEL_DEFAULTS);
+    expect(r.checks.some((c) => c.id === "svc-bot" && /deck cracked/.test(c.note ?? ""))).toBe(false);
+    const plain = designSteelGirder({ ...STEEL_DEFAULTS, appendixA6: false, redistribution: false });
+    expect(plain.checks.find((c) => c.id === "svc-bot")!.note).toMatch(/deck cracked/);
+  });
+});
+
+describe("AASHTO 10th Edition load factors: construction (3.4.2.1) and cross-frame fatigue (3.4.5)", () => {
+  const r = designSteelGirder(STEEL_DEFAULTS);
+  it("the deck on the erected steelwork at 1.4 DC1, not 1.5", () => {
+    const c = r.checks.find((x) => x.id === "con-web")!;
+    const s = r.stations.reduce((b, x) => ((x.ratios["con-web"] ?? -1) > (b.ratios["con-web"] ?? -1) ? x : b));
+    const sc = r.sections[s.seg].steel;
+    const f = (1.4 * Math.abs(s.M.dc1) * 12) / (s.M.dc1 >= 0 ? sc.Stop : sc.Sbot);
+    expect(c.demand).toBeCloseTo(f, 6);
+  });
+  it("with construction loads: the larger of 1.25 DC + 1.5 C and 1.4 (DC + C)", () => {
+    const a = designSteelGirder({ ...STEEL_DEFAULTS, constructionLL: 20 }).checks.find((x) => x.id === "con-web")!;
+    expect(a.demand).toBeGreaterThan(r.checks.find((x) => x.id === "con-web")!.demand);
+  });
+  it("cross-frame connection fatigue: the live load factor times 0.65", () => {
+    const one = designSteelGirder({ ...STEEL_DEFAULTS, crossFrame: { ...STEEL_DEFAULTS.crossFrame, connection: { ...STEEL_DEFAULTS.crossFrame.connection, check: true, fatigueRange: 5 } } });
+    const g = one.crossFrames!.connections[0];
+    expect(g.fatigue!.gamma).toBeCloseTo(0.65 * (g.fatigue!.combo.includes("II") ? 0.8 : 1.75), 6);
+  });
+  it("the brackets' lateral bending is amplified with curvature's on the compression flange (Eq. 6.10.1.6-4)", () => {
+    const base = designSteelGirder({ ...STEEL_DEFAULTS, flConstruction: 3 });
+    const c = base.checks.find((x) => x.id === "con-yield");
+    if (c) expect(c.demand).toBeGreaterThanOrEqual(r.checks.find((x) => x.id === "con-yield")!.demand + 3 - 1e-9);
+  });
+});

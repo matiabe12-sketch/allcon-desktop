@@ -130,8 +130,10 @@ export function cfConnection(c: CfConnection, member: string, Pu: number, Ps: nu
     const cat: FatigueCategory = c.kind === "welded" ? "E'" : c.holes === "drilled" ? "B" : "D";
     const r = fatigueResistance(FATIGUE_CATEGORIES[cat], adttSL, cycles, life);
     const range = c.fatigueRange / Math.max(1e-9, out.U * a.A);
-    out.fatigue = { cat, range, gamma: r.gamma, Fn: r.Fn, combo: r.combo };
-    checks.push({ name: `fatigue of the member at its connection, category ${cat}, ${r.combo}`, demand: r.gamma * range, capacity: r.Fn, unit: "ksi", ref: "AASHTO 6.6.1.2.2, Table 6.6.1.2.3-1" });
+    // Cross-frames: the Fatigue I and II live load factors times 0.65 (3.4.5).
+    const gamma = 0.65 * r.gamma;
+    out.fatigue = { cat, range, gamma, Fn: r.Fn, combo: r.combo };
+    checks.push({ name: `fatigue of the member at its connection, category ${cat}, ${r.combo}`, demand: gamma * range, capacity: r.Fn, unit: "ksi", ref: "AASHTO 3.4.5, 6.6.1.2.2, Table 6.6.1.2.3-1" });
   }
   return { ...out, checks };
 }

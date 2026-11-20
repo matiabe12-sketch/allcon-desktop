@@ -195,18 +195,198 @@ export function steelCalcLines(i: SteelGirderInputs, title: string, result?: Ste
     "n",
     true,
   );
-  flat(
-    [
-      ["con-yield", "Compression flange, yielding", "AASHTO Eq. 6.10.3.2.1-1"],
-      ["con-fnc", "Compression flange, buckling", "AASHTO Eq. 6.10.3.2.1-2"],
-      ["con-web", "Web bend-buckling", "AASHTO Eq. 6.10.3.2.1-3"],
-      ["con-tension", "Tension flange", "AASHTO Eq. 6.10.3.2.2-1"],
-      ["con-shear", "Shear", "AASHTO Eq. 6.10.3.3-1"],
-      ["con-fl", "Flange lateral bending", "AASHTO Eq. 6.10.1.6-1"],
-    ],
-    "Constructibility: the deck placed on the steel (AASHTO 6.10.3)",
-    "c",
-  );
+  // The steel section's hybrid factor at a field section (6.10.1.10.1).
+  const rhOf = (k: number) => {
+    const p = plates(i.segments[k]);
+    const sc = r.sections[k].steel;
+    return hybridRh(p.D * p.tw, Math.min(p.top.b * p.top.t, p.bottom.b * p.bottom.t), Math.max(sc.yNA - p.bottom.t, sc.depth - p.top.t - sc.yNA), p.tw, i.Fyw, i.Fyf);
+  };
+  const near = (a: number, b: number) => Math.abs(a - b) <= 0.003 * Math.max(1, Math.abs(b));
+  const rhLine = (k: number, t: string) => {
+    const Rh = rhOf(k);
+    if (Rh === 1) m(`R_{h${t}}\\coloneq1.0`, "Homogeneous section, AASHTO 6.10.1.10.1");
+    else given(`R_{h${t}}\\coloneq ${num(Rh, 3)}`, "Hybrid factor, AASHTO 6.10.1.10.1");
+  };
+  /** The compression flange's Fnc (6.10.8.2.2 and 6.10.8.2.3, Rb = 1 on the bare steel), its variables tagged t. */
+  const fncLines = (t: string) => {
+    m(`\\lambda_{f${t}}\\coloneq\\frac{b_{fc${t}}}{2\\cdot t_{fc${t}}}=`, "AASHTO Eq. 6.10.8.2.2-3");
+    m(`\\lambda_{pf${t}}\\coloneq0.38\\cdot\\sqrt{\\frac{E_s}{F_{yf}}}=`, "AASHTO Eq. 6.10.8.2.2-4");
+    m(`F_{yr${t}}\\coloneq\\max\\left(0.5\\cdot F_{yf},\\min\\left(0.7\\cdot F_{yf},F_{yw}\\right)\\right)=`, "AASHTO 6.10.8.2.2", "ksi");
+    m(`\\lambda_{rf${t}}\\coloneq0.56\\cdot\\sqrt{\\frac{E_s}{F_{yr${t}}}}=`, "AASHTO Eq. 6.10.8.2.2-5");
+    m(`F_{FLB${t}}\\coloneq\\operatorname{if}\\left(\\lambda_{f${t}}\\le\\lambda_{pf${t}},R_{h${t}}\\cdot F_{yf},\\left(1-\\left(1-\\frac{F_{yr${t}}}{R_{h${t}}\\cdot F_{yf}}\\right)\\cdot\\frac{\\lambda_{f${t}}-\\lambda_{pf${t}}}{\\lambda_{rf${t}}-\\lambda_{pf${t}}}\\right)\\cdot R_{h${t}}\\cdot F_{yf}\\right)=`, "AASHTO Eqs. 6.10.8.2.2-1, -2 (Rb = 1)", "ksi");
+    m(`r_{t${t}}\\coloneq\\frac{b_{fc${t}}}{\\sqrt{12\\cdot\\left(1+\\frac{D_{c${t}}\\cdot t_{w${t}}}{3\\cdot b_{fc${t}}\\cdot t_{fc${t}}}\\right)}}=`, "AASHTO Eq. 6.10.8.2.3b-3", "in");
+    m(`L_{p${t}}\\coloneq1.1\\cdot r_{t${t}}\\cdot\\sqrt{\\frac{E_s}{F_{yf}}}=`, "AASHTO Eq. 6.10.8.2.3a-4", "ft");
+    m(`F_{yrL${t}}\\coloneq0.5\\cdot F_{yf}=`, "Webs without longitudinal stiffeners, AASHTO 6.10.8.2.3a", "ksi");
+    m(`L_{r${t}}\\coloneq\\pi\\cdot r_{t${t}}\\cdot\\sqrt{\\frac{E_s}{F_{yrL${t}}}}=`, "AASHTO Eq. 6.10.8.2.3a-5", "ft");
+    m(`F_{e${t}}\\coloneq\\frac{C_{b${t}}\\cdot\\pi^{2}\\cdot E_s}{\\left(\\frac{L_{b${t}}}{r_{t${t}}}\\right)^{2}}=`, "AASHTO Eq. 6.10.8.2.3b-2", "ksi");
+    m(
+      `F_{LTB${t}}\\coloneq\\operatorname{if}\\left(L_{b${t}}\\le L_{p${t}},R_{h${t}}\\cdot F_{yf},\\operatorname{if}\\left(L_{b${t}}\\le L_{r${t}},\\min\\left(C_{b${t}}\\cdot\\left(1-\\left(1-\\frac{F_{yrL${t}}}{R_{h${t}}\\cdot F_{yf}}\\right)\\cdot\\frac{L_{b${t}}-L_{p${t}}}{L_{r${t}}-L_{p${t}}}\\right)\\cdot R_{h${t}}\\cdot F_{yf},R_{h${t}}\\cdot F_{yf}\\right),\\min\\left(F_{e${t}},R_{h${t}}\\cdot F_{yf}\\right)\\right)\\right)=`,
+      "AASHTO Eqs. 6.10.8.2.3a-1 to -3 (Rb = 1)",
+      "ksi",
+    );
+    m(`F_{nc${t}}\\coloneq\\min\\left(F_{FLB${t}},F_{LTB${t}}\\right)=`, "AASHTO 6.10.8.2.1", "ksi");
+  };
+
+  // --- Constructibility (6.10.3), worked at each governing section: the deck placed on the bare steel ---
+  const conIds: [string, string, string][] = [
+    ["con-yield", "Compression flange, yielding", "AASHTO Eq. 6.10.3.2.1-1"],
+    ["con-fnc", "Compression flange, buckling", "AASHTO Eq. 6.10.3.2.1-2"],
+    ["con-web", "Web bend-buckling", "AASHTO Eq. 6.10.3.2.1-3"],
+    ["con-tension", "Tension flange", "AASHTO Eq. 6.10.3.2.2-1"],
+    ["con-shear", "Shear", "AASHTO Eq. 6.10.3.3-1"],
+    ["con-fl", "Flange lateral bending", "AASHTO Eq. 6.10.1.6-1"],
+  ];
+  const conLeft: [string, string, string][] = [];
+  {
+    const flexIds = ["con-yield", "con-fnc", "con-web", "con-tension"];
+    const present = flexIds.filter((id) => check(id) && stationOf(id));
+    const groups = new Map<number, string[]>();
+    for (const id of present) {
+      const X = stationOf(id)!.X;
+      groups.set(X, [...(groups.get(X) ?? []), id]);
+    }
+    const workable = i.constructionLL === 0 && present.length > 0;
+    if (workable) {
+      text("Constructibility: the deck placed on the steel (AASHTO 6.10.3)", "subheading", { newPage: true, keepWithNext: true });
+      text(
+        `Method:- The deck's weight on the erected steelwork, the steel alone carrying it: 1.4 DC1 (AASHTO 3.4.2.1, its additional combination for steel superstructures; 1.25 DC1 of Strength I is smaller with no construction loads). The compression flange braced at the cross-frames; Rb = 1 (AASHTO 6.10.1.10.2).`,
+        undefined,
+        { keepWithNext: true },
+      );
+      m("\\phi_f\\coloneq1.0", "AASHTO 6.5.4.2");
+      let g = 0;
+      for (const [X, ids] of groups) {
+        const s = r.stations.find((x) => x.X === X)!;
+        const k = s.seg;
+        const p = plates(i.segments[k]);
+        const sc = r.sections[k].steel;
+        const topComp = s.M.dc1 >= 0;
+        const cf = topComp ? p.top : p.bottom;
+        const Mc = 1.4 * i.eta * s.M.dc1;
+        const fbu = (Math.abs(Mc) * 12) / (topComp ? sc.Stop : sc.Sbot);
+        const fbt = (Math.abs(Mc) * 12) / (topComp ? sc.Sbot : sc.Stop);
+        const Dc = topComp ? Math.max(0, sc.depth - p.top.t - sc.yNA) : Math.max(0, sc.yNA - p.bottom.t);
+        // Only where the engine's values follow from these (no construction loads or other stages); else the summary.
+        const fits = ids.every((id) => {
+          const c = check(id)!;
+          if (id === "con-web") return near(fbu, c.demand);
+          if (id === "con-tension") return c.demand >= fbt - 1e-6;
+          return c.demand >= fbu - 1e-6;
+        });
+        if (!fits) {
+          for (const id of ids) conLeft.push(conIds.find((x) => x[0] === id)!);
+          continue;
+        }
+        g++;
+        const t = `c${g}`;
+        text(`Section ${g}:- ${where(s)}, section ${k + 1}: the ${topComp ? "top" : "bottom"} flange in compression.`, undefined, { keepWithNext: true });
+        given(`M_{DC1${t}}\\coloneq ${num(s.M.dc1)}\\mathrm{kip}\\cdot\\mathrm{ft}`, "DC1: the steel, the wet deck and haunch, from the girder line");
+        m(`M_{u${t}}\\coloneq1.4\\cdot${num(i.eta)}\\cdot\\left|M_{DC1${t}}\\right|=`, "1.4 η DC1, AASHTO 3.4.2.1", "kip*ft");
+        given(`S_{xc${t}}\\coloneq ${num(topComp ? sc.Stop : sc.Sbot)}\\mathrm{in}^{3}`, `The steel section, to the ${topComp ? "top" : "bottom"} flange`);
+        given(`S_{xt${t}}\\coloneq ${num(topComp ? sc.Sbot : sc.Stop)}\\mathrm{in}^{3}`, `The steel section, to the ${topComp ? "bottom" : "top"} flange`);
+        m(`f_{bu${t}}\\coloneq\\frac{M_{u${t}}}{S_{xc${t}}}=`, "Compression flange", "ksi");
+        rhLine(k, t);
+        const flOf = (id: string) => {
+          const c = check(id)!;
+          return id === "con-fnc" ? (c.demand - fbu) * 3 : c.demand - (id === "con-tension" ? fbt : fbu);
+        };
+        const flc = ids.includes("con-yield") ? flOf("con-yield") : ids.includes("con-fnc") ? flOf("con-fnc") : 0;
+        if (flc > 0.005 && (ids.includes("con-yield") || ids.includes("con-fnc"))) given(`f_{l${t}}\\coloneq ${num(flc, 3)}\\mathrm{ksi}`, "The compression flange's lateral bending (overhang brackets, curvature), AASHTO 6.10.1.6");
+        const fl = flc > 0.005 ? `+f_{l${t}}` : "";
+        if (ids.includes("con-yield")) m(ok(`f_{bu${t}}${fl}`, `\\phi_f\\cdot R_{h${t}}\\cdot F_{yf}`), "Yielding, AASHTO Eq. 6.10.3.2.1-1");
+        if (ids.includes("con-fnc") || ids.includes("con-web")) {
+          m(`b_{fc${t}}\\coloneq ${num(cf.b)}\\mathrm{in}`);
+          m(`t_{fc${t}}\\coloneq ${num(cf.t)}\\mathrm{in}`);
+          m(`D_{${t}}\\coloneq ${num(p.D)}\\mathrm{in}`);
+          m(`t_{w${t}}\\coloneq ${num(p.tw)}\\mathrm{in}`);
+          given(`D_{c${t}}\\coloneq ${num(Dc)}\\mathrm{in}`, "Web depth in compression, the steel section, AASHTO D6.3.1");
+        }
+        if (ids.includes("con-fnc")) {
+          const note = check("con-fnc")!.note ?? "";
+          m(`L_{b${t}}\\coloneq ${num(Number(/Lb ([\d.]+) ft/.exec(note)?.[1] ?? 0))}\\mathrm{ft}`, "Unbraced length, between cross-frames");
+          given(`C_{b${t}}\\coloneq ${num(Number(/Cb ([\d.]+)/.exec(note)?.[1] ?? 1), 3)}`, "From the moments at the unbraced length's quarter points, AASHTO Eq. 6.10.8.2.3b-1");
+          fncLines(t);
+          m(ok(`f_{bu${t}}${flc > 0.005 ? `+\\frac{f_{l${t}}}{3}` : ""}`, `\\phi_f\\cdot F_{nc${t}}`), "Flange buckling, AASHTO Eq. 6.10.3.2.1-2");
+        }
+        if (ids.includes("con-web")) {
+          m(`k_{w${t}}\\coloneq\\frac{9}{\\left(\\frac{D_{c${t}}}{D_{${t}}}\\right)^{2}}=`, "AASHTO Eq. 6.10.1.9.1-2");
+          m(`F_{crw${t}}\\coloneq\\min\\left(\\frac{0.9\\cdot E_s\\cdot k_{w${t}}}{\\left(\\frac{D_{${t}}}{t_{w${t}}}\\right)^{2}},R_{h${t}}\\cdot F_{yf},\\frac{F_{yw}}{0.7}\\right)=`, "AASHTO Eq. 6.10.1.9.1-1", "ksi");
+          m(ok(`f_{bu${t}}`, `\\phi_f\\cdot F_{crw${t}}`), "Web bend-buckling, AASHTO Eq. 6.10.3.2.1-3");
+        }
+        if (ids.includes("con-tension")) {
+          m(`f_{bt${t}}\\coloneq\\frac{M_{u${t}}}{S_{xt${t}}}=`, "Tension flange", "ksi");
+          const flt = flOf("con-tension");
+          if (flt > 0.005) given(`f_{lt${t}}\\coloneq ${num(flt, 3)}\\mathrm{ksi}`, "The tension flange's lateral bending, AASHTO 6.10.1.6");
+          m(ok(`f_{bt${t}}${flt > 0.005 ? `+f_{lt${t}}` : ""}`, `\\phi_f\\cdot R_{h${t}}\\cdot F_{yf}`), "AASHTO Eq. 6.10.3.2.2-1");
+        }
+      }
+      if (!g) conLeft.length = 0;
+      if (!g) for (const id of present) conLeft.push(conIds.find((x) => x[0] === id)!);
+    } else for (const id of present) conLeft.push(conIds.find((x) => x[0] === id)!);
+    conLeft.push(...conIds.filter(([id]) => !flexIds.includes(id)));
+  }
+
+  // --- Service II (6.10.4.2), worked: 1.0 DC + 1.0 DW + 1.3 LL on the stage that carries each ---
+  const svcLeft: [string, string, string][] = [["svc-web", "Web bend-buckling", "AASHTO Eq. 6.10.4.2.2-4"]];
+  {
+    const rows = (
+      [
+        ["svc-top", "Top flange", "AASHTO Eq. 6.10.4.2.2-1", "Stop"],
+        ["svc-bot", "Bottom flange", "AASHTO Eq. 6.10.4.2.2-2", "Sbot"],
+      ] as const
+    ).filter(([id]) => check(id) && stationOf(id));
+    let opened = false;
+    rows.forEach(([id, name, ref, face]) => {
+      const c = check(id)!;
+      const s = stationOf(id)!;
+      const k = s.seg;
+      const note = c.note ?? "";
+      const negative = note.startsWith("negative");
+      const cracked = /deck cracked/.test(note);
+      const Mrd = Number(/Mrd (-?[\d.]+) kip/.exec(note)?.[1] ?? 0);
+      const flS = face === "Sbot" ? Number(/fℓ ([\d.]+) ksi \(curvature\)/.exec(note)?.[1] ?? 0) : 0;
+      const sec = r.sections[k];
+      const ll = negative ? s.M.llNeg : s.M.llPos;
+      const lt = cracked ? sec.bars : sec.long;
+      const st = cracked ? sec.bars : sec.short;
+      const f = Math.abs((s.M.dc1 * 12) / sec.steel[face] + ((s.M.dc2 + s.M.dw + Mrd) * 12) / lt[face] + (1.3 * ll * 12) / st[face]) + flS / 2;
+      if (!near(f, c.demand)) {
+        svcLeft.unshift([id, name, ref]);
+        return;
+      }
+      if (!opened) {
+        text("Service II: permanent deformations (AASHTO 6.10.4.2)", "subheading", { newPage: true, keepWithNext: true });
+        text(
+          "Method:- 1.0 DC + 1.0 DW + 1.3 LL (AASHTO Table 3.4.1-1): DC1 on the steel, DC2 and DW on the long-term composite section (3n), the live load on the short-term (n). In negative flexure the deck counts only where the studs run throughout and its tension under these loads stays within 2fr; otherwise the steel and the deck's bars carry them (AASHTO 6.10.4.2.1).",
+          undefined,
+          { keepWithNext: true },
+        );
+        opened = true;
+      }
+      const t = face === "Stop" ? "sT" : "sB";
+      text(`${name}:- ${where(s)}, section ${k + 1}, ${negative ? "negative" : "positive"} moment.`, undefined, { keepWithNext: true });
+      given(`M_{1${t}}\\coloneq ${num(s.M.dc1)}\\mathrm{kip}\\cdot\\mathrm{ft}`, "DC1, on the steel");
+      given(`M_{2${t}}\\coloneq ${num(s.M.dc2 + s.M.dw)}\\mathrm{kip}\\cdot\\mathrm{ft}`, "DC2 + DW");
+      given(`M_{L${t}}\\coloneq ${num(ll)}\\mathrm{kip}\\cdot\\mathrm{ft}`, `LL+IM, ${negative ? "negative" : "positive"}, from the girder line`);
+      if (Mrd) given(`M_{rd${t}}\\coloneq ${num(Mrd)}\\mathrm{kip}\\cdot\\mathrm{ft}`, "The redistribution moment at service, on the long-term section, AASHTO B6.3.3");
+      if (negative && i.studsThroughout) {
+        given(`S_{d3${t}}\\coloneq ${num(sec.long.Sdeck)}\\mathrm{in}^{3}`, "Long-term section (3n), to the top of the deck");
+        given(`S_{dn${t}}\\coloneq ${num(sec.short.Sdeck)}\\mathrm{in}^{3}`, "Short-term section (n), to the top of the deck");
+        m(`f_{dk${t}}\\coloneq-\\left(\\frac{M_{2${t}}}{3\\cdot n\\cdot S_{d3${t}}}+\\frac{1.3\\cdot M_{L${t}}}{n\\cdot S_{dn${t}}}\\right)=`, "The deck's longitudinal tension", "ksi");
+        m(`f_{rs${t}}\\coloneq0.24\\cdot\\sqrt{${num(i.fcDeck)}}\\cdot\\mathrm{ksi}=`, "Modulus of rupture, AASHTO 5.4.2.6", "ksi");
+        m(`\\operatorname{if}\\left(f_{dk${t}}\\le2\\cdot f_{rs${t}},\\text{effective},\\text{cracked}\\right)=`, "The deck in negative flexure at service, AASHTO 6.10.4.2.1");
+      }
+      const side = face === "Stop" ? "top" : "bottom";
+      given(`S_{nc${t}}\\coloneq ${num(sec.steel[face])}\\mathrm{in}^{3}`, `The steel, to the ${side} flange`);
+      given(`S_{lt${t}}\\coloneq ${num(lt[face])}\\mathrm{in}^{3}`, cracked ? `The steel and the deck's bars, to the ${side} flange` : `Long-term composite (3n), to the ${side} flange`);
+      given(`S_{st${t}}\\coloneq ${num(st[face])}\\mathrm{in}^{3}`, cracked ? `The steel and the deck's bars, to the ${side} flange` : `Short-term composite (n), to the ${side} flange`);
+      m(`f_{f${t}}\\coloneq\\left|\\frac{M_{1${t}}}{S_{nc${t}}}+\\frac{M_{2${t}}${Mrd ? `+M_{rd${t}}` : ""}}{S_{lt${t}}}+\\frac{1.3\\cdot M_{L${t}}}{S_{st${t}}}\\right|=`, "The flange's stress", "ksi");
+      if (flS > 0) given(`f_{l${t}}\\coloneq ${num(flS, 3)}\\mathrm{ksi}`, "The bottom flange's lateral bending (curvature), AASHTO 6.10.1.6");
+      rhLine(k, t);
+      m(ok(`f_{f${t}}${flS > 0 ? `+\\frac{f_{l${t}}}{2}` : ""}`, `0.95\\cdot R_{h${t}}\\cdot F_{yf}`), ref);
+    });
+  }
+  if (conLeft.length) flat(conLeft, conLeft.length === conIds.length ? "Constructibility: the deck placed on the steel (AASHTO 6.10.3)" : "Constructibility: the other checks", "c", conLeft.length === conIds.length);
   if (r.windConstruction) {
     const wc = r.windConstruction;
     text("Wind during construction (AASHTO 3.4.2.1, C4.6.2.7.1)", "subheading", { keepWithNext: true });
@@ -229,15 +409,7 @@ export function steelCalcLines(i: SteelGirderInputs, title: string, result?: Ste
     "cw",
     false,
   );
-  flat(
-    [
-      ["svc-top", "Top flange", "AASHTO Eq. 6.10.4.2.2-1"],
-      ["svc-bot", "Bottom flange", "AASHTO Eq. 6.10.4.2.2-2"],
-      ["svc-web", "Web bend-buckling", "AASHTO Eq. 6.10.4.2.2-4"],
-    ],
-    "Service II: permanent deformations (AASHTO 6.10.4.2)",
-    "s",
-  );
+  flat(svcLeft, svcLeft.length === 3 ? "Service II: permanent deformations (AASHTO 6.10.4.2)" : "Service II: web bend-buckling", "s", svcLeft.length === 3);
   if (i.pours.length) {
     flat(
       [
@@ -249,7 +421,7 @@ export function steelCalcLines(i: SteelGirderInputs, title: string, result?: Ste
       "p",
     );
     text(
-      `Sequence:- ${[...i.pours].sort((a, b) => a.order - b.order).map((q, k) => `${k + 1}: ${num(q.from)} to ${num(q.to)} ft`).join("; ")}. Each pour's wet concrete (1.5 DC) on the steel where the deck is still wet and on the short-term composite section where earlier pours have hardened (AASHTO 6.10.1.1.1d); the steel's resistance and bracing (Cb = 1).`,
+      `Sequence:- ${[...i.pours].sort((a, b) => a.order - b.order).map((q, k) => `${k + 1}: ${num(q.from)} to ${num(q.to)} ft`).join("; ")}. Each pour's wet concrete (1.4 DC, AASHTO 3.4.2.1) on the steel where the deck is still wet and on the short-term composite section where earlier pours have hardened (AASHTO 6.10.1.1.1d); the steel's resistance and bracing (Cb = 1).`,
     );
     const pd = check("pour-deck");
     if (pd) {
@@ -358,13 +530,13 @@ export function steelCalcLines(i: SteelGirderInputs, title: string, result?: Ste
     const c = cfr.cases.reduce((b, x) => (x.req / x.act > b.req / b.act ? x : b), cfr.cases[0]);
     const cf = i.crossFrame;
     text("Cross-frames (AASHTO 6.7.4.2.2)", "subheading", { newPage: true, keepWithNext: true });
-    text(`Method:- ${cf.type}-type cross-frames as torsional braces for the deck's placement on the steel (1.5 DC1, Cb = 1), the members single angles; ${c.full ? "at least 0.8 of the girder's depth on full-depth connection plates" : "shallower than 0.8 of the girder's depth or without full-depth plates"}. Governing: ${c.label}.`, undefined, { keepWithNext: true });
+    text(`Method:- ${cf.type}-type cross-frames as torsional braces for the deck's placement on the steel (1.4 DC1, AASHTO 3.4.2.1; Cb = 1), the members single angles; ${c.full ? "at least 0.8 of the girder's depth on full-depth connection plates" : "shallower than 0.8 of the girder's depth or without full-depth plates"}. Governing: ${c.label}.`, undefined, { keepWithNext: true });
     m(`S_{cf}\\coloneq ${num(i.S * 12)}\\mathrm{in}`, "Girder spacing");
     m(`h_{b}\\coloneq ${num(cf.hb)}\\mathrm{in}`, "Between the struts' centroids");
     m(`n_{g}\\coloneq ${i.nGirders}`);
     m(`L_{cf}\\coloneq ${num(c.L)}\\mathrm{ft}`, c.label.startsWith("pier") ? "The two spans' average" : "Span");
     m(`n_{b}\\coloneq ${Math.max(1, c.n)}`, "Intermediate brace points in the span");
-    given(`M_{ucf}\\coloneq ${num(c.Mu)}\\mathrm{kip}\\cdot\\mathrm{ft}`, "1.5 DC1 on the steel");
+    given(`M_{ucf}\\coloneq ${num(c.Mu)}\\mathrm{kip}\\cdot\\mathrm{ft}`, "1.4 DC1 on the steel, AASHTO 3.4.2.1");
     given(`I_{yeff}\\coloneq ${num(c.Iyeff)}\\mathrm{in}^{4}`, "AASHTO Eqs. 6.7.4.2.2-4, -5");
     given(`I_{xcf}\\coloneq ${num(c.Ix)}\\mathrm{in}^{4}`, "The steel section");
     m(`\\beta_{Treq}\\coloneq\\frac{${c.full ? "2.4" : "3.6"}\\cdot L_{cf}\\cdot M_{ucf}^{2}}{0.8\\cdot n_{b}\\cdot E_s\\cdot I_{yeff}}=`, c.full ? "AASHTO Eq. 6.7.4.2.2-2, φsb = 0.8" : "AASHTO Eq. 6.7.4.2.2-3, φsb = 0.8", "kip*in");
@@ -475,7 +647,7 @@ export function steelCalcLines(i: SteelGirderInputs, title: string, result?: Ste
         given(`\\Delta_{Pc}\\coloneq ${num(cn.fatigueRange, 3)}\\mathrm{kip}`, "The member's force range under the fatigue truck, from a refined analysis");
         m("\\Delta_{fc}\\coloneq\\frac{\\Delta_{Pc}}{U_{c}\\cdot A_{gc}}=", "AASHTO 6.6.1.2.3 (slip-critical: on the gross section with shear lag)", "ksi");
         given(`\\Delta_{Fc}\\coloneq ${num(g.fatigue.Fn, 3)}\\mathrm{ksi}`, `Category ${g.fatigue.cat}, ${g.fatigue.combo}, ${i.S > 20 ? 1 : 2} cycles per truck (transverse members, AASHTO Table 6.6.1.2.5-2)`);
-        m(ok(`${num(g.fatigue.gamma, 2)}\\cdot\\Delta_{fc}`, "\\Delta_{Fc}"), "AASHTO Eq. 6.6.1.2.2-1");
+        m(ok(`0.65\\cdot${num(g.fatigue.gamma / 0.65, 2)}\\cdot\\Delta_{fc}`, "\\Delta_{Fc}"), "AASHTO Eq. 6.6.1.2.2-1; the live load factor times 0.65 for cross-frames, AASHTO 3.4.5");
         worked.add(idx("fatigue"));
       }
       const rest = [...cons.filter((x) => x !== g).flatMap((x) => x.checks.map((k) => ({ ...k, label: x.label }))), ...g.checks.filter((_, n) => !worked.has(n)).map((k) => ({ ...k, label: g.label }))];

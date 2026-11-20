@@ -85,13 +85,13 @@ Article 6.10, and its details (phase 2).
     positive flexure on the 3n section, and the 1.3RhMy cap is dropped.
   - Service flange limits are skipped from the pier to the nearest transition or contraflexure point.
 - **Deck pour sequence (phase 3).** Pours are placed in order:
-  - Wet concrete (1.5 DC) sits on the steel where the deck is still wet, and on the n section where
+  - Wet concrete (1.4 DC, 3.4.2.1) sits on the steel where the deck is still wet, and on the n section where
     earlier pours have hardened.
   - Flange checks are made at every stage with the steel's resistance (Cb = 1). These replace the
     single-placement flange checks.
   - The hardened deck's tension is checked against fr, or the 6.10.1.7 bars are required (6.10.3.2.4).
   - Camber sums the deck's deflections stage by stage.
-- **Cross-frames (phase 3).** X or K frames as torsional braces for the deck's placement (1.5 DC1, Cb = 1),
+- **Cross-frames (phase 3).** X or K frames as torsional braces for the deck's placement (1.4 DC1, Cb = 1),
   checked per span and at each pier:
   - (βT)act from βbr (Eqs. 6.7.4.2.2-8/-9 with 0.65A), βsec (∞ for full-depth frames on full-depth
     plates, else Eq. -12) and βg (Eq. -13), against (βT)req (Eq. -2 or -3, φsb 0.8).
@@ -218,6 +218,78 @@ Article 6.10, and its details (phase 2).
   - Its dead load moments come from an analysis whose stiffness isn't given. Per klf on the girder alone they
     solve to 843 at 0.4L and −2,213 at the pier, against 770 and −2,396 here with the same properties. Not
     used.
+- **NSBA Continuous-Span Standards (AASHTO 10th Edition), 16 of the 224 models, run in LRFD SIMON 10.5.**
+  - The sample: the middle span length of each set, 1 to 4 spans, 8 to 14 ft spacing.
+  - This was a local comparison, not a committed test: the program and its models stay on the owner's
+    machine.
+  - Exterior distribution factors match. Interior moment factors are within 1.7%; the program uses a
+    weighted-average Kg.
+  - Strength flexure (positive and negative) is within about 1.5%, and fatigue within 1%.
+  - Service II is within 1% on 15 of the 16 models.
+    - This needs two engine fixes, made then:
+      - The deck stress for the 2fr test of 6.10.4.2.1 is taken at the deck. Without the 2fr test the deck
+        counted as effective at the piers.
+      - B6.3.2.1 leaves the pier's flange stress checks out at any qualifying pier, not only where the service
+        redistribution moment is nonzero.
+    - Example 2A was written to the 5th Edition, so it doesn't check 2fr. Its pier deck cracks under the 10th
+      Edition (1.106 > 0.96 ksi).
+    - The exception is the 3-span, 14 ft model: the program reports 0.949 and ours is 0.829. Still open.
+  - Constructibility, after two 10th Edition fixes, is within about 2% on single spans and 4% on multi-span
+    girders.
+    - The fixes: 1.4 DC on the erected steelwork (3.4.2.1, the program's factor too), and the brackets'
+      lateral bending amplified with curvature's (Eq. 6.10.1.6-4).
+    - Single spans' web bend-buckling now matches exactly (0.965).
+    - The rest is the input: the engine takes one bracket fℓ for the girder, which the comparison worked out
+      from the first section's top flange. The program works it out from the bracket moment at each section.
+      On the 3-span, 10 ft model that is 6.22 ksi on span 3's smaller flange against 4.44. Fnc agrees there
+      (36.21 ksi).
+  - Shear (after the panel change below) matches where both check the same panel: 0.875, 0.697 and 0.879.
+    - Elsewhere the program checks only at its own analysis sections. It doesn't check the abutment's end
+      panel, or an unstiffened stretch between its last check point and the next stiffener; the engine checks
+      every station.
+    - At the piers, the program's ratios imply panels of about 4 ft. Its own stiffener list puts the first
+      stiffener 13 ft from the pier, which by hand gives ratios near 1.0 (2-span 14 ft: Vu 812 kip, ours
+      φVn 814).
+- **Shear panels (6.10.9.1).**
+  - A panel runs between neighbouring supports, cross-frame connection plates (when they're full depth on
+    both flanges) and transverse stiffeners. A stiffener zone gives one stiffener every `spacing`; a single
+    stiffener is a zone with `from` = `to`.
+  - A panel no longer than 3D is stiffened, and one next to an abutment is an end panel.
+  - The same panels give Vcr for constructibility.
+
+## Quantities (steel-takeoff.ts)
+
+- **Pay item:** CDOT 509-00000 Structural Steel (LB). 509-00001 (Galvanized) and 509-00010 (Special) can be
+  chosen instead. Painting is part of the work (CDOT 509.01), so it has no item of its own.
+- **Weight:** the computed weight of CDOT Standard Specifications (2025) 509.32(a):
+  - steel at 490.5 lb/ft³;
+  - plates at their net dimensions, with the stiffeners' corner clips deducted and no overrun;
+  - rolled W shapes and the cross-frame angles at their AISC nominal weight;
+  - high-strength bolts by Table 509-4;
+  - no allowance for welds or paint.
+- **What's included:**
+  - each field section's flanges and web, end to end;
+  - the bearing stiffeners and intermediate transverse stiffeners;
+  - the connection plates, two per frame;
+  - the cross-frame struts and diagonals at every line, the supports included, with their bolts;
+  - the studs: shank area × height, at each zone's pitch.
+- **Not included:**
+  - the field splices, which aren't designed;
+  - the K-frames' middle gusset plates;
+  - the bearings (Section 512);
+  - the deck.
+- Each part is worked out as math on the quantity sheet. The plan weight is the pay weight unless the design
+  changes or it is off by more than 2% (509.32(b)).
+
+## AASHTO 10th Edition load factors (checked 2026-11-20)
+
+- **Construction (3.4.2.1):** the larger of:
+  - 1.25 DC + 1.5 × the construction loads (Strength I);
+  - 1.4 × (DC + the construction loads) on the erected steelwork.
+
+  This applies to constructibility, each deck pour, the cross-frames' bracing moment and their construction
+  forces. The engine used 1.5 DC before.
+- **Cross-frame fatigue (3.4.5):** the Fatigue I and II live load factors are multiplied by 0.65.
 
 ## Plan sheets
 

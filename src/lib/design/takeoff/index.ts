@@ -18,6 +18,8 @@ import { HP_PAY_ITEM } from "../foundations/hpile";
 import type { MicropileInputs } from "../foundations/micropile";
 import type { PileInputs } from "../foundations/piles";
 import type { ShaftInputs } from "../foundations/shaft";
+import type { SteelGirderInputs } from "../girders/steel";
+import { steelTakeoff } from "../girders/steel-takeoff";
 import type { StripSealInputs } from "../joints/strip-seal";
 import type { CipInputs } from "../walls/cip";
 import type { MseInputs } from "../walls/mse";
@@ -62,6 +64,8 @@ export function takeoffFor(kind: string, inputs: unknown, s?: TakeoffSettings): 
       return micropileTakeoff(inputs as MicropileInputs, L ?? 1);
     case "abutment":
       return abutmentTakeoff(inputs as AbutmentInputs);
+    case "steel-girder-check":
+      return steelTakeoff(inputs as SteelGirderInputs, L);
     case "strip-seal-joint":
       return jointTakeoff(inputs as StripSealInputs, L ?? 40);
     default:

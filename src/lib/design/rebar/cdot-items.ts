@@ -117,6 +117,10 @@ export const CDOT_ITEMS: PayItem[] = [
     ["618-00184", "BT84"],
   ].map(([code, shape]) => item(code, `Prestressed Concrete I (${shape})`, "LF")),
   item("618-00001", "Prestressing Steel Strand", "LB"),
+  // 509 Structural steel (by the pound, CDOT 509.32-509.33)
+  item("509-00000", "Structural Steel", "LB"),
+  item("509-00001", "Structural Steel (Galvanized)", "LB"),
+  item("509-00010", "Structural Steel (Special)", "LB"),
 ];
 
 export const payItem = (code: string) => CDOT_ITEMS.find((p) => p.code === code) ?? null;
@@ -155,6 +159,7 @@ export const TOOL_PAY_ITEMS: Record<string, Partial<Record<QuantityRole, string[
   abutment: { concrete: ["601-03040", "601-03000"], rebar: ["602-00020", "602-00000"], pile: ["502-11253", "502-11274", "502-11489", "502-10836", "502-11057", "502-11263", "502-11284", "502-11473", "502-14102", "502-14117"], "pile-tip": ["502-00460"], prebore: ["502-00100"], shaft: ["503-00036", "503-00024", "503-00030", "503-00042", "503-00048", "503-00054", "503-00060", "503-00072"], excavation: ["206-00000"], backfill: ["206-00100", "206-00200"] , micropile: ["503-01100", "503-01070", "503-01060", "503-01080", "503-01120"], testing: ["503-02000"] },
   "approach-slab": { concrete: ["601-03056", "601-03040", "601-03000"], rebar: ["602-00020", "602-00000", "602-00025"], waterproofing: ["515-00120"], asphalt: ["403-09210"], joint: ["518-01004", "518-01002"], sealant: ["408-01100"] },
   "strip-seal-joint": { joint: ["518-01004", "518-01002", "518-01006", "518-01009", "518-01012", "518-01201"] },
+  "steel-girder-check": { girder: ["509-00000", "509-00001", "509-00010"] },
   "sign-cantilever": { shaft: ["503-00036", "503-00024", "503-00030", "503-00042", "503-00048", "503-00054", "503-00060", "503-00072"], rebar: ["602-00000"] },
 };
 

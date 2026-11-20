@@ -136,4 +136,23 @@ describe("steel girder calc package", { timeout: 60000 }, () => {
     expect(c.errors).toEqual([]);
     expect(c.checks.length).toBeGreaterThan(10);
   });
+
+  it("works out Service II (with the deck's 2fr test) and constructibility (1.4 DC1, AASHTO 3.4.2.1), their values the engine's", () => {
+    for (const inputs of [{ ...STEEL_DEFAULTS, appendixA6: false, redistribution: false }, STEEL_DEFAULTS]) {
+      const r = designSteelGirder(inputs);
+      const c = workOut(inputs);
+      expect(c.errors).toEqual([]);
+      const top = r.checks.find((x) => x.id === "svc-top")!;
+      const bot = r.checks.find((x) => x.id === "svc-bot")!;
+      close(c.value(String.raw`f_{fsT}\coloneq`, "ksi"), top.demand);
+      close(c.value(String.raw`f_{fsB}\coloneq`, "ksi"), bot.demand);
+      const fnc = r.checks.find((x) => x.id === "con-fnc")!;
+      const regionsOk = c.checks.filter((x) => x.latex.includes("F_{nc") && x.latex.includes("f_{buc"));
+      expect(regionsOk.length).toBeGreaterThan(0);
+      expect(fnc).toBeTruthy();
+    }
+    // The pier's deck worked out as cracked without B6 (1.106 ksi > 2fr).
+    const plain = workOut({ ...STEEL_DEFAULTS, appendixA6: false, redistribution: false });
+    expect(plain.checks.some((x) => x.latex.includes("f_{dk") && x.result.includes("cracked"))).toBe(true);
+  });
 });

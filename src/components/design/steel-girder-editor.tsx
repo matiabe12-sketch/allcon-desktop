@@ -9,6 +9,7 @@ import { BOLT_DIAMETERS, type CfConnection } from "@/lib/design/girders/steel-co
 import { FATIGUE_CATEGORIES, type FatigueCategory } from "@/lib/design/girders/steel-details";
 import type { SteelSegment } from "@/lib/design/girders/steel-section";
 import { DesignError } from "@/lib/design/walls/cip";
+import { TakeoffPanel } from "./takeoff-panel";
 import { ChecksBanner, ChecksTable, Choice, DesignErrorCard, DesignHeader, Field, fmt, KeyValues, Section, Toggle } from "./design-kit";
 import { SteelGirderSketch } from "./steel-girder-sketch";
 import { SteelCamberDiagram, SteelCamberTable, SteelCrossFrameDetail, SteelGirderElevationSheet, SteelPlateSchedule } from "./steel-girder-sheet";
@@ -502,6 +503,7 @@ export function SteelGirderEditor({ design, projects }: { design: { id: string; 
                   </CardContent>
                 </Card>
                 <ChecksTable checks={r.checks} groupOf={groupOf} />
+                <TakeoffPanel kind="steel-girder-check" design={design} inputs={inputs} ok={r.checks.every((c) => c.advisory || c.ok)} onSettings={(t) => setInputs((s) => ({ ...s, takeoff: t }))} />
                 <div className="grid gap-4 xl:grid-cols-2">
                   <KeyValues
                     title="Deck, loads and distribution"

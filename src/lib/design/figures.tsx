@@ -7,6 +7,8 @@ import { GirderElevation, GirderSketch, HandlingSketch } from "@/components/desi
 import { HaunchSketch } from "@/components/design/haunch-sketch";
 import { BridgeSectionSketch } from "@/components/design/bridge-section-sketch";
 import { GirderScheduleSketch } from "@/components/design/girder-schedule-sketch";
+import { SteelCamberDiagram, SteelGirderElevationSheet } from "@/components/design/steel-girder-sheet";
+import { designSteelGirder, type SteelGirderInputs } from "./girders/steel";
 import { girderSchedule } from "./girders/schedule";
 import { SignSketch } from "@/components/design/sign-sketch";
 import { StmSketch } from "@/components/design/stm-sketch";
@@ -163,3 +165,8 @@ export const capDetailFigures = (d: CapDetail) => ({ details: figure(<CapDetailS
 
 /** The Bridge's plan and profile, as the editor draws them. */
 export const bridgeFigures = (b: BridgeInputs, lay: BridgeLayout) => ({ plan: figure(<BridgePlan b={b} lay={lay} />), profile: figure(<BridgeProfile b={b} lay={lay} />) });
+
+export function steelGirderFigures(i: SteelGirderInputs) {
+  const r = designSteelGirder(i);
+  return { elevation: figure(<SteelGirderElevationSheet inputs={i} result={r} />), camber: figure(<SteelCamberDiagram result={r} />) };
+}

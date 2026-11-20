@@ -29,7 +29,7 @@ import { columnCalcLines } from "@/lib/design/piers/column-calc";
 import { columnLinkFrom } from "@/lib/design/piers/column-link";
 import { zone1CalcLines } from "@/lib/design/seismic/zone1-calc";
 import { cbcCalcLines } from "@/lib/design/culverts/cbc-calc";
-import { approachSlabFigures, foundationFigures, bearingFigures, capDetailFigures, takeoffFigures, cbcFigures, cipFigures, uStairFigures, columnFigures, deckFigures, dtFigures, girderFigures, haunchFigures, mseFigures, signFigures, stmFigures, stripSealFigures, wingwallFigures } from "@/lib/design/figures";
+import { approachSlabFigures, foundationFigures, bearingFigures, capDetailFigures, takeoffFigures, cbcFigures, cipFigures, uStairFigures, columnFigures, deckFigures, dtFigures, girderFigures, haunchFigures, mseFigures, signFigures, steelGirderFigures, stmFigures, stripSealFigures, wingwallFigures } from "@/lib/design/figures";
 import { girderSide, type GirderSide } from "@/lib/design/stm/cap-loads";
 import { nodeLpSolver } from "@/lib/design/stm/lp-node";
 import { designStm, stmInputs, type StmInputs } from "@/lib/design/stm/strut-tie";
@@ -293,7 +293,7 @@ export async function createCalcFromDesign(designId: string, variant?: "asd" | "
       : design.kind === "lrfd-girder-check"
       ? girderCalcLines(girderInputs(design.inputs), design.name, figures(() => girderFigures(girderInputs(design.inputs))))
       : design.kind === "steel-girder-check"
-      ? steelCalcLines(steelGirderInputs(design.inputs), design.name)
+      ? steelCalcLines(steelGirderInputs(design.inputs), design.name, undefined, figures(() => steelGirderFigures(steelGirderInputs(design.inputs))))
       : design.kind === "cip-cantilever-wall"
       ? cipCalcLines(cipInputs(design.inputs), design.name, figures(() => cipFigures(cipInputs(design.inputs))))
       : design.kind === "mse-wall"

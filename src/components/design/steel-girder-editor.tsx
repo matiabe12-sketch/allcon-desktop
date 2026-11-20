@@ -10,6 +10,7 @@ import type { SteelSegment } from "@/lib/design/girders/steel-section";
 import { DesignError } from "@/lib/design/walls/cip";
 import { ChecksBanner, ChecksTable, Choice, DesignErrorCard, DesignHeader, Field, fmt, KeyValues, Section, Toggle } from "./design-kit";
 import { SteelGirderSketch } from "./steel-girder-sketch";
+import { SteelCamberDiagram, SteelCamberTable, SteelGirderElevationSheet, SteelPlateSchedule } from "./steel-girder-sheet";
 
 // Checking a steel I-girder line: the spans, deck and girder's sections along it on the left, the
 // envelopes, checks and properties on the right, worked out as the inputs change and saved as you go.
@@ -413,12 +414,34 @@ export function SteelGirderEditor({ design, projects }: { design: { id: string; 
                   title="Sections (steel / short-term n / long-term 3n / steel and bars): I in⁴, S to the bottom in³"
                   rows={r.sections.map((s) => [`${s.k + 1}: ${s.name}, ${fmt(s.weight)} plf`, [s.steel, s.short, s.long, s.bars].map((p) => `${fmt(p.I, 0)} / ${fmt(p.Sbot, 0)}`).join("; ")] as [string, string])}
                 />
-                <KeyValues
-                  title="Camber: dead load deflections, downward (in), DC1 on the steel, DC2 and DW on the long-term section (6.7.2)"
-                  rows={r.camber
-                    .filter((c) => Math.abs(c.at * 10 - Math.round(c.at * 10)) < 1e-6 && [0.2, 0.4, 0.5, 0.6, 0.8].some((t) => Math.abs(c.at - t) < 1e-6))
-                    .map((c) => [`Span ${c.span + 1}, ${fmt(c.at, 1)}L`, `steel ${fmt(c.steel, 2)}, deck ${fmt(c.deck, 2)}, DC2 ${fmt(c.dc2, 2)}; total ${fmt(c.total, 2)} (DW ${fmt(c.dw, 2)} more)`] as [string, string])}
-                />
+                <Card>
+                  <CardContent className="space-y-3 py-3">
+                    <div className="text-sm font-medium">Girder elevation <span className="font-normal text-muted-foreground">· typical for the girder line, thicknesses exaggerated</span></div>
+                    <div className="overflow-x-auto">
+                      <div className="min-w-[640px]">
+                        <SteelGirderElevationSheet inputs={inputs} result={r} />
+                      </div>
+                    </div>
+                    <SteelPlateSchedule inputs={inputs} result={r} />
+                    <p className="text-[11px] text-muted-foreground">
+                      Field sections are taken at the plate transitions (FS, orange); their splices aren&apos;t designed here. DL c.f.: dead load contraflexure. Flanges in tension need the fracture-toughness (CVN) requirement for the owner&apos;s temperature zone.
+                    </p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="space-y-3 py-3">
+                    <div className="text-sm font-medium">Camber <span className="font-normal text-muted-foreground">· dead load deflections, in (6.7.2)</span></div>
+                    <div className="overflow-x-auto">
+                      <div className="min-w-[640px]">
+                        <SteelCamberDiagram result={r} />
+                      </div>
+                    </div>
+                    <SteelCamberTable result={r} />
+                    <p className="text-[11px] text-muted-foreground">
+                      The steel and the deck (DC1) on the steel{inputs.pours.length ? ", the deck pour by pour on the girder as it then is" : ", one deck pour"}; DC2 on the long-term composite section. The camber leaves out DW (the future wearing surface) and the vertical profile, whose ordinates are added to it.
+                    </p>
+                  </CardContent>
+                </Card>
                 {r.b6.piers.length > 0 && (inputs.appendixA6 || inputs.redistribution) && (
                   <KeyValues
                     title={`Pier sections (Appendices A6${inputs.redistribution ? ", B6" : ""}): kip·ft`}

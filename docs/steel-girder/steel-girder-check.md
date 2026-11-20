@@ -101,6 +101,14 @@ Article 6.10, and its details (phase 2).
   nac = As fsr/Zr are reported.
 - **Reactions.** Unfactored DC, DW, truck+IM and lane per girder, the way the NSBA plans tabulate them.
 
+## Plan sheets
+
+The editor and the calc package draw the girder elevation and camber as plan sheets show them (`src/components/design/steel-girder-sheet.tsx`, helpers in `src/lib/design/girders/steel-sheet.ts`, tests in `steel-sheet.test.ts`):
+
+- **Girder elevation:** one per girder line, flange thicknesses exaggerated. It shows field sections A, B, … taken at the plate transitions, the studs by zone, connection plates at the cross-frames, transverse and bearing stiffeners, splices at the transitions (marked FS, not designed), and the dead load contraflexure points (from the DC1 + DC2 + DW moments, parabolic between stations). Below it are the cross-frame, field section and span dimension strings.
+- **Plate schedule:** each field section's plates, from–to, length and plate weight at 490 pcf.
+- **Camber diagram and table:** every span's tenth points with the steel, deck and DC2 deflections; the camber is their sum. DW is listed but left out, as is the vertical profile.
+
 ## Benchmarks (tests)
 
 See `benchmarks.md`.

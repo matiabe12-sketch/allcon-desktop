@@ -1,4 +1,5 @@
 import type { Line } from "@/lib/calcs/library/templates";
+import type { Figure } from "../figures";
 import { COLOR_NOTE, isInput, num } from "../calc-style";
 import { checksSummary } from "../checks-summary";
 import { designSteelGirder, hybridRh, type SteelGirderInputs, type SteelGirderResult } from "./steel";
@@ -13,7 +14,7 @@ import { plates } from "./steel-section";
 
 const ok = (demand: string, capacity: string) => `\\operatorname{if}\\left(${demand}\\le ${capacity},\\text{OK},\\text{NG}\\right)=`;
 
-export function steelCalcLines(i: SteelGirderInputs, title: string, result?: SteelGirderResult): Line[] {
+export function steelCalcLines(i: SteelGirderInputs, title: string, result?: SteelGirderResult, figures?: { elevation?: Figure; camber?: Figure }): Line[] {
   const r = result ?? designSteelGirder(i);
   const lines: Line[] = [];
   const text = (t: string, style?: "heading" | "subheading" | "note", extra?: { newPage?: boolean; keepWithNext?: boolean }) => lines.push({ text: t, ...(style ? { style } : {}), ...(extra ?? {}) });
@@ -31,6 +32,12 @@ export function steelCalcLines(i: SteelGirderInputs, title: string, result?: Ste
     "Method:- A line girder: DC1 on the steel alone, DC2 and DW on the long-term composite section (3n), the live load on the short-term composite section (n), each with the girder's stiffness along it (6.10.1.5); HL-93 placed by influence lines, with 90% of two trucks and the lane for negative moment and pier reactions (3.6.1.3.1); distribution factors by 4.6.2.2. The effects at the governing sections are given; the resistances are worked out here.",
   );
   text(COLOR_NOTE, "note");
+
+  if (figures?.elevation) {
+    text("Girder elevation", "subheading", { newPage: true, keepWithNext: true });
+    text("The girder's field sections, taken at the plate transitions (their splices aren't designed here), with its studs, connection plates and stiffeners; flange thicknesses exaggerated.", undefined, { keepWithNext: true });
+    lines.push({ region: figures.elevation });
+  }
 
   text("Bridge, deck and girder", "subheading", { newPage: true, keepWithNext: true });
   m(`S\\coloneq ${num(i.S)}\\mathrm{ft}`, "Girder spacing");
@@ -451,7 +458,8 @@ export function steelCalcLines(i: SteelGirderInputs, title: string, result?: Ste
 
   if (r.camber.length) {
     text("Camber (AASHTO 6.7.2)", "subheading", { newPage: true, keepWithNext: true });
-    text("Method:- Downward deflections of the dead loads on the sections that carry them: the steel's weight and the deck (DC1) on the steel, DC2 and DW on the long-term composite section; one deck pour. The camber to detail is the total plus the vertical profile's own ordinates.");
+    text(`Method:- Downward deflections of the dead loads on the sections that carry them: the steel's weight and the deck (DC1) on the steel, DC2 and DW on the long-term composite section; ${i.pours.length ? "the deck pour by pour on the girder as it then is" : "one deck pour"}. The camber to detail is the total plus the vertical profile's own ordinates.`, undefined, { keepWithNext: true });
+    if (figures?.camber) lines.push({ region: figures.camber });
     for (const c of r.camber.filter((x) => [0.2, 0.4, 0.5, 0.6, 0.8].some((t) => Math.abs(x.at - t) < 1e-6)))
       text(`Span ${c.span + 1} at ${num(c.at, 1)}L:- steel ${num(c.steel, 3)} in, deck ${num(c.deck, 3)} in, DC2 ${num(c.dc2, 3)} in; total ${num(c.total, 3)} in (DW ${num(c.dw, 3)} in more).`);
   }

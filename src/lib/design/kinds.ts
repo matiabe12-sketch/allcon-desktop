@@ -22,6 +22,7 @@ function cleanExtension(v: unknown): CbcInputs["extension"] {
   return { pieces, bar: Math.round(n(o.bar, 5)), length: n(o.length, 36), spacing: n(o.spacing, 12) || 12, removalBackfill: n(o.removalBackfill, 0), waterproofJoints: o.waterproofJoints === true };
 }
 import { APPROACH_SLAB_DEFAULTS, type ApproachSlabInputs } from "./approach/approach-slab";
+import { SLAB_BRIDGE_DEFAULTS, type SlabBridgeInputs } from "./slabs/slab-bridge";
 import { FOUNDATION_INFO, FOUNDATION_KINDS, foundationInputs } from "./foundations/kinds";
 import { DECK_DEFAULTS, RAIL_DEFAULT, type DeckInputs } from "./decks/deck";
 import { STRIP_SEAL_DEFAULTS, type StripSealInputs } from "./joints/strip-seal";
@@ -44,7 +45,7 @@ import { steelGirderInputs } from "./girders/steel";
 // The Design section's categories and design types: highway structures to AASHTO LRFD, grouped
 // by element. What can be designed, and what's coming next.
 
-export type DesignKind = "lrfd-girder-check" | "steel-girder-check" | "dt-load-rating" | "stm-d-region" | "cip-cantilever-wall" | "mse-wall" | "cantilever-wingwall" | "box-culvert" | "deck-slab" | "seismic-zone1" | "pier-column" | "camber-haunch" | "sign-cantilever" | "elastomeric-bearing" | "ptfe-bearing" | "strip-seal-joint" | "approach-slab" | "spread-footing" | "pile-foundation" | "drilled-shaft" | "micropile" | "abutment";
+export type DesignKind = "lrfd-girder-check" | "steel-girder-check" | "slab-bridge" | "dt-load-rating" | "stm-d-region" | "cip-cantilever-wall" | "mse-wall" | "cantilever-wingwall" | "box-culvert" | "deck-slab" | "seismic-zone1" | "pier-column" | "camber-haunch" | "sign-cantilever" | "elastomeric-bearing" | "ptfe-bearing" | "strip-seal-joint" | "approach-slab" | "spread-footing" | "pile-foundation" | "drilled-shaft" | "micropile" | "abutment";
 
 export const CATEGORIES: { id: string; name: string; kinds: { id: DesignKind; name: string; short: string; description: string; available: boolean }[] }[] = [
   {
@@ -53,6 +54,7 @@ export const CATEGORIES: { id: string; name: string; kinds: { id: DesignKind; na
     kinds: [
       { id: "lrfd-girder-check", name: "LRFD Bridge Design Check", short: "Precast prestressed girders: DFs, stresses, flexure, shear, camber", description: "A simple-span precast, pretensioned girder bridge with a composite deck (AASHTO I-beams, AASHTO-PCI bulb-tees, CDOT Colorado Bulb Tees or a custom section): live load distribution factors, HL-93 envelopes, prestress losses, stresses at release and service, flexure and shear at Strength I, interface shear, and camber, for the interior and exterior girders. AASHTO LRFD 4.6.2.2, 5.6, 5.7 and 5.9.", available: true },
       { id: "steel-girder-check", name: "Steel Girder Design Check", short: "Rolled and plate composite I-girders: flexure, shear, constructibility, service", description: "A straight composite steel I-girder line, simple or continuous over up to six spans: welded plate girders or rolled W shapes, AASHTO LRFD 10th Edition Article 6.10 (constructibility, service, positive and negative flexure, shear, ductility, proportions) with the girder's own stiffness along it and HL-93 by influence lines.", available: true },
+      { id: "slab-bridge", name: "Slab Bridge", short: "Cast-in-place slab, one to four spans: strips, bars and checks", description: "A cast-in-place concrete slab bridge, simple or continuous over up to four spans, its main bars parallel to traffic: the HL-93 load on the influence lines over the equivalent strip and the edge strip, the bars' flexure, minimum, crack control and fatigue, shear, distribution and temperature bars, the least depth, live load deflection, and the supports' reactions for the substructure. AASHTO LRFD 2.5.2.6, 3.6.1, 4.6.2.3, 5.5.3, 5.6, 5.10.6, 5.12.2.1 and 9.7.3.2.", available: true },
       { id: "dt-load-rating", name: "Double-Tee Load Rating (LFR)", short: "Existing double-tee bridges, with or without plans: CDOT vehicles, posting", description: "Load Factor Rating of a simple-span bridge of adjacent precast, prestressed double tees, as AASHTOWare BrR rates one: CDOT's 13 vehicles moved along the span, every girder rated at the points of interest for flexure, service stresses and (optionally) shear, inventory and operating, and the posting check. Without plans the prestress is back-calculated so HS-20 rates 1.0 at inventory (CDOT BRM 1.7.2(A)). With the BrR input sheet and a comparison of BrR's results. AASHTO Standard Specifications (17th ed.), MBE 6B and the CDOT Bridge Rating Manual.", available: true },
     ],
   },
@@ -191,6 +193,12 @@ export function approachSlabInputs(saved: unknown): ApproachSlabInputs {
   return { ...APPROACH_SLAB_DEFAULTS, ...s, joint, sleeper: s.sleeper !== false, barrier: s.barrier === true };
 }
 
+/** A slab bridge's inputs as saved, filled in from the defaults. */
+export function slabBridgeInputs(saved: unknown): SlabBridgeInputs {
+  const s = (saved && typeof saved === "object" ? saved : {}) as Partial<SlabBridgeInputs>;
+  return { ...SLAB_BRIDGE_DEFAULTS, ...s, spans: Array.isArray(s.spans) && s.spans.length ? s.spans.map(Number) : SLAB_BRIDGE_DEFAULTS.spans, edgeBars: s.edgeBars === null ? null : { ...SLAB_BRIDGE_DEFAULTS.edgeBars!, ...(s.edgeBars ?? {}) } };
+}
+
 /** A strip seal joint's inputs as saved, filled in from the defaults. */
 export function stripSealInputs(saved: unknown): StripSealInputs {
   const s = (saved && typeof saved === "object" ? saved : {}) as Partial<StripSealInputs>;
@@ -327,5 +335,5 @@ function parseInputs(kind: string, saved: unknown) {
   if (kind === "dt-load-rating") return dtRatingInputs(saved);
   if (kind === "stm-d-region") return stmInputs(saved);
   if (kind === "pier-column") return columnInputs(saved);
-  return kind === "mse-wall" ? mseInputs(saved) : kind === "box-culvert" ? cbcInputs(saved) : kind === "elastomeric-bearing" ? bearingInputs(saved) : kind === "cantilever-wingwall" ? wingwallInputs(saved) : kind === "deck-slab" ? deckInputs(saved) : kind === "seismic-zone1" ? zone1Inputs(saved) : kind === "camber-haunch" ? haunchInputs(saved) : kind === "sign-cantilever" ? signInputs(saved) : kind === "ptfe-bearing" ? ptfeInputs(saved) : kind === "strip-seal-joint" ? stripSealInputs(saved) : kind === "approach-slab" ? approachSlabInputs(saved) : cipInputs(saved);
+  return kind === "mse-wall" ? mseInputs(saved) : kind === "box-culvert" ? cbcInputs(saved) : kind === "elastomeric-bearing" ? bearingInputs(saved) : kind === "cantilever-wingwall" ? wingwallInputs(saved) : kind === "deck-slab" ? deckInputs(saved) : kind === "seismic-zone1" ? zone1Inputs(saved) : kind === "camber-haunch" ? haunchInputs(saved) : kind === "sign-cantilever" ? signInputs(saved) : kind === "ptfe-bearing" ? ptfeInputs(saved) : kind === "strip-seal-joint" ? stripSealInputs(saved) : kind === "approach-slab" ? approachSlabInputs(saved) : kind === "slab-bridge" ? slabBridgeInputs(saved) : cipInputs(saved);
 }

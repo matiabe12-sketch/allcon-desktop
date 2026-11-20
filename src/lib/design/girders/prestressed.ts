@@ -1,7 +1,7 @@
 import { BARS, DesignError, type Check } from "../walls/cip";
 import { CDOT_VEHICLES } from "../rating/vehicles";
 import { axlesOf, continuousBeam, rotationsFromCurvature, type ContinuousBeam, type EndRotations, type LiveEnvelope } from "./continuous";
-import { GIRDER_SHAPES, profileProps, shapeById, widthAt, type GirderShape, type Profile, type SectionProps } from "./sections";
+import { GIRDER_SHAPES, isAdjacent, profileProps, shapeById, widthAt, type GirderShape, type Profile, type SectionProps } from "./sections";
 import { analyzeHauling, analyzeLifting, type StabilitySection } from "./stability";
 
 // LRFD Bridge Design Check: a simple-span precast, pretensioned girder with a composite cast-in-place
@@ -554,7 +554,8 @@ export function boxTorsion(shape: GirderShape) {
 function adjacentBoxFactors(i: GirderInputs, g: SectionProps, shape: GirderShape, Kg: number, eg: number, n: number, lanes: number, exterior: boolean): DistFactors {
   const { L, nGirders } = i;
   const b = shape.topWidth;
-  const J = boxTorsion(shape);
+  // J: a box's thin-walled closed section (C4.6.2.2.1-2); a solid slab beam's A⁴ / (40 Ip) (Eq. C4.6.2.2.1-3).
+  const J = shape.family === "Prestressed slab" ? g.A ** 4 / (40 * (g.I + g.Iy)) : boxTorsion(shape);
   const IJ = g.I / J;
   const k = Math.max(1.5, 2.5 * nGirders ** -0.2);
   const momentOne = k * (b / (33.3 * L)) ** 0.5 * IJ ** 0.25;
@@ -576,7 +577,7 @@ function adjacentBoxFactors(i: GirderInputs, g: SectionProps, shape: GirderShape
     return { ...base, moment: m * skewMoment, shear: v * skewShear, fatigue: (momentOne * skewMoment) / 1.2, governs: { moment: `type (f), ${m === momentOne ? "one lane" : "two or more lanes"}`, shear: `type (f), ${v === shearOne ? "one lane" : "two or more lanes"}` } };
   }
   // de: the exterior web's midline to the barrier's inside face (ft).
-  const de = i.overhang - (b / 2 - shape.web / 4) / 12 - i.barrierWidth;
+  const de = i.overhang - (b / 2 - (shape.family === "Prestressed slab" ? 0 : shape.web / 4)) / 12 - i.barrierWidth; // a slab beam's from its edge
   if (de < -1 || de > 2) out.push(`de ${de.toFixed(2)} ft is outside −1.0 to 2.0 ft`);
   const eM1 = Math.max(1, 1.125 + de / 30);
   const eM2 = Math.max(1, 1.04 + de / 25);
@@ -604,7 +605,7 @@ export function distributionFactors(i: GirderInputs, g: SectionProps, ts: number
   }
   // A steel girder (the steel girder check passes shape "steel") is never an adjacent box.
   const shape = i.shape === "steel" ? null : girderShape(i);
-  if (shape?.family === "Prestressed box") return adjacentBoxFactors(i, g, shape, Kg, eg, n, lanes, exterior);
+  if (shape && isAdjacent(shape)) return adjacentBoxFactors(i, g, shape, Kg, eg, n, lanes, exterior);
   const stiff = (Kg / (12 * L * ts ** 3)) ** 0.1;
   const momentOne = 0.06 + (S / 14) ** 0.4 * (S / L) ** 0.3 * stiff; // T. 4.6.2.2.2b-1
   const momentMulti = 0.075 + (S / 9.5) ** 0.6 * (S / L) ** 0.2 * stiff;
@@ -1313,7 +1314,8 @@ function designGirderLine(i: GirderInputs, exterior: boolean, ctx: SpanContext |
   const cRelease = dPs - dGr;
   // At the deck: the release camber grown by creep, the prestress part reduced by the losses to then.
   // CDOT BDM 5.5.2.1 D: the camber at deck placement with the girder 60 days old.
-  const camberAge = cdot ? CDOT.camberAge : i.tDeck;
+  // CDOT: 60 days (BDM 5.5.2.1), a slab beam 90 (sheet B-618-SL note 5).
+  const camberAge = cdot ? (girderShape(i).family === "Prestressed slab" ? 90 : CDOT.camberAge) : i.tDeck;
   const tCam = Math.max(0, camberAge - i.tRelease);
   const psiCam = camberAge === i.tDeck ? psi : creep(i, VS, i.fci, tCam, i.tRelease);
   const fpCam =
@@ -1361,6 +1363,8 @@ function designGirderLine(i: GirderInputs, exterior: boolean, ctx: SpanContext |
     add({ id: "cdot-fci", name: "Girder f′ci, CDOT's maximum without approval", demand: i.fci, capacity: CDOT.maxFci, unit: "ksi", ref: "CDOT BDM 5.3.1.2", note: why, ...(approved ? { advisory: true } : {}) });
     add({ id: "cdot-fc", name: "Girder f′c, CDOT's maximum without approval", demand: i.fc, capacity: CDOT.maxFc, unit: "ksi", ref: "CDOT BDM 5.3.1.2", note: why, ...(approved ? { advisory: true } : {}) });
     const h = i.harped;
+    // Boxes and slab beams: straight strands, debonded where needed (sheet B-618-BX: "Harped designs shall not be used").
+    if (h && h.count > 0 && isAdjacent(girderShape(i))) add({ id: "cdot-no-harp", name: "Box and slab girders: straight strands only (no harped strands)", demand: h.count, capacity: 0, unit: "strands", ref: "CDOT sheet B-618-BX (Designer's notes)" });
     if (h && h.count > 0) {
       const slope = (h.yEnd - h.yHarp) / (h.harpPoint * Lg * 12);
       const perStrand = fpj * strand.area * Math.sin(Math.atan(slope));
@@ -2134,7 +2138,7 @@ export function haunchDesign(i: GirderInputs, shape: GirderShape, c: { cDeck: nu
   const minSupport = panels ? CDOT.haunchSupport.panels : CDOT.haunchSupport.none;
   const minBetween = panels ? CDOT.haunchBetween.panels : CDOT.haunchBetween.none;
   // BDM 5.5.2.1 D: ±30% for CBTs, ±50% for slab and box girders; at least 1 in either way.
-  const pct = shape.family === "Prestressed box" ? CDOT.camberToleranceBox : CDOT.camberTolerance;
+  const pct = isAdjacent(shape) ? CDOT.camberToleranceBox : CDOT.camberTolerance;
   const tol = (camber: number) => Math.max(pct * Math.max(0, camber), CDOT.camberToleranceMin);
   // The camber's estimate is enveloped (the BDM sets no method): the lower one, cDeck, for sag and the
   // under-cambered haunch; the higher, cHigh, for the over-cambered haunch.

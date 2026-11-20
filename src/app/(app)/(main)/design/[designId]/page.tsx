@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { ApproachSlabEditor } from "@/components/design/approach-slab-editor";
+import { SlabBridgeEditor } from "@/components/design/slab-bridge-editor";
+import { slabBridgeInputs } from "@/lib/design/kinds";
 import { FoundationEditor } from "@/components/design/foundation-editor";
 import { FOUNDATION_KINDS, foundationInputs, type FoundationKind } from "@/lib/design/foundations/kinds";
 import { BearingEditor } from "@/components/design/bearing-editor";
@@ -123,6 +125,12 @@ export default async function DesignEditorPage({ params }: PageProps<"/design/[d
     return (
       <PageBody>
         <FoundationEditor kind={design.kind as FoundationKind} design={{ ...base, inputs: foundationInputs(design.kind, design.inputs)! }} projects={projects} />
+      </PageBody>
+    );
+  if (design.kind === "slab-bridge")
+    return (
+      <PageBody>
+        <SlabBridgeEditor design={{ ...base, inputs: slabBridgeInputs(design.inputs) }} projects={projects} />
       </PageBody>
     );
   if (design.kind === "approach-slab")

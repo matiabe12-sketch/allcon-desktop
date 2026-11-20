@@ -1,5 +1,5 @@
 import { debondSets, type HarpedStrands, type StrandRow } from "./prestressed";
-import type { GirderShape } from "./sections";
+import { isAdjacent, type GirderShape } from "./sections";
 
 // Where each strand of a girder design sits: its place on the 2 in strand grid across the section and its
 // height along the girder, so the strands can be drawn in elevation and in section at any cut.
@@ -56,6 +56,7 @@ export function gridHalfWidth(shape: GirderShape, y: number): number {
     if (y <= 8.25 + 0.5) return 5;
     return y <= shape.depth - 6 + 1e-6 ? 1 : 0;
   }
+  if (shape.family === "Prestressed slab") return y <= shape.depth - 2 ? Math.max(1, oddFloor(shape.topWidth / 2 - 2.75)) : 0; // the whole width, 2 in cover
   if (shape.family === "Prestressed box") {
     const tb = shape.profile[1][0];
     return y <= tb - 1.5 ? Math.max(1, oddFloor(shape.topWidth / 2 - 2.75)) : 0;
@@ -90,7 +91,7 @@ export function harpedStrands(h: HarpedStrands | null | undefined): PlacedStrand
 }
 
 export function strandLayout(shape: GirderShape, d: { strands: StrandRow[]; harped: HarpedStrands | null }, Lg: number): StrandLayout {
-  const box = shape.family === "Prestressed box";
+  const box = isAdjacent(shape);
   const notes: string[] = [];
   const harped = harpedStrands(d.harped);
   const strands: PlacedStrand[] = [...harped];

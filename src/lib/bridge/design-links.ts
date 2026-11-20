@@ -15,10 +15,13 @@ export type DesignTarget = { key: string; label: string; tool: string; kind: str
 const lineName = (d: BridgeDefinition, k: number) => d.geometry?.supports[k]?.name || (k === 0 || k === d.supports.length - 1 ? `Abutment ${k + 1}` : `Pier ${k + 1}`);
 
 export function designTargets(d: BridgeDefinition): DesignTarget[] {
-  const out: DesignTarget[] = [
-    { key: "girders", label: "Girders", tool: "LRFD Bridge Design Check", kind: "lrfd-girder-check", from: "Spans, girders, deck and loads" },
-    { key: "deck", label: "Deck", tool: "Deck Slab", kind: "deck-slab", from: "Girder spacing, overhang, deck, barrier" },
-  ];
+  const slab = d.superstructure === "slab";
+  const out: DesignTarget[] = slab
+    ? [{ key: "slab", label: "Slab", tool: "Slab Bridge", kind: "slab-bridge", from: "Spans, width, the deck's thickness as its depth, barriers and loads" }]
+    : [
+        { key: "girders", label: "Girders", tool: "LRFD Bridge Design Check", kind: "lrfd-girder-check", from: "Spans, girders, deck and loads" },
+        { key: "deck", label: "Deck", tool: "Deck Slab", kind: "deck-slab", from: "Girder spacing, overhang, deck, barrier" },
+      ];
   d.supports.forEach((_, k) => out.push({ key: `bearing-${k}`, label: `${lineName(d, k)} bearings`, tool: "Elastomeric Bearing", kind: "elastomeric-bearing", from: "The largest bearing reaction on the line, dead and live; the expansion length" }));
   if (d.piers.model) for (let k = 1; k < d.supports.length - 1; k++) out.push({ key: `column-${k}`, label: `${lineName(d, k)} columns`, tool: "Pier Column", kind: "pier-column", from: "Strength I forces at the top of the hardest-worked column, with their concurrent forces" });
   // The substructure and the load path (src/lib/design/bridge/load-path.server.ts): a second group of
@@ -30,7 +33,7 @@ export function designTargets(d: BridgeDefinition): DesignTarget[] {
   } catch {
     // laid out as one group
   }
-  for (let gi = 1; gi < groups; gi++) out.splice(gi, 0, { key: `girders-${gi}`, label: `Girders, group ${gi + 1}`, tool: "LRFD Bridge Design Check", kind: "lrfd-girder-check", from: "The spans past the joint, girders, deck and loads" });
+  if (!slab) for (let gi = 1; gi < groups; gi++) out.splice(gi, 0, { key: `girders-${gi}`, label: `Girders, group ${gi + 1}`, tool: "LRFD Bridge Design Check", kind: "lrfd-girder-check", from: "The spans past the joint, girders, deck and loads" });
   g.supports.forEach((s, k) => {
     const name = s.name || lineName(d, k);
     if (k === 0 || k === g.supports.length - 1) {

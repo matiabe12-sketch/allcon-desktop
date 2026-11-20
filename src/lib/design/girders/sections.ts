@@ -13,7 +13,7 @@ export type Profile = [y: number, halfWidth: number][]; // in, from the bottom u
 export type GirderShape = {
   id: string;
   name: string;
-  family: "AASHTO I-beam" | "AASHTO-PCI bulb-tee" | "CDOT Colorado Bulb Tee" | "Prestressed box" | "Custom";
+  family: "AASHTO I-beam" | "AASHTO-PCI bulb-tee" | "CDOT Colorado Bulb Tee" | "Prestressed box" | "Prestressed slab" | "Custom";
   depth: number; // in
   topWidth: number; // in, top flange (for interface shear and the haunch)
   web: number; // in, web thickness (bv)
@@ -205,9 +205,45 @@ export const GIRDER_SHAPES: GirderShape[] = [
   // 28 x 50 in box (CDOT project 24057 E-16-FZA's IDC: A 734 in², I 72,889 in⁴, yb 13.09 in); its walls and slabs
   // solved to give those three (walls 6.135 in, top 4.168 in, bottom 6.18 in: the void's fillets folded in).
   box(28, 50, 6.135, 4.1683, 6.18, 734, 72889, 13.09, "CDOT 28 in x 50 in box (24057 IDC)"),
+  // CDOT sheet B-618-BX's box at the usual sizes (any W x D by id: cdotbox-D-W), and B-618-SL's solid slab beam (slab-D-W).
+  ...[27, 33, 39, 42, 48].flatMap((D) => [36, 48].map((W) => cdotBox(D, W))),
+  ...[12, 15, 18, 21].flatMap((D) => [36, 48].map((W) => cdotSlab(D, W))),
 ];
 
-export const shapeById = (id: string) => GIRDER_SHAPES.find((s) => s.id === id);
+/**
+ * CDOT's prestressed concrete box (sheet B-618-BX): W wide and D deep, as designed; walls Tw 6 in, the top slab Ttm
+ * 4 in and the bottom Tbm 6 in at midspan (the sheet's values; thicker at the ends' end blocks, not counted here).
+ * Its properties are worked out from the outline (no published values).
+ */
+export function cdotBox(D: number, W: number): GirderShape {
+  const s = box(D, W, 6, 4, 6, 0, 0, 0, "");
+  const p = profileProps(s.profile);
+  return { ...s, id: `cdotbox-${D}-${W}`, name: `CDOT box ${D} x ${W}`, published: { A: p.A, I: p.I, yb: p.yb, source: "CDOT sheet B-618-BX (Tw 6 in, Ttm 4 in, Tbm 6 in), worked out" } };
+}
+
+/** CDOT's prestressed concrete slab (sheet B-618-SL): a solid W x D beam, side by side under a cast-in-place deck. */
+export function cdotSlab(D: number, W: number): GirderShape {
+  const profile: Profile = [
+    [0, W / 2],
+    [D, W / 2],
+  ];
+  return { id: `slab-${D}-${W}`, name: `CDOT slab ${D} x ${W}`, family: "Prestressed slab", depth: D, topWidth: W, web: W, profile, published: { A: W * D, I: (W * D ** 3) / 12, yb: D / 2, source: "CDOT sheet B-618-SL (solid), worked out" } };
+}
+
+/** Boxes and slab beams laid side by side (AASHTO type (f) under a cast-in-place deck, CDOT's practice). */
+export const isAdjacent = (s: Pick<GirderShape, "family">) => s.family === "Prestressed box" || s.family === "Prestressed slab";
+
+export const shapeById = (id: string) => {
+  const found = GIRDER_SHAPES.find((s) => s.id === id);
+  if (found) return found;
+  // Any CDOT box or slab beam size by its id.
+  const m = /^(cdotbox|slab)-(\d+(?:\.\d+)?)-(\d+(?:\.\d+)?)$/.exec(id);
+  if (!m) return undefined;
+  const [D, W] = [Number(m[2]), Number(m[3])];
+  if (!(D >= 10 && D <= 72 && W >= 24 && W <= 72)) return undefined;
+  if (m[1] === "cdotbox" && !(D >= 18 && W >= 30)) return undefined; // room for the void
+  return m[1] === "cdotbox" ? cdotBox(D, W) : cdotSlab(D, W);
+};
 
 /** A custom girder from its outline (half-widths), checked for sense. */
 export function customShape(profile: Profile, web: number, topWidth: number): GirderShape {

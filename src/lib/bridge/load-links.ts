@@ -11,7 +11,7 @@ const COMPONENT_KEYS = { bearingId: "bearing", abutmentId: "abutment", approachS
 type ComponentIdKey = keyof typeof COMPONENT_KEYS;
 
 /** The load path's parts, by the keys it reports them under. */
-export const isLoadPathKey = (key: string) => /^(girders(-\d+)?|deck|(bearing|abutment|approach|wingwall|joint|cap|column|foundation)-\d+)$/.test(key);
+export const isLoadPathKey = (key: string) => /^(girders(-\d+)?|deck|slab|(bearing|abutment|approach|wingwall|joint|cap|column|foundation)-\d+)$/.test(key);
 
 /** The description with the designs the bridge links filled in. */
 export function withLinks(b: BridgeInputs, links: DesignLink[]): BridgeInputs {
@@ -21,6 +21,7 @@ export function withLinks(b: BridgeInputs, links: DesignLink[]): BridgeInputs {
     ...b,
     girderDesignIds: Array.from({ length: groups }, (_, gi) => id(gi === 0 ? "girders" : `girders-${gi}`)),
     deckDesignId: id("deck"),
+    slabDesignId: id("slab"),
     components: b.supports.map((_, k) => {
       const c: BridgeInputs["components"][number] = { support: k };
       for (const [field, prefix] of Object.entries(COMPONENT_KEYS) as [ComponentIdKey, string][]) c[field] = id(`${prefix}-${k}`);
@@ -39,6 +40,7 @@ export function linksFrom(b: BridgeInputs, before: DesignLink[], kinds: Record<s
   };
   b.girderDesignIds.forEach((id, gi) => add(gi === 0 ? "girders" : `girders-${gi}`, id, "lrfd-girder-check"));
   add("deck", b.deckDesignId, "deck-slab");
+  add("slab", b.slabDesignId, "slab-bridge");
   for (const c of b.components)
     for (const [field, prefix] of Object.entries(COMPONENT_KEYS) as [ComponentIdKey, string][]) {
       const key = `${prefix}-${c.support}`;

@@ -64,6 +64,8 @@ export function BridgeForm({ form, def, setDef: setRaw }: Props & { form: FormKe
   if (form === "girders")
     return (
       <>
+        <Choice label="Superstructure (the Bridge design)" value={def.superstructure ?? "girders"} options={[{ value: "girders", label: "Girders under a deck" }, { value: "slab", label: "Cast-in-place slab bridge" }]} onChange={(v) => setDef((s) => ({ ...s, superstructure: v as "girders" | "slab" }))} />
+        {def.superstructure === "slab" && note("A slab bridge: the deck's thickness below is the slab's depth, and the girder lines are its bearing lines at the spacing. The Slab Bridge design carries it; this section's own analysis still models girders.")}
         <Choice label="Girder" value={def.girder.shape} options={def.girder.shape === "custom" ? [{ value: "custom", label: "Custom section" }, ...GIRDER_CHOICES] : GIRDER_CHOICES} onChange={(shape) => setDef((s) => ({ ...s, girder: { shape, fc: s.girder.fc, wc: s.girder.wc } }))} />
         <Field label="Number of girders" value={def.nGirders} onChange={(v) => set("nGirders")(Math.round(v))} />
         <Field label="Girder spacing" unit="ft" value={def.spacing} onChange={set("spacing")} step={0.25} />

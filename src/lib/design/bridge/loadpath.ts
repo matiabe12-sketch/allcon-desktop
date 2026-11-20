@@ -4,7 +4,7 @@ import { type FootingInputs } from "../foundations/footing";
 import { type PileInputs } from "../foundations/piles";
 import { type ShaftInputs } from "../foundations/shaft";
 import { brakingPerLane, SITE_WIND_DEFAULTS, superstructureWind } from "../girders/substructure-loads";
-import { girderSide } from "../stm/cap-loads";
+import { girderSide, type GirderSide } from "../stm/cap-loads";
 import type { StmInputs } from "../stm/strut-tie";
 import { bearingsFromLink, buildTemplate, HAMMERHEAD_DEFAULTS, MULTICOLUMN_DEFAULTS, type StmTemplate } from "../stm/templates";
 import type { ColumnInputs, ColumnLink } from "../piers/column";
@@ -198,19 +198,21 @@ export function capTemplate(p: PierShape, xs: number[], current: StmTemplate | n
 }
 
 /** A pier cap's girder link from the girder designs either side (span ending at the pier, span starting there). */
-export function capFromBridge(b: BridgeInputs, run: BridgeRun, support: number, current: StmInputs, girderIds: (string | null)[], names: string[]): StmInputs {
+export function capFromBridge(b: BridgeInputs, run: BridgeRun, support: number, current: StmInputs, girderIds: (string | null)[], names: string[], slabId?: string | null, slabName?: string): StmInputs {
   const shape = b.supports[support].pier;
   const lp = run.layout.piers[support];
   if (shape && lp) current = { ...current, template: capTemplate(shape, lp.columnsX, current.template ?? null) };
   // Girders made continuous over the pier by a cast-in-place diaphragm: the cap is built in two stages, the
   // diaphragm from the cap's top (the lowest seat) to the deck's top over the cap.
-  if (b.supports[support].type === "continuous-pier" && lp) {
+  // (A slab bridge has none: its slab's weight is in its reactions.)
+  if (b.supports[support].type === "continuous-pier" && lp && !run.slab) {
     const deckTop = Math.max(...[...(support > 0 ? run.layout.spans[support - 1].girders.map((g) => g.end.deck) : []), ...(support < run.layout.spans.length ? run.layout.spans[support].girders.map((g) => g.start.deck) : [])]);
     const h = Math.round((deckTop - lp.capTop) * 100) / 100;
     current = { ...current, stages: { enabled: current.stages?.enabled ?? true, diaphragmHeight: h, topBars: current.stages?.topBars ?? null } };
   }
   const groups = spanGroups(b);
   const sideOf = (span: number, end: "start" | "end") => {
+    if (run.slab) return span >= 0 && span < run.layout.spans.length ? slabSide(b, run, support, span, end, slabId ?? "slab", slabName ?? "Slab") : null;
     const gi = groups.findIndex((g) => g.includes(span));
     const id = girderIds[gi];
     if (!id) return null;
@@ -553,4 +555,44 @@ export function windAlong(run: BridgeRun, share: ReturnType<typeof longitudinalS
   const along = (line: number | null) => share.units.reduce((t, u) => t + u.share * c * (line ?? 0) * u.L, 0);
   const r1 = (v: number) => Math.round(v * 10) / 10;
   return { WS3: r1(along(w.strengthIII?.line ?? null)), WS5: r1(along(w.strengthV.line)), WL: r1(share.units.reduce((t, u) => t + u.share * 0.04 * u.L, 0)), WSs: r1(along(w.serviceI.line)) };
+}
+
+/**
+ * A slab bridge's side of a pier cap, as a girder design's would be (stm/cap-loads.ts GirderSide): its bearing lines at
+ * the Bridge's spacing, each carrying the slab's reaction per foot times its width (the slab design's, so the slab's
+ * continuity is in it), half to each side where a span bears from both; the live load placed by lanes on the cap as for
+ * girders (the lanes' reactions on simple spans, the lever rule across the lines).
+ */
+export function slabSide(b: BridgeInputs, run: BridgeRun, support: number, span: number, end: "start" | "end", designId: string, name: string): GirderSide {
+  const s = b.supports[support];
+  const r = run.reactions[support] as BridgeRun["reactions"][number] & { slab?: { perFoot: { DC: number; DW: number }; tribInt: number; tribExt: number } };
+  const sides = [support - 1, support].filter((j) => j >= 0 && j < run.layout.spans.length).length;
+  const share = 1 / Math.max(1, sides);
+  const per = r.slab?.perFoot ?? { DC: 0, DW: 0 };
+  const int = r.slab?.tribInt ?? spacingAt(b, s);
+  const ext = r.slab?.tribExt ?? spacingAt(b, s) / 2 + run.layout.overhang;
+  const dc = { interior: per.DC * int * share, exterior: per.DC * ext * share };
+  const dw = { interior: per.DW * int * share, exterior: per.DW * ext * share };
+  const total = run.layout.length;
+  return {
+    designId,
+    name,
+    span,
+    end,
+    n: b.nGirders,
+    S: spacingAt(b, s),
+    overhang: run.layout.overhang,
+    barrierWidth: b.barrierWidth,
+    skew: Math.abs(s.skew),
+    L: run.layout.spans[span].L,
+    continuous: false,
+    dc,
+    dc1: dc,
+    dw,
+    liveContinuous: null,
+    liveUnbalance: null,
+    liveUnbalanceStatic: null,
+    wind: null,
+    brakingPerLane: brakingPerLane(total).perLane,
+  };
 }

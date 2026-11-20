@@ -1,3 +1,4 @@
+import { isAdjacent } from "./sections";
 import { inputLabel } from "./from-plans";
 import type { Line } from "@/lib/calcs/library/templates";
 import { cell, COLOR_NOTE, INPUT_COLOR, isInput, num } from "../calc-style";
@@ -59,7 +60,7 @@ export function girderCalcLines(entered: GirderInputs, title: string, figures?: 
       ["Top harped strand at most 6 in below the top and 60 in high; no harping under 100 ft; harp points 0.35–0.45 L; at most 2,800 kip on the bed", "5.5.1.5, B-618-CBT2"],
       ["Lifting and hauling: the fabricator's design, shown for information only", "5.5.1.8"],
       ["Girders up to 154 ft and 240 kip to ship", "5.5.1.9"],
-      [`Camber at 60 days, ±${g.shape.family === "Prestressed box" ? "50" : "30"}% tolerance (at least 1 in); no sag; minimum haunches; dead load haunch by Eq. 5.1, under-cambered`, "5.5.2.1"],
+      [`Camber at ${g.camber.age} days, ±${isAdjacent(g.shape) ? "50" : "30"}% tolerance (at least 1 in); no sag; minimum haunches; dead load haunch by Eq. 5.1, under-cambered`, "5.5.2.1"],
       ["Hold-down at most 4.0 kip per strand", "5.5.2.2"],
       ["Restraint moments zero; positive moment connection resists 1.2 Mcr (φ = 0.9)", "5.7.2"],
       ["A joint fully effective only when the girders are at least 60 days old", "5.7.3"],
@@ -543,7 +544,7 @@ export function girderCalcLines(entered: GirderInputs, title: string, figures?: 
     // CDOT BDM 5.5.2.1: camber tolerance, sag and the haunch.
     const h = g.haunch;
     text("Camber tolerance, sag and haunch (CDOT BDM 5.5.2.1)", "subheading");
-    const box = g.shape.family === "Prestressed box";
+    const box = isAdjacent(g.shape);
     text(`Dead load deflections without long-term multipliers (E). Camber may be up to ${box ? "50% over or under the prediction on a box or slab girder" : "30% over or under the prediction on a CBT"}, and at least 1 in either way (D); a smaller tolerance for cambers under 1 in needs the Unit Leader's approval.`, "note");
     text("The BDM sets no method for the camber, so two estimates are enveloped: the creep estimate above and the PCI Design Handbook's multipliers (Table 5.8.2), the lower for sag and the under-cambered haunch, the higher for the over-cambered haunch.", "note");
     m("C_{dP}\\coloneq1.80\\cdot\\Delta_{ps}-1.85\\cdot\\Delta_{gr}=", "At erection by the PCI multipliers", "in");
@@ -618,7 +619,7 @@ export function girderCalcLines(entered: GirderInputs, title: string, figures?: 
     const s = girderSchedule(input, design);
     lines.push({ text: "Girder schedule", style: "subheading", newPage: true, keepWithNext: true });
     text(
-      `The girders as CDOT's worksheet B-618-CBT1 schedules them, from this design${s.final ? "" : ": preliminary, since the design has failing checks (see the summary), not for plans"}. As* is the prestressing steel provided; Ee and Ec are the strands' centroid above the girder's bottom at its end and at midspan; Fj the jacking force and Ff the force after all losses; Δ the deflection at midspan from the deck, diaphragms, overlay and rails; the predicted camber, for the girder alone, at ${s.rows[0]?.age ?? 0} days. Acceptable camber is ${g.shape.family === "Prestressed box" ? "50" : "30"}% over or under the predicted, or ±1 in, whichever is greater.`,
+      `The girders as CDOT's worksheet ${g.shape.family === "Prestressed slab" ? "B-618-SL" : g.shape.family === "Prestressed box" ? "B-618-BX" : "B-618-CBT1"} schedules them, from this design${s.final ? "" : ": preliminary, since the design has failing checks (see the summary), not for plans"}. As* is the prestressing steel provided; Ee and Ec are the strands' centroid above the girder's bottom at its end and at midspan; Fj the jacking force and Ff the force after all losses; Δ the deflection at midspan from the deck, diaphragms, overlay and rails; the predicted camber, for the girder alone, at ${s.rows[0]?.age ?? 0} days. Acceptable camber is ${isAdjacent(g.shape) ? "50" : "30"}% over or under the predicted, or ±1 in, whichever is greater.`,
     );
     const xs = [4, 104, 134, 210, 248, 296, 334, 372, 420, 466, 500, 532, 568, 626, 680];
     lines.push({ region: textTable(SCHEDULE_HEAD.map((h, k) => ({ title: h, x: xs[k], ...(k > 2 ? { anchor: "end" as const } : {}) })), s.rows.map(scheduleCells), 686, "GIRDER SCHEDULE") });

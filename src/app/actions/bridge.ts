@@ -11,7 +11,7 @@ import { abutmentInputs, foundationInputs, footingInputs, pileFoundationInputs, 
 import { runFoundation } from "@/lib/design/foundations/run";
 import { designGirder, girderShape, type GirderInputs, type HarpedStrands, type StrandRow } from "@/lib/design/girders/prestressed";
 import type { GirderShape } from "@/lib/design/girders/sections";
-import { approachSlabInputs, bearingInputs, deckInputs, designInputs, girderInputs, stripSealInputs, wingwallInputs } from "@/lib/design/kinds";
+import { approachSlabInputs, bearingInputs, deckInputs, designInputs, girderInputs, slabBridgeInputs, stripSealInputs, wingwallInputs } from "@/lib/design/kinds";
 import { designWingwall } from "@/lib/design/walls/wingwall";
 import { columnInputs, designColumn } from "@/lib/design/piers/column";
 import { designStm, stmInputs } from "@/lib/design/stm/strut-tie";
@@ -56,12 +56,15 @@ async function describeBridgeModel(orgId: string, b: BridgeInputs, name: string)
   const ids = b.girderDesignIds.filter((x): x is string => !!x && isUuid(x));
   const linked = await db.design.findMany({ where: { id: { in: ids }, orgId: orgId, kind: "lrfd-girder-check" }, select: { id: true, inputs: true } });
   let run: ReturnType<typeof runBridge>;
+  const verdicts0: Record<string, string> = {};
   try {
-    run = runBridge(b, b.girderDesignIds.map((id) => { const d = linked.find((x) => x.id === id); return d ? girderInputs(d.inputs) : null; }));
+    const slabD = b.superstructure === "slab" && b.slabDesignId && isUuid(b.slabDesignId) ? await db.design.findFirst({ where: { id: b.slabDesignId, orgId, kind: "slab-bridge" }, select: { inputs: true } }) : null;
+    run = runBridge(b, b.girderDesignIds.map((id) => { const d = linked.find((x) => x.id === id); return d ? girderInputs(d.inputs) : null; }), slabD ? slabBridgeInputs(slabD.inputs) : null);
+    if (run.slab && b.slabDesignId) verdicts0[b.slabDesignId] = verdictOf(run.slab.result.checks);
   } catch (e) {
     return { error: e instanceof Error ? e.message : "The bridge can't be laid out." };
   }
-  const verdicts: Record<string, string> = {};
+  const verdicts: Record<string, string> = { ...verdicts0 };
   const verdictTry = (id: string | null | undefined, f: () => { ok: boolean; advisory?: boolean }[]) => {
     if (!id) return;
     try {

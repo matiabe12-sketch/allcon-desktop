@@ -277,7 +277,8 @@ export function bridgeIfc(b: BridgeInputs, run: BridgeRun, c: BridgeComponents =
       const along = unit(sub(B, A));
       const start = sub(A, mul(along, sa.endDistance / Math.cos(Math.atan2(zB - zA, Math.hypot(B[0] - A[0], B[1] - A[1])))));
       const xdir = unit(cross(UP, along));
-      els.push({
+      // A slab bridge has no girders: the slab is the deck below, on its bearing lines.
+      if (b.superstructure !== "slab") els.push({
         cls: "IfcBeam",
         type: "GIRDER_SEGMENT",
         name: `Girder ${g.k + 1}, span ${span.index + 1}`,

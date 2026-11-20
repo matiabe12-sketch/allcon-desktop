@@ -1,3 +1,5 @@
+import { slabBridgeCalcLines } from "../slabs/slab-bridge-calc";
+import { designSlabBridge } from "../slabs/slab-bridge";
 import "server-only";
 import type { Line } from "@/lib/calcs/library/templates";
 import { db } from "@/lib/db";
@@ -14,7 +16,7 @@ import { foundationInputs, type FoundationKind } from "../foundations/kinds";
 import { runFoundation } from "../foundations/run";
 import { designGirder, type GirderInputs } from "../girders/prestressed";
 import { girderCalcLines } from "../girders/prestressed-calc";
-import { approachSlabInputs, bearingInputs, deckInputs, girderInputs, wingwallInputs } from "../kinds";
+import { approachSlabInputs, bearingInputs, deckInputs, girderInputs, slabBridgeInputs, wingwallInputs } from "../kinds";
 import { columnInputs, designColumn } from "../piers/column";
 import { columnCalcLines } from "../piers/column-calc";
 import { roundFor, type PayLine } from "../rebar/pay-lines";
@@ -81,16 +83,24 @@ async function gather(design: { id: string; name: string; inputs: unknown }, org
   const deckFt = deckLengthFor(b, [await abutAt(0), await abutAt(b.supports.length - 1)]);
 
   // --- superstructure -----------------------------------------------------------------------------------------------
-  const groups = spanGroups(b);
+  const isSlab = b.superstructure === "slab";
+  const groups = isSlab ? [] : spanGroups(b);
   const girderDesigns = await Promise.all(groups.map((_, gi) => load(b.girderDesignIds[gi], "lrfd-girder-check")));
   const superParts: CalcPart[] = [];
   const superPay: PayLine[] = [];
-  const deck = await load(b.deckDesignId, "deck-slab");
+  const deck = isSlab ? null : await load(b.deckDesignId, "deck-slab");
+  // A slab bridge: its slab design (calc, checks and quantities) in place of the girders and deck.
+  const slabD = isSlab ? await load(b.slabDesignId, "slab-bridge") : null;
+  if (slabD) {
+    const i = slabBridgeInputs(slabD.inputs);
+    if (full) superParts.push({ label: "Slab", name: slabD.name, lines: slabBridgeCalcLines(i, slabD.name), checks: [{ checks: designSlabBridge(i).checks.map(aashto) }] });
+    superPay.push(...quantities("slab-bridge", i, `${slabD.name} (slab)`));
+  } else if (isSlab) missing.push("the slab");
   if (deck) {
     const i = deckInputs(deck.inputs);
     if (full) superParts.push({ label: "Deck, overhang and rail", name: deck.name, lines: deckCalcLines(i, deck.name, tryFig(() => deckFigures(i))), checks: [{ checks: designDeck(i).checks.map(aashto) }] });
     superPay.push(...quantities("deck-slab", i, `${deck.name} (deck bars)`, { ...(i as { takeoff?: TakeoffSettings }).takeoff, length: deckFt }));
-  } else missing.push("the deck, overhang and rail");
+  } else if (!isSlab) missing.push("the deck, overhang and rail");
   groups.forEach((g, gi) => {
     const d = girderDesigns[gi];
     const label = `Girders, span${g.length > 1 ? "s" : ""} ${g.map((j) => j + 1).join("–")}`;
@@ -190,7 +200,7 @@ async function gather(design: { id: string; name: string; inputs: unknown }, org
   if (approachPay.length) pay.push({ label: "Approach slabs", lines: approachPay });
 
   if (!full) return { lines: [], pay, missing };
-  const run = runBridge(b, girderDesigns.map((d) => (d ? girderInputs(d.inputs) : null)));
+  const run = runBridge(b, girderDesigns.map((d) => (d ? girderInputs(d.inputs) : null)), slabD ? slabBridgeInputs(slabD.inputs) : null);
 
   // The bridge in 3D, and its plan and profile.
   const render = tryFig((): Figure => {

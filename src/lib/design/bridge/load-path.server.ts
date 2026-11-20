@@ -7,14 +7,14 @@ import { designDeck } from "../decks/deck";
 import { abutmentInputs, footingInputs, pileFoundationInputs, shaftInputs } from "../foundations/kinds";
 import { runFoundation } from "../foundations/run";
 import type { GirderInputs } from "../girders/prestressed";
-import { approachSlabInputs, bearingInputs, deckInputs, designInputs, girderInputs, kindInfo, stripSealInputs, wingwallInputs } from "../kinds";
+import { approachSlabInputs, bearingInputs, deckInputs, designInputs, girderInputs, kindInfo, slabBridgeInputs, stripSealInputs, wingwallInputs } from "../kinds";
 import { designStripSeal } from "../joints/strip-seal";
 import { columnInputs, designColumn } from "../piers/column";
 import { columnLinkFrom } from "../piers/column-link";
 import { nodeLpSolver } from "../stm/lp-node";
 import { designStm, stmInputs } from "../stm/strut-tie";
 import { designWingwall } from "../walls/wingwall";
-import { girderInputsFor, runBridge, spanGroups, type BridgeInputs } from "./bridge";
+import { BRIDGE_GIRDER_BASE, girderInputsFor, runBridge, spanGroups, type BridgeInputs } from "./bridge";
 import { abutmentFromBridge, approachSlabFromBridge, bearingFromBridge, bearingLineForce, capFromBridge, changedKeys, columnFromBridge, columnLongitudinal, deckFromBridge, footingFromColumn, integralStiffness, jointFromBridge, longitudinalShares, thermalReactions, approachOnAbutment, windAlong, padLineStiffness, pierStiffness, pilesFromColumn, shaftCageOf, shaftFromColumn, wingwallFromBridge, type LongStiffness } from "./loadpath";
 
 // A bridge's load path through its linked designs (docs/bridge-model.md): each linked design's inputs
@@ -89,9 +89,10 @@ export async function runLoadPath(o: {
     }
   };
 
-  // --- girders: one design per group of spans ---------------------------------------------------------------------
-  const groups = spanGroups(b);
-  const girderIds: (string | null)[] = groups.map((_, gi) => b.girderDesignIds[gi] ?? null);
+  // --- girders: one design per group of spans (none for a slab bridge: its slab design below) -------------------------
+  const isSlab = b.superstructure === "slab";
+  const groups = isSlab ? [] : spanGroups(b);
+  const girderIds: (string | null)[] = isSlab ? [] : groups.map((_, gi) => b.girderDesignIds[gi] ?? null);
   const bases: (GirderInputs | null)[] = [];
   const names: string[] = [];
   const girderRows: { id: string; name: string; inputs: unknown }[] = [];
@@ -102,7 +103,16 @@ export async function runLoadPath(o: {
     if (d) girderRows[gi] = { id: d.id, name: d.name, inputs: d.inputs };
     else girderIds[gi] = null;
   }
-  const run = runBridge(b, bases);
+  const sd0 = isSlab ? await load(b.slabDesignId, "slab-bridge") : null;
+  const slabBefore = slabBridgeInputs(sd0?.inputs ?? {});
+  const run = runBridge(b, bases, isSlab ? slabBefore : null);
+  let slabId: string | null = null;
+  let slabName = "";
+  if (isSlab && run.slab) {
+    const next = run.slab.inputs;
+    slabId = await upsert("slab", "Slab", "slab-bridge", sd0, slabBefore, next, verdictOf(run.slab.result.checks), `${prefix}, slab`);
+    slabName = sd0?.name ?? `${prefix}, slab (${kindInfo("slab-bridge")!.name})`;
+  }
   for (let gi = 0; gi < groups.length; gi++) {
     const label = `Girders, span${groups[gi].length > 1 ? "s" : ""} ${groups[gi].map((j) => j + 1).join("–")}`;
     const next = girderInputsFor(b, run.layout, groups[gi], bases[gi] ?? undefined);
@@ -114,12 +124,18 @@ export async function runLoadPath(o: {
   }
   const girders = new Map<string, GirderInputs>();
   for (let gi = 0; gi < groups.length; gi++) if (girderIds[gi]) girders.set(girderIds[gi]!, run.groups[gi].inputs);
+  // A slab bridge: its spans and width for the columns' braking and wind along the bridge (column-link.ts reads them from a
+  // girder design): a stand-in with the slab's spans; its depth for the wind the girder section's and the slab's (conservative).
+  if (isSlab && slabId && run.slab) {
+    const sp = run.slab.inputs.spans;
+    girders.set(slabId, { ...BRIDGE_GIRDER_BASE, shape: b.shape, L: sp[0], extraSpans: sp.slice(1).map((L) => ({ L, strands: null, harped: null })), nGirders: b.nGirders, S: b.spacing, overhang: run.layout.overhang, barrierWidth: b.barrierWidth, deckT: b.deckT });
+  }
 
   // --- the deck slab (the deck between the girders, the overhang and the rail) ----------------------------------------
-  const dd = await load(b.deckDesignId, "deck-slab");
+  const dd = isSlab ? null : await load(b.deckDesignId, "deck-slab");
   const dBefore = deckInputs(dd?.inputs ?? {});
   const dNext = deckFromBridge(b, run, dBefore, girderIds[0] ? { id: girderIds[0], name: names[0] || `${prefix}, girders` } : null);
-  const deckId = await upsert("deck", "Deck, overhang and rail", "deck-slab", dd, dBefore, dNext, verdictTry(() => designDeck(dNext).checks), `${prefix}, deck`);
+  const deckId = isSlab ? (b.deckDesignId ?? null) : await upsert("deck", "Deck, overhang and rail", "deck-slab", dd, dBefore, dNext, verdictTry(() => designDeck(dNext).checks), `${prefix}, deck`);
   // The rail's end-zone collision values, for the approach slabs it carries on along.
   let railEnd: { Mc: number; T: number } | null = null;
   try {
@@ -222,7 +238,7 @@ export async function runLoadPath(o: {
     let capNext = capBefore;
     let capVerdict = "";
     try {
-      capNext = capFromBridge(b, run, k, capBefore, girderIds, names);
+      capNext = capFromBridge(b, run, k, capBefore, girderIds, names, slabId, slabName);
       // Its force along the bridge at the bearings, its share (the stiffness split): the governing of Strength I's
       // braking, V's braking with the wind and III's wind, with the bearings' temperature force at γTU 0.50.
       if (capNext.girders) {
@@ -295,6 +311,7 @@ export async function runLoadPath(o: {
     b: {
       ...b,
       deckDesignId: deckId,
+      ...(isSlab ? { slabDesignId: slabId } : {}),
       girderDesignIds: girderIds,
       components: comps.map(({ support, bearingId, abutmentId, approachSlabId, wingwallId, jointId, capId, columnId, foundationId, foundationKind }) => ({ support, bearingId: bearingId ?? null, abutmentId: abutmentId ?? null, approachSlabId: approachSlabId ?? null, wingwallId: wingwallId ?? null, jointId: jointId ?? null, capId: capId ?? null, columnId: columnId ?? null, foundationId: foundationId ?? null, foundationKind: foundationKind ?? null })),
     },

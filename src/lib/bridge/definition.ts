@@ -20,6 +20,8 @@ export type BridgeDefinition = {
   // Section (midas's wizard: Section)
   /** A library shape, or "custom" with its outline (half-widths up the girder, in), web and top flange width. */
   girder: { shape: string; fc: number; wc: number; custom?: { profile: Profile; web: number; topWidth: number } }; // ksi; kcf
+  /** The Bridge design's superstructure: girders under a deck (default), or a cast-in-place slab bridge (the deck's thickness its depth, its bearing lines at the girder spacing). */
+  superstructure?: "girders" | "slab";
   nGirders: number;
   spacing: number; // ft
   overhang: number; // ft, exterior girder centerline to the deck's edge
@@ -97,10 +99,11 @@ function parseDefinition(saved: unknown): BridgeDefinition {
     supports: supportsFor(geoSpans && geoSpans.every((L) => L >= 10 && L <= 500) ? geoSpans.length : spans.length || 1, Array.isArray(s.supports) ? (s.supports as SupportLine[]) : []),
     continuity: s.continuity === "simple" ? "simple" : "continuous",
     girder: { shape, fc: num(girder.fc, d.girder.fc, 3, 18), wc: num(girder.wc, d.girder.wc, 0.09, 0.2), ...(custom ? { custom } : {}) },
+    superstructure: s.superstructure === "slab" ? "slab" : "girders",
     nGirders: Math.round(num(s.nGirders, d.nGirders, 2, 20)),
     spacing: num(s.spacing, d.spacing, 2, 20),
     overhang: num(s.overhang, d.overhang, 0, 10),
-    deck: { thickness: num(deck.thickness, d.deck.thickness, 4, 24), sacrificial: num(deck.sacrificial, d.deck.sacrificial, 0, 4), haunch: num(deck.haunch, d.deck.haunch, 0, 12), fc: num(deck.fc, d.deck.fc, 2.5, 12), wc: num(deck.wc, d.deck.wc, 0.09, 0.2) },
+    deck: { thickness: num(deck.thickness, d.deck.thickness, 4, s.superstructure === "slab" ? 36 : 24), sacrificial: num(deck.sacrificial, d.deck.sacrificial, 0, 4), haunch: num(deck.haunch, d.deck.haunch, 0, 12), fc: num(deck.fc, d.deck.fc, 2.5, 12), wc: num(deck.wc, d.deck.wc, 0.09, 0.2) },
     divisions: Math.round(num(s.divisions, d.divisions, 4, 40)),
     diaphragms: { perSpan: Math.round(num(dia.perSpan, d.diaphragms.perSpan, 0, 10)), weight: num(dia.weight, d.diaphragms.weight, 0, 100), thickness: num(dia.thickness, d.diaphragms.thickness, 0.25, 4), atSupports: dia.atSupports !== false },
     piers: {

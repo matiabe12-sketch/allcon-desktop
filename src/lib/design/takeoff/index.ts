@@ -11,6 +11,8 @@ import { columnTakeoff as pierColumnTakeoff } from "../piers/column-detail";
 import type { SignInputs } from "../signs/cantilever";
 import type { ApproachSlabInputs } from "../approach/approach-slab";
 import { approachSlabTakeoff } from "../approach/approach-slab-detail";
+import type { SlabBridgeInputs } from "../slabs/slab-bridge";
+import { slabBridgeTakeoff } from "../slabs/slab-bridge-detail";
 import type { AbutmentInputs } from "../foundations/abutment";
 import { abutmentTakeoff, footingTakeoff, micropileTakeoff, pileTakeoff, shaftTakeoff as drilledShaftTakeoff } from "../foundations/detail";
 import type { FootingInputs } from "../foundations/footing";
@@ -52,6 +54,8 @@ export function takeoffFor(kind: string, inputs: unknown, s?: TakeoffSettings): 
     case "elastomeric-bearing":
     case "ptfe-bearing":
       return bearingTakeoff(Math.max(1, Math.round(L ?? 1)), !!(inputs as { levelingPad?: boolean } | null)?.levelingPad);
+    case "slab-bridge":
+      return slabBridgeTakeoff(inputs as SlabBridgeInputs);
     case "approach-slab":
       return approachSlabTakeoff(inputs as ApproachSlabInputs, L ?? 2);
     case "spread-footing":

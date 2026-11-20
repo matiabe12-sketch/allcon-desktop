@@ -1,4 +1,6 @@
 import { designGirder, GIRDER_DEFAULTS, girderShape, liveLoad, type GirderInputs } from "../girders/prestressed";
+import { isAdjacent } from "../girders/sections";
+import { designSlabBridge, SLAB_BRIDGE_DEFAULTS, type SlabBridgeInputs, type SlabBridgeResult } from "../slabs/slab-bridge";
 import { continuousEndShear, continuousLaneReaction } from "../girders/substructure-loads";
 import { applyRail } from "../girders/bridge-deck";
 import { DesignError } from "../walls/cip";
@@ -67,6 +69,12 @@ export type BridgeInputs = {
   fws: number; // psf
   /** The bridge rail on both edges: a CDOT standard rail (B-606) or "custom" (the barrier width above, a generic parapet in the model). */
   rail?: GirderInputs["rail"];
+  /**
+   * The superstructure: precast or steel girders under a deck (the default), or a cast-in-place slab bridge (its depth
+   * the deck's, deckT; its bearing lines at the girder spacing; the Slab Bridge design `slabDesignId`).
+   */
+  superstructure?: "girders" | "slab";
+  slabDesignId?: string | null;
   /** The deck slab's design (the deck between the girders, the overhang and the rail), set and created by the Bridge. */
   deckDesignId?: string | null;
   // The linked designs (the Bridge sets their layout and loads)
@@ -118,7 +126,11 @@ export function bridgeLayout(b: BridgeInputs) {
   const cache = horizontalElements(b.alignment);
   const vcs = profileGeometry(b.profile);
   const shape = girderShape({ ...GIRDER_DEFAULTS, shape: b.shape });
-  const depth = shape.depth; // in
+  // A slab bridge: no girders; the slab (deckT deep) sits on its bearing lines (docs/slab-and-box-bridges.md).
+  const slab = b.superstructure === "slab";
+  const depth = slab ? 0 : shape.depth; // in
+  // Boxes and slab beams side by side: the spacing at least their width (CDOT sheets B-618-BX, -SL: no keyways, a joint between).
+  if (!slab && isAdjacent(shape) && b.supports.some((s) => spacingAt(b, s) * 12 < shape.topWidth - 1e-6)) throw new DesignError(`The ${shape.name}s are ${shape.topWidth} in wide: the spacing must be at least that (side by side, a joint between).`);
   const offsetsAt = (sp: number) => Array.from({ length: b.nGirders }, (_, k) => b.bridgeLineOffset + (k - (b.nGirders - 1) / 2) * sp);
   const offsets = offsetsAt(b.spacing);
 
@@ -166,7 +178,7 @@ export function bridgeLayout(b: BridgeInputs) {
       const mid = at((fb + fe) / 2);
       // The profile above the bearing-to-bearing chord at midspan (+ crest), in: what the haunch must absorb.
       const ordinate = (mid.deck - (start.deck + end.deck) / 2) * 12;
-      const seat = (d: number, s: (typeof supports)[number]) => d - b.slabOffset / 12 - depth / 12 - s.bearingHeight / 12;
+      const seat = (d: number, s: (typeof supports)[number]) => d - (slab ? b.deckT : b.slabOffset) / 12 - depth / 12 - s.bearingHeight / 12;
       return { k, offset: o, chord, L, length: len, azimuth: gAz, start: { ...start, seat: seat(start.deck, s0) }, end: { ...end, seat: seat(end.deck, s1) }, ordinate, crossSlope: crossSlopeAt(b.roadway, mid.offset, mid.station), flare: c.offset - a.offset };
     });
     const L = Math.max(...girders.map((g) => g.L));
@@ -264,8 +276,9 @@ function endReaction(line: ReturnType<typeof designGirder>["interior"], L: numbe
 }
 
 /** The Bridge run: its layout, the girder check on each group of spans, and each support's reactions per girder. */
-export function runBridge(b: BridgeInputs, bases: (GirderInputs | null | undefined)[] = []) {
+export function runBridge(b: BridgeInputs, bases: (GirderInputs | null | undefined)[] = [], slabBase?: SlabBridgeInputs | null) {
   const lay = bridgeLayout(b);
+  if (b.superstructure === "slab") return runSlabBridge(b, lay, slabBase ?? null);
   const groups = spanGroups(b).map((g, gi) => {
     const inputs = girderInputsFor(b, lay, g, bases[gi] ?? BRIDGE_GIRDER_BASE);
     const result = designGirder(inputs);
@@ -318,7 +331,52 @@ export function runBridge(b: BridgeInputs, bases: (GirderInputs | null | undefin
     return { support: i, name: s.name, sides, DC: per("DC"), DC1: per("DC1"), DW: per("DW"), LL: per("LL"), LLIM: per("LLIM"), Lane: per("Lane"), continuous, totals: { DC: tot("DC"), DW: tot("DW") } };
   });
   const ok = groups.every((g) => g.result.ok);
-  return { layout: lay, groups, reactions, ok };
+  return { layout: lay, groups, reactions, ok, slab: null as SlabRun | null };
 }
 
 export type BridgeRun = ReturnType<typeof runBridge>;
+
+/**
+ * The Slab Bridge design's inputs from the Bridge: its spans (bearing to bearing), continuous where every pier is, its
+ * width, barriers (a CDOT rail's weight), skew, depth (the deck's, deckT) and overlay; its bars and details kept.
+ */
+export function slabFromBridge(b: BridgeInputs, lay: BridgeLayout, base: SlabBridgeInputs = SLAB_BRIDGE_DEFAULTS): SlabBridgeInputs {
+  const inner = b.supports.slice(1, -1);
+  const rail = b.rail ? applyRail({ ...GIRDER_DEFAULTS, rail: b.rail, barrierWidth: b.barrierWidth }) : null;
+  return {
+    ...base,
+    spans: lay.spans.map((s) => Math.round(s.L * 1000) / 1000),
+    continuous: inner.length > 0 && inner.every((s) => s.type === "continuous-pier"),
+    W: b.leftEdge + b.rightEdge,
+    barrierWidth: rail ? rail.barrierWidth : b.barrierWidth,
+    barrierWeight: rail ? rail.barrierWeight : base.barrierWeight,
+    skew: Math.min(45, Math.max(...b.supports.map((s) => Math.abs(s.skew)))),
+    t: b.deckT,
+    wearing: Math.round(((b.fws / 1000 / base.gammaWS) * 12) * 1000) / 1000,
+  };
+}
+
+/**
+ * A slab bridge's run: the slab designed, and each support's reactions on its bearing lines (the Bridge's girder
+ * lines, at its spacing): the slab's reaction per foot times each line's width (an interior line its spacing, an
+ * exterior one half of it and the overhang), so the substructure takes them as it takes girders, once.
+ */
+function runSlabBridge(b: BridgeInputs, lay: BridgeLayout, base: SlabBridgeInputs | null) {
+  const inputs = slabFromBridge(b, lay, base ?? SLAB_BRIDGE_DEFAULTS);
+  const result = designSlabBridge(inputs);
+  const W = b.leftEdge + b.rightEdge;
+  const reactions = b.supports.map((s, i) => {
+    const S = spacingAt(b, s);
+    const tribInt = S;
+    const tribExt = S / 2 + lay.overhang;
+    const per = result.reactions[i];
+    const line = (trib: number) => ({ DC: per.DC * trib, DC1: per.DC * trib, DW: per.DW * trib, LL: per.LL * trib, LLIM: per.LLIM * trib, Lane: per.lane });
+    const int = line(tribInt);
+    const ext = line(tribExt);
+    const pick = (key: "DC" | "DC1" | "DW" | "LL" | "LLIM" | "Lane") => Math.max(int[key], ext[key]);
+    return { support: i, name: s.name, sides: [] as { span: number; interior: ReturnType<typeof line>; exterior: ReturnType<typeof line> }[], DC: pick("DC"), DC1: pick("DC1"), DW: pick("DW"), LL: pick("LL"), LLIM: pick("LLIM"), Lane: pick("Lane"), continuous: s.type === "continuous-pier", totals: { DC: per.DC * W, DW: per.DW * W }, slab: { perFoot: per, tribInt, tribExt } };
+  });
+  return { layout: lay, groups: [] as { spans: number[]; inputs: GirderInputs; result: ReturnType<typeof designGirder> }[], reactions, ok: result.ok, slab: { inputs, result } as SlabRun | null };
+}
+
+export type SlabRun = { inputs: SlabBridgeInputs; result: SlabBridgeResult };

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { girderStrandsFor } from "@/app/actions/bridge";
 import { gridHalfWidth, STRAND_PITCH, strandLayout, strandsAt, type StrandLayout } from "@/lib/design/girders/strand-layout";
-import type { GirderShape } from "@/lib/design/girders/sections";
+import { isAdjacent, type GirderShape } from "@/lib/design/girders/sections";
 
 // A girder's strands for the Member forces table: the girder in elevation (vertical scale exaggerated),
 // every strand row along it (the straight rows level, dashed where debonded, each harped pair from the
@@ -186,7 +186,7 @@ function Elevation({ layout, shape, endDist, cut, onCut }: { layout: StrandLayou
 function Section({ shape, at, dia }: { shape: GirderShape; at: ReturnType<typeof strandsAt>; dia: number }) {
   const H = shape.depth;
   const half = Math.max(...shape.profile.map(([, w]) => w), shape.topWidth / 2);
-  const box = shape.family === "Prestressed box";
+  const box = isAdjacent(shape);
   const W = 360;
   // Scale to fit; an I-shape's bottom flange and web stay readable.
   const s = Math.min((W - 90) / (2 * half), 300 / H);

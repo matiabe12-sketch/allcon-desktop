@@ -1,4 +1,5 @@
 import { capAlongChecks, type CapAlongResult } from "./cap-along";
+import { capRegions, sectionalDesign, type BentFrame } from "./sectional";
 import { DesignError, type Check } from "../walls/cip";
 import { bar, crackGrid, nodeFace, rcTie, type Confinement, type FaceType, type NodeType } from "./aashto";
 import { development, type Coating } from "./anchorage";
@@ -62,6 +63,14 @@ export type StmInputs = {
   nodeGeometry?: "auto" | "entered";
   /** A standard cap's B-regions (every load 2h or more from the supports, 5.8.2.1) also checked by the sectional method (5.6, 5.7). */
   sectional?: boolean;
+  /**
+   * How the cap is designed: "auto" (the default) recommends beam theory where every loaded region is a B-region (all
+   * loads 2h or more from the columns' faces, AASHTO 5.8.2.1) and the strut-and-tie model where any isn't; "stm" or
+   * "beam" as the designer chooses (beam theory with D-regions present is flagged: 5.8.2.1 says STM should be considered).
+   */
+  method?: "auto" | "stm" | "beam";
+  /** The bent's columns and base, for its forces as a plane frame (the Bridge sets it from the pier); none: the beam on pinned column centerlines. */
+  frame?: BentFrame | null;
   /** The pay items its quantities go to in the project's line items, and the heading they went under. */
   /** The quantities' pay items, the original ground (ft) for the M-206-2 excavation, and the line items' heading. */
   payItems?: { concrete: string; rebar: string; excavation?: string; backfill?: string; "soil-reinforcement"?: string; refill?: string; ground?: number; headingId?: string | null };
@@ -214,6 +223,8 @@ export function stmInputs(saved: unknown): StmInputs {
     ...(s.columnBoundary === "linear-stress" ? { columnBoundary: "linear-stress" as const } : {}),
     ...(s.nodeGeometry === "entered" ? { nodeGeometry: "entered" as const } : {}),
     ...(s.sectional === true ? { sectional: true } : {}),
+    ...(s.method === "stm" || s.method === "beam" || s.method === "auto" ? { method: s.method } : {}),
+    ...(s.frame && typeof s.frame === "object" && numOr((s.frame as { columnHeight?: unknown }).columnHeight, 0) > 0 ? { frame: s.frame as BentFrame } : {}),
     ...(s.stages && typeof s.stages === "object" && Number((s.stages as { diaphragmHeight?: unknown }).diaphragmHeight) > 0
       ? (() => {
           const g = s.stages as { enabled?: unknown; diaphragmHeight: unknown; topBars?: { size?: unknown; count?: unknown } | null };
@@ -305,6 +316,38 @@ export function roleOf(entry: string) {
 const keyOf = (labels: string[], a: number, b: number) => `${labels[a]}-${labels[b]}`;
 
 /**
+ * The cap's design method (`method`): AASHTO 5.8.2.1 asks for the strut-and-tie model to be considered where a load is
+ * less than twice the member's depth from its supporting reaction, beam theory applying elsewhere (5.5.1.2.1). So the
+ * recommendation, from the inputs: beam theory where every loaded region is a B-region (a standard bent or hammerhead
+ * cap's loads all 2h or more from the columns' faces), the strut-and-tie model where any isn't, or where the cap isn't a
+ * standard one (no template: the model as entered). The designer may choose either; beam theory with D-regions present is
+ * flagged.
+ */
+export function capMethod(i: StmInputs) {
+  const t = i.template;
+  if (!t || t.kind === "abutment") return null;
+  const regions = capRegions(t);
+  const loaded = regions.filter((g) => g.kind !== "none");
+  const dRegions = loaded.filter((g) => g.kind === "D").map((g) => g.label);
+  const recommended: "stm" | "beam" = loaded.length > 0 && dRegions.length === 0 ? "beam" : "stm";
+  const method: "stm" | "beam" = i.method === "stm" || i.method === "beam" ? i.method : recommended;
+  const why = recommended === "beam" ? "every loaded region is a B-region (its loads 2h or more from the columns' faces), where beam theory applies (AASHTO 5.8.2.1, 5.5.1.2.1)" : `${dRegions.length ? `D-regions (${dRegions.join(", ")}: a load nearer than 2h to a column's face)` : "the model isn't a standard cap"}, where the strut-and-tie model should be considered (AASHTO 5.8.2.1)`;
+  return { method, recommended, chosen: i.method === "stm" || i.method === "beam", why, dRegions };
+}
+
+/** The cap designed by its method: beam theory throughout replaces the model's checks with the sectional design's (every loaded region), the model's kept for information. */
+function withMethod(i: StmInputs, r: StmResult): StmResult {
+  const m = capMethod(i);
+  if (!m) return r;
+  const summary = `Design method: ${m.method === "beam" ? "beam theory (the sectional method)" : "strut-and-tie model"}${m.chosen ? `, as chosen (recommended: ${m.recommended === "beam" ? "beam theory" : "strut-and-tie"})` : ", as recommended"}: ${m.why}.`;
+  if (m.method === "stm") return { ...r, method: { ...m, summary } };
+  const sec = sectionalDesign(i, r, { all: true });
+  const flag = m.dRegions.length ? [{ id: "method-d-regions", name: `Beam theory with D-regions present (${m.dRegions.join(", ")}): AASHTO 5.8.2.1 says the strut-and-tie model should be considered there`, demand: m.dRegions.length, capacity: 0, unit: "regions", ok: false, advisory: true, ref: "AASHTO 5.8.2.1" }] : [];
+  const checks = [...flag, ...sec.checks];
+  return { ...r, checks, ok: checks.every((c) => c.ok || c.advisory), method: { ...m, summary }, sectional: sec, stmChecks: r.checks };
+}
+
+/**
  * The loads along the bridge on a standard cap with its girder link (`girders.along`, set by the Bridge): its bending
  * about the vertical axis, shear across and torsion (stm/cap-along.ts), added to the model's checks.
  */
@@ -328,7 +371,7 @@ function withAlong(i: StmInputs, r: StmResult): StmResult {
   const out = capAlongChecks(t, along, bl.map((b) => b.x), i.grid, i.fc, i.fy, Vg);
   if (!out) return r;
   const checks = [...r.checks, ...out.checks];
-  return { ...r, checks, ok: checks.every((c) => c.ok), along: out.result };
+  return { ...r, checks, ok: checks.every((c) => c.ok || c.advisory), along: out.result };
 }
 
 /**
@@ -338,18 +381,19 @@ function withAlong(i: StmInputs, r: StmResult): StmResult {
  */
 export async function designStm(i: StmInputs, solve: LpSolver): Promise<StmResult> {
   const st = i.stages;
-  if (!st?.enabled || !i.template || !i.girders?.enabled || !(st.diaphragmHeight > 0) || i.girders.stage) return withAlong(i, await designStmModel(i, solve));
+  if (!st?.enabled || !i.template || !i.girders?.enabled || !(st.diaphragmHeight > 0) || i.girders.stage) return withAlong(i, withMethod(i, await designStmModel(i, solve)));
   const t = i.template;
   const link = i.girders;
   const construction = await designStmModel({ ...i, stages: null, girders: { ...link, stage: "construction", diaphragm: { height: st.diaphragmHeight, width: t.capWidth } } }, solve);
   const h = st.diaphragmHeight;
   const deep = buildTemplate({ ...t, depth: t.depth + h, tipDepth: t.tipDepth + h, topBars: st.topBars ?? t.topBars }, { ...i, stages: null, girders: { ...link, stage: "completed" } });
-  const completed = await designStmModel(deep, solve);
+  // The completed member by its method (the construction stage's first-stage cap by the model).
+  const completed = withMethod(deep, await designStmModel(deep, solve));
   const tag = (prefix: string, r: StmModelResult) => r.checks.map((c) => ({ ...c, id: `${prefix.toLowerCase()}-${c.id}`, name: `${prefix}: ${c.name}` }));
   const checks = [...tag("Construction", construction), ...tag("Completed", completed)];
   const staged: StmResult = {
     ...completed,
-    ok: checks.every((c) => c.ok),
+    ok: checks.every((c) => c.ok || c.advisory),
     checks,
     warnings: [...new Set([...construction.warnings, ...completed.warnings])],
     stages: { diaphragmHeight: h, construction, completed },
@@ -358,7 +402,7 @@ export async function designStm(i: StmInputs, solve: LpSolver): Promise<StmResul
   const al = withAlong(deep, completed);
   if (!al.along) return staged;
   const more = al.checks.filter((c) => c.id.startsWith("along-")).map((c) => ({ ...c, id: `completed-${c.id}`, name: `Completed: ${c.name}` }));
-  return { ...staged, checks: [...checks, ...more], ok: [...checks, ...more].every((c) => c.ok), along: al.along };
+  return { ...staged, checks: [...checks, ...more], ok: [...checks, ...more].every((c) => c.ok || c.advisory), along: al.along };
 }
 
 async function designStmModel(i: StmInputs, solve: LpSolver) {
@@ -1072,4 +1116,4 @@ async function designStmModel(i: StmInputs, solve: LpSolver) {
 }
 
 type StmModelResult = Awaited<ReturnType<typeof designStmModel>>;
-export type StmResult = StmModelResult & { stages?: { diaphragmHeight: number; construction: StmModelResult; completed: StmModelResult }; along?: CapAlongResult };
+export type StmResult = StmModelResult & { stages?: { diaphragmHeight: number; construction: StmModelResult; completed: StmModelResult }; along?: CapAlongResult; method?: NonNullable<ReturnType<typeof capMethod>> & { summary: string }; sectional?: import("./sectional").SectionalResult; stmChecks?: Check[] };

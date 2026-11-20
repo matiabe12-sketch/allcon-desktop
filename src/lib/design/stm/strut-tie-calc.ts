@@ -14,7 +14,7 @@ const ok = (demand: string, capacity: string) => `\\operatorname{if}\\left(${dem
 const FACE: Record<string, string> = { bearing: "bearing face", back: "back face", interface: "strut-to-node interface" };
 
 /** The girder loads on the cap: dead load reactions, the lane's reaction, and the live load placed across the roadway. */
-function girderLoadLines(i: StmInputs, r: StmResult, text: (t: string, style?: "heading" | "subheading" | "note", extra?: { newPage?: boolean; keepWithNext?: boolean }) => void) {
+export function girderLoadLines(i: StmInputs, r: StmResult, text: (t: string, style?: "heading" | "subheading" | "note", extra?: { newPage?: boolean; keepWithNext?: boolean }) => void) {
   const g = i.girders!;
   const c = r.capLoads!;
   text("Loads from the girders (AASHTO 3.4, 3.6.1)", "subheading", { keepWithNext: true });
@@ -219,5 +219,22 @@ export function stmCalcLines(i: StmInputs, r: StmResult, title: string, figures?
     const why: Record<string, string> = { "missing-input": "missing input", "not-checked": "not checked", "not-implemented": "not evaluated by these calculations", fail: "fails" };
     lines.push({ region: textTable([{ title: "Item", x: 4 }, { title: "Status", x: 200 }, { title: "Detail", x: 330 }], open.map((c) => [wrap(c.item, 30), wrap(why[c.status], 20), wrap(c.detail, 64)]), 720) });
   }
+  return lines;
+}
+
+/** A cap designed by beam theory throughout (its method): the purpose, the method chosen and why, its materials and loads; the sectional design follows (sectional-calc.ts). */
+export function beamCapCalcLines(i: StmInputs, r: StmResult, title: string): Line[] {
+  const lines: Line[] = [];
+  const text = (t: string, style?: "heading" | "subheading" | "note", extra?: { newPage?: boolean; keepWithNext?: boolean }) => lines.push({ text: t, ...(style ? { style } : {}), ...(extra ?? {}) });
+  const m = (math: string, ref?: string) => lines.push({ math, ...(ref ? { ref } : {}), ...(isInput(math) ? { color: INPUT_COLOR } : {}) });
+  text(title.toUpperCase(), "heading");
+  text(`Purpose:- These calculations design the pier cap by beam theory (the sectional method of AASHTO LRFD 5.6 and 5.7) for the factored load cases listed.`);
+  if (r.method) text(`Method:- ${r.method.summary} The cap's moments and shears are from ${i.frame ? "the bent as a plane frame with its columns (rigid joints), the same frame its columns are designed from" : "the cap as a beam on its columns' centerlines"}; every loaded region is checked by the sectional method.`);
+  text(COLOR_NOTE, "note");
+  text("Materials", "subheading", { keepWithNext: true });
+  m(`f'_{c}\\coloneq ${num(i.fc)}\\mathrm{ksi}`, "Design concrete strength");
+  m(`f_y\\coloneq ${num(i.fy)}\\mathrm{ksi}`, "Bar yield strength");
+  m(`b_w\\coloneq ${num(i.template?.capWidth ?? i.b)}\\mathrm{in}`, "The cap's width");
+  if (r.capLoads && i.girders?.enabled) girderLoadLines(i, r, text);
   return lines;
 }

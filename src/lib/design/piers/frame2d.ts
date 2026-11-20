@@ -64,30 +64,37 @@ export function solveFrame(nodes: FrameNode[], members: FrameMember[], loadSets:
   });
   const free = Array.from({ length: n }, (_, d) => d).filter((d) => !nodes[Math.floor(d / 3)].fixed);
   const nf = free.length;
-  return loadSets.map((loads) => {
-    const F = new Array<number>(n).fill(0);
-    for (const l of loads) {
-      F[l.node * 3] += l.fx ?? 0;
-      F[l.node * 3 + 1] += l.fy ?? 0;
-      F[l.node * 3 + 2] += l.m ?? 0;
-    }
-    // Gaussian elimination with partial pivoting on the free DOFs.
-    const A = free.map((r) => [...free.map((c) => K[r][c]), F[r]]);
-    for (let p = 0; p < nf; p++) {
-      let piv = p;
-      for (let r = p + 1; r < nf; r++) if (Math.abs(A[r][p]) > Math.abs(A[piv][p])) piv = r;
-      if (Math.abs(A[piv][p]) < 1e-12) throw new DesignError("The bent is unstable as modeled.");
-      [A[p], A[piv]] = [A[piv], A[p]];
-      for (let r = p + 1; r < nf; r++) {
-        const f = A[r][p] / A[p][p];
-        if (f) for (let c = p; c <= nf; c++) A[r][c] -= f * A[p][c];
+  // Gaussian elimination with partial pivoting on the free DOFs, once, every load set a right-hand side.
+  const S = loadSets.length;
+  const A = free.map((r) => {
+    const row = new Float64Array(nf + S);
+    free.forEach((c, j) => (row[j] = K[r][c]));
+    return row;
+  });
+  const pos = new Map(free.map((d, j) => [d, j]));
+  loadSets.forEach((loads, s) => {
+    for (const l of loads)
+      for (const [o, v] of [[0, l.fx ?? 0], [1, l.fy ?? 0], [2, l.m ?? 0]] as const) {
+        const j = pos.get(l.node * 3 + o);
+        if (j !== undefined) A[j][nf + s] += v;
       }
+  });
+  for (let p = 0; p < nf; p++) {
+    let piv = p;
+    for (let r = p + 1; r < nf; r++) if (Math.abs(A[r][p]) > Math.abs(A[piv][p])) piv = r;
+    if (Math.abs(A[piv][p]) < 1e-12) throw new DesignError("The bent is unstable as modeled.");
+    [A[p], A[piv]] = [A[piv], A[p]];
+    for (let r = p + 1; r < nf; r++) {
+      const f = A[r][p] / A[p][p];
+      if (f) for (let c = p; c < nf + S; c++) A[r][c] -= f * A[p][c];
     }
+  }
+  return loadSets.map((_, s) => {
     const x = new Array<number>(nf).fill(0);
     for (let r = nf - 1; r >= 0; r--) {
-      let s = A[r][nf];
-      for (let c = r + 1; c < nf; c++) s -= A[r][c] * x[c];
-      x[r] = s / A[r][r];
+      let v = A[r][nf + s];
+      for (let c = r + 1; c < nf; c++) v -= A[r][c] * x[c];
+      x[r] = v / A[r][r];
     }
     const d = new Array<number>(n).fill(0);
     free.forEach((dof, k) => (d[dof] = x[k]));

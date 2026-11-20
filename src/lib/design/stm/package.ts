@@ -8,7 +8,7 @@ import { capEarthwork, detailCap, type CapDetail, type CapEarthwork } from "./de
 import { sectionalDesign } from "./sectional";
 import { sectionalCalcLines } from "./sectional-calc";
 import type { StmInputs, StmResult } from "./strut-tie";
-import { stmCalcLines } from "./strut-tie-calc";
+import { beamCapCalcLines, stmCalcLines } from "./strut-tie-calc";
 import { capAlongLines } from "./cap-along";
 
 // A strut-and-tie design's calc package: the STM calculations, then for a standard cap the
@@ -26,12 +26,14 @@ export function capDetailOrNull(i: StmInputs): CapDetail | null {
 }
 
 export function stmPackageLines(i: StmInputs, r: StmResult, title: string, figures?: { model?: Figure; details?: Figure }): Line[] {
-  const lines = stmCalcLines(i, r, title, figures);
-  const sectional = i.template && i.sectional ? sectionalDesign(i, r) : null;
+  // Beam theory throughout: the sectional design is the cap's calc; the strut-and-tie model's isn't shown.
+  const beam = r.method?.method === "beam" && r.sectional;
+  const lines = beam ? beamCapCalcLines(i, r, title) : stmCalcLines(i, r, title, figures);
+  const sectional = beam ? r.sectional! : i.template && i.sectional ? sectionalDesign(i, r) : null;
   if (sectional) lines.push(...sectionalCalcLines(i, sectional));
   if (r.along && i.template) lines.push(...(capAlongLines(r.stages ? { ...i.template, depth: i.template.depth + r.stages.diaphragmHeight, tipDepth: i.template.tipDepth + r.stages.diaphragmHeight } : i.template, r.along, i.fc, i.fy) as Line[]));
   // The summary of the checks, after the details appendix (pushed below).
-  const summary = checksSummary([{ title: sectional ? "Strut-and-tie model" : undefined, checks: r.checks }, ...(sectional ? [{ title: "Sectional design of the B-Regions", checks: sectional.checks }] : [])]);
+  const summary = beam ? checksSummary([{ title: "Beam theory (the sectional method)", checks: r.checks }]) : checksSummary([{ title: sectional ? "Strut-and-tie model" : undefined, checks: r.checks }, ...(sectional ? [{ title: "Sectional design of the B-Regions", checks: sectional.checks }] : [])]);
   const d = capDetailOrNull(i);
   if (d) {
     lines.push({ text: "Reinforcement details", style: "subheading", newPage: true, keepWithNext: true });

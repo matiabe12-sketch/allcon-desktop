@@ -560,7 +560,7 @@ export function StmEditor({ design, projects }: { design: { id: string; name: st
                 </Card>
               )}
               <ChecksTable checks={r.checks} groupOf={(id) => (id === "angle" ? "Model" : id.startsWith("grid") ? "Crack-control grid" : id.startsWith("tie") ? "Ties" : id.startsWith("anchor") ? "Anchorage" : id.startsWith("node") ? "Nodes" : "Service")} />
-              {sectional && <StmSectionalCard sec={sectional} on={!!inputs.sectional} onToggle={(v) => set("sectional")(v || undefined)} />}
+              {sectional && <StmSectionalCard sec={r?.method?.method === "beam" && r.sectional ? r.sectional : sectional} on={!!inputs.sectional || r?.method?.method === "beam"} onToggle={(v) => set("sectional")(v || undefined)} method={inputs.method ?? "auto"} onMethod={(v) => set("method")(v)} summary={r?.method?.summary} />}
               <Card>
                 <CardContent className="overflow-x-auto py-3 text-xs">
                   <p className="pb-1 font-semibold">Member forces <span className="font-normal text-muted-foreground">(largest over the cases; governing case in brackets)</span></p>

@@ -2,12 +2,12 @@
 
 import { Card, CardContent } from "@/components/ui/card";
 import type { SectionalResult } from "@/lib/design/stm/sectional";
-import { ChecksTable, fmt, Toggle } from "./design-kit";
+import { Choice, ChecksTable, fmt, Toggle } from "./design-kit";
 
 // Where a standard cap needs the strut-and-tie method and where the sectional method suits it
 // (AASHTO 5.8.2.1, 5.5.1.2.1), and, when asked for, the sectional checks of its B-Regions.
 
-export function StmSectionalCard({ sec, on, onToggle }: { sec: SectionalResult; on: boolean; onToggle: (v: boolean) => void }) {
+export function StmSectionalCard({ sec, on, onToggle, method, onMethod, summary }: { sec: SectionalResult; on: boolean; onToggle: (v: boolean) => void; method: "auto" | "stm" | "beam"; onMethod: (v: "auto" | "stm" | "beam") => void; summary?: string }) {
   const loaded = sec.regions.filter((g) => g.kind !== "none");
   const bCount = loaded.filter((g) => g.kind === "B").length;
   return (
@@ -41,8 +41,10 @@ export function StmSectionalCard({ sec, on, onToggle }: { sec: SectionalResult; 
               ? "Some regions have loads within two depths of a column face: those need the strut-and-tie model; the others may be checked by the sectional method."
               : "Every region has a load within two depths of a column face: the strut-and-tie model governs."}
         </p>
-        {bCount > 0 && <Toggle label="Check the B-Regions by the sectional method (5.6, 5.7)" value={on} onChange={onToggle} />}
-        {on && bCount > 0 && (
+        <Choice label="Design method" value={method} options={[{ value: "auto", label: `Recommended (${sec.allB ? "beam theory" : "strut-and-tie"})` }, { value: "stm", label: "Strut-and-tie model" }, { value: "beam", label: "Beam theory throughout" }]} onChange={onMethod} />
+        {summary && <p className="text-muted-foreground">{summary}</p>}
+        {method !== "beam" && !(method === "auto" && sec.allB) && bCount > 0 && <Toggle label="Also check the B-Regions by the sectional method (5.6, 5.7)" value={on} onChange={onToggle} />}
+        {on && sec.checks.length > 0 && (
           <>
             <ChecksTable checks={sec.checks} groupOf={(id) => sec.regions.find((g) => id.startsWith(`sec-${g.label.toLowerCase().replace(/\s+/g, "-")}-`))?.label ?? "Sectional"} />
             {sec.notes.map((n) => (

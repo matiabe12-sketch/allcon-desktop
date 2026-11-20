@@ -1,8 +1,10 @@
 import type { Check } from "../walls/cip";
 import { bar } from "./aashto";
 import { barsFit } from "./nodal-zones";
+import { development } from "./anchorage";
 import type { StmCase, StmInputs, StmResult } from "./strut-tie";
 import { resolveBearings, type StmTemplate } from "./templates";
+import { solveFrame, type FrameLoad, type FrameMember, type FrameNode } from "../piers/frame2d";
 
 // Where a standard cap may be designed by the sectional method, and that design. AASHTO LRFD 10th
 // Edition: STM should be considered where the distance between the centers of an applied load and
@@ -183,6 +185,62 @@ function reactionsMany(L: number, supports: number[], sets: { x: number; P: numb
   });
 }
 
+/**
+ * The bent as a plane frame (piers/frame2d.ts, as the column tool solves it): the cap a beam on its columns, the
+ * joints rigid, the columns fixed at their bases (or on a shaft to its point of fixity); gross sections, Ec by Eq.
+ * 5.4.2.4-1. Each load set's moment (sagging +) and shear along the cap: the loads gathered on a ½ ft grid of the
+ * cap's nodes, the moment linear and the shear constant between them.
+ */
+export type BentFrame = { columnHeight: number; columnShape: "round" | "rectangular"; columnT: number; columnW: number; base: "footing" | "shaft"; fixity: number; shaftD: number; fc: number };
+export function frameForces(t: StmTemplate, f: BentFrame, fcCap: number, sets: { x: number; P: number }[][]) {
+  const cols = [...t.columns].sort((p, q) => p - q);
+  const step = 0.5;
+  const snap = (x: number) => Math.min(t.length, Math.max(0, Math.round(x / step) * step));
+  const xs = [...new Set([0, t.length, ...cols.map(snap), ...Array.from({ length: Math.round(t.length / step) + 1 }, (_, k) => k * step)].map((x) => Math.round(x * 1e4) / 1e4))].sort((p, q) => p - q);
+  const nodes: FrameNode[] = xs.map((x) => ({ x, y: f.columnHeight + t.depth / 2 }));
+  const idx = new Map(xs.map((x, k) => [x, k]));
+  const Ecap = 120000 * 0.145 ** 2 * fcCap ** 0.33 * 144; // ksf
+  const Ecol = 120000 * 0.145 ** 2 * f.fc ** 0.33 * 144;
+  const bc = t.capWidth / 12;
+  const members: FrameMember[] = [];
+  for (let k = 0; k + 1 < xs.length; k++) members.push({ a: k, b: k + 1, EA: Ecap * bc * t.depth, EI: (Ecap * bc * t.depth ** 3) / 12 });
+  const D = f.columnT / 12;
+  const Wc = f.columnW / 12;
+  const Acol = f.columnShape === "round" ? (Math.PI * D * D) / 4 : D * Wc;
+  const Icol = f.columnShape === "round" ? (Math.PI * D ** 4) / 64 : (Wc * D ** 3) / 12; // bending in the cap's plane
+  for (const xc of cols) {
+    const top = idx.get(snap(xc))!;
+    const base = nodes.length;
+    nodes.push({ x: snap(xc), y: 0, fixed: f.base === "footing" });
+    let below = base;
+    if (f.base === "shaft") {
+      const fix = nodes.length;
+      nodes.push({ x: snap(xc), y: -f.fixity, fixed: true });
+      const Ds = f.shaftD / 12;
+      members.push({ a: fix, b: base, EA: Ecol * (Math.PI * Ds * Ds) / 4, EI: (Ecol * Math.PI * Ds ** 4) / 64 });
+    }
+    members.push({ a: below, b: top, EA: Ecol * Acol, EI: Ecol * Icol });
+    below = top;
+  }
+  const loadSets: FrameLoad[][] = sets.map((ls) => {
+    const m = new Map<number, number>();
+    for (const l of ls) {
+      const x = snap(l.x);
+      m.set(x, (m.get(x) ?? 0) + l.P);
+    }
+    return [...m].map(([x, P]) => ({ node: idx.get(x)!, fy: -P }));
+  });
+  const sols = solveFrame(nodes, members, loadSets);
+  return (k: number, x: number) => {
+    // The cap member containing x (members 0..xs.length − 2 are the cap's, left to right).
+    let e = xs.findIndex((v, j) => j + 1 < xs.length && x >= v - 1e-9 && x <= xs[j + 1] + 1e-9);
+    if (e < 0) e = x <= 0 ? 0 : xs.length - 2;
+    const end = sols[k].ends[e];
+    const M = -end[2] + end[1] * (x - xs[e]);
+    return { M, V: end[1] };
+  };
+}
+
 /** Moment (kip·ft, sagging positive) and shear (kip) at x for a case's loads, P down (ft). */
 function forcesAt(t: StmTemplate, loads: { x: number; P: number }[], x: number, R: number[] | null) {
   const cols = [...t.columns].sort((p, q) => p - q);
@@ -200,7 +258,9 @@ function forcesAt(t: StmTemplate, loads: { x: number; P: number }[], x: number, 
 
 const beta1 = (fc: number) => Math.max(0.65, Math.min(0.85, 0.85 - 0.05 * (fc - 4)));
 
-export function sectionalDesign(i: StmInputs, r: StmResult): SectionalResult {
+export function sectionalDesign(i: StmInputs, r: StmResult, o: { all?: boolean } = {}): SectionalResult {
+  // The regions designed here: the B-regions, or every loaded region where the cap is designed by beam theory throughout.
+  const designed = (g: CapRegion) => g.kind === "B" || (!!o.all && g.kind === "D");
   const t = i.template!;
   const regions = capRegions(t);
   const notes: string[] = [];
@@ -228,7 +288,9 @@ export function sectionalDesign(i: StmInputs, r: StmResult): SectionalResult {
   const all: StmCase[] = r.capLoads ? r.capLoads.cases : i.cases;
   const xOf = (node: string) => i.nodes.find((n) => n.label === node.trim())?.x ?? NaN;
   const caseLoads = all.map((c) => c.loads.map((l) => ({ x: xOf(l.node), P: -l.fy })).filter((l) => Number.isFinite(l.x) && Math.abs(l.P) > 1e-9));
-  const R = cols.length > 1 ? caseLoads.map((ls) => reactions(t.length, cols, ls)) : null;
+  // A bent's forces from the plane frame with its columns (rigid joints) where the frame is described; else the beam on pinned column centerlines.
+  const ff = i.frame && cols.length > 1 ? frameForces(t, i.frame, i.fc, caseLoads) : null;
+  const R = !ff && cols.length > 1 ? caseLoads.map((ls) => reactions(t.length, cols, ls)) : null;
 
   const sections: SectionResult[] = [];
   const at = (region: CapRegion, xft: number, label: string, shearHere: boolean) => {
@@ -236,7 +298,7 @@ export function sectionalDesign(i: StmInputs, r: StmResult): SectionalResult {
     const h = H - soffit(x);
     let worst: SectionResult | null = null;
     caseLoads.forEach((ls, k) => {
-      const { M, V } = forcesAt(t, ls, xft, R ? R[k] : null);
+      const { M, V } = ff ? ff(k, xft) : forcesAt(t, ls, xft, R ? R[k] : null);
       const negative = M < 0;
       const As = negative ? topA : botA;
       const ds = negative ? h - t.topCover : h - botC;
@@ -268,7 +330,7 @@ export function sectionalDesign(i: StmInputs, r: StmResult): SectionalResult {
   };
 
   for (const g of regions) {
-    if (g.kind !== "B") continue;
+    if (!designed(g)) continue;
     // At each face (moment), dv from it (shear, 5.7.3.2), and inboard of each load (the moment there, and the taper).
     for (const f of g.face) {
       const into = f === g.from ? 1 : -1;
@@ -283,7 +345,7 @@ export function sectionalDesign(i: StmInputs, r: StmResult): SectionalResult {
   }
 
   const checks: Check[] = [];
-  for (const g of regions.filter((x) => x.kind === "B")) {
+  for (const g of regions.filter(designed)) {
     const mine = sections.filter((q) => q.region === g.label);
     if (!mine.length) continue;
     const id = g.label.toLowerCase().replace(/\s+/g, "-");
@@ -306,6 +368,31 @@ export function sectionalDesign(i: StmInputs, r: StmResult): SectionalResult {
       const need = (lon.Mu * 12) / (lon.dv * lon.phiF) + Math.max(0, lon.Vu / PHI_V - 0.5 * Math.min(lon.Vs, lon.Vu / PHI_V)) / Math.tan((lon.theta * Math.PI) / 180);
       checks.push({ id: `sec-${id}-longitudinal`, name: `${g.label}: longitudinal reinforcement for shear ${lon.label}`, demand: need, capacity: lon.As * fy, unit: "kip", ok: need <= lon.As * fy + 1e-9, ref: "AASHTO 5.7.3.5" });
     }
+    // A cantilever's top bars developed from each section to the cap's end (5.10.8.1.2, 5.10.8.2): the stress they carry
+    // there (Mu / Mr of fy) over its share of the development length, straight or hooked as the cap's bars end, against
+    // the length left to the end less the cover.
+    if (g.face.length === 1) {
+      const end = g.side < 0 ? 0 : t.length;
+      const tb = t.topBars;
+      const db = bar(tb.size).db;
+      const clearSpacing = tb.count > 1 ? Math.max(1, (b - 2 * t.sideCover - 2 * bar(t.stirrups.size).db - db) / (tb.count - 1) - db) : 6;
+      const kind = t.barEnds === "hook" && tb.size <= 11 ? "hook" : "straight";
+      let ld = NaN;
+      try {
+        ld = development({ barSize: tb.size, fy, fc, clearCover: t.sideCover + bar(t.stirrups.size).db, clearSpacing, horizontal: true, concreteBelow: H - t.topCover, coating: "epoxy", kind }).required;
+      } catch {
+        ld = NaN;
+      }
+      const neg = mine.filter((q) => q.negative);
+      if (Number.isFinite(ld) && neg.length) {
+        const dv = neg.map((q) => {
+          const ratio = Math.min(1, q.Mu / q.Mr);
+          return { q, need: ratio * ld, have: Math.abs(end - q.x) * 12 - t.sideCover };
+        });
+        const w = dv.reduce((a, c) => (c.need - c.have > a.need - a.have ? c : a));
+        checks.push({ id: `sec-${id}-develop`, name: `${g.label}: top bars developed to the cap's end (${kind}, ${w.q.label})`, demand: w.need, capacity: w.have, unit: "in", ok: w.need <= w.have + 1e-9, ref: kind === "hook" ? "AASHTO 5.10.8.1.2, 5.10.8.2.4" : "AASHTO 5.10.8.1.2, 5.10.8.2.1" });
+      }
+    }
     // Skin reinforcement on each side face where dℓ exceeds 3.0 ft (5.6.7).
     const deep = mine.reduce((p, q) => (q.ds > p.ds ? q : p));
     if (deep.ds > 36) {
@@ -325,8 +412,9 @@ export function sectionalDesign(i: StmInputs, r: StmResult): SectionalResult {
   const Ec = 120000 * 0.145 ** 2 * fc ** 0.33; // ksi, Eq. 5.4.2.4-1 (K1 1, wc 0.145)
   const nMod = ES / Ec;
   if (sets && sets.length) {
-    const Rs = cols.length > 1 ? reactionsMany(t.length, cols, sets) : null;
-    for (const g of regions.filter((x) => x.kind === "B")) {
+    const fs = i.frame && cols.length > 1 ? frameForces(t, i.frame, i.fc, sets) : null;
+    const Rs = !fs && cols.length > 1 ? reactionsMany(t.length, cols, sets) : null;
+    for (const g of regions.filter(designed)) {
       const mine = sections.filter((q) => q.region === g.label);
       if (!mine.length) continue;
       const id = g.label.toLowerCase().replace(/\s+/g, "-");
@@ -334,7 +422,7 @@ export function sectionalDesign(i: StmInputs, r: StmResult): SectionalResult {
       const found: Crack[] = [];
       for (const q of mine)
         sets.forEach((ls, k) => {
-          const M = forcesAt(t, ls, q.x, Rs ? Rs[k] : null).M;
+          const M = fs ? fs(k, q.x).M : forcesAt(t, ls, q.x, Rs ? Rs[k] : null).M;
           const negative = M < 0;
           const bars = negative ? t.topBars : t.bottomBars;
           const As = negative ? topA : botA;
@@ -358,6 +446,7 @@ export function sectionalDesign(i: StmInputs, r: StmResult): SectionalResult {
       }
     }
   } else notes.push("Crack control by the distribution of reinforcement (Eq. 5.6.7-1) needs the Service I moments from the girder link: not checked without it.");
+  notes.push(ff ? "Forces: the bent as a plane frame with its columns (rigid joints; the columns fixed at their bases or on a shaft to its point of fixity; gross sections), the same frame the column is designed from." : cols.length > 1 ? "Forces: the cap as a continuous beam on pinned column centerlines (the bent's frame isn't described: its columns' height, section and base)." : "Forces: the arms by statics from their tips.");
   const withLoads = regions.filter((g) => g.kind !== "none");
   const allB = withLoads.length > 0 && withLoads.every((g) => g.kind === "B");
   if (!r.capLoads) notes.push("The loads are the bearing loads as entered: the cap's own weight is in them only if it was entered.");

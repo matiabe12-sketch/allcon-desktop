@@ -202,6 +202,24 @@ export function capFromBridge(b: BridgeInputs, run: BridgeRun, support: number, 
   const shape = b.supports[support].pier;
   const lp = run.layout.piers[support];
   if (shape && lp) current = { ...current, template: capTemplate(shape, lp.columnsX, current.template ?? null) };
+  // The bent's columns and base, for the cap's forces as a plane frame (the column's own frame): their height, section
+  // and base from the pier (a drilled shaft to its point of fixity, as the cap's frame kept it, else 10 ft).
+  if (shape && lp) {
+    const was = current.frame ?? null;
+    current = {
+      ...current,
+      frame: {
+        columnHeight: Math.round(lp.columnHeight * 100) / 100,
+        columnShape: shape.columnShape,
+        columnT: shape.columnSize,
+        columnW: shape.columnShape === "round" ? shape.columnSize : shape.columnDepth,
+        base: shape.foundation === "drilled-shaft" ? "shaft" : "footing",
+        fixity: was?.fixity ?? 10,
+        shaftD: Math.max(was?.shaftD ?? 0, shape.columnSize),
+        fc: was?.fc ?? current.fc,
+      },
+    };
+  }
   // Girders made continuous over the pier by a cast-in-place diaphragm: the cap is built in two stages, the
   // diaphragm from the cap's top (the lowest seat) to the deck's top over the cap.
   // (A slab bridge has none: its slab's weight is in its reactions.)

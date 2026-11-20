@@ -64,6 +64,13 @@ export function sectionalCalcLines(i: StmInputs, s: SectionalResult): Line[] {
       m(`s_{mc${n}}\\coloneq\\frac{700\\cdot1.00\\cdot\\frac{\\mathrm{kip}}{\\mathrm{in}}}{\\beta_{sc${n}}\\cdot f_{sc${n}}}-2\\cdot d_{cc${n}}=`, "AASHTO Eq. 5.6.7-1, Class 1", "in");
       m(ok(`${num(ck.s, 3)}\\mathrm{in}`, `s_{mc${n}}`), "The bars' spacing across the cap");
     }
+    const dev = s.checks.find((c) => c.id === `sec-${g.label.toLowerCase().replace(/\s+/g, "-")}-develop`);
+    if (dev) {
+      text(`${g.label}: ${dev.name.replace(`${g.label}: `, "")}`, undefined, { keepWithNext: true });
+      m(`l_{dn${n}}\\coloneq ${num(dev.demand, 3)}\\mathrm{in}`, "The bars' development for the stress they carry there (Mu / Mr of fy), AASHTO 5.10.8.2");
+      m(`l_{av${n}}\\coloneq ${num(dev.capacity, 3)}\\mathrm{in}`, "To the cap's end, less the cover");
+      m(ok(`l_{dn${n}}`, `l_{av${n}}`), "AASHTO 5.10.8.1.2");
+    }
     const sh = mine.filter((q) => q.shear);
     if (!sh.length) return;
     const v: SectionResult = sh.reduce((p, q) => (q.Vu / q.Vr > p.Vu / p.Vr ? q : p));

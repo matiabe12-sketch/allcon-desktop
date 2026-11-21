@@ -2,8 +2,8 @@
 
 **Status (2026-11-20): built.** Kinds `pipe-culvert` and `three-sided-culvert` under Culverts; engines in
 `src/lib/design/culverts/pipe.ts` and `three-sided.ts`, drawings, take-offs and calc packages in `culverts/detail.ts`,
-tests in `culverts/pipe-three-sided.test.ts`. Pay items: RCP 603-01DD0, CSP 603-10DD0, end sections 603-050DD (RCP)
-and 603-020DD (steel), 12 to 96 in.; the three-sided footings in 601-03000, 602-00000, 206-00000 and 206-00100. The
+tests in `culverts/pipe-three-sided.test.ts`. Pay items by diameter from CDOT's item book (`PIPE_ITEMS` in rebar/cdot-items.ts):
+RCP 603-01xxx, CSP 603-10xxx, concrete end sections 603-050DD, steel end sections 603-300DD; the three-sided footings in 601-03000, 602-00000, 206-00000 and 206-00100. The
 precast units are noted, not given a pay item: CDOT pays them under a project special item.
 
 The next tool on the schedule (Fri 2026-12-11 slot): **pipe culverts** (reinforced concrete and corrugated steel) and
@@ -33,6 +33,15 @@ already exists.
 - the installation drawn (bedding, haunch, lower side, overfill and cover zones of Table 12.10.2.1-1) and the pipe's wall;
 - the calc package;
 - quantities: pipe LF by size (CDOT 603-01xx0 RCP, 603-10xx0 CSP) and end sections (603-05xx).
+
+**Also checked (added 2026-11-20):**
+- every fill from the least to the most by 0.5 ft, the worst reported;
+- riveted CSP seams (12.7.2.5, Table A12-7, φ 0.67);
+- multiple lines' spacing (Table C12.6.7-1);
+- the soil envelope or trench width (C12.6.6.1, Table C12.6.6.2-1);
+- uplift under groundwater (12.6.2.3);
+- cover measured below a flexible pavement (Table 12.6.6.3-1);
+- corrosion and abrasion (12.6.9) and construction cover (Construction Specifications 30.5.5) noted in the calc.
 
 ## Three-Sided Culvert (AASHTO 12.14)
 

@@ -36,6 +36,46 @@ describe("reinforced concrete pipe, indirect design (AASHTO 12.10.4.3)", () => {
   });
 });
 
+describe("the rest of a pipe's checks (AASHTO 12.6, 12.7.2.5)", () => {
+  it("every fill from the least to the most: the governing D-load is the largest of them", () => {
+    const r = designPipe({ ...PIPE_DEFAULTS, D: 24, minFill: 1, maxFill: 6 });
+    const all = r.rcp!.all;
+    expect(all.length).toBeGreaterThan(10);
+    expect(r.rcp!.gov.D01).toBe(Math.max(...all.map((c) => c.D01)));
+  });
+  it("riveted seams by Table A12-7 with phi 0.67; a combination it doesn't list is refused", () => {
+    const base = { ...PIPE_DEFAULTS, material: "csp" as const, D: 48, maxFill: 20, thickness: 0.079 };
+    const one = designPipe({ ...base, seam: "riveted-single" });
+    expect(one.checks.find((c) => c.id === "seam")!.capacity).toBeCloseTo(0.67 * 18.2, 9);
+    expect(designPipe({ ...base, seam: "riveted-double" }).checks.find((c) => c.id === "seam")!.capacity).toBeCloseTo(0.67 * 29.8, 9);
+    expect(designPipe(base).checks.some((c) => c.id === "seam")).toBe(false);
+    expect(() => designPipe({ ...base, corrugation: "3x1", seam: "riveted-single" })).toThrow();
+  });
+  it("lines spaced by Table C12.6.7-1, the envelope by C12.6.6", () => {
+    const r = designPipe({ ...PIPE_DEFAULTS, lines: 2, gap: 1 });
+    expect(r.checks.find((c) => c.id === "spacing")!.demand).toBeCloseTo(1.5, 9); // D/2 for 36 in.
+    expect(r.checks.find((c) => c.id === "spacing")!.ok).toBe(false);
+    expect(r.site.envMin).toBe(2); // embankment, 24 to 144 in.
+    const t = designPipe({ ...PIPE_DEFAULTS, trench: true });
+    expect(t.site.envMin).toBeCloseTo((66 / 12 - 44 / 12) / 2, 9); // 1.5D + 12 in. overall
+    expect(designPipe({ ...PIPE_DEFAULTS, trench: true, envelope: 0.5 }).checks.find((c) => c.id === "envelope")!.ok).toBe(false);
+  });
+  it("uplift of the empty pipe under water (12.6.2.3), by hand", () => {
+    const Do = 44 / 12;
+    const r = designPipe({ ...PIPE_DEFAULTS, water: Do + 2 }); // water at the ground
+    const u = r.site.uplift!;
+    expect(u.B).toBeCloseTo(0.0624 * Math.PI * (Do / 2) ** 2, 6);
+    const pipe = (0.15 * Math.PI * (Do ** 2 - 3 ** 2)) / 4;
+    expect(u.W).toBeCloseTo(pipe + Do * 2 * (0.12 - 0.0624), 6);
+    expect(r.checks.find((c) => c.id === "uplift")!.ok).toBe(true);
+  });
+  it("cover is measured below a flexible pavement", () => {
+    const r = designPipe({ ...PIPE_DEFAULTS, minFill: 1.5, pavementT: 8 });
+    expect(r.checks.find((c) => c.id === "cover")!.capacity).toBeCloseTo(1.5 - 8 / 12, 9);
+    expect(r.checks.find((c) => c.id === "cover")!.ok).toBe(false);
+  });
+});
+
 describe("corrugated steel pipe (AASHTO 12.7)", () => {
   const r = designPipe({ ...PIPE_DEFAULTS, material: "csp", D: 48, maxFill: 20, thickness: 0.079 });
   const c = r.csp!;

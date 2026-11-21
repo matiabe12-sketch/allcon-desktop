@@ -4,8 +4,15 @@
 
 export type PayItem = { code: string; description: string; unit: string };
 
-/** Pipe diameters with a CDOT pay item (in). */
-export const PIPE_SIZES = [12, 15, 18, 24, 30, 36, 42, 48, 54, 60, 66, 72, 78, 84, 90, 96];
+/** CDOT's pipe and end-section items by diameter (in.), from the item book: reinforced concrete pipe, corrugated steel
+ * pipe, concrete end sections and steel end sections. The sizes without a plain item carry the "Complete In Place" one. */
+export const PIPE_ITEMS = {
+  rcp: { 12: "603-01120", 15: "603-01150", 18: "603-01180", 21: "603-01215", 24: "603-01240", 27: "603-01270", 30: "603-01300", 33: "603-01330", 36: "603-01360", 42: "603-01420", 48: "603-01480", 54: "603-01540", 60: "603-01600", 66: "603-01665", 72: "603-01720", 78: "603-01780", 84: "603-01845", 90: "603-01900", 96: "603-01960", 108: "603-01980" },
+  csp: { 12: "603-10120", 15: "603-10150", 18: "603-10180", 24: "603-10240", 30: "603-10300", 36: "603-10360", 42: "603-10420", 48: "603-10480", 54: "603-10540", 60: "603-10600", 66: "603-10660", 72: "603-10720", 78: "603-10780", 84: "603-10840", 102: "603-10970", 108: "603-10980", 120: "603-10992" },
+  rcpEnd: { 12: "603-05012", 15: "603-05015", 18: "603-05018", 24: "603-05024", 30: "603-05030", 33: "603-05033", 36: "603-05036", 42: "603-05042", 48: "603-05048", 54: "603-05054", 60: "603-05060", 72: "603-05072", 78: "603-05078" },
+  cspEnd: { 12: "603-30012", 15: "603-30015", 18: "603-30018", 21: "603-30021", 24: "603-30024", 30: "603-30030", 36: "603-30036", 42: "603-30042", 48: "603-30048", 54: "603-30054", 60: "603-30060", 66: "603-30066", 78: "603-30078", 84: "603-30084" },
+} as const satisfies Record<string, Record<number, string>>;
+const COMPLETE = new Set(["603-01215", "603-01665", "603-01845"]);
 const item = (code: string, description: string, unit: string): PayItem => ({ code, description, unit });
 
 export const CDOT_ITEMS: PayItem[] = [
@@ -56,12 +63,10 @@ export const CDOT_ITEMS: PayItem[] = [
   item("504-06406", "Soil Nail", "LF"),
   item("641-10010", "Initial Shotcrete Facing", "SF"),
   // 603 Culverts and sewers: pipe by the foot of diameter, end sections each
-  ...PIPE_SIZES.flatMap((d) => [
-    item(`603-01${d}0`, `${d} Inch Reinforced Concrete Pipe`, "LF"),
-    item(`603-10${d}0`, `${d} Inch Corrugated Steel Pipe`, "LF"),
-    item(`603-050${d}`, `${d} Inch Reinforced Concrete End Section`, "EACH"),
-    item(`603-020${d}`, `${d} Inch Steel End Section`, "EACH"),
-  ]),
+  ...Object.entries(PIPE_ITEMS.rcp).map(([d, c]) => item(c, `${d} Inch Reinforced Concrete Pipe${COMPLETE.has(c) ? " (Complete In Place)" : ""}`, "LF")),
+  ...Object.entries(PIPE_ITEMS.csp).map(([d, c]) => item(c, `${d} Inch Corrugated Steel Pipe`, "LF")),
+  ...Object.entries(PIPE_ITEMS.rcpEnd).map(([d, c]) => item(c, `${d} Inch Reinforced Concrete End Section`, "EACH")),
+  ...Object.entries(PIPE_ITEMS.cspEnd).map(([d, c]) => item(c, `${d} Inch Steel End Section`, "EACH")),
   // 502 Piling, 503 Drilled shafts
   item("502-10836", "Steel Piling (HP 8x36)", "LF"),
   item("502-11057", "Steel Piling (HP 10x57)", "LF"),
@@ -76,7 +81,8 @@ export const CDOT_ITEMS: PayItem[] = [
   item("502-00100", "Drilling Hole to Facilitate Pile Driving", "LF"),
   item("502-00460", "Pile Tip", "EACH"),
   item("502-00500", "Complete Joint Penetration (CJP) Splice", "EACH"),
-  ...[24, 30, 36, 42, 48, 54, 60, 66, 72, 78, 84, 96].map((d) => item(`503-000${d}`, `Drilled Shaft (${d} Inch)`, "LF")),
+  ...[18, 24, 30, 36, 42, 48, 54, 60, 66, 72, 78, 84, 96].map((d) => item(`503-000${d}`, `Drilled Shaft (${d} Inch)`, "LF")),
+  item("607-15000", "Fence Concrete (Noise Barrier)", "SF"),
   item("503-00310", "Crosshole Sonic Logging Testing", "EACH"),
   ...[6, 7, 8].map((d) => item(`503-010${d}0`, `Micropile (${d} Inch)`, "LF")),
   item("503-01100", "Micropile (10 Inch)", "LF"),
@@ -181,7 +187,9 @@ export const TOOL_PAY_ITEMS: Record<string, Partial<Record<QuantityRole, string[
   "finger-joint": { joint: ["518-01201"] },
   "strip-seal-joint": { joint: ["518-01004", "518-01002", "518-01006", "518-01009", "518-01012", "518-01201"] },
   "steel-girder-check": { girder: ["509-00000", "509-00001", "509-00010"], bearing: ["512-00101", "512-00102", "512-00103", "512-00118"] },
-  "pipe-culvert": { pipe: [...PIPE_SIZES.map((d) => `603-01${d}0`), ...PIPE_SIZES.map((d) => `603-10${d}0`)], "end-section": [...PIPE_SIZES.map((d) => `603-050${d}`), ...PIPE_SIZES.map((d) => `603-020${d}`)] }, // the default by the pipe's size and material (takeoff/index.ts)
+  "grs-abutment": { "soil-reinforcement": ["206-00360"], facing: ["504-04410"], backfill: ["206-00100", "206-00200"], excavation: ["206-00000"], concrete: ["601-03040", "601-03000"], rebar: ["602-00020", "602-00000"] },
+  "noise-wall": { wall: ["607-15000"], shaft: ["503-00030", "503-00018", "503-00024", "503-00036", "503-00042", "503-00048"] },
+  "pipe-culvert": { pipe: [...Object.values(PIPE_ITEMS.rcp), ...Object.values(PIPE_ITEMS.csp)], "end-section": [...Object.values(PIPE_ITEMS.rcpEnd), ...Object.values(PIPE_ITEMS.cspEnd)] }, // the default by the pipe's size and material (takeoff/index.ts)
   "three-sided-culvert": { concrete: ["601-03000", "601-03030"], rebar: ["602-00000", "602-00020"], excavation: ["206-00000"], backfill: ["206-00100", "206-00200"] },
   "soil-nail-wall": { pile: ["504-06406"], wall: ["504-06400"], facing: ["641-10010"] },
   "shoring-wall": { wall: ["504-08150", "501-00000", "501-00200"], pile: ["502-11489", "502-11473", "502-14102", "502-14117", "502-11253", "502-11274", "502-11284"], shoring: ["206-01750"] },

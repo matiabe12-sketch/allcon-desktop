@@ -3,7 +3,7 @@ import { checksSummary } from "../checks-summary";
 import { COLOR_NOTE, INPUT_COLOR, isInput, num } from "../calc-style";
 import type { Figure } from "../figures";
 import { ftIn } from "../rebar/bars";
-import { PIPE_SIZES } from "../rebar/cdot-items";
+import { PIPE_ITEMS } from "../rebar/cdot-items";
 import { countAt, runGroups, type PreGroup } from "../rebar/runs";
 import { markGroups, schedule, type ConcreteItem } from "../rebar/schedule";
 import { ftT, inT, plus18T } from "../takeoff/tex";
@@ -58,7 +58,10 @@ export function pipeViews(i: PipeInputs, lengthFt = 60): DetailView[] {
   // --- the installation (ft): the pipe on its bedding, the zones, the fill to the least cover -----------------------
   const tb = rcp ? (i.installation === 4 ? 0 : Math.max(3 / 12, Do / 24)) : Math.max(3 / 12, Do / 24);
   const yc = Do / 2; // the pipe's center, the invert's outside at 0
-  const half = Do / 2 + Math.max(Do / 2, 1.5); // the zones' half width
+  const env = Math.max(r.site.envelope, 0.3);
+  const half = Do / 2 + env; // the envelope's half width
+  const hz = Math.min(half, Do / 2 + Do / 6); // the haunch zone's edge; a lower side beyond it only where there's room
+  const lower = half - hz > 0.4;
   const top = Do + H;
   const sec: DetailView = {
     title: rcp
@@ -74,8 +77,7 @@ export function pipeViews(i: PipeInputs, lengthFt = 60): DetailView[] {
   if (tb > 0) sec.polys.push({ pts: rect(-half, -tb, half, 0), style: "dashed" }); // the bedding
   if (rcp) {
     // haunch and outer bedding to the springline, beside the pipe; the lower side beyond; the overfill above.
-    sec.polys.push({ pts: rect(-half, 0, -Do / 2 - Do / 6, yc), style: "dashed" });
-    sec.polys.push({ pts: rect(Do / 2 + Do / 6, 0, half, yc), style: "dashed" });
+    if (lower) sec.polys.push({ pts: rect(-half, 0, -hz, yc), style: "dashed" }, { pts: rect(hz, 0, half, yc), style: "dashed" });
     sec.polys.push({ pts: rect(xs[0], yc, xs[1], top), style: "earth" });
     sec.polys.push({ pts: rect(xs[0], -tb, -half, yc), style: "earth" });
     sec.polys.push({ pts: rect(half, -tb, xs[1], yc), style: "earth" });
@@ -105,6 +107,13 @@ export function pipeViews(i: PipeInputs, lengthFt = 60): DetailView[] {
   sec.labels!.push({ x: 0, y: top + 0.5, text: i.pavement === "none" ? "Finished grade" : `${i.pavement === "rigid" ? "Rigid" : "Flexible"} pavement${i.traffic ? ", HL-93" : ""}`, anchor: "middle" });
   sec.labels!.push({ x: 0, y: yc + 0.15, text: `${i.D} in.`, anchor: "middle" });
   sec.lines.push({ pts: [[-i.D / 24, yc], [i.D / 24, yc]], mark: "", kind: "secondary" });
+  // The envelope's width beside the pipe, and the groundwater.
+  sec.lines.push({ pts: [[-half, Do + 0.25], [-Do / 2, Do + 0.25]], mark: "", kind: "secondary" }, { pts: [[-half, Do + 0.05], [-half, Do + 0.45]], mark: "", kind: "secondary" });
+  sec.labels!.push({ x: -half + 0.1, y: Do + 0.45, text: `${i.trench ? "Trench" : "Envelope"} ${n2(r.site.envelope)} ft each side (at least ${n2(r.site.envMin)})`, anchor: "start" });
+  if (i.water > 0) {
+    sec.lines.push({ pts: [[xs[0], i.water], [xs[1], i.water]], mark: "", kind: "secondary" });
+    sec.labels!.push({ x: xs[1] - 0.2, y: i.water + 0.2, text: "Groundwater", anchor: "end" });
+  }
   // The zones' notes, under the section.
   const z = ZONES[rcp ? i.installation : 1];
   const leg = rcp
@@ -120,10 +129,12 @@ export function pipeViews(i: PipeInputs, lengthFt = 60): DetailView[] {
       ];
   leg.forEach((s, k) => sec.labels!.push({ x: xs[0], y: -tb - 2.6 - 0.8 * k, text: s, anchor: "start" }));
   if (rcp) {
-    sec.labels!.push({ x: (-half - Do / 2 - Do / 6) / 2, y: yc / 2 - 0.1, text: "Lower side", anchor: "middle" });
-    sec.labels!.push({ x: (half + Do / 2 + Do / 6) / 2, y: yc / 2 - 0.1, text: "Lower side", anchor: "middle" });
+    if (lower) {
+      sec.labels!.push({ x: (-half - hz) / 2, y: yc / 2 - 0.1, text: "Lower side", anchor: "middle" });
+      sec.labels!.push({ x: (half + hz) / 2, y: yc / 2 - 0.1, text: "Lower side", anchor: "middle" });
+    }
     // the haunch and the bedding by leaders to labels under the foundation line
-    sec.lines.push({ pts: [[-Do / 2 - Do / 12, yc / 3], [-Do / 2 - 0.2, -tb - 0.9]], mark: "", kind: "secondary" });
+    sec.lines.push({ pts: [[(-Do / 2 - hz) / 2, yc / 3], [-Do / 2 - 0.2, -tb - 0.9]], mark: "", kind: "secondary" });
     sec.labels!.push({ x: -Do / 2 - 0.3, y: -tb - 1.1, text: "Haunch and outer bedding", anchor: "end" });
     if (tb > 0) {
       sec.lines.push({ pts: [[0, -tb / 2], [0.3, -tb - 0.9]], mark: "", kind: "secondary" });
@@ -132,6 +143,23 @@ export function pipeViews(i: PipeInputs, lengthFt = 60): DetailView[] {
   } else sec.labels!.push({ x: -half + 0.1, y: Do / 2 - 0.15, text: "Structure backfill", anchor: "start" });
   sec.labels!.push({ x: xs[0] + 0.2, y: top - 0.7, text: rcp ? "Overfill" : "Fill", anchor: "start" });
   views.push(sec);
+
+  // --- multiple lines (ft): the barrels side by side with their clear spacing ------------------------------------
+  if (i.lines > 1) {
+    const pitch = Do + i.gap;
+    const ml: DetailView = { title: `${i.lines} lines side by side, ${n2(i.gap)} ft clear (at least ${n2(r.site.spacing ?? 0)} ft, Table C12.6.7-1)`, polys: [], lines: [], dots: [], labels: [] };
+    const w = (i.lines - 1) * pitch + Do + 2 * env;
+    ml.polys.push({ pts: rect(-env - Do / 2, -tb, w - env - Do / 2, Do + Math.min(H, 2)), style: "earth" });
+    for (let k = 0; k < i.lines; k++) {
+      ml.polys.push({ pts: circle(k * pitch, yc, Do / 2), style: rcp ? "concrete" : "void" });
+      ml.polys.push({ pts: circle(k * pitch, yc, i.D / 24), style: "void" });
+      if (!rcp) ml.lines.push({ pts: [...circle(k * pitch, yc, i.D / 24 + 0.02), circle(k * pitch, yc, i.D / 24 + 0.02)[0]], mark: "", kind: "main" });
+    }
+    ml.lines.push({ pts: [[Do / 2, yc], [pitch - Do / 2, yc]], mark: "", kind: "secondary" });
+    ml.labels!.push({ x: pitch / 2, y: yc + 0.25, text: `${n2(i.gap)} ft`, anchor: "middle" });
+    ml.labels!.push({ x: -env - Do / 2, y: -tb - 0.8, text: "Backfill placed and compacted evenly over all the lines (C12.6.7)", anchor: "start" });
+    views.push(ml);
+  }
 
   // --- the wall (in) ---------------------------------------------------------------------------------------------
   if (rcp) {
@@ -186,13 +214,11 @@ export function pipeViews(i: PipeInputs, lengthFt = 60): DetailView[] {
   return views;
 }
 
-/** The pipe's pay item by its diameter, where CDOT has one (12 to 96 in.). */
+/** The pipe's pay item by its diameter and material, where CDOT's item book has one. */
 export function pipePayItem(i: PipeInputs, role: "pipe" | "end-section") {
   const d = Math.round(i.D);
-  if (!PIPE_SIZES.includes(d)) return undefined;
-  const dd = String(d).padStart(2, "0");
-  if (role === "pipe") return `603-${i.material === "rcp" ? "01" : "10"}${dd}0`;
-  return `603-${i.material === "rcp" ? "05" : "02"}0${dd}`;
+  const table: Record<number, string> = role === "pipe" ? (i.material === "rcp" ? PIPE_ITEMS.rcp : PIPE_ITEMS.csp) : i.material === "rcp" ? PIPE_ITEMS.rcpEnd : PIPE_ITEMS.cspEnd;
+  return table[d];
 }
 
 export function pipeTakeoff(i: PipeInputs, lengthFt = 60): Takeoff {
@@ -222,7 +248,7 @@ export function pipeCalcLines(i: PipeInputs, title: string, figures?: Figure[]):
   text(
     i.material === "rcp"
       ? `A ${i.D} in. reinforced concrete pipe, Class ${CLASS_NAME[i.rcpClass]}, under ${i.minFill} to ${i.maxFill} ft of fill, by the indirect design method of AASHTO LRFD 12.10.4.3 on standard installation Type ${i.installation}.`
-      : `A ${i.D} in. corrugated steel pipe, ${i.corrugation.replace("x", " x ")} in. corrugations, ${i.thickness} in. thick, helical lock seam, under ${i.minFill} to ${i.maxFill} ft of fill, by AASHTO LRFD 12.7.`,
+      : `A ${i.D} in. corrugated steel pipe, ${i.corrugation.replace("x", " x ")} in. corrugations, ${i.thickness} in. thick, ${i.seam === "helical" ? "helical lock seam" : `annular, ${i.seam === "riveted-single" ? "single" : "double"}-riveted seams`}, under ${i.minFill} to ${i.maxFill} ft of fill, by AASHTO LRFD 12.7.`,
   );
   text(COLOR_NOTE, "note");
   for (const fg of figures ?? []) lines.push({ region: fg });
@@ -230,6 +256,7 @@ export function pipeCalcLines(i: PipeInputs, title: string, figures?: Figure[]):
   if (r.rcp) {
     const p = r.rcp;
     text("Earth, fluid and live loads (12.10.2)", "subheading");
+    text(`The D-load is worked out at every 0.5 ft of fill from ${i.minFill} to ${i.maxFill} ft (the live load falls as the earth load grows): it is largest at ${num(p.gov.H, 2)} ft. Shown: the least and the most fill${p.gov.H !== i.minFill && p.gov.H !== i.maxFill ? ", and the governing one" : ""}.`);
     m(`D_{i}\\coloneq ${num(i.D)}\\mathrm{in}`, "Inside diameter");
     m(`t\\coloneq ${num(p.t, 3)}\\mathrm{in}`, i.wall > 0 ? "Wall" : "Wall B: D/12 + 1 in.");
     m("B_{c}\\coloneq D_{i}+2\\cdot t=", "Outside diameter", "ft");
@@ -249,6 +276,7 @@ export function pipeCalcLines(i: PipeInputs, title: string, figures?: Figure[]):
   if (r.csp) {
     const c = r.csp;
     text("Thrust (12.7.2.2)", "subheading");
+    text(`The thrust is worked out at every 0.5 ft of fill from ${i.minFill} to ${i.maxFill} ft: it is largest at ${num(c.gov.H, 2)} ft.`);
     m(`S\\coloneq ${num(i.D)}\\mathrm{in}`, "Span (diameter)");
     m(`A\\coloneq ${num(c.sec.A, 3)}\\frac{\\mathrm{in}^{2}}{\\mathrm{ft}}`, "Table A12-1");
     m(`r\\coloneq ${num(c.sec.r, 4)}\\mathrm{in}`, "Table A12-1");
@@ -261,11 +289,22 @@ export function pipeCalcLines(i: PipeInputs, title: string, figures?: Figure[]):
     m(`\\frac{r}{0.22}\\cdot\\sqrt{\\frac{24\\cdot 29000}{${num(i.Fu)}}}=`, "The limit on S (in)", "in");
     m(`f_{cr}\\coloneq ${num(c.fcr, 3)}\\mathrm{ksi}`, i.D < c.lim ? "Eq. 12.7.2.4-1: Fu − (Fu²/48E)(kS/r)²" : "Eq. 12.7.2.4-2: 12E/(kS/r)²");
     m(ok(`${num(c.gov.TL, 3)}`, `1.0\\cdot ${num(c.fWall, 3)}\\cdot ${num(c.sec.A, 3)}`), "Wall area, φ 1.0 (kip/ft)");
+    if (c.seamR !== null) {
+      text("Seam resistance (12.7.2.5)", "subheading");
+      m(`R_{seam}\coloneq ${num(c.seamR, 1)}\frac{\mathrm{kip}}{\mathrm{ft}}`, `Table A12-7, ${i.seam === "riveted-single" ? "single" : "double"} rivets`);
+      m(ok(`${num(c.gov.TL, 3)}\frac{\mathrm{kip}}{\mathrm{ft}}`, "0.67\cdot R_{seam}"), "φ 0.67 (Table 12.5.5-1)");
+    }
     text("Handling and installation (12.7.2.6)", "subheading");
     m("FF\\coloneq\\frac{S^{2}}{29000\\mathrm{ksi}\\cdot I}=", "Flexibility factor", "in/kip");
     m(ok("FF", `${c.FFlim}\\frac{\\mathrm{in}}{\\mathrm{kip}}`), "Table 12.5.6.1-1");
   }
-  text(`Minimum cover (Table 12.6.6.3-1): ${i.material === "rcp" ? (i.pavement === "rigid" ? "9 in. under rigid pavement" : "Bc/8, at least 12 in.") : "S/8, at least 12 in."}`);
+  text("Installation (12.6)", "subheading");
+  text(`Minimum cover (Table 12.6.6.3-1): ${i.material === "rcp" ? (i.pavement === "rigid" ? "9 in. under rigid pavement" : "Bc/8, at least 12 in.") : "S/8, at least 12 in."}, measured from the top of a rigid pavement or the bottom of a flexible one${i.pavement === "flexible" && i.pavementT > 0 ? ` (${i.pavementT} in. of pavement: ${num(i.minFill - i.pavementT / 12, 2)} ft of cover)` : ""}; more cover may be needed for construction equipment (AASHTO LRFD Bridge Construction Specifications 30.5.5).`);
+  const st = r.site;
+  text(`${i.trench ? `Trench (C12.6.6.1): at least the greater of D + 16 in. and 1.5·D + 12 in. overall, ${num(st.envMin, 2)} ft beside the pipe` : `Embankment (Table C12.6.6.2-1): a soil envelope of at least ${num(st.envMin, 2)} ft each side`}; provided ${num(st.envelope, 2)} ft.`);
+  if (st.spacing !== null) text(`${i.lines} lines: clear spacing ${num(i.gap, 2)} ft against ${num(st.spacing, 2)} ft (Table C12.6.7-1); backfill brought up evenly over all the lines to avoid unbalanced loading.`);
+  if (st.uplift) text(`Uplift (12.6.2.3): water ${num(i.water, 2)} ft above the invert; buoyancy of the empty pipe ${num(st.uplift.B, 3)} kip/ft against 0.9 × (pipe + soil prism over it, buoyant below the water) = ${num(0.9 * st.uplift.W, 3)} kip/ft.`);
+  text(`Corrosion and abrasion (12.6.9): the material's service life is to meet the culvert's (commonly 25 to 75 years), by the site's soil resistivity, pH and abrasion level; ${i.material === "rcp" ? "added cover over the cage or a coating where the site needs it" : "a heavier gauge, coating or another metal where it falls short"}, per CDOT's pipe material selection.`);
   lines.push(...checksSummary([{ checks: r.checks }]));
   return lines;
 }

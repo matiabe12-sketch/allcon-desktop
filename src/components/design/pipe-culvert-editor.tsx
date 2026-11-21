@@ -77,6 +77,16 @@ export function PipeCulvertEditor({ design, projects }: { design: { id: string; 
                     onChange={(v) => setInputs((s) => ({ ...s, corrugation: v, thickness: CSP_SECTIONS[v].some((x) => x.t === s.thickness) ? s.thickness : CSP_SECTIONS[v][1].t }))}
                   />
                   <Choice label="Thickness" value={inputs.thickness} options={thicknesses} onChange={set("thickness")} />
+                  <Choice
+                    label="Longitudinal seam (12.7.2.5)"
+                    value={inputs.seam}
+                    options={[
+                      { value: "helical", label: "Helical lock seam or welded" },
+                      { value: "riveted-single", label: "Annular, single rivets" },
+                      { value: "riveted-double", label: "Annular, double rivets" },
+                    ]}
+                    onChange={set("seam")}
+                  />
                   <Field label="Steel Fy" unit="ksi" value={inputs.Fy} onChange={set("Fy")} />
                   <Field label="Steel Fu" unit="ksi" value={inputs.Fu} onChange={set("Fu")} />
                 </>
@@ -96,8 +106,16 @@ export function PipeCulvertEditor({ design, projects }: { design: { id: string; 
                 ]}
                 onChange={set("pavement")}
               />
+              {inputs.pavement === "flexible" && <Field label="Flexible pavement thickness (cover is below it)" unit="in" value={inputs.pavementT} onChange={set("pavementT")} />}
               <Toggle label="HL-93 live load" value={inputs.traffic} onChange={set("traffic")} />
               <Field label="Live load distribution factor (3.6.1.2.6)" value={inputs.lldf} onChange={set("lldf")} step={0.05} hint="1.15 for granular fill, 1.0 otherwise" />
+            </Section>
+            <Section title="Site (12.6)">
+              <Toggle label="In a trench (else an embankment)" value={inputs.trench} onChange={set("trench")} />
+              <Field label={inputs.trench ? "Trench beside the pipe, each side (0: the minimum)" : "Soil envelope each side (0: the minimum)"} unit="ft" value={inputs.envelope} onChange={set("envelope")} step={0.25} />
+              <Field label="Lines of pipe side by side" value={inputs.lines} onChange={(v) => set("lines")(Math.max(1, Math.round(v)))} />
+              {inputs.lines > 1 && <Field label="Clear spacing between lines" unit="ft" value={inputs.gap} onChange={set("gap")} step={0.25} />}
+              <Field label="Groundwater above the invert (0: none)" unit="ft" value={inputs.water} onChange={set("water")} step={0.5} hint="For uplift of the empty pipe (12.6.2.3)" />
             </Section>
           </CardContent>
         </Card>
@@ -116,7 +134,7 @@ export function PipeCulvertEditor({ design, projects }: { design: { id: string; 
                     </CardContent>
                   </Card>
                 ))}
-                <ChecksTable checks={r.checks} groupOf={(id) => (id.startsWith("dload") || id === "wall" || id === "buckling" ? "Strength" : "Installation")} />
+                <ChecksTable checks={r.checks} groupOf={(id) => (id.startsWith("dload") || id === "wall" || id === "buckling" || id === "seam" ? "Strength" : "Installation")} />
                 <TakeoffPanel kind="pipe-culvert" design={design} inputs={inputs} ok={r.checks.every((c) => c.advisory || c.ok)} onSettings={(t) => setInputs((s) => ({ ...s, takeoff: t }))} />
                 {r.rcp && (
                   <KeyValues

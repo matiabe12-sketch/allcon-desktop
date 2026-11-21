@@ -55,14 +55,23 @@ export function bridgeCalcLines(d: BridgeDefinition, a: BridgeAnalysis, live: Li
     "Static load cases, with the reactions that balance each",
   );
   text(
-    `Live load: HL-93 (AASHTO 3.6.1) in ${lanes} design lane${lanes === 1 ? "" : "s"} of 12 ft between the barriers, placed against either barrier and centered; the design truck (rear axles 14 to 30 ft apart) or tandem with ${Math.round(live.IM * 100)}% dynamic allowance, plus the 0.64 klf lane load on the lengths that add to each effect; ` +
+    `Live load: HL-93 (AASHTO 3.6.1) in ${lanes} design lane${lanes === 1 ? "" : "s"} of 12 ft between the barriers (or the sidewalks' curbs), placed against either side and centered; the design truck (rear axles 14 to 30 ft apart) or tandem with ${Math.round(live.IM * 100)}% dynamic allowance, plus the 0.64 klf lane load on the lengths that add to each effect; ` +
       "90% of two trucks with the lane load for negative moment between points of contraflexure and for reactions at interior piers (3.6.1.3.1); multiple presence factors 1.2, 1.0, 0.85, 0.65 (3.6.1.1.2). Each result's worst loading is found on its influence lines, from a unit axle moved along each lane.",
     "note",
   );
+  const sw = d.sidewalks;
+  if (sw && sw.left + sw.right > 0)
+    text(
+      `Sidewalks (${[sw.left > 0 ? `${sw.left} ft on the left` : "", sw.right > 0 ? `${sw.right} ft on the right` : ""].filter(Boolean).join(", ")}, ${sw.depth} in above the deck): inside the barriers, so the lanes run between their curbs; their concrete (DC) on the composite bridge, and 0.075 ksf of pedestrians (3.6.1.6) on those wider than 2 ft, with the vehicles at live load's factors (no dynamic allowance, none in fatigue). Each is placed across the deck as lines of load, to the girders either side, or onto the exterior girder with its moment.`,
+      "note",
+    );
   const w = g.wind;
   const env = d.environment;
   text(
     `Temperature (3.12.2, CDOT BDM 14.3): uniform, from ${env.Tset} °F to ${env.Tmax} °F and ${env.Tmin} °F along the girders, α = 6.0E-6 /°F; the rise or the fall, whichever is worse, at 0.50 in the strength combinations and 1.0 in the service ones. ` +
+      (env.gradientZone
+        ? `Temperature gradient (3.12.3, zone ${env.gradientZone}): T1 and T2 from Table 3.12.3-1 on each composite section (Figure 3.12.3-2, A = 12 in, T3 = 0), its uniform part and curvature in the frame; the negative gradient ${env.asphalt ? "−0.20" : "−0.30"} times the positive; the worse at 0.50 in Service I and III (C3.4.1, with live load), none at Strength. `
+        : "Temperature gradient: not considered (CDOT BDM 14.3: where appropriate). ") +
       `Wind (3.8.1.2): ${env.wind} mph, exposure ${env.exposure}, Kz ${w.Kz.toFixed(3)} at ${Math.max(33, env.height).toFixed(0)} ft, G 1.0: ${(w.Pz * 1000).toFixed(1)} psf on the superstructure's ${w.depth.toFixed(2)} ft (CD 1.3) and ${(w.PzSub * 1000).toFixed(1)} psf on the columns (CD 1.6), ` +
       `with 0.020 ksf up at the deck's windward quarter point (3.8.2) and 0.10 klf on the live load 6 ft above the deck (3.8.1.3), from either side; Strength V and Service I take the wind at 80 and 70 mph. ` +
       `The fatigue truck (3.6.1.4: rear axles 30 ft apart, 15% dynamic allowance, one lane without the multiple presence factor) and CDOT's Strength II vehicles (BDM 3.6: the Colorado Permit Vehicle and EV3, 33%) run as HL-93 does.`,

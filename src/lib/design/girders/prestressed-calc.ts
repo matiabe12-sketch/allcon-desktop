@@ -84,7 +84,8 @@ export function girderCalcLines(entered: GirderInputs, title: string, figures?: 
   m(`N_b\\coloneq ${num(i.nGirders)}`, "Girders");
   m(`S\\coloneq ${num(i.S)}\\mathrm{ft}`, "Girder spacing");
   m(`O_h\\coloneq ${num(i.overhang)}\\mathrm{ft}`, "Overhang, exterior girder to the deck edge");
-  m(`b_{br}\\coloneq ${num(i.barrierWidth)}\\mathrm{ft}`, "Deck edge to the barrier's inside face");
+  if (i.sidewalk && i.sidewalk.width > 0) m(`b_{br}\\coloneq ${num(i.barrierWidth)}\\mathrm{ft}+${num(i.sidewalk.width)}\\mathrm{ft}=`, "Deck edge to the roadway's edge: the barrier and the sidewalk inside it (the narrower side's); the lanes keep to the curbs", "ft");
+  else m(`b_{br}\\coloneq ${num(i.barrierWidth)}\\mathrm{ft}`, "Deck edge to the barrier's inside face");
   m(`\\theta_s\\coloneq ${num(i.skew)}\\mathrm{deg}`, "Skew");
   if (figures?.bridge) {
     const rail = railDef(input.rail?.type ?? "custom");
@@ -196,8 +197,9 @@ export function girderCalcLines(entered: GirderInputs, title: string, figures?: 
   m(`w_{dk}\\coloneq\\left(t_d\\cdot b_{tr}+h_h\\cdot b_{tf}\\right)\\cdot ${i.wcDeckLoad ? "w_{cdw}" : "w_{cd}"}${i.otherDC1 ? `+${num(i.otherDC1)}\\mathrm{klf}` : ""}=`, "Deck and haunch on the girder alone (DC)", "klf");
   if (ext) m(`P_{dia}\\coloneq0.5\\cdot${num(i.diaphragmWeight)}\\mathrm{kip}=`, `${i.diaphragms} intermediate diaphragms, equally spaced; diaphragms on one side of the exterior girder: half`, "kip");
   else m(`P_{dia}\\coloneq ${num(i.diaphragmWeight)}\\mathrm{kip}`, `${i.diaphragms} intermediate diaphragms, equally spaced`);
-  m(`w_{DC2}\\coloneq ${i.barriersOnExterior ? (ext ? num(i.barrierWeight) : "0") : `\\frac{2\\cdot${num(i.barrierWeight)}}{N_b}`}\\mathrm{klf}${i.otherDC2 ? `+${num(i.otherDC2)}\\mathrm{klf}` : ""}=`, i.barriersOnExterior ? "Barrier on its exterior girder (DC, composite)" : "Barriers shared by all girders, AASHTO 4.6.2.2.1 (DC, composite)", "klf");
+  m(`w_{DC2}\\coloneq ${i.barriersOnExterior ? (ext ? num(i.barrierWeight) : "0") : `\\frac{2\\cdot${num(i.barrierWeight)}}{N_b}`}\\mathrm{klf}${i.otherDC2 ? `+${num(i.otherDC2)}\\mathrm{klf}` : ""}${i.sidewalk?.dc ? `+${num(i.sidewalk.dc)}\\mathrm{klf}` : ""}=`, (i.barriersOnExterior ? "Barrier on its exterior girder (DC, composite)" : "Barriers shared by all girders, AASHTO 4.6.2.2.1 (DC, composite)") + (i.sidewalk?.dc ? "; the sidewalks' concrete, shared by all girders" : ""), "klf");
   m(`w_{DW}\\coloneq\\frac{${num(i.fws)}\\mathrm{psf}\\cdot\\left(\\left(N_b-1\\right)\\cdot S+2\\cdot O_h-2\\cdot b_{br}\\right)}{N_b}=`, "Future wearing surface (DW), shared", "klf");
+  if (i.sidewalk?.pl) m(`w_{PL}\\coloneq ${num(i.sidewalk.pl)}\\mathrm{klf}`, "Pedestrians, 0.075 ksf on the sidewalks wider than 2 ft (AASHTO 3.6.1.6), shared by all girders: with the vehicles at their load factors, without IM or a distribution factor");
 
   text("Moments at midspan", "subheading");
   m("M_g\\coloneq\\frac{w_g\\cdot L^{2}}{8}=", "Girder", "kip*ft");
@@ -217,9 +219,12 @@ export function girderCalcLines(entered: GirderInputs, title: string, figures?: 
     m("M_{DW}\\coloneq\\frac{w_{DW}\\cdot L^{2}}{8}=", undefined, "kip*ft");
   }
   m("I_M\\coloneq0.33", "Dynamic load allowance, not on the lane load, AASHTO T. 3.6.2.1-1");
+  // Pedestrians (3.6.1.6) at midspan, as the superimposed dead loads are carried.
+  const Mpl = (i.sidewalk?.pl ?? 0) * ((i.L * i.L) / 8 + (contMid ? g.endMoments : 0));
+  if (Mpl) m(contMid ? "M_{PL}\\coloneq w_{PL}\\cdot\\left(\\frac{L^{2}}{8}+\\mu_s\\right)=" : "M_{PL}\\coloneq\\frac{w_{PL}\\cdot L^{2}}{8}=", "Pedestrians", "kip*ft");
   if (cont) {
-    given(`M_{L1}\\coloneq ${num(midStation.Mll / g.df.moment, 6)}${kft}`, "HL-93 per lane with IM, by influence lines on the continuous beam (truck or tandem with the lane load; AASHTO 3.6.1.3.1)");
-    m("M_{LL}\\coloneq g_M\\cdot M_{L1}=", "LL + IM on this girder", "kip*ft");
+    given(`M_{L1}\\coloneq ${num((midStation.Mll - Mpl) / g.df.moment, 6)}${kft}`, "HL-93 per lane with IM, by influence lines on the continuous beam (truck or tandem with the lane load; AASHTO 3.6.1.3.1)");
+    m(Mpl ? "M_{LL}\\coloneq g_M\\cdot M_{L1}+M_{PL}=" : "M_{LL}\\coloneq g_M\\cdot M_{L1}=", Mpl ? "LL + IM on this girder, and the pedestrians" : "LL + IM on this girder", "kip*ft");
     const r = g.restraint!;
     const Xm = (g.shift + i.L / 2) / g.La; // midspan on the beam's span
     const Mr = Math.max(0, r.left * (1 - Xm) + r.right * Xm);
@@ -229,7 +234,7 @@ export function girderCalcLines(entered: GirderInputs, title: string, figures?: 
     given(`M_{tr}\\coloneq ${num(lv.truckM, 6)}${kft}`, "HL-93 design truck, per lane (rear axle 14–30 ft), AASHTO 3.6.1.2.2");
     given(`M_{td}\\coloneq ${num(lv.tandemM, 6)}${kft}`, "Design tandem, AASHTO 3.6.1.2.3");
     m("M_{ln}\\coloneq\\frac{0.64\\mathrm{klf}\\cdot L^{2}}{8}=", "Design lane load, AASHTO 3.6.1.2.4", "kip*ft");
-    m("M_{LL}\\coloneq g_M\\cdot\\left(\\left(1+I_M\\right)\\cdot\\max\\left(M_{tr},M_{td}\\right)+M_{ln}\\right)=", "LL + IM on this girder", "kip*ft");
+    m(Mpl ? "M_{LL}\\coloneq g_M\\cdot\\left(\\left(1+I_M\\right)\\cdot\\max\\left(M_{tr},M_{td}\\right)+M_{ln}\\right)+M_{PL}=" : "M_{LL}\\coloneq g_M\\cdot\\left(\\left(1+I_M\\right)\\cdot\\max\\left(M_{tr},M_{td}\\right)+M_{ln}\\right)=", Mpl ? "LL + IM on this girder, and the pedestrians" : "LL + IM on this girder", "kip*ft");
   }
   m(`\\eta\\coloneq ${num(i.eta)}`, "AASHTO 1.3.2");
   if (cont) m("M_u\\coloneq\\eta\\cdot\\left(1.25\\cdot\\left(M_g+M_{dk}+M_{DC2}\\right)+1.5\\cdot M_{DW}+1.75\\cdot M_{LL}+M_{CR}\\right)=", "Strength I, AASHTO T. 3.4.1-1, -3", "kip*ft");
@@ -428,7 +433,7 @@ export function girderCalcLines(entered: GirderInputs, title: string, figures?: 
   text(`Shear, Strength I, at ${shearStation.label} (x = ${num(shearStation.x, 3)} ft), the governing section (AASHTO 5.7)`, "subheading");
   given(`V_{DC}\\coloneq ${num(Math.abs(shearStation.Vdc), 6)}\\mathrm{kip}`, "Dead loads there");
   given(`V_{DW}\\coloneq ${num(Math.abs(shearStation.Vdw), 6)}\\mathrm{kip}`);
-  given(`V_{LL}\\coloneq ${num(shearStation.Vll, 6)}\\mathrm{kip}`, "LL + IM, with gV");
+  given(`V_{LL}\\coloneq ${num(shearStation.Vll, 6)}\\mathrm{kip}`, i.sidewalk?.pl ? "LL + IM, with gV, and the pedestrians" : "LL + IM, with gV");
   if (cont) {
     const r = g.restraint!;
     given(`V_{CR}\\coloneq ${num(Math.abs((r.right - r.left) / g.La), 6)}\\mathrm{kip}`, "From the restraint moments at the supports, (Mr,right − Mr,left)/span");

@@ -78,6 +78,8 @@ export type BridgeInputs = {
   leftEdge: number; // ft, the bridge line to the deck's left edge
   rightEdge: number;
   barrierWidth: number; // ft, the deck's edge to the barrier's inside face
+  /** Sidewalks inside the barriers (ft wide each side; in above the deck). */
+  sidewalks?: { left: number; right: number; depth: number };
   deckT: number; // in
   sacrificial: number; // in
   slabOffset: number; // in, the top of the deck to the top of the girder at the bearings ("A")
@@ -132,6 +134,19 @@ export const BRIDGE_GIRDER_BASE: GirderInputs = { ...GIRDER_DEFAULTS, restraintM
 const rad = (d: number) => (d * Math.PI) / 180;
 const isAbutment = (t: SupportType) => t.endsWith("abutment");
 const castInAt = (s: Support | undefined) => !!s && (s.type === "integral-abutment" || s.type === "semi-integral-abutment");
+
+/**
+ * The Bridge's sidewalks as a girder design takes them: the narrower one's width (the lanes keep to the curbs; the
+ * wheel nearer the exterior girder, the conservative side), and their concrete (0.150 kcf) and pedestrians (0.075 ksf on
+ * those wider than 2 ft, 3.6.1.6) shared equally by the girders, klf each. Undefined without sidewalks.
+ */
+export function sidewalkLoads(b: Pick<BridgeInputs, "sidewalks" | "nGirders">) {
+  const sw = b.sidewalks;
+  if (!sw || sw.left + sw.right <= 0) return undefined;
+  const r = (v: number) => Math.round(v * 10000) / 10000;
+  const ped = (w: number) => (w > 2 ? w : 0);
+  return { width: Math.min(sw.left, sw.right), dc: r(((sw.left + sw.right) * (sw.depth / 12) * 0.15) / b.nGirders), pl: r(((ped(sw.left) + ped(sw.right)) * 0.075) / b.nGirders) };
+}
 
 /** The Bridge's girder as a shape: the library's, or a steel plate girder's deepest segment. */
 export function bridgeGirderShape(b: Pick<BridgeInputs, "shape" | "steel">): GirderShape {
@@ -277,6 +292,7 @@ export function girderInputsFor(b: BridgeInputs, lay: BridgeLayout, group: numbe
     pierBearingOffset: pier ? pier.bearingOffset : base.pierBearingOffset,
     // Live load deflection (AASHTO 2.5.2.6.2, optional there): checked on the Bridge's girders, the conservative choice (L/800 unless the design sets its own limit).
     llDeflection: true,
+    sidewalk: sidewalkLoads(b),
     // The girders' ends cast into an integral or semi-integral abutment's diaphragm (their connection steel counts at the bearing, 5.7.3.5).
     endsCastIn: { left: castInAt(b.supports[group[0]]), right: castInAt(b.supports[group[group.length - 1] + 1]) },
   };
@@ -430,7 +446,7 @@ export function steelFromBridge(b: BridgeInputs, lay: BridgeLayout, base: SteelG
     Fyf: st.Fyf,
     segments: st.segments.map((s) => ({ ...s, length: Math.round(((s.length * total) / sum) * 1000) / 1000 })),
     braces: base.braces.filter((x) => x < total),
-    loads: { ...base.loads, mode: "computed", barrierWeight: rail ? rail.barrierWeight : base.loads.barrierWeight, fws: b.fws },
+    loads: { ...base.loads, mode: "computed", barrierWeight: rail ? rail.barrierWeight : base.loads.barrierWeight, fws: b.fws, sidewalk: sidewalkLoads(b) },
   };
 }
 

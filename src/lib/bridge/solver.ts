@@ -120,7 +120,7 @@ function fixedEndPlane(EI: number, GAs: number, L: number, q: number, points: { 
   return [R1, M1, R2, M2];
 }
 
-type ElementLoad = { q: Vec3; points: { P: Vec3; a: number }[]; strain?: number }; // local components; strain: a free axial strain (α·ΔT)
+type ElementLoad = { q: Vec3; points: { P: Vec3; a: number }[]; strain?: number; curvature?: number }; // local components; strain: a free axial strain (α·ΔT); curvature: a free curvature about local y (α·gradient, 1/ft)
 
 /** A beam's fixed-end forces (12, local): what its ends would carry with every degree of freedom held. */
 function fixedEnd(p: Props, L: number, load: ElementLoad, truss: boolean): number[] {
@@ -154,6 +154,10 @@ function fixedEnd(p: Props, L: number, load: ElementLoad, truss: boolean): numbe
   f[4] = -z[1];
   f[8] = z[2];
   f[10] = -z[3];
+  // A free curvature held at both ends: a constant moment E·I·κ, no shear (the ends turned back to their places).
+  const Mk = p.E * p.Iy * (load.curvature ?? 0);
+  f[4] += Mk;
+  f[10] -= Mk;
   return f;
 }
 
@@ -498,6 +502,7 @@ export function analyze(model: Model): Analysis {
       const cur = (onElement[k] ??= { q: [0, 0, 0], points: [] });
       if (l.kind === "thermal") {
         cur.strain = (cur.strain ?? 0) + e.alpha * l.dT;
+        if (l.gradient) cur.curvature = (cur.curvature ?? 0) + e.alpha * l.gradient;
         continue;
       }
       const value = l.kind === "uniform" ? l.w : l.P;

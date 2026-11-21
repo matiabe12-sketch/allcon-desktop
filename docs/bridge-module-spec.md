@@ -169,10 +169,10 @@ analysis the deflected shape and the diagrams.
 - **Live load deflection** (3.6.1.3.2): the truck alone or 25% of it with the lane load, at every girder node, against
   L/800 (2.5.2.6.2), in the Checks panel and the calc package.
 - **Combinations:** Table 3.4.1-1's Service I–IV, Strength I–V and Fatigue I–II, with TU at 0.50 in Strength.
+- **Temperature gradient** (3.12.3, an option since CDOT BDM 14.3 says it "may be considered"): see docs/bridge-model.md.
 - **Not built:**
   - the FHWA examples as fixtures: Example 2A is a steel plate girder, which the grillage doesn't model yet (the Steel
     Girder Design Check benchmarks it on its own analysis), and NHI-04-043's printed moments aren't in the library;
-  - temperature gradient (BDM 14.3: "may be considered");
   - the extreme events (Colorado is Zone 1; vehicle collision is in the pier column).
 
 ## 5. Analysis

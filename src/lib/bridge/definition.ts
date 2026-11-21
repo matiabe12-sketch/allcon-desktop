@@ -40,10 +40,16 @@ export type BridgeDefinition = {
   piers: { model: boolean; capWidth: number; capDepth: number; columns: number; columnDiameter: number; columnHeight: number; columnSpacing: number; fc: number; bearingHeight: number }; // ft; ksi; in
   // Loads
   loads: { barrierWeight: number; barrierWidth: number; wearingSurface: number }; // klf each side; ft; psf
+  /** Sidewalks (none: 0 wide): inside each edge's barrier, raised `depth` in above the deck with a curb at the roadway,
+   * ft wide on the left and right; their concrete on the composite bridge (DC), and the pedestrian load (3.6.1.6) on
+   * those wider than 2 ft. The lanes keep to the roadway between the curbs. */
+  sidewalks?: { left: number; right: number; depth: number };
   /** Temperature and wind (AASHTO 3.12.2, 3.8.1): the design temperatures (Procedure B, CDOT BDM 14.3) and the
    * temperature the bridge is made continuous at; the 3-second gust (Figure 3.8.1.1.2-1), the exposure, the
-   * superstructure's height above the ground or water, and the barrier's height (the depth the wind sees). */
-  environment: { Tmax: number; Tmin: number; Tset: number; wind: number; exposure: "B" | "C" | "D"; height: number; barrierHeight: number }; // °F; mph; ft
+   * superstructure's height above the ground or water, and the barrier's height (the depth the wind sees). The
+   * temperature gradient (3.12.3): its solar radiation zone (Figure 3.12.3-1; 0, not considered: CDOT BDM 14.3 lets it
+   * be considered where appropriate), and whether the deck has an asphalt overlay (the negative gradient's factor). */
+  environment: { Tmax: number; Tmin: number; Tset: number; wind: number; exposure: "B" | "C" | "D"; height: number; barrierHeight: number; gradientZone?: 0 | 1 | 2 | 3 | 4; asphalt?: boolean }; // °F; mph; ft
   /** The designs started from this bridge (Design tab): which part each is for. */
   designs: DesignLink[];
   /** The 3D model (IFC) the bridge was last exported to, under its project's Models. */
@@ -149,6 +155,10 @@ function parseDefinition(saved: unknown): BridgeDefinition {
       bearingHeight: num(piers.bearingHeight, d.piers.bearingHeight, 0, 24),
     },
     loads: { barrierWeight: num(loads.barrierWeight, d.loads.barrierWeight, 0, 5), barrierWidth: num(loads.barrierWidth, d.loads.barrierWidth, 0, 5), wearingSurface: num(loads.wearingSurface, d.loads.wearingSurface, 0, 200) },
+    sidewalks: (() => {
+      const sw = obj(s.sidewalks);
+      return { left: num(sw.left, 0, 0, 20), right: num(sw.right, 0, 0, 20), depth: num(sw.depth, 8, 0, 24) };
+    })(),
     environment: {
       Tmax: num(env.Tmax, d.environment.Tmax, 40, 160),
       Tmin: num(env.Tmin, d.environment.Tmin, -60, 60),
@@ -157,6 +167,8 @@ function parseDefinition(saved: unknown): BridgeDefinition {
       exposure: env.exposure === "B" || env.exposure === "D" ? env.exposure : "C",
       height: num(env.height, d.environment.height, 0, 500),
       barrierHeight: num(env.barrierHeight, d.environment.barrierHeight, 0, 15),
+      gradientZone: ([0, 1, 2, 3, 4] as const).find((z) => z === env.gradientZone) ?? 0,
+      asphalt: env.asphalt === true,
     },
     designs: (Array.isArray(s.designs) ? s.designs : [])
       .map(obj)

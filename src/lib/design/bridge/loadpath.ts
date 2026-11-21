@@ -40,7 +40,7 @@ import { spacingAt, spanGroups, type BridgeInputs, type BridgeRun, type JointKin
 export const multiplePresence = (lanes: number) => (lanes <= 1 ? 1.2 : lanes === 2 ? 1.0 : lanes === 3 ? 0.85 : 0.65);
 
 /** Design lanes on the bridge's clear roadway (3.6.1.1.1): whole 12 ft lanes. */
-export const designLanes = (b: BridgeInputs) => Math.max(1, Math.floor((b.leftEdge + b.rightEdge - 2 * b.barrierWidth) / 12));
+export const designLanes = (b: BridgeInputs) => Math.max(1, Math.floor((b.leftEdge + b.rightEdge - 2 * b.barrierWidth - (b.sidewalks?.left ?? 0) - (b.sidewalks?.right ?? 0)) / 12));
 
 /** The unit of the bridge an abutment belongs to: from it to the nearest support that isn't continuous or integral (an expansion joint), ft. */
 export function unitLength(b: BridgeInputs, support: number) {

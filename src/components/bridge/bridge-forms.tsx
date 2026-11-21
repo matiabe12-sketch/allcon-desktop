@@ -161,6 +161,8 @@ export function BridgeForm({ form, def, setDef: setRaw }: Props & { form: FormKe
     );
   const rail = def.geometry && def.geometry.rail.type !== "custom" ? railDef(def.geometry.rail.type) : null;
   const env = def.environment ?? BRIDGE_DEFAULTS.environment;
+  const sw = def.sidewalks ?? { left: 0, right: 0, depth: 8 };
+  const setSw = (p: Partial<typeof sw>) => setDef((s) => ({ ...s, sidewalks: { ...(s.sidewalks ?? { left: 0, right: 0, depth: 8 }), ...p } }));
   return (
     <>
       {rail ? (
@@ -177,6 +179,9 @@ export function BridgeForm({ form, def, setDef: setRaw }: Props & { form: FormKe
         </>
       )}
       <Field label="Future wearing surface" unit="psf" value={def.loads.wearingSurface} onChange={part("loads")("wearingSurface")} step={5} />
+      <Field label="Sidewalk, left" unit="ft" value={sw.left} onChange={(v) => setSw({ left: v })} step={0.5} hint="Inside the barrier, 0 for none; the lanes keep to the curbs" />
+      <Field label="Sidewalk, right" unit="ft" value={sw.right} onChange={(v) => setSw({ right: v })} step={0.5} />
+      {sw.left + sw.right > 0 && <Field label="Sidewalk depth above the deck" unit="in" value={sw.depth} onChange={(v) => setSw({ depth: v })} step={1} hint="Its concrete (DC); 0.075 ksf of pedestrians on a sidewalk wider than 2 ft (AASHTO 3.6.1.6)" />}
       {note("The girders', deck's, haunches' and piers' weights come from the sections. Live load is HL-93 (AASHTO 3.6.1): the design truck or tandem with 33% dynamic allowance, plus the lane load, in every lane that adds to an effect; the fatigue truck (Fatigue I, II) and CDOT's permit vehicles (Strength II) run the same way.")}
       <Field label="Highest temperature" unit="°F" value={env.Tmax} onChange={part("environment")("Tmax")} hint="Procedure B (AASHTO Figure 3.12.2.2.1), CDOT BDM 14.3" />
       <Field label="Lowest temperature" unit="°F" value={env.Tmin} onChange={part("environment")("Tmin")} />
@@ -192,6 +197,22 @@ export function BridgeForm({ form, def, setDef: setRaw }: Props & { form: FormKe
           <option value="D">D</option>
         </select>
       </div>
+      <div className="grid grid-cols-[1fr_7rem] items-center gap-2 py-0.5 text-xs">
+        <span className="text-muted-foreground" title="AASHTO 3.12.3: the solar radiation zone (Figure 3.12.3-1). CDOT BDM 14.3 considers it where appropriate.">Temperature gradient</span>
+        <select value={env.gradientZone ?? 0} onChange={(e) => part("environment")("gradientZone")(Number(e.target.value) as 0 | 1 | 2 | 3 | 4)} className="h-7 rounded-md border bg-transparent px-1 text-xs" aria-label="Temperature gradient zone">
+          <option value={0}>Not considered</option>
+          <option value={1}>Zone 1</option>
+          <option value={2}>Zone 2</option>
+          <option value={3}>Zone 3</option>
+          <option value={4}>Zone 4</option>
+        </select>
+      </div>
+      {(env.gradientZone ?? 0) > 0 && (
+        <label className="flex items-center gap-2 py-0.5 text-xs text-muted-foreground">
+          <input type="checkbox" checked={!!env.asphalt} onChange={(e) => part("environment")("asphalt")(e.target.checked)} />
+          Asphalt overlay (negative gradient × −0.20, else −0.30)
+        </label>
+      )}
     </>
   );
 }

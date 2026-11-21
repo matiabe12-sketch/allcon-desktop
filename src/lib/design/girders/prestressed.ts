@@ -118,6 +118,9 @@ export type GirderInputs = {
   barrierWeight: number; // klf, one barrier
   barriersOnExterior: boolean; // each barrier on its exterior girder (else shared equally)
   otherDC2: number; // klf on each girder
+  /** Sidewalks (from the Bridge): the narrower one's width inside the barrier (the lanes keep to the curbs), their
+   * concrete (DC2) and pedestrian load (3.6.1.6) on each girder, klf, shared equally. */
+  sidewalk?: { width: number; dc: number; pl: number };
   fws: number; // psf, future wearing surface (DW)
   overlay?: number; // in, the asphalt overlay placed on the membrane (quantities only; 0 or unset for none)
   // Shear reinforcement
@@ -471,6 +474,9 @@ export type DistFactors = {
  * each wheel 2 ft or more from its lane's edge, the lanes anywhere across the roadway; the most a girder takes
  * per lane with the multiple presence factor (T. 3.6.1.1.2-1). One lane (with 1.2), more lanes, and the larger.
  */
+/** The deck's edge to the roadway's: the barrier's width and a sidewalk's inside it. */
+export const curbOffset = (i: Pick<GirderInputs, "barrierWidth" | "sidewalk">) => i.barrierWidth + (i.sidewalk?.width ?? 0);
+
 export function leverRuleAll(nGirders: number, S: number, overhang: number, barrierWidth: number, exterior: boolean) {
   const z = Array.from({ length: nGirders }, (_, k) => (k - (nGirders - 1) / 2) * S);
   const target = exterior ? 0 : Math.floor((nGirders - 1) / 2);
@@ -579,7 +585,7 @@ function adjacentBoxFactors(i: GirderInputs, g: SectionProps, shape: GirderShape
     return { ...base, moment: m * skewMoment, shear: v * skewShear, fatigue: (momentOne * skewMoment) / 1.2, governs: { moment: `type (f), ${m === momentOne ? "one lane" : "two or more lanes"}`, shear: `type (f), ${v === shearOne ? "one lane" : "two or more lanes"}` } };
   }
   // de: the exterior web's midline to the barrier's inside face (ft).
-  const de = i.overhang - (b / 2 - (shape.family === "Prestressed slab" ? 0 : shape.web / 4)) / 12 - i.barrierWidth; // a slab beam's from its edge
+  const de = i.overhang - (b / 2 - (shape.family === "Prestressed slab" ? 0 : shape.web / 4)) / 12 - curbOffset(i); // a slab beam's from its edge
   if (de < -1 || de > 2) out.push(`de ${de.toFixed(2)} ft is outside −1.0 to 2.0 ft`);
   const eM1 = Math.max(1, 1.125 + de / 30);
   const eM2 = Math.max(1, 1.04 + de / 25);
@@ -599,10 +605,10 @@ export function distributionFactors(i: GirderInputs, g: SectionProps, ts: number
   const { S, L, nGirders } = i;
   const eg = deckCg - g.yb; // in
   const Kg = n * (g.I + g.A * eg ** 2); // in⁴, 4.6.2.2.1-1
-  const roadway = (nGirders - 1) * S + 2 * i.overhang - 2 * i.barrierWidth;
+  const roadway = (nGirders - 1) * S + 2 * i.overhang - 2 * curbOffset(i);
   const lanes = Math.max(1, Math.floor(roadway / 12)); // 3.6.1.1.1
   if (i.distribution === "lever-rule") {
-    const lv = leverRuleAll(nGirders, S, i.overhang, i.barrierWidth, exterior);
+    const lv = leverRuleAll(nGirders, S, i.overhang, curbOffset(i), exterior);
     return { moment: lv.best, shear: lv.best, fatigue: lv.one / 1.2, Kg, eg, n, lanes, momentOne: lv.one, momentMulti: lv.multi, shearOne: lv.one, shearMulti: lv.multi, lever: lv.best, skewMoment: 1, skewShear: 1, governs: { moment: `lever rule, ${lv.lanes} lane${lv.lanes > 1 ? "s" : ""}`, shear: `lever rule, ${lv.lanes} lane${lv.lanes > 1 ? "s" : ""}` }, outOfRange: [] };
   }
   // A steel girder (the steel girder check passes shape "steel") is never an adjacent box.
@@ -649,7 +655,7 @@ export function distributionFactors(i: GirderInputs, g: SectionProps, ts: number
     };
   }
   // Exterior girder: lever rule for one lane, e·g(interior) for more (T. 4.6.2.2.2d-1, 4.6.2.2.3b-1).
-  const de = i.overhang - i.barrierWidth; // ft, exterior web to the barrier's inside face
+  const de = i.overhang - curbOffset(i); // ft, exterior web to the barrier's inside face (or the sidewalk's curb)
   if (de < -1 || de > 5.5) out.push(`de ${de.toFixed(2)} ft is outside −1.0 to 5.5 ft`);
   const lever = leverRule(S, de);
   const eM = 0.77 + de / 9.1;
@@ -937,8 +943,9 @@ function designGirderLine(i: GirderInputs, exterior: boolean, ctx: SpanContext |
   const trib = exterior ? i.S / 2 + i.overhang : i.S;
   const wDeck = ((i.deckT / 12) * trib + (i.haunch / 12) * (shape.topWidth / 12)) * (i.wcDeckLoad ?? i.wcDeck) + i.otherDC1;
   const wBarrier = i.barriersOnExterior ? (exterior ? i.barrierWeight : 0) : (2 * i.barrierWeight) / i.nGirders;
-  const wDC2 = wBarrier + i.otherDC2;
-  const roadway = (i.nGirders - 1) * i.S + 2 * i.overhang - 2 * i.barrierWidth;
+  const wDC2 = wBarrier + i.otherDC2 + (i.sidewalk?.dc ?? 0);
+  const wPL = i.sidewalk?.pl ?? 0; // pedestrians (3.6.1.6), with the vehicles
+  const roadway = (i.nGirders - 1) * i.S + 2 * i.overhang - 2 * curbOffset(i);
   const wDW = ((i.fws / 1000) * roadway) / i.nGirders;
   const diaphragmAt = Array.from({ length: i.diaphragms }, (_, k) => ((k + 1) * i.L) / (i.diaphragms + 1));
   const Pdia = exterior ? i.diaphragmWeight / 2 : i.diaphragmWeight; // diaphragms on one side of an exterior girder
@@ -1120,6 +1127,16 @@ function designGirderLine(i: GirderInputs, exterior: boolean, ctx: SpanContext |
           ii = { ...ii, Mpos: Math.max(ii.Mpos, s.Mpos), V: Math.max(ii.V, s.V), name: s.Mpos > ii.Mpos ? s.name : ii.name };
         }
       }
+    }
+    // Pedestrians on the sidewalks (3.6.1.6): with the vehicles at their factors, without IM or a distribution factor.
+    if (wPL > 0) {
+      const ps = uniform(wPL, i.L, x);
+      const pc = full ? { M: wPL * ctx!.unit(x).M, V: wPL * ctx!.unit(x).V } : null;
+      // As the superimposed dead loads: the continuous beam's, or the simple span's too where a joint isn't fully effective.
+      const p = pc ? (ctx!.simpleToo ? { M: Math.max(pc.M, ps.M), V: Math.max(Math.abs(pc.V), Math.abs(ps.V)) } : pc) : ps;
+      Mll += Math.max(0, p.M);
+      Vll += Math.abs(p.V);
+      if (negative) negative.Mll += Math.min(0, p.M);
     }
     const Vdc = uniform(wg, i.L, x).V + Vdeck + Vdc2;
 

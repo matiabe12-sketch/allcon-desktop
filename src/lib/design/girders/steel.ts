@@ -88,6 +88,9 @@ export type SteelGirderInputs = {
     barrierWeight: number; // klf, each barrier (shared equally by the girders)
     otherDC2: number; // klf
     fws: number; // psf, future wearing surface over the roadway
+    /** Sidewalks (from the Bridge): the narrower one's width inside the barrier, their concrete and pedestrian load
+     * (3.6.1.6) on each girder, klf, shared equally. */
+    sidewalk?: { width: number; dc: number; pl: number };
   };
   girder: "both" | "interior" | "exterior"; // which girder's distribution factor and effective width; both: the larger factor and the smaller width
   rigidMethod: boolean; // exterior girder not less than the rigid cross-section (4.6.2.2.2d), required with cross-frames
@@ -429,14 +432,16 @@ export function designSteelGirder(i: SteelGirderInputs) {
 
   // Loads per girder (klf).
   const L = i.loads;
-  const roadway = (i.nGirders - 1) * i.S + 2 * i.overhang - 2 * i.barrierWidth;
+  const curb = i.barrierWidth + (i.loads.sidewalk?.width ?? 0); // the deck's edge to the roadway's
+  const roadway = (i.nGirders - 1) * i.S + 2 * i.overhang - 2 * curb;
   const deckWidth = (i.nGirders - 1) * i.S + 2 * i.overhang;
   const avgTop = i.segments.reduce((s, x) => s + plates(x).top.b * x.length, 0) / total; // in
   const dc1Deck =
     L.mode === "entered"
       ? L.dc1
       : (i.deckT / 12) * deckWidth * i.wcDeck / i.nGirders + ((i.haunch / 12) * (avgTop / 12) * i.wcDeck) + ((L.sip / 1000) * Math.max(0, i.S - avgTop / 12) * (i.nGirders - 1)) / i.nGirders + L.misc / 1000 + L.otherDC1;
-  const dc2 = L.mode === "entered" ? L.dc2 : (2 * L.barrierWeight) / i.nGirders + L.otherDC2;
+  const dc2 = L.mode === "entered" ? L.dc2 : (2 * L.barrierWeight) / i.nGirders + L.otherDC2 + (L.sidewalk?.dc ?? 0);
+  const pl = L.mode === "entered" ? 0 : (L.sidewalk?.pl ?? 0); // pedestrians (3.6.1.6), with the vehicles
   const dw = L.mode === "entered" ? L.dw : ((L.fws / 1000) * roadway) / i.nGirders;
   const wSteel = (X: number) => selfWeight(i.segments[segAt(X)]);
 
@@ -464,7 +469,7 @@ export function designSteelGirder(i: SteelGirderInputs) {
 
   // Distribution factors (4.6.2.2): positive moment and shear per span from its own section and length; negative
   // moment at each pier from the pier's section and the two spans' average length (Table C4.6.2.2.1-1).
-  const dfBase = { S: i.S, nGirders: i.nGirders, overhang: i.overhang, barrierWidth: i.barrierWidth, skew: i.skew, distribution: "aashto", rigidMethod: i.rigidMethod, skewShearInterior: i.skewShearInterior, shape: "steel" } as unknown as GirderInputs;
+  const dfBase = { S: i.S, nGirders: i.nGirders, overhang: i.overhang, barrierWidth: curb, skew: i.skew, distribution: "aashto", rigidMethod: i.rigidMethod, skewShearInterior: i.skewShearInterior, shape: "steel" } as unknown as GirderInputs;
   const dfFor = (Lspan: number, k: number) => {
     const g = prop(k, "steel");
     const deck = deckFor(i.segments[k]);
@@ -515,14 +520,16 @@ export function designSteelGirder(i: SteelGirderInputs) {
     const dW = deadAt(longLine, s, x, dw);
     const env = shortLine.beam.liveEnvelope(s, x, i.IM);
     const negativeRegion = longLine.beam.uniformAll(s, x).M < 0;
+    // Pedestrians on the sidewalks (3.6.1.6): with the vehicles, without IM or a distribution factor.
+    const p = pl > 0 ? deadAt(longLine, s, x, pl) : { M: 0, V: 0 };
     if (grid) {
       const gx = grid.at(X, !!at && at.x >= spans[at.s] - 1e-9 && at.s < spans.length - 1);
-      return { s, x, k, M: { ...gx.M, llPos: llk * gx.M.llPos, llNeg: llk * gx.M.llNeg }, V: { ...gx.V, ll: llk * gx.V.ll }, dfM: 1, dfV: 1, negativeRegion };
+      return { s, x, k, M: { ...gx.M, llPos: llk * gx.M.llPos + Math.max(0, p.M), llNeg: llk * gx.M.llNeg + Math.min(0, p.M) }, V: { ...gx.V, ll: llk * gx.V.ll + Math.abs(p.V) }, dfM: 1, dfV: 1, negativeRegion };
     }
     const pier = x > spans[s] / 2 ? s : s - 1; // the nearer interior pier
     const dfM = negativeRegion && pier >= 0 && pier < pierDF.length ? pierDF[pier].moment : spanDF[s].moment;
     const dfV = spanDF[s].shear;
-    return { s, x, k, M: { dc1: d1.M, dc2: d2.M, dw: dW.M, llPos: llk * dfM * env.Mpos, llNeg: llk * dfM * env.Mneg }, V: { dc1: d1.V, dc2: d2.V, dw: dW.V, ll: llk * dfV * env.V }, dfM, dfV, negativeRegion };
+    return { s, x, k, M: { dc1: d1.M, dc2: d2.M, dw: dW.M, llPos: llk * dfM * env.Mpos + Math.max(0, p.M), llNeg: llk * dfM * env.Mneg + Math.min(0, p.M) }, V: { dc1: d1.V, dc2: d2.V, dw: dW.V, ll: llk * dfV * env.V + Math.abs(p.V) }, dfM, dfV, negativeRegion };
   }
   /** The fatigue truck (3.6.1.4.1: 8, 32 and 32 kip axles, 14 and 30 ft apart) on the short-term girder line: per girder, with its factors and 15% IM, unfactored. */
   const fatigueAt = (X: number) => {
@@ -610,7 +617,7 @@ export function designSteelGirder(i: SteelGirderInputs) {
   const grid = i.analysis === "grid" ? buildGrid() : null;
   function buildGrid() {
     const halfDeck = ((i.nGirders - 1) * i.S) / 2 + i.overhang;
-    const roadway: [number, number] = [-halfDeck + i.barrierWidth, halfDeck - i.barrierWidth];
+    const roadway: [number, number] = [-halfDeck + curb, halfDeck - curb];
     if (!(roadway[1] - roadway[0] >= 10)) throw new DesignError("The roadway is too narrow for a lane.");
     const gin: GridInput = {
       spans,
@@ -647,7 +654,7 @@ export function designSteelGirder(i: SteelGirderInputs) {
     const fwsShare = entered ? [] : leverStrip(ys, L.fws / 1000, roadway[0], roadway[1]);
     const segOf = (X: number) => i.segments[segAt(Math.min(Math.max(X, 1e-6), total - 1e-6))];
     const dc1Line = (j: number, X: number) => selfWeight(segOf(X)) + (entered ? L.dc1 : deckShare[j] + (i.haunch / 12) * (plates(segOf(X)).top.b / 12) * i.wcDeck + sipShare[j] + L.misc / 1000 + L.otherDC1);
-    const dc2Line = (j: number) => (entered ? L.dc2 : barrierShare[j] + L.otherDC2);
+    const dc2Line = (j: number) => (entered ? L.dc2 : barrierShare[j] + L.otherDC2 + (L.sidewalk?.dc ?? 0));
     const dwLine = (j: number) => (entered ? L.dw : fwsShare[j]);
     const symmetric = !(i.radius > 0) && Math.abs(i.skew) < 1e-9;
     const all = ys.map((_, j) => j);

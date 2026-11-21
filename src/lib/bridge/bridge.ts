@@ -10,31 +10,31 @@ import { analyze, type Analysis, type SectionForces } from "./solver";
 // with it, a combination's results are an envelope (the permanent loads, plus the live load's
 // largest and smallest effect).
 
-export type CaseRef = { name: string; type: LoadType; stage: 1 | 2; description?: string; index: number; group?: "TU" | "wind"; signed?: boolean };
+export type CaseRef = { name: string; type: LoadType; stage: 1 | 2; description?: string; index: number; group?: "TU" | "TG" | "wind"; signed?: boolean };
 /** A combination: each load type's factor, the vehicle its live load is (HL-93, the fatigue truck, or the Strength II
  * permit vehicles), and the wind's pressure as a fraction of the model's (Strength III's) wind case. */
 export type Vehicle = "hl93" | "fatigue" | "permit";
 export type Combination = { name: string; description: string; factors: Record<LoadType, number>; vehicle?: Vehicle };
 
-const F = (o: Partial<Record<LoadType, number>>): Record<LoadType, number> => ({ DC: 0, DW: 0, LL: 0, TU: 0, WS: 0, WL: 0, USER: 1, ...o });
-/** AASHTO LRFD 10th Table 3.4.1-1 (the permanent loads at their maximum factors, Table 3.4.1-2; TU at 0.50 for force
- * effects): the wind at each combination's own speed (Table 3.8.1.1.2-1: Strength III and Service IV the site's,
+const F = (o: Partial<Record<LoadType, number>>): Record<LoadType, number> => ({ DC: 0, DW: 0, LL: 0, PL: o.LL ?? 0, TU: 0, TG: 0, WS: 0, WL: 0, USER: 1, ...o });
+/** AASHTO LRFD 10th Table 3.4.1-1 (the permanent loads at their maximum factors, Table 3.4.1-2; TU at 0.50 for force effects; TG, when the Bridge considers it, at 0.50 in Service I and III with live load and 0.0 in
+ * Strength, C3.4.1): the wind at each combination's own speed (Table 3.8.1.1.2-1: Strength III and Service IV the site's,
  * Strength V 80 mph and Service I 70 mph, Kz = G = 1), `scale` those as fractions of Strength III's. */
 export function combinationsFor(scale = { strengthV: 0.484, serviceI: 0.371 }): Combination[] {
   const sV = +scale.strengthV.toFixed(4);
   const sI = +scale.serviceI.toFixed(4);
   return [
-    { name: "Service I", description: `1.0 DC + 1.0 DW + 1.0 (LL+IM) + 1.0 TU + WS at 70 mph (${sI} × Strength III's) + 1.0 WL`, factors: F({ DC: 1, DW: 1, LL: 1, TU: 1, WS: sI, WL: 1 }) },
+    { name: "Service I", description: `1.0 DC + 1.0 DW + 1.0 (LL+IM) + 1.0 TU + 0.50 TG + WS at 70 mph (${sI} × Strength III's) + 1.0 WL`, factors: F({ DC: 1, DW: 1, LL: 1, TU: 1, TG: 0.5, WS: sI, WL: 1 }) },
     { name: "Service II", description: "1.0 DC + 1.0 DW + 1.3 (LL+IM): steel girders' permanent deflection", factors: F({ DC: 1, DW: 1, LL: 1.3 }) },
-    { name: "Service III", description: "1.0 DC + 1.0 DW + 0.8 (LL+IM) + 1.0 TU", factors: F({ DC: 1, DW: 1, LL: 0.8, TU: 1 }) },
+    { name: "Service III", description: "1.0 DC + 1.0 DW + 0.8 (LL+IM) + 1.0 TU + 0.50 TG", factors: F({ DC: 1, DW: 1, LL: 0.8, TU: 1, TG: 0.5 }) },
     { name: "Service IV", description: "1.0 DC + 1.0 DW + 1.0 TU + 1.0 WS", factors: F({ DC: 1, DW: 1, TU: 1, WS: 1 }) },
     { name: "Strength I", description: "1.25 DC + 1.5 DW + 1.75 (LL+IM) + 0.5 TU", factors: F({ DC: 1.25, DW: 1.5, LL: 1.75, TU: 0.5 }) },
     { name: "Strength II", description: "1.25 DC + 1.5 DW + 1.35 (permit vehicle + IM, CDOT BDM 3.6) + 0.5 TU", factors: F({ DC: 1.25, DW: 1.5, LL: 1.35, TU: 0.5 }), vehicle: "permit" },
     { name: "Strength III", description: "1.25 DC + 1.5 DW + 1.0 WS + 0.5 TU", factors: F({ DC: 1.25, DW: 1.5, TU: 0.5, WS: 1 }) },
     { name: "Strength IV", description: "1.5 DC + 1.5 DW + 0.5 TU", factors: F({ DC: 1.5, DW: 1.5, TU: 0.5 }) },
     { name: "Strength V", description: `1.25 DC + 1.5 DW + 1.35 (LL+IM) + WS at 80 mph (${sV} × Strength III's) + 1.0 WL + 0.5 TU`, factors: F({ DC: 1.25, DW: 1.5, LL: 1.35, TU: 0.5, WS: sV, WL: 1 }) },
-    { name: "Fatigue I", description: "1.75 (fatigue truck + IM), one lane", factors: F({ LL: 1.75, USER: 0 }), vehicle: "fatigue" },
-    { name: "Fatigue II", description: "0.80 (fatigue truck + IM), one lane", factors: F({ LL: 0.8, USER: 0 }), vehicle: "fatigue" },
+    { name: "Fatigue I", description: "1.75 (fatigue truck + IM), one lane", factors: F({ LL: 1.75, PL: 0, USER: 0 }), vehicle: "fatigue" },
+    { name: "Fatigue II", description: "0.80 (fatigue truck + IM), one lane", factors: F({ LL: 0.8, PL: 0, USER: 0 }), vehicle: "fatigue" },
   ];
 }
 /** The combinations at the default wind (for lists before a bridge is analyzed). */
@@ -108,8 +108,10 @@ export function analyzeBridge(definition: BridgeDefinition): BridgeAnalysis {
     const combo = comboOf(sel);
     if (!combo) return [];
     const out: Term[][][] = [];
-    const tu = cases.filter((c) => c.group === "TU" && combo.factors[c.type]);
-    if (tu.length) out.push(tu.map((ref) => [{ ref, factor: combo.factors[ref.type] }]));
+    for (const g of ["TU", "TG"] as const) {
+      const alt = cases.filter((c) => c.group === g && combo.factors[c.type]);
+      if (alt.length) out.push(alt.map((ref) => [{ ref, factor: combo.factors[ref.type] }]));
+    }
     const wind = cases.filter((c) => c.group === "wind" && combo.factors[c.type]);
     if (wind.length) out.push([1, -1].map((side) => wind.map((ref) => ({ ref, factor: combo.factors[ref.type] * (ref.signed ? side : 1) }))));
     return out;

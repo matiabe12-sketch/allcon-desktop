@@ -133,6 +133,39 @@ const rectJ = (a: number, c: number) => {
   return b * t ** 3 * (1 / 3 - 0.21 * (t / b) * (1 - t ** 4 / (12 * b ** 4)));
 };
 
+/** AASHTO Table 3.12.3-1: T1 and T2 (°F) in each solar radiation zone (Figure 3.12.3-1). */
+export const GRADIENT_ZONES: Record<1 | 2 | 3 | 4, [number, number]> = { 1: [54, 14], 2: [46, 12], 3: [41, 11], 4: [38, 9] };
+
+/**
+ * The positive vertical temperature gradient (Figure 3.12.3-2) on a composite girder as the frame takes it: T1 at the
+ * deck's top, T2 4 in down, nothing A = 12 in below that (T3 = 0), on the section's transformed widths (the deck's at
+ * n and the ratio of its α to the girder's). The uniform part (°F, the axial strain over α) and the linear part (°F/ft,
+ * the curvature over α, top warmer +): the self-equilibrating rest stresses the section but moves nothing.
+ */
+export function gradientOn(profile: [number, number][], H: number, ts: number, c: Composite, n: number, T1: number, T2: number, alphaRatio: number) {
+  const half = (y: number) => {
+    for (let i = 0; i < profile.length - 1; i++) {
+      const [y0, w0] = profile[i];
+      const [y1, w1] = profile[i + 1];
+      if (y1 > y0 && y >= y0 && y <= y1) return w0 + ((w1 - w0) * (y - y0)) / (y1 - y0);
+    }
+    return 0;
+  };
+  const top = H + ts;
+  const dy = 0.05;
+  let P = 0;
+  let M = 0;
+  for (let z = dy / 2; z < 16; z += dy) {
+    const T = z <= 4 ? T1 + ((T2 - T1) * z) / 4 : T2 * (1 - (z - 4) / 12);
+    const y = top - z;
+    if (y <= 0) break;
+    const b = y >= H ? c.beff * n * alphaRatio : 2 * half(y);
+    P += b * T * dy;
+    M += b * T * (y - c.yb) * dy;
+  }
+  return { uniform: P / c.A, gradient: (12 * M) / c.I };
+}
+
 function compositeProps(g: { A: number; I: number; yb: number }, H: number, beff: number, ts: number, n: number): Composite {
   const Ad = beff * ts * n;
   const yd = H + ts / 2;
@@ -389,15 +422,40 @@ export function generate(d: BridgeDefinition): Generated {
     ...(substructure.length ? [{ name: "Substructure", type: "DC" as const, description: "Pier caps and columns" }] : []),
   ];
   const env = d.environment ?? BRIDGE_DEFAULTS.environment; // a bridge saved before temperature and wind were inputs
+  // Sidewalks, inside each edge's barrier: their bands across the bridge (Y), and whether pedestrians load them.
+  const sw = d.sidewalks ?? { left: 0, right: 0, depth: 8 };
+  const swBands = [
+    ...(sw.left > 0 ? [{ a: -leftEdge + d.loads.barrierWidth, b: -leftEdge + d.loads.barrierWidth + sw.left, ped: sw.left > 2 }] : []),
+    ...(sw.right > 0 ? [{ a: rightEdge - d.loads.barrierWidth - sw.right, b: rightEdge - d.loads.barrierWidth, ped: sw.right > 2 }] : []),
+  ];
+  // The temperature gradient (3.12.3), when the bridge considers it: by section, its uniform and linear parts.
+  const zone = env.gradientZone ?? 0;
+  const negTG = env.asphalt ? -0.2 : -0.3;
+  const gradientOf = new Map<number, { uniform: number; gradient: number }>();
+  if (zone) {
+    const [T1, T2] = GRADIENT_ZONES[zone];
+    const aR = 6e-6 / (steel ? 6.5e-6 : 6e-6);
+    const beffs = [d.spacing * 12, (d.spacing / 2 + ovL) * 12, (d.spacing / 2 + ovR) * 12];
+    if (steel) steelSegs.forEach((sg, j) => beffs.forEach((beff, q) => gradientOf.set(1000 + 10 * j + 1 + q, gradientOn(sg.shape.profile, sg.shape.depth, ts, compositeProps(sg.props, sg.shape.depth, beff, ts, n), n, T1, T2, aR))));
+    else beffs.forEach((beff, q) => gradientOf.set(2 + q, gradientOn(shape.profile, shape.depth, ts, compositeProps(g, shape.depth, beff, ts, n), n, T1, T2, aR)));
+  }
   const wind = windPressures(d, shape.depth);
   const stage2Cases: Model["loadCases"] = [
     { name: "Barriers", type: "DC", description: "Barriers, on the composite bridge" },
     { name: "Wearing surface", type: "DW", description: "Future wearing surface" },
     { name: "Temperature rise", type: "TU", group: "TU", description: `Uniform temperature, +${env.Tmax - env.Tset} °F from ${env.Tset} °F to ${env.Tmax} °F (AASHTO 3.12.2.2, CDOT BDM 14.3)` },
     { name: "Temperature fall", type: "TU", group: "TU", description: `Uniform temperature, −${env.Tset - env.Tmin} °F from ${env.Tset} °F to ${env.Tmin} °F` },
+    ...(zone
+      ? [
+          { name: "Temperature gradient, positive", type: "TG" as const, group: "TG" as const, description: `Vertical gradient (AASHTO 3.12.3, zone ${zone}): T1 ${GRADIENT_ZONES[zone][0]} °F at the deck's top, T2 ${GRADIENT_ZONES[zone][1]} °F 4 in down, 0 at 16 in` },
+          { name: "Temperature gradient, negative", type: "TG" as const, group: "TG" as const, description: `The positive gradient × ${negTG.toFixed(2)} (${env.asphalt ? "an asphalt overlay" : "a plain concrete deck"})` },
+        ]
+      : []),
     { name: "Wind on the structure", type: "WS", group: "wind", signed: true, description: `Across the bridge at ${env.wind} mph (Strength III), ${(wind.Pz * 1000).toFixed(1)} psf on ${wind.depth.toFixed(2)} ft of superstructure (CD 1.3) and the columns (CD 1.6), from either side (3.8.1.2)` },
     { name: "Wind up", type: "WS", group: "wind", description: "Vertical wind, 0.020 ksf on the deck's width at its windward quarter point (3.8.2)" },
     { name: "Wind on live load", type: "WL", group: "wind", signed: true, description: "0.10 klf across the bridge, 6 ft above the deck (3.8.1.3), from either side" },
+    ...(swBands.length ? [{ name: "Sidewalks", type: "DC" as const, description: `The sidewalks' concrete, ${sw.depth} in above the deck (${[sw.left, sw.right].filter((x) => x > 0).map((x) => `${x} ft`).join(" and ")} wide), on the composite bridge` }] : []),
+    ...(swBands.some((b) => b.ped) ? [{ name: "Pedestrians", type: "PL" as const, description: "0.075 ksf on the sidewalks wider than 2 ft (3.6.1.6), with the vehicles, factored as live load (no dynamic allowance)" }] : []),
   ];
   const wGirder = g.A * IN2 * d.girder.wc;
   const interiorStations = new Set(supportStations);
@@ -409,7 +467,14 @@ export function generate(d: BridgeDefinition): Generated {
       const width = (tributeAt(k, s).width + tributeAt(k, s + 1).width) / 2;
       const topWidth = steel ? steelSegs[segmentAt((stations[s] + stations[s + 1]) / 2)].seg.top.b : shape.topWidth;
       const wDeck = width * (d.deck.thickness / 12) * d.deck.wc + topWidth * d.deck.haunch * IN2 * d.deck.wc;
-      const wWearing = ((edge ? width - d.loads.barrierWidth : width) * d.loads.wearingSurface) / 1000;
+      const onWalk = (() => {
+        // The sidewalks' part of its tributary width (no wearing surface on them).
+        const y = pointOn(k, s).Y;
+        const lo = k > 0 ? (y + pointOn(k - 1, s).Y) / 2 : -Infinity;
+        const hi = k < nG - 1 ? (y + pointOn(k + 1, s).Y) / 2 : Infinity;
+        return swBands.reduce((t, bd) => t + Math.max(0, Math.min(hi, bd.b) - Math.max(lo, bd.a)), 0);
+      })();
+      const wWearing = (Math.max(0, (edge ? width - d.loads.barrierWidth : width) - onWalk) * d.loads.wearingSurface) / 1000;
       const sj = steel ? steelSegs[segmentAt((stations[s] + stations[s + 1]) / 2)] : null;
       loads.push({ stage: 1, load: { case: "Girders", kind: "uniform", element, dir: "GZ", w: -(sj ? sj.weight : wGirder) } });
       loads.push({ stage: 1, load: { case: "Deck and haunch", kind: "uniform", element, dir: "GZ", w: -wDeck } });
@@ -431,6 +496,32 @@ export function generate(d: BridgeDefinition): Generated {
   // girder (the deck spreads it): the superstructure's depth, and the live load's 0.10 klf with its couple to the deck;
   // vertical wind as a line of load at the deck's windward quarter point, split between the girders beside it.
   const lenAt = (s: number) => ((s > 0 ? stations[s] - stations[s - 1] : 0) + (s < nS - 1 ? stations[s + 1] - stations[s] : 0)) / 2;
+  // A line of load across the bridge at Y (kip at a station, down): to the two girders either side as a simple span
+  // of the deck between them, or outside the exterior girder onto it with its moment (as a barrier's).
+  const lineAt = (name: string, s: number, y: number, P: number) => {
+    const ys = Array.from({ length: nG }, (_, k) => pointOn(k, s).Y);
+    const out = y <= ys[0] ? 0 : y >= ys[nG - 1] ? nG - 1 : -1;
+    if (out >= 0) {
+      loads.push({ stage: 2, load: { case: name, kind: "nodal", node: girderNode(out, s), F: [0, 0, -P, -(y - ys[out]) * P, 0, 0] } });
+      return;
+    }
+    let k = 0;
+    while (k < nG - 2 && ys[k + 1] <= y) k++;
+    const t = (y - ys[k]) / (ys[k + 1] - ys[k]);
+    loads.push({ stage: 2, load: { case: name, kind: "nodal", node: girderNode(k, s), F: [0, 0, -P * (1 - t), 0, 0, 0] } });
+    loads.push({ stage: 2, load: { case: name, kind: "nodal", node: girderNode(k + 1, s), F: [0, 0, -P * t, 0, 0, 0] } });
+  };
+  // The sidewalks' concrete and the pedestrians, as lines 0.5 ft apart or closer across each band.
+  for (const bd of swBands) {
+    const m = Math.max(1, Math.ceil((bd.b - bd.a) / 0.5));
+    const dy = (bd.b - bd.a) / m;
+    for (let s = 0; s < nS; s++)
+      for (let q = 0; q < m; q++) {
+        const y = bd.a + (q + 0.5) * dy;
+        lineAt("Sidewalks", s, y, (sw.depth / 12) * 0.15 * dy * lenAt(s));
+        if (bd.ped) lineAt("Pedestrians", s, y, 0.075 * dy * lenAt(s));
+      }
+  }
   const deckWidth = leftEdge + rightEdge;
   const armWL = 6 + d.deck.thickness / 12 + d.deck.haunch / 12 + (shape.depth - g.yb) / 12; // 6 ft above the deck to the girder's centroid
   for (let k = 0; k < nG; k++)
@@ -438,6 +529,12 @@ export function generate(d: BridgeDefinition): Generated {
       const element = girderElement(k, s);
       loads.push({ stage: 2, load: { case: "Temperature rise", kind: "thermal", element, dT: env.Tmax - env.Tset } });
       loads.push({ stage: 2, load: { case: "Temperature fall", kind: "thermal", element, dT: -(env.Tset - env.Tmin) } });
+      if (zone) {
+        const sec = steel ? 1000 + 10 * segmentAt((stations[s] + stations[s + 1]) / 2) + (k === 0 ? 2 : k === nG - 1 ? (twoSides ? 3 : 2) : 1) : k === 0 ? 3 : k === nG - 1 ? (twoSides ? 4 : 3) : 2;
+        const tg = gradientOf.get(sec)!;
+        loads.push({ stage: 2, load: { case: "Temperature gradient, positive", kind: "thermal", element, dT: tg.uniform, gradient: tg.gradient } });
+        loads.push({ stage: 2, load: { case: "Temperature gradient, negative", kind: "thermal", element, dT: negTG * tg.uniform, gradient: negTG * tg.gradient } });
+      }
       if (k === 0) {
         loads.push({ stage: 2, load: { case: "Wind on the structure", kind: "uniform", element, dir: "GY", w: wind.Pz * wind.depth } });
         loads.push({ stage: 2, load: { case: "Wind on live load", kind: "uniform", element, dir: "GY", w: 0.1 } });
@@ -515,7 +612,7 @@ export function generate(d: BridgeDefinition): Generated {
     layout: {
       girderY: girderYAt(d.spans[0] / 2),
       deck: [-leftEdge, rightEdge],
-      roadway: [-leftEdge + d.loads.barrierWidth, rightEdge - d.loads.barrierWidth],
+      roadway: [-leftEdge + d.loads.barrierWidth + sw.left, rightEdge - d.loads.barrierWidth - sw.right],
       tan,
       girderElement,
       girderYAt,

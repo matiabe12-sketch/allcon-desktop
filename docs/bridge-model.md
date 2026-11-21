@@ -294,7 +294,7 @@ The owner asked that no load be counted twice as it passes down the load path. W
   flexure 5.6, shear 5.7, strut-and-tie 5.8, anchors 5.13). The load factors were checked against Table 3.4.1-1, with
   two fixes in the seat abutment's statics: braking in Service I was 1.75 (now 1.0), and it was missing from Strength I's
   minimum set.
-- **Not changed:** sidewalks (no pedestrian load or sidewalk on the Bridge yet) and curved girders (chorded) remain to
+- **Not changed:** curved girders (chorded) remain to
   be built as features.
 
 ## The remaining checks, steps 5 to 8 (2026-11-20)
@@ -358,3 +358,52 @@ length along the bridge, web and flanges, as the Steel Girder Design Check takes
     steel's (no longer the library's deeper default).
   - **Girders inside cast concrete** (girdersInside, the cap's inDiaphragm): the steel of the segment at the support
     (0.490 kcf) from the girder's end to the block's face, the deck and haunch from the bearing line to the face.
+
+## Temperature gradient (2026-11-21)
+
+AASHTO 3.12.3, an option on the Bridge's temperatures ("Temperature gradient": not considered, or the solar radiation
+zone of Figure 3.12.3-1, and whether the deck has an asphalt overlay). Off by default: CDOT BDM 14.3 says the gradient
+"may be considered where appropriate", and C3.4.1 notes open girder bridges have usually been designed without it.
+
+- **The gradient** (Figure 3.12.3-2): T1 at the deck's top and T2 4 in down from Table 3.12.3-1 (zone 1: 54 and 14 °F),
+  nothing 12 in below that (A = 12 in; T3 = 0), measured from the structural deck's top. The same profile is used for
+  steel girders (A = 12 in for steel superstructures).
+- **In the frame** (generate.ts gradientOn): on each composite section (precast interior, exterior and right; each
+  steel segment's), the gradient over the transformed widths (the deck at n, and α deck/α girder for steel) gives a
+  uniform temperature (the axial strain over α) and a linear gradient (the curvature over α). The solver holds the
+  free curvature at the element's ends (a constant moment E·I·κ), so continuous spans and restrained supports get the
+  restraint moments and reactions; a simple span bows freely. The self-equilibrating stresses aren't in the frame.
+- **Cases:** "Temperature gradient, positive" and "negative" (−0.30 the positive for a plain concrete deck, −0.20
+  with an asphalt overlay), alternatives in a combination as the rise and fall are.
+- **Combinations** (Table 3.4.1-1, C3.4.1): 0.50 TG in Service I and III (with live load), none in Strength.
+- **Tests:** temperature-gradient.test.ts: the section's parts against hand integration; two equal spans' pier moment
+  1.5·E·I·α·gradient (sagging for a positive gradient); the Bridge's cases and factors.
+- **Not yet:** the girder designs' own TG stresses (the prestressed and steel checks don't take the gradient).
+
+## Sidewalks (2026-11-21)
+
+The Bridge takes a sidewalk on either side ("Sidewalk, left / right", ft wide, 0 for none; its depth above the deck).
+Each sidewalk sits inside its edge's barrier, raised, with a curb at the roadway.
+
+- **Analysis** (src/lib/bridge):
+  - **Roadway:** the lanes run between the curbs (the layout's roadway, the moving load's arrangements); no wearing
+    surface on the sidewalks.
+  - **"Sidewalks"** (DC, composite): the concrete, 0.150 kcf × width × depth.
+  - **"Pedestrians"** (a PL case): 0.075 ksf on a sidewalk wider than 2 ft (3.6.1.6), with the vehicles. Its factors are
+    live load's in every combination (Table 3.4.1-1 groups PL with LL), none in fatigue; no dynamic allowance.
+  - **Placement:** each sidewalk as lines of load 0.5 ft apart or closer: to the two girders either side as a simple
+    span of the deck, or, outside the exterior girder, onto it with its moment (as a barrier's).
+- **The girder designs** (the Bridge's links; sidewalkLoads):
+  - the narrower sidewalk's width moves the curb in (the lanes, the lever rule and de of the exterior girder, the
+    wearing surface's width): the wheel nearer the exterior girder, the conservative side;
+  - the sidewalks' concrete (DC2) and pedestrians shared equally by the girders, klf each;
+  - **precast check:** wDC2 and the calc's w_DC2 gain the concrete; the pedestrians (w_PL) are added to M_LL and V_LL at
+    live load's factors, without IM or a distribution factor (continuous as the superimposed loads are);
+  - **steel check:** dc2 and the live load's envelope (llPos, llNeg, V) gain them the same way;
+  - **pier caps:** the girder side's DC gains the concrete, and the lanes keep to the curbs.
+- **Tests:** src/lib/bridge/sidewalks.test.ts.
+- **Not yet:**
+  - the pedestrians on the substructure's live load (the caps' and abutments' lanes take the vehicles only);
+  - the deck design's overhang with a sidewalk on it;
+  - the sidewalks in the drawings, the 3D model and the quantities;
+  - slab bridges' sidewalks.

@@ -1,4 +1,4 @@
-import { girderShape, spanInputs, type GirderInputs } from "../girders/prestressed";
+import { curbOffset, girderShape, spanInputs, type GirderInputs } from "../girders/prestressed";
 import { profileProps } from "../girders/sections";
 import { brakingPerLane, continuousEndShear, continuousLaneReaction, continuousLaneUnbalance, SITE_WIND_DEFAULTS, superstructureWind } from "../girders/substructure-loads";
 import { DesignError } from "../walls/cip";
@@ -112,7 +112,7 @@ export function girderSide(design: GirderInputs, span: number, designId: string,
   const A = profileProps(shape.profile).A; // in²
   const wg = (A / 144) * i.wc; // klf
   const Lg = i.L + 2 * i.endDist;
-  const roadway = (i.nGirders - 1) * i.S + 2 * i.overhang - 2 * i.barrierWidth;
+  const roadway = (i.nGirders - 1) * i.S + 2 * i.overhang - 2 * curbOffset(i);
   const pier = end === "end" ? span + 1 : span;
   const interiorPier = spans > 1 && pier > 0 && pier < spans;
   const share = interiorPier ? continuousEndShear(design, span, end) : i.L / 2; // per klf of load after continuity
@@ -124,7 +124,7 @@ export function girderSide(design: GirderInputs, span: number, designId: string,
     const Pdia = exterior ? i.diaphragmWeight / 2 : i.diaphragmWeight;
     const dc1 = (wg * Lg) / 2 + (wDeck * i.L) / 2 + (i.diaphragms * Pdia) / 2;
     deckAt[exterior ? "exterior" : "interior"] = wDeck;
-    const dc = dc1 + (wBarrier + i.otherDC2) * share;
+    const dc = dc1 + (wBarrier + i.otherDC2 + (i.sidewalk?.dc ?? 0)) * share;
     const dw = (((i.fws / 1000) * roadway) / i.nGirders) * share;
     return { dc, dc1, dw };
   };
@@ -139,7 +139,7 @@ export function girderSide(design: GirderInputs, span: number, designId: string,
     n: i.nGirders,
     S: i.S,
     overhang: i.overhang,
-    barrierWidth: i.barrierWidth,
+    barrierWidth: curbOffset(i), // to the roadway's edge (a sidewalk's curb), for the lanes
     skew: i.skew,
     L: i.L,
     continuous: spans > 1,

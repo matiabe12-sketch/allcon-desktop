@@ -47,6 +47,8 @@ const ROLE_LABEL: Record<QuantityRole, string> = {
   shoring: "Shoring",
   pipe: "Pipe",
   "end-section": "End sections",
+  outlet: "Outlet paving",
+  foundation: "Foundation",
 };
 
 /** The design's quantities into its project's line items, under CDOT pay items. */

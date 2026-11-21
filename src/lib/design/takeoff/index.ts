@@ -21,6 +21,10 @@ import type { ThreeSidedInputs } from "../culverts/three-sided";
 import { pipePayItem, pipeTakeoff, threeSidedTakeoff } from "../culverts/detail";
 import type { GrsInputs } from "../grs/abutment";
 import { grsTakeoff } from "../grs/detail";
+import type { HeadwallInputs } from "../culverts/headwall";
+import { headwallTakeoff } from "../culverts/headwall-detail";
+import type { HighMastInputs } from "../signals/highmast";
+import { highMastTakeoff } from "../signals/highmast-detail";
 import type { NoiseWallInputs } from "../noisewall/wall";
 import { noiseWallTakeoff } from "../noisewall/detail";
 import { signalTakeoff } from "../signals/detail";
@@ -68,6 +72,10 @@ export function takeoffFor(kind: string, inputs: unknown, s?: TakeoffSettings): 
       return mseTakeoff(inputs as MseInputs, L ?? 100);
     case "pier-column":
       return pierColumnTakeoff(inputs as ColumnInputs, L);
+    case "pipe-headwall":
+      return headwallTakeoff(inputs as HeadwallInputs);
+    case "high-mast-foundation":
+      return highMastTakeoff(inputs as HighMastInputs);
     case "grs-abutment":
       return grsTakeoff(inputs as GrsInputs, L ?? 40);
     case "noise-wall":
@@ -124,6 +132,7 @@ export function takeoffFor(kind: string, inputs: unknown, s?: TakeoffSettings): 
 function defaultFor(kind: string, role: QuantityRole, inputs: unknown): string | undefined {
   if (!inputs) return undefined;
   if (kind === "pipe-culvert" && (role === "pipe" || role === "end-section")) return pipePayItem(inputs as PipeInputs, role);
+  if (kind === "pipe-headwall" && role === "outlet") return (inputs as HeadwallInputs).paving === "concrete" ? "507-00100" : "506-00218";
   if (kind === "noise-wall" && role === "shaft") {
     const code = `503-000${String(Math.round((inputs as NoiseWallInputs).shaftD)).padStart(2, "0")}`;
     return payItem(code) ? code : undefined;

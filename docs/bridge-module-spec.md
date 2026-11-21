@@ -150,6 +150,31 @@ from the girder ends to the cap, cap and column elements, supports at the column
 A 3D view (three.js, as the model viewer uses) shows the model, the supports, the loads, and after
 analysis the deflected shape and the diagrams.
 
+## Status (2026-11-20): the remaining loads and combinations
+
+- **Temperature** (3.12.2): uniform temperature along the girders, a rise and a fall from the temperature the bridge is
+  made continuous at (Procedure B, CDOT BDM 14.3; the definition's environment). The two are alternatives: the
+  worse counts. The solver takes thermal loads (a free axial strain held at the ends).
+- **Wind** (3.8.1.2, 3.8.1.3, 3.8.2):
+  - Strength III's pressure at the site's speed, exposure and height (Kz, G 1.0, CD 1.3 superstructure and 1.6
+    columns);
+  - the live load's 0.10 klf 6 ft above the deck with its couple;
+  - the vertical wind at the windward quarter point;
+  - from either side.
+  - Strength V and Service I take it at 80 and 70 mph as fractions of Strength III's.
+- **Vehicles**:
+  - the fatigue truck (one lane, 15%, no multiple presence) for Fatigue I and II;
+  - CDOT's Strength II vehicles (BDM 3.6: the Colorado Permit Vehicle and EV3) for Strength II;
+  - run by the same influence-line engine, on demand in the workspace.
+- **Live load deflection** (3.6.1.3.2): the truck alone or 25% of it with the lane load, at every girder node, against
+  L/800 (2.5.2.6.2), in the Checks panel and the calc package.
+- **Combinations:** Table 3.4.1-1's Service I–IV, Strength I–V and Fatigue I–II, with TU at 0.50 in Strength.
+- **Not built:**
+  - the FHWA examples as fixtures: Example 2A is a steel plate girder, which the grillage doesn't model yet (the Steel
+    Girder Design Check benchmarks it on its own analysis), and NHI-04-043's printed moments aren't in the library;
+  - temperature gradient (BDM 14.3: "may be considered");
+  - the extreme events (Colorado is Zone 1; vehicle collision is in the pier column).
+
 ## 5. Analysis
 
 - A 3D frame solver in TypeScript, in the browser (a web worker): 6 degrees of freedom a node,

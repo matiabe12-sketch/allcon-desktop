@@ -167,12 +167,14 @@ describe("combinations with live load", () => {
     const perm = mid(a.member(m, { kind: "combination", name: "Strength I" }, 1));
     const withLive = mid(a.member(m, { kind: "combination", name: "Strength I" }, 1, live));
     const ll = mid(a.member(m, { kind: "live" }, 1, live));
-    expect(perm.max).toBeUndefined();
+    // Strength I carries 0.5 TU as an alternative (rise or fall): on one fixed and one expansion line it bends nothing.
+    expect(perm.max!.My).toBeCloseTo(perm.forces.My, 3);
     expect(withLive.forces.My).toBeCloseTo(perm.forces.My, 6);
-    expect(withLive.max!.My).toBeCloseTo(perm.forces.My + 1.75 * ll.max!.My, 3);
+    expect(withLive.max!.My).toBeCloseTo(perm.max!.My + 1.75 * ll.max!.My, 3);
     expect(withLive.min!.My).toBeLessThanOrEqual(withLive.forces.My);
     expect(ll.max!.My).toBeGreaterThan(1000);
-    expect(mid(a.member(m, { kind: "combination", name: "Strength IV" }, 1, live)).max).toBeUndefined();
+    const iv = mid(a.member(m, { kind: "combination", name: "Strength IV" }, 1, live));
+    expect(iv.max!.My).toBeCloseTo(iv.forces.My, 3); // no live load: only the temperature's (nil) envelope
     const b = a.bearings({ kind: "combination", name: "Service I" }, live)[0];
     expect(b.max!).toBeGreaterThan(b.vertical + 40);
   });

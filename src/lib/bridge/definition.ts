@@ -38,6 +38,10 @@ export type BridgeDefinition = {
   piers: { model: boolean; capWidth: number; capDepth: number; columns: number; columnDiameter: number; columnHeight: number; columnSpacing: number; fc: number; bearingHeight: number }; // ft; ksi; in
   // Loads
   loads: { barrierWeight: number; barrierWidth: number; wearingSurface: number }; // klf each side; ft; psf
+  /** Temperature and wind (AASHTO 3.12.2, 3.8.1): the design temperatures (Procedure B, CDOT BDM 14.3) and the
+   * temperature the bridge is made continuous at; the 3-second gust (Figure 3.8.1.1.2-1), the exposure, the
+   * superstructure's height above the ground or water, and the barrier's height (the depth the wind sees). */
+  environment: { Tmax: number; Tmin: number; Tset: number; wind: number; exposure: "B" | "C" | "D"; height: number; barrierHeight: number }; // °F; mph; ft
   /** The designs started from this bridge (Design tab): which part each is for. */
   designs: DesignLink[];
   /** The 3D model (IFC) the bridge was last exported to, under its project's Models. */
@@ -62,6 +66,7 @@ export const BRIDGE_DEFAULTS: BridgeDefinition = {
   diaphragms: { perSpan: 2, weight: 2.5, thickness: 0.75, atSupports: true },
   piers: { model: true, capWidth: 4, capDepth: 4, columns: 3, columnDiameter: 3.5, columnHeight: 20, columnSpacing: 16, fc: 4, bearingHeight: 3 },
   loads: { barrierWeight: 0.4, barrierWidth: 1.5, wearingSurface: 25 },
+  environment: { Tmax: 105, Tmin: -10, Tset: 60, wind: 115, exposure: "C", height: 30, barrierHeight: 2.83 },
   designs: [],
 };
 
@@ -92,6 +97,7 @@ function parseDefinition(saved: unknown): BridgeDefinition {
   const dia = obj(s.diaphragms);
   const piers = obj(s.piers);
   const loads = obj(s.loads);
+  const env = obj(s.environment);
   const c = obj(girder.custom);
   const profile = Array.isArray(c.profile) ? (c.profile as unknown[]).filter((p): p is [number, number] => Array.isArray(p) && p.length === 2 && p.every((v) => typeof v === "number" && Number.isFinite(v))) : [];
   const custom = girder.shape === "custom" && profile.length >= 2 ? { profile, web: num(c.web, 6, 1, 60), topWidth: num(c.topWidth, 2 * profile[profile.length - 1][1], 1, 200) } : undefined;
@@ -124,6 +130,15 @@ function parseDefinition(saved: unknown): BridgeDefinition {
       bearingHeight: num(piers.bearingHeight, d.piers.bearingHeight, 0, 24),
     },
     loads: { barrierWeight: num(loads.barrierWeight, d.loads.barrierWeight, 0, 5), barrierWidth: num(loads.barrierWidth, d.loads.barrierWidth, 0, 5), wearingSurface: num(loads.wearingSurface, d.loads.wearingSurface, 0, 200) },
+    environment: {
+      Tmax: num(env.Tmax, d.environment.Tmax, 40, 160),
+      Tmin: num(env.Tmin, d.environment.Tmin, -60, 60),
+      Tset: num(env.Tset, d.environment.Tset, -20, 120),
+      wind: num(env.wind, d.environment.wind, 60, 200),
+      exposure: env.exposure === "B" || env.exposure === "D" ? env.exposure : "C",
+      height: num(env.height, d.environment.height, 0, 500),
+      barrierHeight: num(env.barrierHeight, d.environment.barrierHeight, 0, 15),
+    },
     designs: (Array.isArray(s.designs) ? s.designs : [])
       .map(obj)
       .filter((l) => typeof l.id === "string" && /^[0-9a-f-]{36}$/i.test(l.id) && typeof l.target === "string" && typeof l.kind === "string")

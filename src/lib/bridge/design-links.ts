@@ -97,9 +97,10 @@ export function designPrefill(target: DesignTarget, d: BridgeDefinition, a: Brid
   const line = Number(target.key.split("-")[1]);
   if (target.kind === "elastomeric-bearing") {
     // The bearing with the largest total reaction on the line: its permanent load, and its live load.
-    const rows = a.bearings(SERVICE, live).filter((b) => b.support === line + 1);
-    const worst = rows.reduce((p, b) => ((b.max ?? b.vertical) > (p.max ?? p.vertical) ? b : p));
-    return { name, inputs: { DL: +worst.vertical.toFixed(1), LL: +((worst.max ?? worst.vertical) - worst.vertical).toFixed(1), expansionLength: expansionLength(d, line), jointed: line === 0 || line === d.supports.length - 1 } };
+    // (The live load alone: Service I's envelope also carries the temperature and wind, which the bearing design takes itself.)
+    const rows = a.bearings(SERVICE).filter((b) => b.support === line + 1).map((b) => ({ ...b, ll: live.bearing(b.link).max }));
+    const worst = rows.reduce((p, b) => (b.vertical + b.ll > p.vertical + p.ll ? b : p));
+    return { name, inputs: { DL: +worst.vertical.toFixed(1), LL: +worst.ll.toFixed(1), expansionLength: expansionLength(d, line), jointed: line === 0 || line === d.supports.length - 1 } };
   }
   if (target.kind === "pier-column") {
     // Each column's top (its element runs from the base up): Strength I, the permanent loads plus

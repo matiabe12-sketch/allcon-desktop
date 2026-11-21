@@ -83,6 +83,10 @@ export const CDOT_ITEMS: PayItem[] = [
   item("502-00500", "Complete Joint Penetration (CJP) Splice", "EACH"),
   ...[18, 24, 30, 36, 42, 48, 54, 60, 66, 72, 78, 84, 96].map((d) => item(`503-000${d}`, `Drilled Shaft (${d} Inch)`, "LF")),
   item("607-15000", "Fence Concrete (Noise Barrier)", "SF"),
+  item("506-00218", "Riprap (18 Inch)", "CY"),
+  item("507-00100", "Concrete Slope and Ditch Paving (Reinforced)", "CY"),
+  item("507-00000", "Concrete Slope and Ditch Paving", "CY"),
+  item("613-45000", "High Mast Foundation", "EACH"),
   item("503-00310", "Crosshole Sonic Logging Testing", "EACH"),
   ...[6, 7, 8].map((d) => item(`503-010${d}0`, `Micropile (${d} Inch)`, "LF")),
   item("503-01100", "Micropile (10 Inch)", "LF"),
@@ -149,7 +153,7 @@ export const CDOT_ITEMS: PayItem[] = [
 export const payItem = (code: string) => CDOT_ITEMS.find((p) => p.code === code) ?? null;
 
 /** What a quantity is, for choosing its pay item. */
-export type QuantityRole = "concrete" | "rebar" | "excavation" | "backfill" | "refill" | "bedding" | "girder" | "bearing" | "joint" | "waterproofing" | "shaft" | "facing" | "soil-reinforcement" | "rail" | "removal" | "sealant" | "pile" | "pile-tip" | "prebore" | "testing" | "micropile" | "asphalt" | "panels" | "wall" | "shoring" | "pipe" | "end-section";
+export type QuantityRole = "concrete" | "rebar" | "excavation" | "backfill" | "refill" | "bedding" | "girder" | "bearing" | "joint" | "waterproofing" | "shaft" | "facing" | "soil-reinforcement" | "rail" | "removal" | "sealant" | "pile" | "pile-tip" | "prebore" | "testing" | "micropile" | "asphalt" | "panels" | "wall" | "shoring" | "pipe" | "end-section" | "outlet" | "foundation";
 
 /**
  * Each tool's quantities and the pay items each may go to (first: the default). Defaults follow
@@ -189,6 +193,8 @@ export const TOOL_PAY_ITEMS: Record<string, Partial<Record<QuantityRole, string[
   "steel-girder-check": { girder: ["509-00000", "509-00001", "509-00010"], bearing: ["512-00101", "512-00102", "512-00103", "512-00118"] },
   "grs-abutment": { "soil-reinforcement": ["206-00360"], facing: ["504-04410"], backfill: ["206-00100", "206-00200"], excavation: ["206-00000"], concrete: ["601-03040", "601-03000"], rebar: ["602-00020", "602-00000"] },
   "noise-wall": { wall: ["607-15000"], shaft: ["503-00030", "503-00018", "503-00024", "503-00036", "503-00042", "503-00048"] },
+  "pipe-headwall": { concrete: ["601-01000"], rebar: ["602-00000"], outlet: ["506-00218", "507-00100", "507-00000"] },
+  "high-mast-foundation": { foundation: ["613-45000"] },
   "pipe-culvert": { pipe: [...Object.values(PIPE_ITEMS.rcp), ...Object.values(PIPE_ITEMS.csp)], "end-section": [...Object.values(PIPE_ITEMS.rcpEnd), ...Object.values(PIPE_ITEMS.cspEnd)] }, // the default by the pipe's size and material (takeoff/index.ts)
   "three-sided-culvert": { concrete: ["601-03000", "601-03030"], rebar: ["602-00000", "602-00020"], excavation: ["206-00000"], backfill: ["206-00100", "206-00200"] },
   "soil-nail-wall": { pile: ["504-06406"], wall: ["504-06400"], facing: ["641-10010"] },

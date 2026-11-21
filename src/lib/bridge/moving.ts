@@ -1,6 +1,7 @@
 import { isCapSection, isColumnSection, isGirderSection, type Generated } from "./generate";
 import type { Load } from "./model";
 import type { Analysis, SectionForces } from "./solver";
+import { CDOT_VEHICLES } from "../design/rating/vehicles";
 
 // Moving load analysis of the bridge model for HL-93 (AASHTO LRFD 3.6.1), the way midas Civil does
 // it with traffic line lanes: a unit axle is moved along each lane, its two wheels' loads spread
@@ -27,6 +28,26 @@ export const multiplePresence = (lanes: number) => MPF[Math.min(lanes, 4) - 1];
 
 export const COMPONENTS = ["N", "Vy", "Vz", "T", "My", "Mz"] as const;
 type Axle = { x: number; P: number };
+/** A vehicle's axles: each one's load (kip) and its distance behind the first (ft). */
+export type AxleSet = { P: number; d: number }[];
+const set = (P: number[], S: number[]): AxleSet => P.map((p, k) => ({ P: p, d: S.slice(0, k).reduce((a, s) => a + s, 0) }));
+/** HL-93: the design truck at each rear spacing, and the tandem. */
+export const HL93_SETS: AxleSet[] = [...REAR.map((r) => set([8, 32, 32], [14, r])), set([25, 25], [4])];
+/** The fatigue truck: the design truck with its rear axles 30 ft apart (3.6.1.4.1). */
+export const FATIGUE_SETS: AxleSet[] = [set([8, 32, 32], [14, 30])];
+/** CDOT's Strength II vehicles (BDM 3.6): the Colorado Permit Vehicle and EV3 (axle loads, twice the rating wheel lines). */
+export const PERMIT_SETS: AxleSet[] = ["CO Permit", "EV3"].map((name) => {
+  const v = CDOT_VEHICLES.find((x) => x.name === name)!;
+  return set(v.P.map((p) => 2 * p), v.S);
+});
+export type VehicleKind = "hl93" | "fatigue" | "permit";
+/** What a vehicle's run is: its axle sets, the lane load with it, the dynamic allowance, whether the two-truck loading
+ * applies, and whether it's one lane without the multiple presence factor (fatigue, 3.6.1.4.3b and 3.6.1.1.2). */
+export const VEHICLES: Record<VehicleKind, { sets: AxleSet[]; lane: number; IM: number; dual: boolean; single: boolean; name: string }> = {
+  hl93: { sets: HL93_SETS, lane: LANE_LOAD, IM: 0.33, dual: true, single: false, name: "HL-93" },
+  fatigue: { sets: FATIGUE_SETS, lane: 0, IM: 0.15, dual: false, single: true, name: "Fatigue truck" },
+  permit: { sets: PERMIT_SETS, lane: 0, IM: 0.33, dual: false, single: false, name: "CO Permit and EV3" },
+};
 
 /** A loading found on one influence line: its value, and what made it (to work out the concurrent forces). */
 export type Pattern = { value: number; axles: Axle[]; lane: 1 | -1 | 0; factor: number };
@@ -66,43 +87,36 @@ export class Grid {
  * The worst HL-93 loading of one lane on an influence line: sense +1 for the largest value, −1 for
  * the smallest. With `dual`, the two-truck loading of 3.6.1.3.1 is tried too.
  */
-export function laneEffect(grid: Grid, eta: Float32Array, at: number, sense: 1 | -1, IM: number, dual: boolean): Pattern {
+export function laneEffect(grid: Grid, eta: Float32Array, at: number, sense: 1 | -1, IM: number, dual: boolean, sets: AxleSet[] = HL93_SETS, laneLoad = LANE_LOAD): Pattern {
   const x = grid.x;
   const n = x.length;
   // The lane load, on the lengths that add to the effect.
   let lane = 0;
-  for (let j = 0; j < n; j++) {
-    const v = eta[at + j];
-    if (sense * v > 0) lane += v * grid.tributary[j];
-  }
-  lane *= LANE_LOAD;
+  if (laneLoad > 0)
+    for (let j = 0; j < n; j++) {
+      const v = eta[at + j];
+      if (sense * v > 0) lane += v * grid.tributary[j];
+    }
+  lane *= laneLoad;
   const better = (a: number, b: number) => sense * a > sense * b;
-  // The truck, each axle on each grid point, facing either way, its rear axles at each spacing; the tandem likewise.
+  // Each vehicle with each of its axles on each grid point that adds to the effect, facing either way.
   let best = 0;
   let bestAxles: Axle[] = [];
   for (let j = 0; j < n; j++) {
-    if (sense * eta[at + j] <= 0) continue; // an axle at a point that adds to the effect
+    if (sense * eta[at + j] <= 0) continue;
     for (const dir of [1, -1])
-      for (const r of REAR) {
-        const off = [0, -14 * dir, -(14 + r) * dir];
-        for (let a = 0; a < 3; a++) {
-          const front = x[j] - off[a];
-          const v = 8 * grid.value(eta, at, front) + 32 * grid.value(eta, at, front + off[1]) + 32 * grid.value(eta, at, front + off[2]);
+      for (const axles of sets)
+        for (const anchor of axles) {
+          const front = x[j] + dir * anchor.d;
+          let v = 0;
+          for (const a of axles) v += a.P * grid.value(eta, at, front - dir * a.d);
           if (better(v, best)) {
             best = v;
-            bestAxles = [{ x: front, P: 8 }, { x: front + off[1], P: 32 }, { x: front + off[2], P: 32 }];
+            bestAxles = axles.map((a) => ({ x: front - dir * a.d, P: a.P }));
           }
         }
-      }
-    for (const other of [x[j] + 4, x[j] - 4]) {
-      const v = 25 * (eta[at + j] + grid.value(eta, at, other));
-      if (better(v, best)) {
-        best = v;
-        bestAxles = [{ x: x[j], P: 25 }, { x: other, P: 25 }];
-      }
-    }
   }
-  let out: Pattern = { value: (1 + IM) * best + lane, axles: bestAxles, lane: sense, factor: 1 };
+  let out: Pattern = { value: (1 + IM) * best + lane, axles: bestAxles, lane: laneLoad > 0 ? sense : 0, factor: 1 };
   if (dual) {
     // Two trucks, rear axles at 14 ft, the lead's rear axle 50 ft or more ahead of the follower's
     // front axle: their middle axles 78 ft apart or more. One pass with the best so far behind.
@@ -165,6 +179,7 @@ export function laneArrangements(left: number, right: number): { lines: number[]
 
 export type Envelope = { value: number; concurrent: SectionForces };
 export type LiveLoad = {
+  vehicle: VehicleKind;
   IM: number;
   lanes: number[]; // each lane line's Y
   arrangements: number[][];
@@ -173,6 +188,9 @@ export type LiveLoad = {
   at: (elementId: number, end: 0 | 1, component: keyof SectionForces) => { max: Envelope; min: Envelope } | null;
   /** A bearing's vertical reaction (compression +) under LL+IM. */
   bearing: (linkId: number) => { max: number; min: number };
+  /** HL-93 only: the live load deflection at a girder node (ft, down −), the larger of the truck alone and 25% of it
+   * with the lane load (3.6.1.3.2), with IM and over the lanes with the multiple presence factor. */
+  deflection: (nodeId: number) => number;
   /** An influence line, for checks: the response at an element's end for a unit axle along a lane. */
   influence: (lane: number, elementId: number, end: 0 | 1, component: keyof SectionForces) => Float32Array;
 };
@@ -184,8 +202,10 @@ const forces = (v: ArrayLike<number>, o: number): SectionForces => ({ N: v[o], V
  * The moving load analysis, in steps (so a page can keep responding): yields its progress (0 to 1)
  * and returns the live load results. `stage2` is the composite model's analysis.
  */
-export function* movingLoadSteps(g: Generated, stage2: Analysis, opts: { IM?: number; step?: number } = {}): Generator<number, LiveLoad, void> {
-  const IM = opts.IM ?? 0.33;
+export function* movingLoadSteps(g: Generated, stage2: Analysis, opts: { IM?: number; step?: number; vehicle?: VehicleKind } = {}): Generator<number, LiveLoad, void> {
+  const vehicle = opts.vehicle ?? "hl93";
+  const V = VEHICLES[vehicle];
+  const IM = opts.IM ?? V.IM;
   const model = stage2.model;
   const { roadway, girderYAt, locate, laneX } = g.layout;
   const total = g.stations[g.stations.length - 1];
@@ -203,9 +223,12 @@ export function* movingLoadSteps(g: Generated, stage2: Analysis, opts: { IM?: nu
   const index = new Map(model.elements.map((e, i) => [e.id, i]));
   const followed = model.elements.filter((e) => isGirderSection(e.sec) || isCapSection(e.sec) || isColumnSection(e.sec));
   const isGirder = followed.map((e) => isGirderSection(e.sec));
-  const want = { elements: followed.map((e) => index.get(e.id)!), links: model.links.map((_, i) => i) };
+  // The girders' nodes, for the live load deflection (HL-93's run).
+  const nodeIndex = new Map(model.nodes.map((nd, i) => [nd.id, i]));
+  const girderNodes = vehicle === "hl93" ? [...new Set(followed.filter((e) => isGirderSection(e.sec)).flatMap((e) => [e.n1, e.n2]))] : [];
+  const want = { elements: followed.map((e) => index.get(e.id)!), links: model.links.map((_, i) => i), nodes: girderNodes.map((id) => nodeIndex.get(id)!) };
   const E = followed.length;
-  const R = 12 * E + 3 * model.links.length;
+  const R = 12 * E + 3 * model.links.length + girderNodes.length;
 
   /** A wheel's load on the girders beside it (the lever rule; beyond the outside girder, carried on with its couple). */
   const wheel = (X: number, y: number, load: number): Load[] => {
@@ -243,13 +266,19 @@ export function* movingLoadSteps(g: Generated, stage2: Analysis, opts: { IM?: nu
   const multiSpan = g.supportStations.length > 2;
 
   /** The worst loading of a response over the lanes, of the arrangement that gives the most. */
-  const worst = (q: number, sense: 1 | -1, dual: boolean) => {
-    const patterns = lines.map((_, l) => laneEffect(grid, eta[l], q * P, sense, IM, dual));
+  const worst = (q: number, sense: 1 | -1, dual: boolean, sets: AxleSet[] = V.sets, laneLoad = V.lane) => {
+    const patterns = lines.map((_, l) => laneEffect(grid, eta[l], q * P, sense, IM, dual && V.dual, sets, laneLoad));
     let best = { total: 0, lanes: [] as number[], m: 1 };
-    for (const arr of arrangements) {
-      const pick = loadedLanes(arr.map((l) => patterns[l].value), sense);
-      if (sense * pick.total > sense * best.total) best = { total: pick.total, lanes: pick.lanes.map((i) => arr[i]), m: pick.m };
-    }
+    if (V.single) {
+      // One lane, the multiple presence factor not applied (3.6.1.1.2, 3.6.1.4.3b).
+      patterns.forEach((p, l) => {
+        if (sense * p.value > sense * best.total) best = { total: p.value, lanes: [l], m: 1 };
+      });
+    } else
+      for (const arr of arrangements) {
+        const pick = loadedLanes(arr.map((l) => patterns[l].value), sense);
+        if (sense * pick.total > sense * best.total) best = { total: pick.total, lanes: pick.lanes.map((i) => arr[i]), m: pick.m };
+      }
     return { value: best.total, lanes: best.lanes.map((l) => ({ l, pattern: patterns[l] })), m: best.m, q };
   };
   /** Another response under a loading found for response `w.q`. */
@@ -263,7 +292,7 @@ export function* movingLoadSteps(g: Generated, stage2: Analysis, opts: { IM?: nu
         let lane = 0;
         const primary = w.q * P;
         for (let j = 0; j < P; j++) if (pattern.lane * eta[l][primary + j] > 0) lane += eta[l][q * P + j] * grid.tributary[j];
-        v += LANE_LOAD * lane;
+        v += V.lane * lane;
       }
       sum += w.m * pattern.factor * v;
     }
@@ -293,9 +322,18 @@ export function* movingLoadSteps(g: Generated, stage2: Analysis, opts: { IM?: nu
     const dual = multiSpan && pierLinks.has(link.id);
     bearings.set(link.id, { max: -worst(q, -1, dual).value, min: -worst(q, 1, false).value });
   });
+  // Live load deflection (HL-93): the truck alone, or a quarter of it with the lane load.
+  const deflections = new Map<number, number>();
+  const trucks = HL93_SETS.slice(0, REAR.length);
+  const quarter = trucks.map((s) => s.map((a) => ({ ...a, P: 0.25 * a.P })));
+  girderNodes.forEach((id, i) => {
+    const q = 12 * E + 3 * model.links.length + i;
+    deflections.set(id, Math.min(worst(q, -1, false, trucks, 0).value, worst(q, -1, false, quarter, LANE_LOAD).value, 0));
+  });
   yield 1;
 
   return {
+    vehicle,
     IM,
     lanes: lines,
     arrangements,
@@ -308,6 +346,7 @@ export function* movingLoadSteps(g: Generated, stage2: Analysis, opts: { IM?: nu
       return { max: { value: env[o + key(component)], concurrent: forces(env, o) }, min: { value: env[o + 6 + key(component)], concurrent: forces(env, o + 6) } };
     },
     bearing: (id) => bearings.get(id) ?? { max: 0, min: 0 },
+    deflection: (id) => deflections.get(id) ?? 0,
     influence: (lane, id, end, component) => {
       const q = 12 * followedIndex.get(id)! + 6 * end + key(component);
       return eta[lane].subarray(q * P, (q + 1) * P);
@@ -316,7 +355,7 @@ export function* movingLoadSteps(g: Generated, stage2: Analysis, opts: { IM?: nu
 }
 
 /** The moving load analysis, straight through. */
-export function movingLoad(g: Generated, stage2: Analysis, opts?: { IM?: number; step?: number }): LiveLoad {
+export function movingLoad(g: Generated, stage2: Analysis, opts?: { IM?: number; step?: number; vehicle?: VehicleKind }): LiveLoad {
   const it = movingLoadSteps(g, stage2, opts);
   for (;;) {
     const r = it.next();

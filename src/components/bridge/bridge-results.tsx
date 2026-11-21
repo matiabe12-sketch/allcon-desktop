@@ -220,6 +220,30 @@ export function ChecksPanel({ a, live }: { a: BridgeAnalysis; live: LiveLoad | n
             {Math.round(live.IM * 100)}% on the truck and tandem; multiple presence 1.2, 1.0, 0.85, 0.65.
           </p>
         )}
+        {live?.vehicle === "hl93" && (
+          <table className="w-full tabular-nums">
+            <thead>
+              <tr className="border-b text-muted-foreground">
+                <th className="py-1 pr-2 text-left font-medium">Live load deflection (2.5.2.6.2, 3.6.1.3.2)</th>
+                <th className={th}>Span (ft)</th>
+                <th className={th}>Most (in)</th>
+                <th className={th}>L/800 (in)</th>
+                <th className="pl-2" />
+              </tr>
+            </thead>
+            <tbody>
+              {a.liveDeflections(live).map((r) => (
+                <tr key={r.span} className="border-b border-border/40">
+                  <td className="py-0.5 pr-2">Span {r.span}, girder {r.girder}: the truck, or 25% of it with the lane load</td>
+                  <td className={td}>{fmt(r.L, 1)}</td>
+                  <td className={td}>{fmt(r.delta * 12, 3)}</td>
+                  <td className={td}>{fmt(r.limit * 12, 3)}</td>
+                  <td className={cn("pl-2 font-medium", r.delta <= r.limit ? "text-emerald-600" : "text-red-600")}>{r.delta <= r.limit ? "OK" : "NG"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
       <div className="space-y-2">
         <KeyValues

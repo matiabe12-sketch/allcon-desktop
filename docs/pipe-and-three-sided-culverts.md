@@ -75,8 +75,14 @@ A precast flat-topped three-sided frame on cast-in-place footings.
 
 ## Not included
 
-- **Headwalls and wingwalls:** CDOT's standard end sections are paid items (603-05xx), and the CIP Cantilever Wall and
-  Cantilever Wingwall tools design cast-in-place ones.
+- **Wingwalls:** the Cantilever Wingwall tool (M-601-20).
+
+## Pipe Headwall (built 2026-11-20, kind `pipe-headwall`)
+
+CDOT M-601-12 (18–48 in., with the pipe outlet paving) and M-601-10 (54–108 in. round, rigid or flexible), single or
+double, skewed by cosec: the standard's dimensions drawn and its Class B concrete (601-01000), steel (602-00000, M-601-10;
+M-601-12's is paid with the concrete) and outlet paving (506-00218 riprap or 507-00100) quantities. The tables were read
+off the 2019 sheets (codot.gov OnBase); each row satisfies the sheet's own formulas (tested).
 - **The direct design of RCP** (12.10.4.2): CDOT specifies pipe classes.
 - **Long-span and deep-corrugation structures** (12.8).
 - **Thermoplastic pipe** (12.12).

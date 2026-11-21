@@ -119,7 +119,8 @@ describe("the bridge model", () => {
     const a = analyzeBridge(bridgeDefinition({ ...BRIDGE_DEFAULTS, spans: [80, 110, 80], skew: 25, supports: supportsFor(3), piers: { ...BRIDGE_DEFAULTS.piers, model: false } }));
     expect(a.ok).toBe(true);
     const total = a.reactions({ kind: "combination", name: "Service I" }).reduce((s, r) => s + r.R[2], 0);
-    const applied = a.checks.reduce((s, c) => s + c.applied, 0);
+    // Service I's permanent loads (the temperature and wind are alternatives, in the envelope).
+    const applied = a.checks.filter((_, i) => !a.cases[i].group).reduce((s, c) => s + c.applied, 0);
     within(total, applied, 1e-8, "all the load reaches the supports");
   });
 

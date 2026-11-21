@@ -258,7 +258,7 @@ export function designThreeSided(i: ThreeSidedInputs) {
 
   // --- section checks per foot -------------------------------------------------------------------------------
   const fc = i.fc;
-  const Ec = 1820 * Math.sqrt(fc);
+  const Ec = 120000 * 0.15 ** 2 * fc ** 0.33; // AASHTO Eq. 5.4.2.4-1, K1 1, wc 0.150 kcf
   const n = 29000 / Ec;
   const fr = 0.24 * Math.sqrt(fc);
   const sectionOf = (t: number, b: Bars) => {

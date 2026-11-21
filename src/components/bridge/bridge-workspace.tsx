@@ -9,7 +9,7 @@ import { LinkButton } from "@/components/ui/link-button";
 import { analyzeBridge, type BridgeAnalysis, type Selection } from "@/lib/bridge/bridge";
 import type { BridgeDefinition } from "@/lib/bridge/definition";
 import type { Member } from "@/lib/bridge/generate";
-import { LANE_WIDTH, movingLoadSteps, type LiveLoad } from "@/lib/bridge/moving";
+import { LANE_WIDTH, movingLoadSteps, type LiveLoad, type VehicleKind } from "@/lib/bridge/moving";
 import { bridgeSolids, type SolidKind, type Vec3 } from "@/lib/bridge/solids";
 import { cn } from "@/lib/utils";
 import { DesignPanel } from "./bridge-design";
@@ -148,22 +148,27 @@ export function BridgeWorkspace({ bridge, projects }: { bridge: { id: string; na
   const a = outcome.analysis;
 
   // The moving load analysis: started once the inputs rest, run in slices so the page keeps responding.
-  const [moving, setMoving] = useState<{ for: BridgeAnalysis | null; live: LiveLoad | null; progress: number; error: string | null }>({ for: null, live: null, progress: 0, error: null });
+  // Each vehicle's run once asked for: HL-93 always, the fatigue truck and the permit vehicles when one of their
+  // combinations is picked.
+  const [moving, setMoving] = useState<{ for: BridgeAnalysis | null; vehicle: VehicleKind; lives: Partial<Record<VehicleKind, LiveLoad>>; progress: number; error: string | null }>({ for: null, vehicle: "hl93", lives: {}, progress: 0, error: null });
   const [rerun, setRerun] = useState(0);
+  const wanted: VehicleKind = a ? a.vehicleOf(selectionOf(selKey)) : "hl93";
+  const have = moving.for === a ? moving.lives : {};
+  const nextVehicle: VehicleKind | null = !have.hl93 ? "hl93" : !have[wanted] ? wanted : null;
   useEffect(() => {
-    if (!a) return;
+    if (!a || !nextVehicle) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout>;
     const start = () => {
-      const steps = movingLoadSteps(a.generated, a.stage(2));
-      setMoving({ for: a, live: null, progress: 0.01, error: null });
+      const steps = movingLoadSteps(a.generated, a.stage(2), { vehicle: nextVehicle });
+      setMoving((m) => ({ for: a, vehicle: nextVehicle, lives: m.for === a ? m.lives : {}, progress: 0.01, error: null }));
       const slice = () => {
         if (cancelled) return;
         try {
           const until = performance.now() + 30;
           for (;;) {
             const r = steps.next();
-            if (r.done) return setMoving({ for: a, live: r.value, progress: 1, error: null });
+            if (r.done) return setMoving((m) => ({ for: a, vehicle: nextVehicle, lives: { ...(m.for === a ? m.lives : {}), [nextVehicle]: r.value }, progress: 1, error: null }));
             if (performance.now() > until) {
               setMoving((m) => (m.for === a ? { ...m, progress: r.value } : m));
               break;
@@ -171,18 +176,19 @@ export function BridgeWorkspace({ bridge, projects }: { bridge: { id: string; na
           }
           timer = setTimeout(slice, 0);
         } catch (e) {
-          setMoving({ for: a, live: null, progress: 0, error: e instanceof Error ? e.message : "The moving load analysis failed." });
+          setMoving((m) => ({ ...m, for: a, progress: 0, error: e instanceof Error ? e.message : "The moving load analysis failed." }));
         }
       };
       slice();
     };
-    timer = setTimeout(start, 500);
+    timer = setTimeout(start, nextVehicle === "hl93" ? 500 : 50);
     return () => {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [a, rerun]);
-  const live = moving.for === a ? moving.live : null;
+  }, [a, rerun, nextVehicle]);
+  // The live load for what's shown: the selection's vehicle (HL-93 for the live load alone and most combinations).
+  const live = (moving.for === a ? moving.lives[wanted] : null) ?? null;
 
   const sel = useMemo(() => selectionOf(selKey), [selKey]);
   const members = useMemo(() => a?.generated.members ?? [], [a]);
@@ -461,7 +467,7 @@ export function BridgeWorkspace({ bridge, projects }: { bridge: { id: string; na
           {tab === "analysis" && (
             <>
               <Panel title="Perform">
-                <Big icon={Play} label="Run moving load" title="The static analysis runs as you type; this runs the moving load analysis again" onClick={() => setRerun((n) => n + 1)} disabled={!a} />
+                <Big icon={Play} label="Run moving load" title="The static analysis runs as you type; this runs the moving load analysis again" onClick={() => { setMoving((m) => ({ ...m, lives: {} })); setRerun((n) => n + 1); }} disabled={!a} />
                 <Big icon={ClipboardCheck} label="Checks" title="Equilibrium of every load case, and the section properties used" onClick={() => setTable("checks")} active={table === "checks"} />
               </Panel>
               <Panel title="Status">

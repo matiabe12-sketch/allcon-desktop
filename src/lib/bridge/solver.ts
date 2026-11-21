@@ -120,14 +120,14 @@ function fixedEndPlane(EI: number, GAs: number, L: number, q: number, points: { 
   return [R1, M1, R2, M2];
 }
 
-type ElementLoad = { q: Vec3; points: { P: Vec3; a: number }[] }; // local components
+type ElementLoad = { q: Vec3; points: { P: Vec3; a: number }[]; strain?: number }; // local components; strain: a free axial strain (α·ΔT)
 
 /** A beam's fixed-end forces (12, local): what its ends would carry with every degree of freedom held. */
 function fixedEnd(p: Props, L: number, load: ElementLoad, truss: boolean): number[] {
   const f = new Array<number>(12).fill(0);
-  // Along the member.
-  f[0] = (-load.q[0] * L) / 2;
-  f[6] = (-load.q[0] * L) / 2;
+  // Along the member; a free strain held at both ends pushes them apart (E·A·ε).
+  f[0] = (-load.q[0] * L) / 2 + p.E * p.A * (load.strain ?? 0);
+  f[6] = (-load.q[0] * L) / 2 - p.E * p.A * (load.strain ?? 0);
   for (const pt of load.points) {
     f[0] -= (pt.P[0] * (L - pt.a)) / L;
     f[6] -= (pt.P[0] * pt.a) / L;
@@ -412,7 +412,7 @@ export function analyze(model: Model): Analysis {
     const full = beamStiffness(p, L, truss);
     const released = e.releases ? [...e.releases.i, ...e.releases.j] : [];
     const cond = condense(full, released.length ? released : new Array<boolean>(12).fill(false));
-    return { a, b, R, L, p, truss, k: cond.k, fe: cond.fe, kg: toGlobal(cond.k, R), density: m.density };
+    return { a, b, R, L, p, truss, k: cond.k, fe: cond.fe, kg: toGlobal(cond.k, R), density: m.density, alpha: m.alpha };
   });
   const links = model.links.map((l) => {
     const a = at(l.n1, `Link ${l.id}`);
@@ -496,6 +496,10 @@ export function analyze(model: Model): Analysis {
       if (k === undefined) throw new ModelError(`A load is on element ${l.element}, which isn't in the model.`);
       const e = el[k];
       const cur = (onElement[k] ??= { q: [0, 0, 0], points: [] });
+      if (l.kind === "thermal") {
+        cur.strain = (cur.strain ?? 0) + e.alpha * l.dT;
+        continue;
+      }
       const value = l.kind === "uniform" ? l.w : l.P;
       const loc = localLoad(e.R, l.dir, value);
       const glob = rotate(e.R, loc, true);

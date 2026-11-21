@@ -374,6 +374,7 @@ export async function createBridgeCalc(bridgeId: string): Promise<{ calcId: stri
   const analysis = analyzeBridge(definition);
   if (!analysis.ok) throw new Error("The analysis isn't in equilibrium: no calc package was made");
   const live = movingLoad(analysis.generated, analysis.stage(2));
+  const more = { fatigue: movingLoad(analysis.generated, analysis.stage(2), { vehicle: "fatigue" }), permit: movingLoad(analysis.generated, analysis.stage(2), { vehicle: "permit" }) };
   const data = emptyCalc("USCS");
   const project = bridge.projectId ? await db.project.findUnique({ where: { id: bridge.projectId }, select: { name: true } }) : null;
   data.header = { ...data.header, title: bridge.name, project: project?.name ?? "", by: user.name ?? "" };
@@ -381,7 +382,7 @@ export async function createBridgeCalc(bridgeId: string): Promise<{ calcId: stri
   // the summary of design checks, the superstructure, each support's substructure in load-path order and
   // the summary of quantities by pay item), then this analysis model and its results.
   const pkg = await bridgePackageLines({ id: bridge.id, name: bridge.name, inputs: withLinks(toBridgeInputs(definition), definition.designs) }, user.orgId);
-  const analysisLines = bridgeAnalysisLines(definition, analysis, live, `${bridge.name}: analysis model`);
+  const analysisLines = bridgeAnalysisLines(definition, analysis, live, `${bridge.name}: analysis model`, more);
   if (analysisLines.length && "text" in analysisLines[0]) analysisLines[0] = { ...analysisLines[0], newPage: true };
   data.regions = layout([...pkg, ...analysisLines], { x: 0, y: 0 }, data.paper);
   const calc = await db.calc.create({ data: { orgId: user.orgId, projectId: bridge.projectId, name: `${bridge.name} calc package`, createdById: user.id } });

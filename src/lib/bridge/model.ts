@@ -23,13 +23,15 @@ export type Spring = { node: number; k: Dof6<number> }; // kip/ft, kip·ft/rad, 
 /** A spring between two nodes, in the link's local axes, acting at mid-length (midas's elastic link, shear at 0.5). */
 export type ElasticLink = { id: number; n1: number; n2: number; k: Dof6<number>; angle?: number };
 
-export type LoadType = "DC" | "DW" | "LL" | "TU" | "WS" | "USER";
-export type LoadCase = { name: string; type: LoadType; description?: string };
+export type LoadType = "DC" | "DW" | "LL" | "TU" | "WS" | "WL" | "USER";
+/** A load case. `group`: cases that are alternatives in a combination (a temperature rise or fall; the wind from either side, `signed` cases reversed with it): the worst one counts, in the envelope as live load does. */
+export type LoadCase = { name: string; type: LoadType; description?: string; group?: "TU" | "wind"; signed?: boolean };
 export type Direction = "GX" | "GY" | "GZ" | "LX" | "LY" | "LZ";
 export type Load =
   | { case: string; kind: "nodal"; node: number; F: Dof6<number> } // global
   | { case: string; kind: "uniform"; element: number; dir: Direction; w: number } // kip/ft over the whole element
-  | { case: string; kind: "point"; element: number; dir: Direction; P: number; a: number }; // kip at a (ft) from the first node
+  | { case: string; kind: "point"; element: number; dir: Direction; P: number; a: number } // kip at a (ft) from the first node
+  | { case: string; kind: "thermal"; element: number; dT: number }; // a uniform temperature change (°F) along the element
 
 export type Model = {
   nodes: ModelNode[];

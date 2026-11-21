@@ -1,7 +1,7 @@
 "use client";
 
 import { Choice, Field, Toggle } from "@/components/design/design-kit";
-import { GIRDER_CHOICES, supportsFor, type BridgeDefinition, type JointChoice } from "@/lib/bridge/definition";
+import { GIRDER_CHOICES, supportsFor, type BridgeDefinition, type JointChoice, BRIDGE_DEFAULTS } from "@/lib/bridge/definition";
 import { applyEdit } from "@/lib/bridge/geometry";
 import { railDef, railWeight } from "@/lib/design/decks/rails";
 import { GeometryForm, PierShapesForm } from "./geometry-forms";
@@ -32,7 +32,7 @@ export function BridgeForm({ form, def, setDef: setRaw }: Props & { form: FormKe
   const setDef: Props["setDef"] = (update) => setRaw((s) => applyEdit(s, update(s)));
   if (form === "alignment" || form === "profile" || form === "roadway" || form === "supports") return <GeometryForm form={form} def={def} setDef={setRaw} />;
   const set = <K extends keyof BridgeDefinition>(key: K) => (v: BridgeDefinition[K]) => setDef((s) => ({ ...s, [key]: v }));
-  const part = <K extends "girder" | "deck" | "diaphragms" | "piers" | "loads">(key: K) => <F extends keyof BridgeDefinition[K]>(field: F) => (v: BridgeDefinition[K][F]) => setDef((s) => ({ ...s, [key]: { ...s[key], [field]: v } }));
+  const part = <K extends "girder" | "deck" | "diaphragms" | "piers" | "loads" | "environment">(key: K) => <F extends keyof BridgeDefinition[K]>(field: F) => (v: BridgeDefinition[K][F]) => setDef((s) => ({ ...s, [key]: { ...s[key], [field]: v } }));
   const setSpans = (spans: number[]) => setDef((s) => ({ ...s, spans, supports: supportsFor(spans.length, s.supports) }));
   const lineName = (k: number) => (k === 0 ? "Abutment 1" : k === def.supports.length - 1 ? "Abutment 2" : `Pier ${k}`);
 
@@ -154,6 +154,7 @@ export function BridgeForm({ form, def, setDef: setRaw }: Props & { form: FormKe
       </>
     );
   const rail = def.geometry && def.geometry.rail.type !== "custom" ? railDef(def.geometry.rail.type) : null;
+  const env = def.environment ?? BRIDGE_DEFAULTS.environment;
   return (
     <>
       {rail ? (
@@ -170,7 +171,21 @@ export function BridgeForm({ form, def, setDef: setRaw }: Props & { form: FormKe
         </>
       )}
       <Field label="Future wearing surface" unit="psf" value={def.loads.wearingSurface} onChange={part("loads")("wearingSurface")} step={5} />
-      {note("The girders', deck's, haunches' and piers' weights come from the sections. Live load is HL-93 (AASHTO 3.6.1): the design truck or tandem with 33% dynamic allowance, plus the lane load, in every lane that adds to an effect.")}
+      {note("The girders', deck's, haunches' and piers' weights come from the sections. Live load is HL-93 (AASHTO 3.6.1): the design truck or tandem with 33% dynamic allowance, plus the lane load, in every lane that adds to an effect; the fatigue truck (Fatigue I, II) and CDOT's permit vehicles (Strength II) run the same way.")}
+      <Field label="Highest temperature" unit="°F" value={env.Tmax} onChange={part("environment")("Tmax")} hint="Procedure B (AASHTO Figure 3.12.2.2.1), CDOT BDM 14.3" />
+      <Field label="Lowest temperature" unit="°F" value={env.Tmin} onChange={part("environment")("Tmin")} />
+      <Field label="Temperature when made continuous" unit="°F" value={env.Tset} onChange={part("environment")("Tset")} />
+      <Field label="Wind speed, 3-second gust" unit="mph" value={env.wind} onChange={part("environment")("wind")} hint="AASHTO Figure 3.8.1.1.2-1 (Strength III)" />
+      <Field label="Height above the ground or water" unit="ft" value={env.height} onChange={part("environment")("height")} hint="For Kz; 33 ft at least" />
+      <Field label="Barrier height (the depth the wind sees)" unit="ft" value={env.barrierHeight} onChange={part("environment")("barrierHeight")} step={0.25} />
+      <div className="grid grid-cols-[1fr_7rem] items-center gap-2 py-0.5 text-xs">
+        <span className="text-muted-foreground">Wind exposure</span>
+        <select value={env.exposure} onChange={(e) => part("environment")("exposure")(e.target.value as "B" | "C" | "D")} className="h-7 rounded-md border bg-transparent px-1 text-xs" aria-label="Wind exposure">
+          <option value="B">B</option>
+          <option value="C">C</option>
+          <option value="D">D</option>
+        </select>
+      </div>
     </>
   );
 }

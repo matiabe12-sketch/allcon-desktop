@@ -3,13 +3,15 @@ import { notFound } from "next/navigation";
 import { ApproachSlabEditor } from "@/components/design/approach-slab-editor";
 import { SlabBridgeEditor } from "@/components/design/slab-bridge-editor";
 import { PotDiscEditor } from "@/components/design/pot-disc-editor";
-import { fingerInputs, hlmrInputs, modularInputs, shoringInputs, signalInputs, signBridgeInputs, soilNailInputs, pipeInputs, threeSidedInputs, grsInputs, noiseWallInputs } from "@/lib/design/kinds";
+import { fingerInputs, hlmrInputs, modularInputs, shoringInputs, signalInputs, signBridgeInputs, soilNailInputs, pipeInputs, threeSidedInputs, grsInputs, noiseWallInputs, headwallInputs, highMastInputs } from "@/lib/design/kinds";
 import { SignBridgeEditor } from "@/components/design/sign-bridge-editor";
 import { SignalEditor } from "@/components/design/signal-editor";
 import { ShoringEditor } from "@/components/design/shoring-editor";
 import { SoilNailEditor } from "@/components/design/soil-nail-editor";
 import { PipeCulvertEditor } from "@/components/design/pipe-culvert-editor";
 import { GrsEditor } from "@/components/design/grs-editor";
+import { HeadwallEditor } from "@/components/design/headwall-editor";
+import { HighMastEditor } from "@/components/design/high-mast-editor";
 import { NoiseWallEditor } from "@/components/design/noise-wall-editor";
 import { ThreeSidedEditor } from "@/components/design/three-sided-editor";
 import { FingerJointEditor, ModularJointEditor } from "@/components/design/joint-editors";
@@ -94,6 +96,18 @@ export default async function DesignEditorPage({ params }: PageProps<"/design/[d
     return (
       <PageBody>
         <CbcEditor design={{ ...base, inputs: cbcInputs(design.inputs) }} projects={projects} />
+      </PageBody>
+    );
+  if (design.kind === "pipe-headwall")
+    return (
+      <PageBody>
+        <HeadwallEditor design={{ ...base, inputs: headwallInputs(design.inputs) }} projects={projects} />
+      </PageBody>
+    );
+  if (design.kind === "high-mast-foundation")
+    return (
+      <PageBody>
+        <HighMastEditor design={{ ...base, inputs: highMastInputs(design.inputs) }} projects={projects} />
       </PageBody>
     );
   if (design.kind === "grs-abutment")

@@ -79,3 +79,28 @@ Transverse stiffeners, two-span 8 ft spacing (sheet 7; 1/2 in thick, single-side
 2@100 none; 2@115 at 103 ft (5.5 in wide); 2@130 at 103 and 116.5 ft (5.5 in); 2@145 at 7.5, 115, 130 ft (6 in);
 2@160 at 8.25, 24.75, 95.5, 112, 127, 143.5 ft; 2@175 at 8.75, 26.75, 87, 105, 123, 140.75, 158.75 ft;
 2@190 at 152, 171 ft; 2@205 at 143.5, 164, 184.5 ft. Bearing stiffeners 7.25-9.25 in (ends), 10.25-12.25 in (piers).
+
+## Service II at piers: the deck's cracking limit (2026-11-20)
+
+On NSBA's longest three-span, 14 ft spacing design (223-285-223 ft), the check gives Service II 1.065 at the first
+pier where the reference program reports 0.774. The two agree on the stresses: the deck at 1.254 ksi in tension and
+the top flange at 50.41 ksi on the steel and the deck's bars. They differ on whether the deck counts. AASHTO 10th
+6.10.4.2.1 lets the deck count in negative flexure only while its Service II tension is below 2fr, and 6.10.1.7 and
+5.4.2.6 set fr = 0.24λ√f′c: 2fr = 0.96 ksi for the 4 ksi deck, so the deck is cracked and the flange's 50.41 ksi
+governs (1.065). The reference's 0.774 is the uncracked composite section's stress (about 36 ksi), which holds only
+with fr = 0.37√f′c (2fr = 1.48 ksi), the upper bound quoted in C5.4.2.6. The check keeps AASHTO's 0.24. On the
+shorter designs of the set the deck stays under 2fr and the two agree (188-240-188 ft: 0.920 and 0.920).
+
+## Service II at piers: the deck's cracking limit (2026-11-20)
+
+On NSBA's longest three-span, 14 ft spacing design (223-285-223 ft), the check gives Service II 1.065 at the first
+pier where the reference program reports 0.774. The two agree on the stresses: the deck at 1.254 ksi in tension and
+the top flange at 50.41 ksi on the steel and the deck's bars. They differ on whether the deck counts:
+- AASHTO 10th 6.10.4.2.1 lets the deck count in negative flexure only while its Service II tension is below 2fr.
+- 6.10.1.7 and 5.4.2.6 set fr = 0.24λ√f′c, so 2fr = 0.96 ksi for the 4 ksi deck. The deck is cracked, and the
+  flange's 50.41 ksi governs (1.065).
+- The reference's 0.774 is the uncracked composite section's stress (about 36 ksi). That holds only with
+  fr = 0.37√f′c (2fr = 1.48 ksi), the upper bound quoted in C5.4.2.6.
+
+The check keeps AASHTO's 0.24. On the shorter designs of the set the deck stays under 2fr and the two agree
+(188-240-188 ft: 0.920 and 0.920).

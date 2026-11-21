@@ -15,7 +15,7 @@ const cols = (titles: (string | [string, string])[], width = 640): TableColumn[]
 const SERVICE: Selection = { kind: "combination", name: "Service I" };
 const STRENGTH: Selection = { kind: "combination", name: "Strength I" };
 
-export function bridgeCalcLines(d: BridgeDefinition, a: BridgeAnalysis, live: LiveLoad, title: string): Line[] {
+export function bridgeCalcLines(d: BridgeDefinition, a: BridgeAnalysis, live: LiveLoad, title: string, more: { fatigue?: LiveLoad; permit?: LiveLoad } = {}): Line[] {
   const g = a.generated;
   const p = g.properties;
   const lines: Line[] = [];
@@ -59,6 +59,15 @@ export function bridgeCalcLines(d: BridgeDefinition, a: BridgeAnalysis, live: Li
       "90% of two trucks with the lane load for negative moment between points of contraflexure and for reactions at interior piers (3.6.1.3.1); multiple presence factors 1.2, 1.0, 0.85, 0.65 (3.6.1.1.2). Each result's worst loading is found on its influence lines, from a unit axle moved along each lane.",
     "note",
   );
+  const w = g.wind;
+  const env = d.environment;
+  text(
+    `Temperature (3.12.2, CDOT BDM 14.3): uniform, from ${env.Tset} °F to ${env.Tmax} °F and ${env.Tmin} °F along the girders, α = 6.0E-6 /°F; the rise or the fall, whichever is worse, at 0.50 in the strength combinations and 1.0 in the service ones. ` +
+      `Wind (3.8.1.2): ${env.wind} mph, exposure ${env.exposure}, Kz ${w.Kz.toFixed(3)} at ${Math.max(33, env.height).toFixed(0)} ft, G 1.0: ${(w.Pz * 1000).toFixed(1)} psf on the superstructure's ${w.depth.toFixed(2)} ft (CD 1.3) and ${(w.PzSub * 1000).toFixed(1)} psf on the columns (CD 1.6), ` +
+      `with 0.020 ksf up at the deck's windward quarter point (3.8.2) and 0.10 klf on the live load 6 ft above the deck (3.8.1.3), from either side; Strength V and Service I take the wind at 80 and 70 mph. ` +
+      `The fatigue truck (3.6.1.4: rear axles 30 ft apart, 15% dynamic allowance, one lane without the multiple presence factor) and CDOT's Strength II vehicles (BDM 3.6: the Colorado Permit Vehicle and EV3, 33%) run as HL-93 does.`,
+    "note",
+  );
   text("Combinations (Table 3.4.1-1): " + a.combinations.map((c) => `${c.name} = ${c.description}`).join("; ") + ".", "note");
 
   // Girders: an exterior and an interior one in each span.
@@ -85,7 +94,23 @@ export function bridgeCalcLines(d: BridgeDefinition, a: BridgeAnalysis, live: Li
         keep.map((k) => [n(ll[k].x, 1), n(dc(k, "Vz")), n(dw(k, "Vz")), n(ll[k].max!.Vz), n(ll[k].min!.Vz), n(su[k].max!.Vz), n(su[k].min!.Vz)]),
         "Shears (kip)",
       );
+      if (more.permit || more.fatigue) {
+        const s2 = more.permit ? a.member(m, { kind: "combination", name: "Strength II" }, 1, more.permit) : null;
+        const f1 = more.fatigue ? a.member(m, { kind: "live" }, 1, more.fatigue) : null;
+        table(
+          ["x (ft)", ["Strength II", "M max"], ["Strength II", "M min"], ["Fatigue I", "M max"], ["Fatigue I", "M min"], ["Fatigue I", "range"]],
+          keep.map((k) => [n(ll[k].x, 1), s2 ? n(s2[k].max!.My) : "", s2 ? n(s2[k].min!.My) : "", f1 ? n(1.75 * f1[k].max!.My) : "", f1 ? n(1.75 * f1[k].min!.My) : "", f1 ? n(1.75 * (f1[k].max!.My - f1[k].min!.My)) : ""]),
+          "Strength II (the permit vehicles) and Fatigue I (1.75 × the fatigue truck), kip·ft",
+        );
+      }
     }
+
+  text("Live load deflection", "subheading", true);
+  table(
+    ["Span", "L (ft)", "Girder", "Most (in)", "L/800 (in)", ""],
+    a.liveDeflections(live).map((r) => [String(r.span), n(r.L, 1), `G${r.girder}`, n(r.delta * 12, 3), n(r.limit * 12, 3), r.delta <= r.limit ? "OK" : "NG"]),
+    "HL-93: the truck alone, or 25% of it with the lane load, with IM and multiple presence (3.6.1.3.2; 2.5.2.6.2)",
+  );
 
   text("Bearing reactions", "subheading", true);
   const bearings = a.bearings(SERVICE, live);

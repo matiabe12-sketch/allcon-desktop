@@ -296,3 +296,24 @@ The owner asked that no load be counted twice as it passes down the load path. W
   minimum set.
 - **Not changed:** sidewalks (no pedestrian load or sidewalk on the Bridge yet) and curved girders (chorded) remain to
   be built as features.
+
+## The remaining checks, steps 5 to 8 (2026-11-20)
+
+- **Step 5, the analysis model:** temperature, wind, the fatigue truck, CDOT's permit vehicles, live load deflection and
+  Table 3.4.1-1's other combinations (docs/bridge-module-spec.md, "the remaining loads and combinations"). The bearing
+  design link takes the live load alone (Service I's envelope now also carries temperature and wind, which the bearing
+  design takes itself).
+- **Step 6, girders:**
+  - **Steel:** the three-span Service II difference is the reference program's modulus of rupture, not ours
+    (docs/steel-girder/benchmarks.md). Single-span constructibility stays within about 2%, the rest being one
+    lateral-bending input.
+  - **I-05-VA, on the plans' own details:**
+    - "no sag" at 1.12 and the pier-bottom compression at 1.02 (with the prestress built over its transfer length);
+    - the abutment cap 7.5 ft deep against CDOT's 6 ft;
+    - the cap's construction tie at 1.19 (the cap alone before its diaphragm, the conservative stage chosen in step 2).
+    These are findings on the plans, not code errors.
+  - **F-19-AGA:** its debonding, splitting, wingwall hook and deck distribution fail on assumed details, as before.
+- **Step 7, AASHTO 10th:**
+  - no Section 5 numbers from before the 8th edition's reorganization remain;
+  - Eq. 5.4.2.4-1 everywhere (the Three-Sided Culvert's 1820√f′c fixed);
+  - the Bridge's combinations follow Table 3.4.1-1.

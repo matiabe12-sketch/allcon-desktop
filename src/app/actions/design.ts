@@ -18,10 +18,12 @@ import { approachSlabCalcLines } from "@/lib/design/approach/approach-slab-calc"
 import { slabBridgeCalcLines } from "@/lib/design/slabs/slab-bridge-calc";
 import { hlmrCalcLines } from "@/lib/design/bearings/pot-disc-calc";
 import { hlmrTakeoff } from "@/lib/design/bearings/pot-disc-detail";
-import { fingerInputs, hlmrInputs, modularInputs, shoringInputs, signalInputs, signBridgeInputs, soilNailInputs, pipeInputs, threeSidedInputs, grsInputs, noiseWallInputs } from "@/lib/design/kinds";
+import { fingerInputs, hlmrInputs, modularInputs, shoringInputs, signalInputs, signBridgeInputs, soilNailInputs, pipeInputs, threeSidedInputs, grsInputs, noiseWallInputs, headwallInputs, highMastInputs } from "@/lib/design/kinds";
 import { soilNailCalcLines, soilNailTakeoff } from "@/lib/design/soilnail/detail";
 import { pipeCalcLines, pipeTakeoff, threeSidedCalcLines, threeSidedTakeoff } from "@/lib/design/culverts/detail";
 import { grsCalcLines, grsTakeoff } from "@/lib/design/grs/detail";
+import { headwallCalcLines, headwallTakeoff } from "@/lib/design/culverts/headwall-detail";
+import { highMastCalcLines, highMastTakeoff } from "@/lib/design/signals/highmast-detail";
 import { noiseWallCalcLines, noiseWallTakeoff } from "@/lib/design/noisewall/detail";
 import { shoringCalcLines, shoringTakeoff } from "@/lib/design/shoring/detail";
 import { signalCalcLines, signalTakeoff } from "@/lib/design/signals/detail";
@@ -327,6 +329,10 @@ export async function createCalcFromDesign(designId: string, variant?: "asd" | "
                     ? columnCalcLines(columnInputs(design.inputs), design.name, figures(() => columnFigures(columnInputs(design.inputs))))
                     : design.kind === "camber-haunch"
                       ? haunchCalcLines(haunchInputs(design.inputs), design.name, figures(() => haunchFigures(haunchInputs(design.inputs))))
+                      : design.kind === "pipe-headwall"
+                        ? headwallCalcLines(headwallInputs(design.inputs), design.name, figures(() => takeoffFigures(headwallTakeoff(headwallInputs(design.inputs)))))
+                      : design.kind === "high-mast-foundation"
+                        ? highMastCalcLines(highMastInputs(design.inputs), design.name, figures(() => takeoffFigures(highMastTakeoff(highMastInputs(design.inputs)))))
                       : design.kind === "grs-abutment"
                         ? grsCalcLines(grsInputs(design.inputs), design.name, figures(() => takeoffFigures(grsTakeoff(grsInputs(design.inputs)))))
                       : design.kind === "noise-wall"

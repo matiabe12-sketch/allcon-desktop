@@ -1,7 +1,7 @@
 import { modulus } from "../design/girders/prestressed";
 import { customShape, profileProps, shapeById, type GirderShape } from "../design/girders/sections";
 import { bridgeLayout, type PierShape } from "../design/bridge/bridge";
-import type { BridgeDefinition } from "./definition";
+import { BRIDGE_DEFAULTS, type BridgeDefinition } from "./definition";
 import { pierFrom, toBridgeInputs } from "./geometry";
 import { emptyModel, ModelError, type Dof6, type Element, type Load, type Model, type Section } from "./model";
 
@@ -47,6 +47,8 @@ export type Generated = {
     n: number; // deck / girder modular ratio
     Ec: { girder: number; deck: number }; // ksi
   };
+  /** Wind (Strength III's pressures, the depth it acts on, and the other combinations' pressures as fractions of it). */
+  wind: ReturnType<typeof windPressures>;
   /** Station positions along the bridge at the centerline (ft), and the stations at the supports. */
   stations: number[];
   supportStations: number[];
@@ -347,9 +349,16 @@ export function generate(d: BridgeDefinition): Generated {
     { name: "Diaphragms", type: "DC" as const, description: "Intermediate diaphragms" },
     ...(substructure.length ? [{ name: "Substructure", type: "DC" as const, description: "Pier caps and columns" }] : []),
   ];
-  const stage2Cases = [
-    { name: "Barriers", type: "DC" as const, description: "Barriers, on the composite bridge" },
-    { name: "Wearing surface", type: "DW" as const, description: "Future wearing surface" },
+  const env = d.environment ?? BRIDGE_DEFAULTS.environment; // a bridge saved before temperature and wind were inputs
+  const wind = windPressures(d, shape.depth);
+  const stage2Cases: Model["loadCases"] = [
+    { name: "Barriers", type: "DC", description: "Barriers, on the composite bridge" },
+    { name: "Wearing surface", type: "DW", description: "Future wearing surface" },
+    { name: "Temperature rise", type: "TU", group: "TU", description: `Uniform temperature, +${env.Tmax - env.Tset} °F from ${env.Tset} °F to ${env.Tmax} °F (AASHTO 3.12.2.2, CDOT BDM 14.3)` },
+    { name: "Temperature fall", type: "TU", group: "TU", description: `Uniform temperature, −${env.Tset - env.Tmin} °F from ${env.Tset} °F to ${env.Tmin} °F` },
+    { name: "Wind on the structure", type: "WS", group: "wind", signed: true, description: `Across the bridge at ${env.wind} mph (Strength III), ${(wind.Pz * 1000).toFixed(1)} psf on ${wind.depth.toFixed(2)} ft of superstructure (CD 1.3) and the columns (CD 1.6), from either side (3.8.1.2)` },
+    { name: "Wind up", type: "WS", group: "wind", description: "Vertical wind, 0.020 ksf on the deck's width at its windward quarter point (3.8.2)" },
+    { name: "Wind on live load", type: "WL", group: "wind", signed: true, description: "0.10 klf across the bridge, 6 ft above the deck (3.8.1.3), from either side" },
   ];
   const wGirder = g.A * IN2 * d.girder.wc;
   const interiorStations = new Set(supportStations);
@@ -376,6 +385,39 @@ export function generate(d: BridgeDefinition): Generated {
     }
     for (const s of diaphragmStations)
       if (!interiorStations.has(s) && d.diaphragms.weight > 0) loads.push({ stage: 1, load: { case: "Diaphragms", kind: "nodal", node: girderNode(k, s), F: [0, 0, -(edge ? 0.5 : 1) * d.diaphragms.weight, 0, 0, 0] } });
+  }
+  // Temperature, along every girder element (the composite bridge). Wind across the bridge, on the windward exterior
+  // girder (the deck spreads it): the superstructure's depth, and the live load's 0.10 klf with its couple to the deck;
+  // vertical wind as a line of load at the deck's windward quarter point, split between the girders beside it.
+  const lenAt = (s: number) => ((s > 0 ? stations[s] - stations[s - 1] : 0) + (s < nS - 1 ? stations[s + 1] - stations[s] : 0)) / 2;
+  const deckWidth = leftEdge + rightEdge;
+  const armWL = 6 + d.deck.thickness / 12 + d.deck.haunch / 12 + (shape.depth - g.yb) / 12; // 6 ft above the deck to the girder's centroid
+  for (let k = 0; k < nG; k++)
+    for (let s = 0; s < nS - 1; s++) {
+      const element = girderElement(k, s);
+      loads.push({ stage: 2, load: { case: "Temperature rise", kind: "thermal", element, dT: env.Tmax - env.Tset } });
+      loads.push({ stage: 2, load: { case: "Temperature fall", kind: "thermal", element, dT: -(env.Tset - env.Tmin) } });
+      if (k === 0) {
+        loads.push({ stage: 2, load: { case: "Wind on the structure", kind: "uniform", element, dir: "GY", w: wind.Pz * wind.depth } });
+        loads.push({ stage: 2, load: { case: "Wind on live load", kind: "uniform", element, dir: "GY", w: 0.1 } });
+      }
+    }
+  for (let s = 0; s < nS; s++) {
+    loads.push({ stage: 2, load: { case: "Wind on live load", kind: "nodal", node: girderNode(0, s), F: [0, 0, 0, 0.1 * armWL * lenAt(s), 0, 0] } });
+    // The windward quarter point, a quarter of the deck in from its windward (−Y) edge: shared by the girders either side.
+    const yq = -leftEdge + deckWidth / 4;
+    const ys = Array.from({ length: nG }, (_, k) => pointOn(k, s).Y);
+    let k = 0;
+    while (k < nG - 2 && ys[k + 1] <= yq) k++;
+    const t = Math.min(Math.max((yq - ys[k]) / (ys[k + 1] - ys[k]), 0), 1);
+    const up = 0.02 * deckWidth * lenAt(s);
+    loads.push({ stage: 2, load: { case: "Wind up", kind: "nodal", node: girderNode(k, s), F: [0, 0, up * (1 - t), 0, 0, 0] } });
+    loads.push({ stage: 2, load: { case: "Wind up", kind: "nodal", node: girderNode(k + 1, s), F: [0, 0, up * t, 0, 0, 0] } });
+  }
+  // The columns: wind across the bridge on their width (CD 1.6, 3.8.1.2.3b).
+  for (const e of substructure) {
+    const pm = [...pierModels.values()].find((p) => p.colSec === e.sec);
+    if (pm) loads.push({ stage: 2, load: { case: "Wind on the structure", kind: "uniform", element: e.id, dir: "GY", w: wind.PzSub * pm.size } });
   }
   const areaOf = new Map<number, number>();
   for (const pm of pierModels.values()) areaOf.set(pm.capSec, pm.capArea).set(pm.colSec, pm.colArea);
@@ -424,6 +466,7 @@ export function generate(d: BridgeDefinition): Generated {
     members,
     bearings,
     properties: { girder: { A: g.A, I: g.I, yb: g.yb, weight: wGirder }, composite: comp, n, Ec: { girder: EcG, deck: EcD } },
+    wind,
     stations,
     supportStations,
     layout: {
@@ -472,4 +515,18 @@ export function generate(d: BridgeDefinition): Generated {
     }
     return null;
   }
+}
+
+/** Wind across the bridge for Strength III (AASHTO 3.8.1.2): Pz = 2.56E-6·V²·Kz·G·CD (ksf), G 1.0, CD 1.3 for the
+ * girder superstructure and 1.6 for the substructure; Kz by the exposure at Z ≥ 33 ft (Eqs. 3.8.1.2.1-2 to -4). The
+ * depth the wind sees: the girder, haunch, deck and barrier. `scale`: Strength V's and Service I's pressures, 80 and
+ * 70 mph with Kz = G = 1 (Table C3.8.1.2.1-2), as fractions of Strength III's. */
+export function windPressures(d: BridgeDefinition, girderDepthIn: number) {
+  const e = d.environment ?? BRIDGE_DEFAULTS.environment;
+  const z = Math.max(33, e.height);
+  const [a, z0, den] = e.exposure === "B" ? [6.87, 0.9834, 345.6] : e.exposure === "C" ? [7.35, 0.0984, 478.4] : [7.65, 0.0164, 616.1];
+  const Kz = (2.5 * Math.log(z / z0) + a) ** 2 / den;
+  const q = 2.56e-6 * e.wind ** 2 * Kz; // ksf per CD
+  const depth = (girderDepthIn + d.deck.haunch + d.deck.thickness) / 12 + e.barrierHeight;
+  return { Kz, Pz: q * 1.3, PzSub: q * 1.6, depth, scale: { strengthV: (2.56e-6 * 80 ** 2) / q, serviceI: (2.56e-6 * 70 ** 2) / q } };
 }

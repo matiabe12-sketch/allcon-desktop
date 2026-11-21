@@ -81,6 +81,7 @@ designer chooses the standard signal pole and mast arms it supports.**
 
 - The steel: poles, arms, the built-up box, base plates and anchor bolts, and fatigue. These are the standard's and the
   fabricator's.
-- High-mast lighting towers (bought on a performance specification); their foundation could be added the same way from
-  the supplier's base reactions.
+- High-mast lighting towers: built 2026-11-20 as the High-Mast Light Foundation tool (`signals/highmast.ts`): the caisson for
+  the supplier's base reactions or an LTS wind estimate from the tower, Broms, soil torsion and the shaft; pay item
+  613-45000 High Mast Foundation (EACH).
 - A p–y analysis of the caisson (the Drilled Shaft tool has one); layered soil.

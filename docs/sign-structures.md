@@ -93,3 +93,29 @@ Supports for Highway Signs, Luminaires, and Traffic Signals (LRFD-LTS), with CDO
   - the steel's quantities (CDOT 614 item);
   - the hexadecagonal (16-sided) tubes;
   - stiffened base connections.
+
+## Built (2026-11-20): phase 2, sign bridges
+- A separate tool, **Sign Bridge** (`sign-bridge`, `signs/bridge.ts`): a CDOT S-614-50 monotube. A round span on two
+  round posts, bolted into a portal frame, each post on a drilled shaft. Up to six signs, each with its own size,
+  place, weight (or an aluminum panel) and depth.
+- **In the frame's plane:** gravity on the portal (posts fixed at the shafts' tops, rigid knees) by the plane frame
+  solver, the span in 24 elements.
+- **Across it:** the wind (3.8). The span is simply supported on the posts' tops (conservative for the span). Each post
+  is a cantilever under the span's reaction, its own wind, and the span's end torsion from the signs' eccentricity.
+- **Checks:**
+  - the tubes (Section 5), with the in-plane and across moments combined (Eq. 5.12.1-4);
+  - the knees;
+  - the anchor bolts and base plates (5.16), the span's flange bolts (5.15);
+  - fatigue as a noncantilevered support: natural wind gust and truck-induced gust, no galloping (Table 11.6-1),
+    at the welds by KF and KI;
+  - the span's deflection, L/150 under Service I (10.4.1);
+  - each post's shaft (`designShaft`, shared with the cantilever).
+- `bridge-detail.ts`: the elevation, the take-off (two shafts, B-503-1) and the calc package.
+- Tests `bridge.test.ts`: the portal's statics (midspan plus knee = wL²/8), the wind by Eq. 3.8.1-1, L/150, the shafts,
+  the calc package.
+- Not yet:
+  - truss sign bridges;
+  - the span's splices;
+  - a walkway's live load;
+  - the steel's pay item;
+  - a benchmark against a CDOT S-614-50 standard structure (its sheets weren't reachable).

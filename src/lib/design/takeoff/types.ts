@@ -28,7 +28,7 @@ export type Takeoff = {
 };
 
 /** The design kinds with a take-off in takeoff/tools.ts (the STM caps have their own, in stm/detail.ts). */
-export const TAKEOFF_KINDS = ["box-culvert", "cip-cantilever-wall", "cantilever-wingwall", "deck-slab", "mse-wall", "pier-column", "sign-cantilever", "lrfd-girder-check", "elastomeric-bearing", "ptfe-bearing", "strip-seal-joint", "modular-joint", "finger-joint", "approach-slab", "slab-bridge", "pot-disc-bearing", "spread-footing", "pile-foundation", "drilled-shaft", "micropile", "abutment", "steel-girder-check"];
+export const TAKEOFF_KINDS = ["box-culvert", "cip-cantilever-wall", "cantilever-wingwall", "deck-slab", "mse-wall", "pier-column", "sign-cantilever", "sign-bridge", "lrfd-girder-check", "elastomeric-bearing", "ptfe-bearing", "strip-seal-joint", "modular-joint", "finger-joint", "approach-slab", "slab-bridge", "pot-disc-bearing", "spread-footing", "pile-foundation", "drilled-shaft", "micropile", "abutment", "steel-girder-check"];
 
 /** What a design keeps about its take-off: the length it covers, its pay items, and its line items' heading. */
 export type TakeoffSettings = { length?: number; ground?: number; angle?: number; items?: Partial<Record<QuantityRole, string>>; headingId?: string | null };

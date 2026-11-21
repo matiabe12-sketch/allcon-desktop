@@ -28,6 +28,7 @@ import { FOUNDATION_INFO, FOUNDATION_KINDS, foundationInputs } from "./foundatio
 import { DECK_DEFAULTS, RAIL_DEFAULT, type DeckInputs } from "./decks/deck";
 import { STRIP_SEAL_DEFAULTS, type StripSealInputs } from "./joints/strip-seal";
 import { SIGN_STEEL_DEFAULTS } from "./signs/structure";
+import { SIGN_BRIDGE_DEFAULTS, type SignBridgeInputs } from "./signs/bridge";
 import { LRFR_DEFAULTS } from "./girders/lrfr";
 import { MODULAR_DEFAULTS, type ModularJointInputs } from "./joints/modular";
 import { FINGER_DEFAULTS, type FingerJointInputs } from "./joints/finger";
@@ -50,7 +51,7 @@ import { steelGirderInputs } from "./girders/steel";
 // The Design section's categories and design types: highway structures to AASHTO LRFD, grouped
 // by element. What can be designed, and what's coming next.
 
-export type DesignKind = "modular-joint" | "finger-joint" | "lrfd-girder-check" | "steel-girder-check" | "slab-bridge" | "dt-load-rating" | "stm-d-region" | "cip-cantilever-wall" | "mse-wall" | "cantilever-wingwall" | "box-culvert" | "deck-slab" | "seismic-zone1" | "pier-column" | "camber-haunch" | "sign-cantilever" | "elastomeric-bearing" | "ptfe-bearing" | "pot-disc-bearing" | "strip-seal-joint" | "approach-slab" | "spread-footing" | "pile-foundation" | "drilled-shaft" | "micropile" | "abutment";
+export type DesignKind = "sign-bridge" | "modular-joint" | "finger-joint" | "lrfd-girder-check" | "steel-girder-check" | "slab-bridge" | "dt-load-rating" | "stm-d-region" | "cip-cantilever-wall" | "mse-wall" | "cantilever-wingwall" | "box-culvert" | "deck-slab" | "seismic-zone1" | "pier-column" | "camber-haunch" | "sign-cantilever" | "elastomeric-bearing" | "ptfe-bearing" | "pot-disc-bearing" | "strip-seal-joint" | "approach-slab" | "spread-footing" | "pile-foundation" | "drilled-shaft" | "micropile" | "abutment";
 
 export const CATEGORIES: { id: string; name: string; kinds: { id: DesignKind; name: string; short: string; description: string; available: boolean }[] }[] = [
   {
@@ -120,6 +121,7 @@ export const CATEGORIES: { id: string; name: string; kinds: { id: DesignKind; na
     name: "Sign Structures",
     kinds: [
       { id: "sign-cantilever", name: "Cantilever Sign Foundation", short: "Wind loads and the drilled shaft", description: "A cantilever sign structure's drilled shaft: dead and wind loads on the pole, arm and panel by AASHTO LTS, and the shaft's axial, bending, shear and torsion checks by AASHTO LRFD, for a p–y analysis's lateral response.", available: true },
+      { id: "sign-bridge", name: "Sign Bridge", short: "Monotube span on two posts, and their shafts", description: "A monotube sign bridge (CDOT S-614-50): the span and posts as a portal frame under dead load and wind, the round tubes (AASHTO LRFD-LTS Section 5), anchor bolts and flange bolts, fatigue from natural wind and truck-induced gusts at the welds (Section 11), the span's L/150 deflection (10.4.1), and each post's drilled shaft.", available: true },
     ],
   },
 ];
@@ -218,6 +220,13 @@ export function hlmrInputs(saved: unknown): HlmrInputs {
 export function slabBridgeInputs(saved: unknown): SlabBridgeInputs {
   const s = (saved && typeof saved === "object" ? saved : {}) as Partial<SlabBridgeInputs>;
   return { ...SLAB_BRIDGE_DEFAULTS, ...s, ...(s.rating ? { rating: { ...LRFR_DEFAULTS, ...s.rating } } : {}), spans: Array.isArray(s.spans) && s.spans.length ? s.spans.map(Number) : SLAB_BRIDGE_DEFAULTS.spans, edgeBars: s.edgeBars === null ? null : { ...SLAB_BRIDGE_DEFAULTS.edgeBars!, ...(s.edgeBars ?? {}) } };
+}
+
+/** A sign bridge's inputs as saved, filled in from the defaults. */
+export function signBridgeInputs(saved: unknown): SignBridgeInputs {
+  const s = (saved && typeof saved === "object" ? saved : {}) as Partial<SignBridgeInputs>;
+  const d = SIGN_BRIDGE_DEFAULTS;
+  return { ...d, ...s, signs: Array.isArray(s.signs) ? s.signs.slice(0, 6).map((x) => ({ ...d.signs[0], ...x })) : d.signs, base: { ...d.base, ...(s.base ?? {}) }, flange: { ...d.flange, ...(s.flange ?? {}) }, fatigue: { ...d.fatigue, ...(s.fatigue ?? {}) } };
 }
 
 /** A modular joint's inputs as saved, filled in from the defaults. */
@@ -369,5 +378,5 @@ function parseInputs(kind: string, saved: unknown) {
   if (kind === "dt-load-rating") return dtRatingInputs(saved);
   if (kind === "stm-d-region") return stmInputs(saved);
   if (kind === "pier-column") return columnInputs(saved);
-  return kind === "mse-wall" ? mseInputs(saved) : kind === "box-culvert" ? cbcInputs(saved) : kind === "elastomeric-bearing" ? bearingInputs(saved) : kind === "cantilever-wingwall" ? wingwallInputs(saved) : kind === "deck-slab" ? deckInputs(saved) : kind === "seismic-zone1" ? zone1Inputs(saved) : kind === "camber-haunch" ? haunchInputs(saved) : kind === "sign-cantilever" ? signInputs(saved) : kind === "ptfe-bearing" ? ptfeInputs(saved) : kind === "strip-seal-joint" ? stripSealInputs(saved) : kind === "approach-slab" ? approachSlabInputs(saved) : kind === "slab-bridge" ? slabBridgeInputs(saved) : kind === "pot-disc-bearing" ? hlmrInputs(saved) : kind === "modular-joint" ? modularInputs(saved) : kind === "finger-joint" ? fingerInputs(saved) : cipInputs(saved);
+  return kind === "mse-wall" ? mseInputs(saved) : kind === "box-culvert" ? cbcInputs(saved) : kind === "elastomeric-bearing" ? bearingInputs(saved) : kind === "cantilever-wingwall" ? wingwallInputs(saved) : kind === "deck-slab" ? deckInputs(saved) : kind === "seismic-zone1" ? zone1Inputs(saved) : kind === "camber-haunch" ? haunchInputs(saved) : kind === "sign-cantilever" ? signInputs(saved) : kind === "ptfe-bearing" ? ptfeInputs(saved) : kind === "strip-seal-joint" ? stripSealInputs(saved) : kind === "approach-slab" ? approachSlabInputs(saved) : kind === "slab-bridge" ? slabBridgeInputs(saved) : kind === "pot-disc-bearing" ? hlmrInputs(saved) : kind === "modular-joint" ? modularInputs(saved) : kind === "sign-bridge" ? signBridgeInputs(saved) : kind === "finger-joint" ? fingerInputs(saved) : cipInputs(saved);
 }

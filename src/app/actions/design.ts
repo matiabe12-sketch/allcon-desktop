@@ -18,7 +18,8 @@ import { approachSlabCalcLines } from "@/lib/design/approach/approach-slab-calc"
 import { slabBridgeCalcLines } from "@/lib/design/slabs/slab-bridge-calc";
 import { hlmrCalcLines } from "@/lib/design/bearings/pot-disc-calc";
 import { hlmrTakeoff } from "@/lib/design/bearings/pot-disc-detail";
-import { fingerInputs, hlmrInputs, modularInputs } from "@/lib/design/kinds";
+import { fingerInputs, hlmrInputs, modularInputs, signBridgeInputs } from "@/lib/design/kinds";
+import { signBridgeCalcLines, signBridgeTakeoff } from "@/lib/design/signs/bridge-detail";
 import { modularCalcLines } from "@/lib/design/joints/modular-calc";
 import { fingerCalcLines } from "@/lib/design/joints/finger-calc";
 import { fingerTakeoff, modularTakeoff } from "@/lib/design/joints/detail";
@@ -320,6 +321,8 @@ export async function createCalcFromDesign(designId: string, variant?: "asd" | "
                     ? columnCalcLines(columnInputs(design.inputs), design.name, figures(() => columnFigures(columnInputs(design.inputs))))
                     : design.kind === "camber-haunch"
                       ? haunchCalcLines(haunchInputs(design.inputs), design.name, figures(() => haunchFigures(haunchInputs(design.inputs))))
+                      : design.kind === "sign-bridge"
+                        ? signBridgeCalcLines(signBridgeInputs(design.inputs), design.name, figures(() => takeoffFigures(signBridgeTakeoff(signBridgeInputs(design.inputs)))))
                       : design.kind === "sign-cantilever"
                         ? signCalcLines(signInputs(design.inputs), design.name, figures(() => signFigures(signInputs(design.inputs))))
                         : design.kind === "ptfe-bearing"

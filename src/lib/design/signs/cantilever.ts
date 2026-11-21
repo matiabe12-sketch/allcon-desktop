@@ -121,7 +121,6 @@ function tube(length: number, base: number, end: number, wall: number) {
 export function designSign(i: SignInputs) {
   if (i.poleLength <= i.armDrop || i.shaftD <= 0) throw new DesignError("The arm must be on the pole, and the shaft needs a diameter.");
   const checks: Check[] = [];
-  const add = (c: Omit<Check, "ok"> & { ok?: boolean }) => checks.push({ ...c, ok: c.ok ?? c.demand <= c.capacity });
 
   // --- dead loads (LTS 3.5) --------------------------------------------------------------------------
   const pole = tube(i.poleLength, i.poleBase, i.poleTop, i.poleWall);
@@ -159,6 +158,36 @@ export function designSign(i: SignInputs) {
   const extreme = groups[1];
 
   // --- the shaft --------------------------------------------------------------------------------------------
+  const shaft = designShaft(i, groups);
+  checks.push(...shaft.checks);
+
+  // The steel above the shaft, when it's designed.
+  const steel = i.steel
+    ? designSignSteel(i.steel, { DC, pole: { weight: pole.weight }, arm: { weight: arm.weight, centroid: arm.centroid, projCentroid: arm.projCentroid, projected: arm.projected }, sign: sign + misc, signOffset: i.signOffset, signArea, zArm, poleLength: i.poleLength, armLength: i.armLength, Wsign, Warm, Wpole, polePC: pole.projCentroid, CdMember, CdSign: i.CdSign, signLength: i.signLength, signHeight: i.signHeight }, i)
+    : null;
+  if (steel) checks.push(...steel.checks);
+  return {
+    ok: checks.every((c) => c.ok || c.advisory),
+    checks,
+    steel,
+    dead: { pole: pole.weight, arm: arm.weight, armCentroid: arm.centroid, sign, misc, DC, MDC },
+    wind: { kz, CvVd, CdMember, qMember, qSign, poleArea: pole.projected, armArea: arm.projected, signArea, Wpole, Warm, Wsign, zArm, poleCentroid: pole.projCentroid, armCentroid: arm.projCentroid, Mx, T, H },
+    groups,
+    extreme,
+    shaft: shaft.shaft,
+  };
+}
+
+export type SignResult = ReturnType<typeof designSign>;
+
+/** The shaft's inputs: its size, bars, ties, concrete and the soil, and the lateral response from a p–y analysis. */
+export type ShaftPart = Pick<SignInputs, "shaftD" | "shaftLength" | "cover" | "bars" | "bar" | "tieBar" | "tieSpacing" | "fc" | "fy" | "phiM" | "qp" | "qs" | "phiQp" | "phiQs" | "sideLength" | "pyMoment" | "pyShear">;
+export type ShaftGroup = { gW: number; P: number; M: number; T: number; V: number };
+
+/** A sign structure's drilled shaft under the load groups at its top (kip, kip·ft): axial (10.8.3.5), axial load and bending (5.6), shear (5.7.3.3), torsion (5.7.2.1). */
+export function designShaft(i: ShaftPart, groups: ShaftGroup[]) {
+  const checks: Check[] = [];
+  const add = (c: Omit<Check, "ok"> & { ok?: boolean }) => checks.push({ ...c, ok: c.ok ?? c.demand <= c.capacity });
   const bar = BARS[i.bar];
   const tie = BARS[i.tieBar];
   const Dr = i.shaftD - 2 * i.cover - 2 * tie.dia - bar.dia;
@@ -197,21 +226,5 @@ export function designSign(i: SignInputs) {
   const Tu = Math.max(...groups.map((g) => g.T));
   add({ id: "torsion", name: "Torsion may be neglected: Tu ≤ 0.25 φ Tcr", demand: Tu * 12, capacity: 0.25 * 0.9 * Tcr, unit: "kip·in", ref: "AASHTO 5.7.2.1" });
 
-  // The steel above the shaft, when it's designed.
-  const steel = i.steel
-    ? designSignSteel(i.steel, { DC, pole: { weight: pole.weight }, arm: { weight: arm.weight, centroid: arm.centroid, projCentroid: arm.projCentroid, projected: arm.projected }, sign: sign + misc, signOffset: i.signOffset, signArea, zArm, poleLength: i.poleLength, armLength: i.armLength, Wsign, Warm, Wpole, polePC: pole.projCentroid, CdMember, CdSign: i.CdSign, signLength: i.signLength, signHeight: i.signHeight }, i)
-    : null;
-  if (steel) checks.push(...steel.checks);
-  return {
-    ok: checks.every((c) => c.ok || c.advisory),
-    checks,
-    steel,
-    dead: { pole: pole.weight, arm: arm.weight, armCentroid: arm.centroid, sign, misc, DC, MDC },
-    wind: { kz, CvVd, CdMember, qMember, qSign, poleArea: pole.projected, armArea: arm.projected, signArea, Wpole, Warm, Wsign, zArm, poleCentroid: pole.projCentroid, armCentroid: arm.projCentroid, Mx, T, H },
-    groups,
-    extreme,
-    shaft: { Dr, shaftWeight, Rp, Rs, Pu, Mu, Mn, de, Af, dv, Vu, Av, Vc, Vs, Vn, AvMin, vu, sMax, Acp, pc, Tcr, Tu, beta1: section.beta1 },
-  };
+  return { checks, shaft: { Dr, shaftWeight, Rp, Rs, Pu, Mu, Mn, de, Af, dv, Vu, Av, Vc, Vs, Vn, AvMin, vu, sMax, Acp, pc, Tcr, Tu, beta1: section.beta1 } };
 }
-
-export type SignResult = ReturnType<typeof designSign>;

@@ -412,7 +412,14 @@ Each sidewalk sits inside its edge's barrier, raised, with a curb at the roadway
     (1.75 M_PL3, no IM); the collision Cases 1 and 2 at the barrier unchanged;
   - the Bridge's link: the sidewalk if both sides match, else the side whose Case 3 works hardest (the deck design is
     one overhang).
+- **Slab bridges** (2026-11-21; SlabBridgeInputs.sidewalks, from the Bridge):
+  - the roadway and lanes between the curbs; no overlay on the sidewalks;
+  - the interior strip: the sidewalks' concrete and pedestrians spread over the width, as the barriers are; the
+    pedestrians in M_LL (and the shear) with the vehicles, no IM or skew factor;
+  - the edge strip: from the nearer curb (the narrower sidewalk, wheels nearest the edge), with the wider sidewalk's
+    part of it (concrete and pedestrians): both the conservative side;
+  - the supports' live load per foot gains the pedestrians, and a pier cap's side places the wider line's share of
+    them with each lane arrangement.
 - **Tests:** src/lib/bridge/sidewalks.test.ts.
 - **Not yet:**
   - the sidewalks in the drawings, the 3D model and the quantities;
-  - slab bridges' sidewalks.

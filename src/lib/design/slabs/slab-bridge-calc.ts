@@ -37,7 +37,13 @@ export function slabBridgeCalcLines(i: SlabBridgeInputs, title: string): Line[] 
   text("The slab and its strips (AASHTO 4.6.2.3)", "subheading", { newPage: true, keepWithNext: true });
   m(`W_s\\coloneq ${num(i.W)}\\mathrm{ft}`, "Width, out to out");
   m(`b_b\\coloneq ${num(i.barrierWidth)}\\mathrm{ft}`, "The edge to the barrier's inside face");
-  m("W_r\\coloneq W_s-2\\cdot b_b=", "Clear roadway", "ft");
+  const sw = i.sidewalks && i.sidewalks.left + i.sidewalks.right > 0 ? i.sidewalks : null;
+  if (sw) {
+    m(`s_L\\coloneq ${num(sw.left)}\\mathrm{ft}`, "Sidewalk inside the left barrier");
+    m(`s_R\\coloneq ${num(sw.right)}\\mathrm{ft}`, "Sidewalk inside the right barrier");
+    m("W_r\\coloneq W_s-2\\cdot b_b-s_L-s_R=", "Clear roadway, between the curbs", "ft");
+    m("b_c\\coloneq b_b+\\min\\left(s_L,s_R\\right)=", "The edge to the nearer curb (the edge strip's wheels nearest the edge)", "ft");
+  } else m("W_r\\coloneq W_s-2\\cdot b_b=", "Clear roadway", "ft");
   m(`N_L\\coloneq ${r.NL}`, "Design lanes, whole 12 ft lanes, AASHTO 3.6.1.1.1");
   m(`t_s\\coloneq ${num(i.t)}\\mathrm{in}`, "Slab depth");
   m(`\\theta\\coloneq ${num(i.skew)}\\mathrm{deg}`, "Skew");
@@ -50,16 +56,20 @@ export function slabBridgeCalcLines(i: SlabBridgeInputs, title: string): Line[] 
       m(`E_{ms${n}}\\coloneq\\min\\left(84\\mathrm{in}+1.44\\cdot\\sqrt{\\frac{\\min\\left(L_{${n}},60\\mathrm{ft}\\right)}{\\mathrm{ft}}\\cdot\\frac{\\min\\left(W_s,60\\mathrm{ft}\\right)}{\\mathrm{ft}}}\\cdot\\mathrm{in},\\frac{W_s}{N_L}\\right)=`, "More lanes, AASHTO Eq. 4.6.2.3-2", "in");
       m(`E_{s${n}}\\coloneq\\min\\left(E_{1s${n}},E_{ms${n}}\\right)=`, "The strip", "in");
     } else m(`E_{s${n}}\\coloneq E_{1s${n}}=`, "The strip", "in");
-    m(`E_{e${n}}\\coloneq\\min\\left(b_b+12\\mathrm{in}+\\frac{E_{s${n}}}{4},\\frac{E_{s${n}}}{2},72\\mathrm{in}\\right)=`, "The edge strip, AASHTO 4.6.2.1.4b", "in");
+    m(`E_{e${n}}\\coloneq\\min\\left(${sw ? "b_c" : "b_b"}+12\\mathrm{in}+\\frac{E_{s${n}}}{4},\\frac{E_{s${n}}}{2},72\\mathrm{in}\\right)=`, "The edge strip, AASHTO 4.6.2.1.4b", "in");
   });
 
   text("Dead loads per foot of width", "subheading", { keepWithNext: true });
   m(`\\gamma_c\\coloneq ${num(i.gammaC)}\\mathrm{kcf}`);
   m("w_{sl}\\coloneq\\gamma_c\\cdot t_s=", "The slab", "ksf");
   m(`w_{bar}\\coloneq ${num(i.barrierWeight)}\\frac{\\mathrm{kip}}{\\mathrm{ft}}`, "Each barrier");
-  m("w_{DC}\\coloneq w_{sl}+\\frac{2\\cdot w_{bar}}{W_s}=", "The interior strip: the barriers spread over the width", "ksf");
+  if (sw) {
+    m(`t_{sw}\\coloneq ${num(sw.depth)}\\mathrm{in}`, "Sidewalk depth above the slab");
+    m("w_{DC}\\coloneq w_{sl}+\\frac{2\\cdot w_{bar}+\\gamma_c\\cdot t_{sw}\\cdot\\left(s_L+s_R\\right)}{W_s}=", "The interior strip: the barriers and sidewalks spread over the width", "ksf");
+  } else m("w_{DC}\\coloneq w_{sl}+\\frac{2\\cdot w_{bar}}{W_s}=", "The interior strip: the barriers spread over the width", "ksf");
   m(`w_{DW}\\coloneq ${num(i.gammaWS)}\\mathrm{kcf}\\cdot ${num(i.wearing)}\\mathrm{in}\\cdot\\frac{W_r}{W_s}=`, "The overlay, on the roadway", "ksf");
-  text("The edge strip:- its own slab and one barrier over its width, the overlay on its part past the barrier.");
+  if (r.loads.wPLint > 0) m(`w_{PL}\\coloneq ${num(r.loads.wPLint, 6)}\\mathrm{ksf}`, "Pedestrians, 0.075 ksf on the sidewalks wider than 2 ft (AASHTO 3.6.1.6), spread over the width: in M_LL with the vehicles, without IM");
+  text(sw ? "The edge strip:- its own slab, one barrier and the wider sidewalk's part of it (its concrete and pedestrians) over its width, the overlay on its part past the nearer curb." : "The edge strip:- its own slab and one barrier over its width, the overlay on its part past the barrier.");
 
   const Ec = r.concrete.Ec;
   m(`f'_{c}\\coloneq ${num(i.fc)}\\mathrm{ksi}`);

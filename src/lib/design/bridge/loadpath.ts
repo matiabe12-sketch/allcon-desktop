@@ -688,7 +688,7 @@ export function steelAtSupport(run: BridgeRun, support: number) {
  */
 export function slabSide(b: BridgeInputs, run: BridgeRun, support: number, span: number, end: "start" | "end", designId: string, name: string): GirderSide {
   const s = b.supports[support];
-  const r = run.reactions[support] as BridgeRun["reactions"][number] & { slab?: { perFoot: { DC: number; DW: number }; tribInt: number; tribExt: number } };
+  const r = run.reactions[support] as BridgeRun["reactions"][number] & { slab?: { perFoot: { DC: number; DW: number; PL?: number }; tribInt: number; tribExt: number } };
   const sides = [support - 1, support].filter((j) => j >= 0 && j < run.layout.spans.length).length;
   const share = 1 / Math.max(1, sides);
   const per = r.slab?.perFoot ?? { DC: 0, DW: 0 };
@@ -717,6 +717,8 @@ export function slabSide(b: BridgeInputs, run: BridgeRun, support: number, span:
     liveUnbalanceStatic: null,
     wind: null,
     brakingPerLane: brakingPerLane(total).perLane,
+    // Pedestrians (3.6.1.6), the slab's per foot spread over the width: the wider line's width of them on each, with the vehicles.
+    ...(r.slab?.perFoot.PL ? { pl: r.slab.perFoot.PL * Math.max(int, ext) * share } : {}),
   };
 }
 

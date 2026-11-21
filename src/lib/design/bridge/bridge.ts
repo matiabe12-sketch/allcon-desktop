@@ -394,6 +394,7 @@ export function slabFromBridge(b: BridgeInputs, lay: BridgeLayout, base: SlabBri
     skew: Math.min(45, Math.max(...b.supports.map((s) => Math.abs(s.skew)))),
     t: b.deckT,
     wearing: Math.round(((b.fws / 1000 / base.gammaWS) * 12) * 1000) / 1000,
+    sidewalks: b.sidewalks && b.sidewalks.left + b.sidewalks.right > 0 ? b.sidewalks : null,
   };
 }
 

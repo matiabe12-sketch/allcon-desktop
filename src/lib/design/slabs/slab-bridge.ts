@@ -35,6 +35,10 @@ export type SlabBridgeInputs = {
   edgeBars: { count: number; bar: number } | null;
   llDeflection: boolean;
   deflectionLimit: number; // L / this
+  /** Sidewalks inside the barriers (from the Bridge): ft wide each side to the curb, in above the slab. Their concrete
+   * (DC), no overlay on them, the lanes between the curbs, and 0.075 ksf of pedestrians on those wider than 2 ft
+   * (3.6.1.6), with the vehicles. */
+  sidewalks?: { left: number; right: number; depth: number } | null;
   /** Load and Resistance Factor Rating (slabs/lrfr-slab.ts): its settings, off unless turned on. */
   rating?: import("../girders/lrfr").LrfrSettings;
 };
@@ -92,7 +96,9 @@ export type SlabSection = {
 export function designSlabBridge(i: SlabBridgeInputs) {
   const spans = i.spans.filter((L) => L > 0);
   if (!spans.length || spans.length > 4) throw new DesignError("Give one to four spans.");
-  if (!(i.W > 2 * i.barrierWidth + 12) || !(i.t > 0)) throw new DesignError("The slab needs a width with room for a lane between the barriers, and a depth.");
+  const swL = i.sidewalks?.left ?? 0;
+  const swR = i.sidewalks?.right ?? 0;
+  if (!(i.W > 2 * i.barrierWidth + swL + swR + 12) || !(i.t > 0)) throw new DesignError("The slab needs a width with room for a lane between the barriers, and a depth.");
   if (i.skew < 0 || i.skew > 45) throw new DesignError("The skew must be from 0° to 45°.");
   const checks: Check[] = [];
   const add = (c: Omit<Check, "ok"> & { ok?: boolean }) => checks.push({ ...c, ok: c.ok ?? c.demand <= c.capacity + 1e-9 });
@@ -100,7 +106,13 @@ export function designSlabBridge(i: SlabBridgeInputs) {
   const continuous = i.continuous && spans.length > 1;
 
   // --- the strips (4.6.2.3) ------------------------------------------------------------------------------------------
-  const roadway = i.W - 2 * i.barrierWidth;
+  const roadway = i.W - 2 * i.barrierWidth - swL - swR; // between the barriers, or the sidewalks' curbs
+  // The edge strip: the curb nearer its edge (the narrower sidewalk: the wheels nearest the edge), the wider sidewalk's
+  // concrete and pedestrians in it (both the conservative side).
+  const curbEdge = i.barrierWidth + Math.min(swL, swR);
+  const swWide = Math.max(swL, swR);
+  const wSw = i.sidewalks ? (i.gammaC * i.sidewalks.depth) / 12 : 0; // ksf
+  const ped = (w: number) => (w > 2 ? w : 0);
   const NL = Math.max(1, Math.floor(roadway / 12)); // 3.6.1.1.1
   const strip = (L: number) => {
     const L1 = Math.min(L, 60);
@@ -108,15 +120,18 @@ export function designSlabBridge(i: SlabBridgeInputs) {
     const Em = Math.min(84 + 1.44 * Math.sqrt(L1 * Math.min(i.W, 60)), (12 * i.W) / NL); // in, Eq. 4.6.2.3-2
     const E = NL > 1 ? Math.min(E1, Em) : E1;
     // The edge strip (4.6.2.1.4b): the barrier's width, 12 in and a quarter strip, at most half the strip and 72 in.
-    const Eedge = Math.min(i.barrierWidth * 12 + 12 + E / 4, E / 2, 72);
+    const Eedge = Math.min(curbEdge * 12 + 12 + E / 4, E / 2, 72);
     return { L1, E1, Em, E, Eedge };
   };
   const r = Math.min(1, 1.05 - 0.25 * Math.tan(rad)); // Eq. 4.6.2.3-3, on the longitudinal moments
 
   // --- dead loads per foot ---------------------------------------------------------------------------------------------
   const wSlab = (i.gammaC * i.t) / 12; // klf/ft
-  const wDCint = wSlab + (2 * i.barrierWeight) / i.W; // the barriers spread over the width (interior strip)
+  const wDCint = wSlab + (2 * i.barrierWeight + wSw * (swL + swR)) / i.W; // the barriers and sidewalks spread over the width (interior strip)
   const wDW = (i.gammaWS * i.wearing * roadway) / (12 * i.W);
+  const wPLint = (0.075 * (ped(swL) + ped(swR))) / i.W; // pedestrians spread over the width, ksf
+  /** In the edge strip (Eedge, in): the wider sidewalk's part of it, ft. */
+  const swIn = (Eedge: number) => Math.max(0, Math.min(swWide, Eedge / 12 - i.barrierWidth));
 
   // --- the beam: one continuous, or a simple span each ---------------------------------------------------------------------
   const beams = continuous ? [{ spans, first: 0 }] : spans.map((L, k) => ({ spans: [L], first: k }));
@@ -153,14 +168,16 @@ export function designSlabBridge(i: SlabBridgeInputs) {
           const MDCu = sign * dc.M; // per klf
           const fatLane = negative ? -live.fatNeg : live.fatPos;
           for (const where of ["interior", "edge"] as const) {
-            const wDC = where === "interior" ? wDCint : wSlab + i.barrierWeight / (Eedge / 12);
-            const wdw = where === "interior" ? wDW : (i.gammaWS * i.wearing * Math.max(0, Eedge / 12 - i.barrierWidth)) / (12 * (Eedge / 12));
+            const wDC = where === "interior" ? wDCint : wSlab + (i.barrierWeight + wSw * swIn(Eedge)) / (Eedge / 12);
+            const wdw = where === "interior" ? wDW : (i.gammaWS * i.wearing * Math.max(0, Eedge / 12 - curbEdge)) / (12 * (Eedge / 12));
+            const wPL = where === "interior" ? wPLint : swWide > 2 ? (0.075 * swIn(Eedge)) / (Eedge / 12) : 0;
             // The edge strip: one line of wheels (half the truck) and the lane's tributary part (the lane within it past
             // the barrier, of its 10 ft): the envelope's truck and lane together times the larger of half and that part,
             // with the one-lane multiple presence factor 1.2 (conservative).
-            const tribLane = Math.min(1, Math.max(0, Eedge / 12 - i.barrierWidth) / 10);
+            const tribLane = Math.min(1, Math.max(0, Eedge / 12 - curbEdge) / 10);
             const MLLlane = where === "interior" ? Mlane : 1.2 * Math.max(0.5, tribLane) * Mlane;
-            const MLL = (MLLlane / ((where === "interior" ? E : Eedge) / 12)) * r;
+            // The vehicles over the strip, and the pedestrians (as the dead loads lie, where they add; no IM or r).
+            const MLL = (MLLlane / ((where === "interior" ? E : Eedge) / 12)) * r + Math.max(0, MDCu * wPL);
             const MDC = Math.max(0, MDCu * wDC);
             const MDW = Math.max(0, MDCu * wdw);
             const Mu = 1.25 * MDC + 1.5 * MDW + 1.75 * MLL;
@@ -216,7 +233,7 @@ export function designSlabBridge(i: SlabBridgeInputs) {
           const st = strip(L);
           const live = cb.liveEnvelope(s, x, IM);
           const dc = cb.uniformAll(s, x, 1);
-          v = Math.max(v, 1.25 * Math.abs(dc.V) * wDCint + 1.5 * Math.abs(dc.V) * wDW + (1.75 * live.V) / (st.E / 12));
+          v = Math.max(v, 1.25 * Math.abs(dc.V) * wDCint + 1.5 * Math.abs(dc.V) * wDW + (1.75 * live.V) / (st.E / 12) + 1.75 * Math.abs(dc.V) * wPLint);
         }
       });
     }
@@ -293,7 +310,7 @@ export function designSlabBridge(i: SlabBridgeInputs) {
 
   // --- the supports' reactions per foot of width (unfactored), for the substructure ------------------------------------
   const nSup = spans.length + 1;
-  const reactions = Array.from({ length: nSup }, () => ({ DC: 0, DW: 0, LLlane: 0, LLlaneIM: 0 }));
+  const reactions = Array.from({ length: nSup }, () => ({ DC: 0, DW: 0, PL: 0, LLlane: 0, LLlaneIM: 0 }));
   for (const beam of beams) {
     const cb = continuousBeam(beam.spans);
     cb.spans.forEach((L, s) => {
@@ -302,6 +319,8 @@ export function designSlabBridge(i: SlabBridgeInputs) {
       const dc1 = -cb.uniformAll(s, L, 1).V;
       reactions[k0].DC += dc0 * wDCint;
       reactions[k0].DW += dc0 * wDW;
+      reactions[k0].PL += dc0 * wPLint;
+      reactions[k0 + 1].PL += dc1 * wPLint;
       reactions[k0 + 1].DC += dc1 * wDCint;
       reactions[k0 + 1].DW += dc1 * wDW;
     });
@@ -320,7 +339,8 @@ export function designSlabBridge(i: SlabBridgeInputs) {
   }
   // Every lane with its multiple presence factor, the most, over the width (per foot).
   const lanesM = Math.max(...Array.from({ length: NL }, (_, m) => (m + 1) * mpf(m + 1)));
-  const perFoot = reactions.map((x) => ({ DC: x.DC, DW: x.DW, LL: (x.LLlane * lanesM) / i.W, LLIM: (x.LLlaneIM * lanesM) / i.W, lane: x.LLlane, laneIM: x.LLlaneIM }));
+  // The pedestrians with the vehicles (3.6.1.6), per foot of width.
+  const perFoot = reactions.map((x) => ({ DC: x.DC, DW: x.DW, LL: (x.LLlane * lanesM) / i.W + x.PL, LLIM: (x.LLlaneIM * lanesM) / i.W + x.PL, PL: x.PL, lane: x.LLlane, laneIM: x.LLlaneIM }));
 
   return {
     ok: checks.every((c) => c.ok || c.advisory),
@@ -329,7 +349,7 @@ export function designSlabBridge(i: SlabBridgeInputs) {
     strips: spans.map((L) => ({ L, ...strip(L) })),
     NL,
     r,
-    loads: { wSlab, wDCint, wDW },
+    loads: { wSlab, wDCint, wDW, wPLint },
     sections,
     env,
     shear: { Vmax, dv, Vc },

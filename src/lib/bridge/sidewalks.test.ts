@@ -4,7 +4,8 @@ import { BRIDGE_DEFAULTS, bridgeDefinition } from "./definition";
 import { toBridgeInputs } from "./geometry";
 import { designGirder, GIRDER_DEFAULTS } from "../design/girders/prestressed";
 import { designSteelGirder, STEEL_DEFAULTS } from "../design/girders/steel";
-import { runBridge, sidewalkLoads } from "../design/bridge/bridge";
+import { bridgeLayout, runBridge, sidewalkLoads, slabFromBridge } from "../design/bridge/bridge";
+import { designSlabBridge, SLAB_BRIDGE_DEFAULTS } from "../design/slabs/slab-bridge";
 import { capLoadCases, girderSide, type GirderLink } from "../design/stm/cap-loads";
 import { STM_DEFAULTS } from "../design/stm/strut-tie";
 import { deckFromBridge, designLanes } from "../design/bridge/loadpath";
@@ -141,5 +142,32 @@ describe("a sidewalk on the deck's overhang", () => {
     const r = (d: typeof pick) => designDeck(d).overhang.case3.Mu / designDeck(d).overhang.case3.MR;
     expect(r(pick)).toBeGreaterThanOrEqual(r(other) - 1e-12);
     expect(deckFromBridge({ ...b, sidewalks: undefined }, run, DECK_DEFAULTS, null).sidewalk).toBeNull();
+  });
+});
+
+describe("a slab bridge's sidewalks", () => {
+  const base = { ...SLAB_BRIDGE_DEFAULTS, spans: [30], continuous: false };
+  const s0 = designSlabBridge(base);
+  const s1 = designSlabBridge({ ...base, sidewalks: { left: 6, right: 6, depth: 8 } });
+  it("their concrete and pedestrians spread over the width; the roadway between the curbs", () => {
+    expect(s1.loads.wDCint - s0.loads.wDCint).toBeCloseTo((base.gammaC * (8 / 12) * 12) / base.W, 9);
+    expect(s1.loads.wPLint).toBeCloseTo((0.075 * 12) / base.W, 9);
+    expect(s1.NL).toBeLessThan(s0.NL);
+    expect(s1.loads.wDW).toBeLessThan(s0.loads.wDW);
+  });
+  it("the support's live load per foot gains the pedestrians' wL/2", () => {
+    expect(s1.reactions[0].PL).toBeCloseTo((s1.loads.wPLint * 30) / 2, 9);
+    expect(s0.reactions[0].PL).toBe(0);
+  });
+  it("the interior strip's live load moment gains them at midspan", () => {
+    const mid = (r: typeof s0) => r.sections.find((q) => q.where === "interior" && !q.negative && Math.abs(q.x - 15) < 1e-6)!;
+    // the same roadway (12 ft of sidewalks): 6 + 6 ft carry pedestrians on 12 ft, 2 + 10 ft on 10 ft
+    const other = designSlabBridge({ ...base, sidewalks: { left: 2, right: 10, depth: 8 } });
+    expect(mid(s1).MLL - mid(other).MLL).toBeCloseTo(((s1.loads.wPLint - other.loads.wPLint) * 30 * 30) / 8, 6);
+    expect(mid(s1).MDC).toBeGreaterThan(mid(s0).MDC);
+  });
+  it("the Bridge passes them to the slab design", () => {
+    const b = toBridgeInputs(bridgeDefinition({ ...BRIDGE_DEFAULTS, spans: [30], superstructure: "slab", sidewalks: { left: 6, right: 0, depth: 8 } }));
+    expect(slabFromBridge(b, bridgeLayout(b)).sidewalks).toEqual({ left: 6, right: 0, depth: 8 });
   });
 });

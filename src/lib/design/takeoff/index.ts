@@ -12,6 +12,8 @@ import type { SignInputs } from "../signs/cantilever";
 import type { SignBridgeInputs } from "../signs/bridge";
 import { signBridgeTakeoff } from "../signs/bridge-detail";
 import type { SignalInputs } from "../signals/foundation";
+import type { ShoringInputs } from "../shoring/wall";
+import { shoringTakeoff } from "../shoring/detail";
 import { signalTakeoff } from "../signals/detail";
 import type { ApproachSlabInputs } from "../approach/approach-slab";
 import { approachSlabTakeoff } from "../approach/approach-slab-detail";
@@ -57,6 +59,8 @@ export function takeoffFor(kind: string, inputs: unknown, s?: TakeoffSettings): 
       return mseTakeoff(inputs as MseInputs, L ?? 100);
     case "pier-column":
       return pierColumnTakeoff(inputs as ColumnInputs, L);
+    case "shoring-wall":
+      return shoringTakeoff(inputs as ShoringInputs, L ?? 100);
     case "signal-foundation":
       return signalTakeoff(inputs as SignalInputs);
     case "sign-bridge":

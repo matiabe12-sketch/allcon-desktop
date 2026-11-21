@@ -3,9 +3,10 @@ import { notFound } from "next/navigation";
 import { ApproachSlabEditor } from "@/components/design/approach-slab-editor";
 import { SlabBridgeEditor } from "@/components/design/slab-bridge-editor";
 import { PotDiscEditor } from "@/components/design/pot-disc-editor";
-import { fingerInputs, hlmrInputs, modularInputs, signalInputs, signBridgeInputs } from "@/lib/design/kinds";
+import { fingerInputs, hlmrInputs, modularInputs, shoringInputs, signalInputs, signBridgeInputs } from "@/lib/design/kinds";
 import { SignBridgeEditor } from "@/components/design/sign-bridge-editor";
 import { SignalEditor } from "@/components/design/signal-editor";
+import { ShoringEditor } from "@/components/design/shoring-editor";
 import { FingerJointEditor, ModularJointEditor } from "@/components/design/joint-editors";
 import { slabBridgeInputs } from "@/lib/design/kinds";
 import { FoundationEditor } from "@/components/design/foundation-editor";
@@ -88,6 +89,12 @@ export default async function DesignEditorPage({ params }: PageProps<"/design/[d
     return (
       <PageBody>
         <CbcEditor design={{ ...base, inputs: cbcInputs(design.inputs) }} projects={projects} />
+      </PageBody>
+    );
+  if (design.kind === "shoring-wall")
+    return (
+      <PageBody>
+        <ShoringEditor design={{ ...base, inputs: shoringInputs(design.inputs) }} projects={projects} />
       </PageBody>
     );
   if (design.kind === "signal-foundation")

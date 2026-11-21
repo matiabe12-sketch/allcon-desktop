@@ -45,6 +45,11 @@ export const CDOT_ITEMS: PayItem[] = [
   item("206-00360", "Mechanical Reinforcement of Soil", "CY"),
   item("206-01000", "Bed Course Material", "CY"),
   item("206-00510", "Filter Material (Class A)", "CY"),
+  item("206-01750", "Shoring", "LS"),
+  // 501 Sheet piling, 504 soldier pile walls
+  item("501-00000", "Steel Sheet Piling (Type I)", "SF"),
+  item("501-00200", "Steel Sheet Piling (Type II)", "SF"),
+  item("504-08150", "Soldier Pile Wall", "SF"),
   // 502 Piling, 503 Drilled shafts
   item("502-10836", "Steel Piling (HP 8x36)", "LF"),
   item("502-11057", "Steel Piling (HP 10x57)", "LF"),
@@ -126,7 +131,7 @@ export const CDOT_ITEMS: PayItem[] = [
 export const payItem = (code: string) => CDOT_ITEMS.find((p) => p.code === code) ?? null;
 
 /** What a quantity is, for choosing its pay item. */
-export type QuantityRole = "concrete" | "rebar" | "excavation" | "backfill" | "refill" | "bedding" | "girder" | "bearing" | "joint" | "waterproofing" | "shaft" | "facing" | "soil-reinforcement" | "rail" | "removal" | "sealant" | "pile" | "pile-tip" | "prebore" | "testing" | "micropile" | "asphalt" | "panels";
+export type QuantityRole = "concrete" | "rebar" | "excavation" | "backfill" | "refill" | "bedding" | "girder" | "bearing" | "joint" | "waterproofing" | "shaft" | "facing" | "soil-reinforcement" | "rail" | "removal" | "sealant" | "pile" | "pile-tip" | "prebore" | "testing" | "micropile" | "asphalt" | "panels" | "wall" | "shoring";
 
 /**
  * Each tool's quantities and the pay items each may go to (first: the default). Defaults follow
@@ -164,6 +169,7 @@ export const TOOL_PAY_ITEMS: Record<string, Partial<Record<QuantityRole, string[
   "finger-joint": { joint: ["518-01201"] },
   "strip-seal-joint": { joint: ["518-01004", "518-01002", "518-01006", "518-01009", "518-01012", "518-01201"] },
   "steel-girder-check": { girder: ["509-00000", "509-00001", "509-00010"], bearing: ["512-00101", "512-00102", "512-00103", "512-00118"] },
+  "shoring-wall": { wall: ["504-08150", "501-00000", "501-00200"], pile: ["502-11489", "502-11473", "502-14102", "502-14117", "502-11253", "502-11274", "502-11284"], shoring: ["206-01750"] },
   "signal-foundation": { shaft: ["503-00036", "503-00024", "503-00042", "503-00048", "503-00054"], rebar: ["602-00000"] },
   "sign-bridge": { shaft: ["503-00042", "503-00036", "503-00048", "503-00054", "503-00060", "503-00072"], rebar: ["602-00000"] },
   "sign-cantilever": { shaft: ["503-00036", "503-00024", "503-00030", "503-00042", "503-00048", "503-00054", "503-00060", "503-00072"], rebar: ["602-00000"] },

@@ -43,6 +43,8 @@ const ROLE_LABEL: Record<QuantityRole, string> = {
   micropile: "Micropiles",
   asphalt: "Asphalt overlay",
   panels: "Precast deck panels",
+  wall: "Wall",
+  shoring: "Shoring",
 };
 
 /** The design's quantities into its project's line items, under CDOT pay items. */

@@ -11,6 +11,8 @@ import { columnTakeoff as pierColumnTakeoff } from "../piers/column-detail";
 import type { SignInputs } from "../signs/cantilever";
 import type { SignBridgeInputs } from "../signs/bridge";
 import { signBridgeTakeoff } from "../signs/bridge-detail";
+import type { SignalInputs } from "../signals/foundation";
+import { signalTakeoff } from "../signals/detail";
 import type { ApproachSlabInputs } from "../approach/approach-slab";
 import { approachSlabTakeoff } from "../approach/approach-slab-detail";
 import type { SlabBridgeInputs } from "../slabs/slab-bridge";
@@ -55,6 +57,8 @@ export function takeoffFor(kind: string, inputs: unknown, s?: TakeoffSettings): 
       return mseTakeoff(inputs as MseInputs, L ?? 100);
     case "pier-column":
       return pierColumnTakeoff(inputs as ColumnInputs, L);
+    case "signal-foundation":
+      return signalTakeoff(inputs as SignalInputs);
     case "sign-bridge":
       return signBridgeTakeoff(inputs as SignBridgeInputs);
     case "sign-cantilever":
@@ -96,6 +100,10 @@ export function takeoffFor(kind: string, inputs: unknown, s?: TakeoffSettings): 
 /** The pay item a shaft or girder quantity defaults to, from its size or shape (the code book's item, where there is one). */
 function defaultFor(kind: string, role: QuantityRole, inputs: unknown): string | undefined {
   if (!inputs) return undefined;
+  if (kind === "signal-foundation" && role === "shaft") {
+    const code = `503-000${Math.round((inputs as SignalInputs).shaftD)}`;
+    return payItem(code) ? code : undefined;
+  }
   if (kind === "sign-bridge" && role === "shaft") {
     const code = `503-000${Math.round((inputs as SignBridgeInputs).shaftD)}`;
     return payItem(code) ? code : undefined;

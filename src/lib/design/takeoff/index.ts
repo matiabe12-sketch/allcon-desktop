@@ -16,6 +16,9 @@ import type { ShoringInputs } from "../shoring/wall";
 import { shoringTakeoff } from "../shoring/detail";
 import type { SoilNailInputs } from "../soilnail/wall";
 import { soilNailTakeoff } from "../soilnail/detail";
+import type { PipeInputs } from "../culverts/pipe";
+import type { ThreeSidedInputs } from "../culverts/three-sided";
+import { pipePayItem, pipeTakeoff, threeSidedTakeoff } from "../culverts/detail";
 import { signalTakeoff } from "../signals/detail";
 import type { ApproachSlabInputs } from "../approach/approach-slab";
 import { approachSlabTakeoff } from "../approach/approach-slab-detail";
@@ -61,6 +64,10 @@ export function takeoffFor(kind: string, inputs: unknown, s?: TakeoffSettings): 
       return mseTakeoff(inputs as MseInputs, L ?? 100);
     case "pier-column":
       return pierColumnTakeoff(inputs as ColumnInputs, L);
+    case "pipe-culvert":
+      return pipeTakeoff(inputs as PipeInputs, L ?? 60);
+    case "three-sided-culvert":
+      return threeSidedTakeoff(inputs as ThreeSidedInputs, L ?? 40);
     case "soil-nail-wall":
       return soilNailTakeoff(inputs as SoilNailInputs, L ?? 100);
     case "shoring-wall":
@@ -108,6 +115,7 @@ export function takeoffFor(kind: string, inputs: unknown, s?: TakeoffSettings): 
 /** The pay item a shaft or girder quantity defaults to, from its size or shape (the code book's item, where there is one). */
 function defaultFor(kind: string, role: QuantityRole, inputs: unknown): string | undefined {
   if (!inputs) return undefined;
+  if (kind === "pipe-culvert" && (role === "pipe" || role === "end-section")) return pipePayItem(inputs as PipeInputs, role);
   if (kind === "signal-foundation" && role === "shaft") {
     const code = `503-000${Math.round((inputs as SignalInputs).shaftD)}`;
     return payItem(code) ? code : undefined;

@@ -45,6 +45,8 @@ const ROLE_LABEL: Record<QuantityRole, string> = {
   panels: "Precast deck panels",
   wall: "Wall",
   shoring: "Shoring",
+  pipe: "Pipe",
+  "end-section": "End sections",
 };
 
 /** The design's quantities into its project's line items, under CDOT pay items. */

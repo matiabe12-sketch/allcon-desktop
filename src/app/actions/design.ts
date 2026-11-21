@@ -18,8 +18,9 @@ import { approachSlabCalcLines } from "@/lib/design/approach/approach-slab-calc"
 import { slabBridgeCalcLines } from "@/lib/design/slabs/slab-bridge-calc";
 import { hlmrCalcLines } from "@/lib/design/bearings/pot-disc-calc";
 import { hlmrTakeoff } from "@/lib/design/bearings/pot-disc-detail";
-import { fingerInputs, hlmrInputs, modularInputs, shoringInputs, signalInputs, signBridgeInputs, soilNailInputs } from "@/lib/design/kinds";
+import { fingerInputs, hlmrInputs, modularInputs, shoringInputs, signalInputs, signBridgeInputs, soilNailInputs, pipeInputs, threeSidedInputs } from "@/lib/design/kinds";
 import { soilNailCalcLines, soilNailTakeoff } from "@/lib/design/soilnail/detail";
+import { pipeCalcLines, pipeTakeoff, threeSidedCalcLines, threeSidedTakeoff } from "@/lib/design/culverts/detail";
 import { shoringCalcLines, shoringTakeoff } from "@/lib/design/shoring/detail";
 import { signalCalcLines, signalTakeoff } from "@/lib/design/signals/detail";
 import { signBridgeCalcLines, signBridgeTakeoff } from "@/lib/design/signs/bridge-detail";
@@ -324,6 +325,10 @@ export async function createCalcFromDesign(designId: string, variant?: "asd" | "
                     ? columnCalcLines(columnInputs(design.inputs), design.name, figures(() => columnFigures(columnInputs(design.inputs))))
                     : design.kind === "camber-haunch"
                       ? haunchCalcLines(haunchInputs(design.inputs), design.name, figures(() => haunchFigures(haunchInputs(design.inputs))))
+                      : design.kind === "pipe-culvert"
+                        ? pipeCalcLines(pipeInputs(design.inputs), design.name, figures(() => takeoffFigures(pipeTakeoff(pipeInputs(design.inputs)))))
+                      : design.kind === "three-sided-culvert"
+                        ? threeSidedCalcLines(threeSidedInputs(design.inputs), design.name, figures(() => takeoffFigures(threeSidedTakeoff(threeSidedInputs(design.inputs)))))
                       : design.kind === "soil-nail-wall"
                         ? soilNailCalcLines(soilNailInputs(design.inputs), design.name, figures(() => takeoffFigures(soilNailTakeoff(soilNailInputs(design.inputs)))))
                       : design.kind === "shoring-wall"

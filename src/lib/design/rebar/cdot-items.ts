@@ -4,6 +4,8 @@
 
 export type PayItem = { code: string; description: string; unit: string };
 
+/** Pipe diameters with a CDOT pay item (in). */
+export const PIPE_SIZES = [12, 15, 18, 24, 30, 36, 42, 48, 54, 60, 66, 72, 78, 84, 90, 96];
 const item = (code: string, description: string, unit: string): PayItem => ({ code, description, unit });
 
 export const CDOT_ITEMS: PayItem[] = [
@@ -53,6 +55,13 @@ export const CDOT_ITEMS: PayItem[] = [
   item("504-06400", "Soil Nail Wall", "SF"),
   item("504-06406", "Soil Nail", "LF"),
   item("641-10010", "Initial Shotcrete Facing", "SF"),
+  // 603 Culverts and sewers: pipe by the foot of diameter, end sections each
+  ...PIPE_SIZES.flatMap((d) => [
+    item(`603-01${d}0`, `${d} Inch Reinforced Concrete Pipe`, "LF"),
+    item(`603-10${d}0`, `${d} Inch Corrugated Steel Pipe`, "LF"),
+    item(`603-050${d}`, `${d} Inch Reinforced Concrete End Section`, "EACH"),
+    item(`603-020${d}`, `${d} Inch Steel End Section`, "EACH"),
+  ]),
   // 502 Piling, 503 Drilled shafts
   item("502-10836", "Steel Piling (HP 8x36)", "LF"),
   item("502-11057", "Steel Piling (HP 10x57)", "LF"),
@@ -134,7 +143,7 @@ export const CDOT_ITEMS: PayItem[] = [
 export const payItem = (code: string) => CDOT_ITEMS.find((p) => p.code === code) ?? null;
 
 /** What a quantity is, for choosing its pay item. */
-export type QuantityRole = "concrete" | "rebar" | "excavation" | "backfill" | "refill" | "bedding" | "girder" | "bearing" | "joint" | "waterproofing" | "shaft" | "facing" | "soil-reinforcement" | "rail" | "removal" | "sealant" | "pile" | "pile-tip" | "prebore" | "testing" | "micropile" | "asphalt" | "panels" | "wall" | "shoring";
+export type QuantityRole = "concrete" | "rebar" | "excavation" | "backfill" | "refill" | "bedding" | "girder" | "bearing" | "joint" | "waterproofing" | "shaft" | "facing" | "soil-reinforcement" | "rail" | "removal" | "sealant" | "pile" | "pile-tip" | "prebore" | "testing" | "micropile" | "asphalt" | "panels" | "wall" | "shoring" | "pipe" | "end-section";
 
 /**
  * Each tool's quantities and the pay items each may go to (first: the default). Defaults follow
@@ -172,6 +181,8 @@ export const TOOL_PAY_ITEMS: Record<string, Partial<Record<QuantityRole, string[
   "finger-joint": { joint: ["518-01201"] },
   "strip-seal-joint": { joint: ["518-01004", "518-01002", "518-01006", "518-01009", "518-01012", "518-01201"] },
   "steel-girder-check": { girder: ["509-00000", "509-00001", "509-00010"], bearing: ["512-00101", "512-00102", "512-00103", "512-00118"] },
+  "pipe-culvert": { pipe: [...PIPE_SIZES.map((d) => `603-01${d}0`), ...PIPE_SIZES.map((d) => `603-10${d}0`)], "end-section": [...PIPE_SIZES.map((d) => `603-050${d}`), ...PIPE_SIZES.map((d) => `603-020${d}`)] }, // the default by the pipe's size and material (takeoff/index.ts)
+  "three-sided-culvert": { concrete: ["601-03000", "601-03030"], rebar: ["602-00000", "602-00020"], excavation: ["206-00000"], backfill: ["206-00100", "206-00200"] },
   "soil-nail-wall": { pile: ["504-06406"], wall: ["504-06400"], facing: ["641-10010"] },
   "shoring-wall": { wall: ["504-08150", "501-00000", "501-00200"], pile: ["502-11489", "502-11473", "502-14102", "502-14117", "502-11253", "502-11274", "502-11284"], shoring: ["206-01750"] },
   "signal-foundation": { shaft: ["503-00036", "503-00024", "503-00042", "503-00048", "503-00054"], rebar: ["602-00000"] },

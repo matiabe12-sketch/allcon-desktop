@@ -3,11 +3,13 @@ import { notFound } from "next/navigation";
 import { ApproachSlabEditor } from "@/components/design/approach-slab-editor";
 import { SlabBridgeEditor } from "@/components/design/slab-bridge-editor";
 import { PotDiscEditor } from "@/components/design/pot-disc-editor";
-import { fingerInputs, hlmrInputs, modularInputs, shoringInputs, signalInputs, signBridgeInputs, soilNailInputs } from "@/lib/design/kinds";
+import { fingerInputs, hlmrInputs, modularInputs, shoringInputs, signalInputs, signBridgeInputs, soilNailInputs, pipeInputs, threeSidedInputs } from "@/lib/design/kinds";
 import { SignBridgeEditor } from "@/components/design/sign-bridge-editor";
 import { SignalEditor } from "@/components/design/signal-editor";
 import { ShoringEditor } from "@/components/design/shoring-editor";
 import { SoilNailEditor } from "@/components/design/soil-nail-editor";
+import { PipeCulvertEditor } from "@/components/design/pipe-culvert-editor";
+import { ThreeSidedEditor } from "@/components/design/three-sided-editor";
 import { FingerJointEditor, ModularJointEditor } from "@/components/design/joint-editors";
 import { slabBridgeInputs } from "@/lib/design/kinds";
 import { FoundationEditor } from "@/components/design/foundation-editor";
@@ -90,6 +92,18 @@ export default async function DesignEditorPage({ params }: PageProps<"/design/[d
     return (
       <PageBody>
         <CbcEditor design={{ ...base, inputs: cbcInputs(design.inputs) }} projects={projects} />
+      </PageBody>
+    );
+  if (design.kind === "pipe-culvert")
+    return (
+      <PageBody>
+        <PipeCulvertEditor design={{ ...base, inputs: pipeInputs(design.inputs) }} projects={projects} />
+      </PageBody>
+    );
+  if (design.kind === "three-sided-culvert")
+    return (
+      <PageBody>
+        <ThreeSidedEditor design={{ ...base, inputs: threeSidedInputs(design.inputs) }} projects={projects} />
       </PageBody>
     );
   if (design.kind === "soil-nail-wall")

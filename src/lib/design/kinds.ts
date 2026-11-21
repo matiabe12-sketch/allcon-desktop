@@ -32,6 +32,8 @@ import { SIGN_BRIDGE_DEFAULTS, type SignBridgeInputs } from "./signs/bridge";
 import { SIGNAL_DEFAULTS, type SignalInputs } from "./signals/foundation";
 import { SHORING_DEFAULTS, type ShoringInputs } from "./shoring/wall";
 import { SOIL_NAIL_DEFAULTS, type SoilNailInputs } from "./soilnail/wall";
+import { PIPE_DEFAULTS, type PipeInputs } from "./culverts/pipe";
+import { THREE_SIDED_DEFAULTS, type ThreeSidedInputs } from "./culverts/three-sided";
 import { LRFR_DEFAULTS } from "./girders/lrfr";
 import { MODULAR_DEFAULTS, type ModularJointInputs } from "./joints/modular";
 import { FINGER_DEFAULTS, type FingerJointInputs } from "./joints/finger";
@@ -54,7 +56,7 @@ import { steelGirderInputs } from "./girders/steel";
 // The Design section's categories and design types: highway structures to AASHTO LRFD, grouped
 // by element. What can be designed, and what's coming next.
 
-export type DesignKind = "soil-nail-wall" | "shoring-wall" | "signal-foundation" | "sign-bridge" | "modular-joint" | "finger-joint" | "lrfd-girder-check" | "steel-girder-check" | "slab-bridge" | "dt-load-rating" | "stm-d-region" | "cip-cantilever-wall" | "mse-wall" | "cantilever-wingwall" | "box-culvert" | "deck-slab" | "seismic-zone1" | "pier-column" | "camber-haunch" | "sign-cantilever" | "elastomeric-bearing" | "ptfe-bearing" | "pot-disc-bearing" | "strip-seal-joint" | "approach-slab" | "spread-footing" | "pile-foundation" | "drilled-shaft" | "micropile" | "abutment";
+export type DesignKind = "pipe-culvert" | "three-sided-culvert" | "soil-nail-wall" | "shoring-wall" | "signal-foundation" | "sign-bridge" | "modular-joint" | "finger-joint" | "lrfd-girder-check" | "steel-girder-check" | "slab-bridge" | "dt-load-rating" | "stm-d-region" | "cip-cantilever-wall" | "mse-wall" | "cantilever-wingwall" | "box-culvert" | "deck-slab" | "seismic-zone1" | "pier-column" | "camber-haunch" | "sign-cantilever" | "elastomeric-bearing" | "ptfe-bearing" | "pot-disc-bearing" | "strip-seal-joint" | "approach-slab" | "spread-footing" | "pile-foundation" | "drilled-shaft" | "micropile" | "abutment";
 
 export const CATEGORIES: { id: string; name: string; kinds: { id: DesignKind; name: string; short: string; description: string; available: boolean }[] }[] = [
   {
@@ -86,6 +88,8 @@ export const CATEGORIES: { id: string; name: string; kinds: { id: DesignKind; na
     name: "Walls",
     kinds: [
       { id: "cip-cantilever-wall", name: "CIP Cantilever Wall", short: "Stability, stem, heel, toe and shear key", description: "Cast-in-place cantilever retaining wall: stability, shear key, and stem, heel and toe design. AASHTO LRFD.", available: true },
+      { id: "pipe-culvert", name: "Pipe Culvert", short: "Reinforced concrete or corrugated steel pipe under fill", description: "A pipe culvert by AASHTO LRFD Section 12: reinforced concrete pipe by the indirect design method (D-load on the standard installations, bedding factors, the class needed) or corrugated steel pipe (thrust, wall area, buckling, flexibility), minimum cover, the installation drawn and the pipe and end sections quantified.", available: true },
+      { id: "three-sided-culvert", name: "Three-Sided Culvert", short: "Precast flat-top frame on cast-in-place footings", description: "A precast three-sided culvert by AASHTO LRFD 12.14: the frame under fill, earth pressure and moving HL-93 live load; the top slab and legs in flexure, shear and crack control, live load deflection, and the footings in bearing, sliding, flexure and shear.", available: true },
       { id: "mse-wall", name: "MSE Wall", short: "External and internal stability, facing panel", description: "Mechanically stabilized earth wall: external and internal stability, and the precast facing panel. AASHTO LRFD.", available: true },
       { id: "cantilever-wingwall", name: "Cantilever Wingwall", short: "Off an abutment: earth pressure, bars, abutment forces", description: "Wingwall cantilevered off an abutment: at-rest earth pressure and surcharge on the retained face, the horizontal bars at the abutment face, and the forces handed to the abutment. AASHTO LRFD.", available: true },
       { id: "soil-nail-wall", name: "Soil Nail Wall", short: "Nails, facing and stability by FHWA GEC 7", description: "A soil nail wall by FHWA GEC 7 (FHWA-NHI-14-007), as CDOT BDM 11.5.6 recommends: internal stability with the nails, each construction stage and global stability by Bishop circles, sliding and basal heave, nail pullout and tendon, the initial and final facing in flexure and punching shear, headed studs, displacements, and seismic.", available: true },
@@ -233,6 +237,19 @@ export function signBridgeInputs(saved: unknown): SignBridgeInputs {
   const s = (saved && typeof saved === "object" ? saved : {}) as Partial<SignBridgeInputs>;
   const d = SIGN_BRIDGE_DEFAULTS;
   return { ...d, ...s, signs: Array.isArray(s.signs) ? s.signs.slice(0, 6).map((x) => ({ ...d.signs[0], ...x })) : d.signs, base: { ...d.base, ...(s.base ?? {}) }, flange: { ...d.flange, ...(s.flange ?? {}) }, fatigue: { ...d.fatigue, ...(s.fatigue ?? {}) } };
+}
+
+/** A pipe culvert's inputs as saved, filled in from the defaults. */
+export function pipeInputs(saved: unknown): PipeInputs {
+  const s = (saved && typeof saved === "object" ? saved : {}) as Partial<PipeInputs>;
+  return { ...PIPE_DEFAULTS, ...s };
+}
+
+/** A three-sided culvert's inputs as saved, filled in from the defaults. */
+export function threeSidedInputs(saved: unknown): ThreeSidedInputs {
+  const s = (saved && typeof saved === "object" ? saved : {}) as Partial<ThreeSidedInputs>;
+  const d = THREE_SIDED_DEFAULTS;
+  return { ...d, ...s, slabBottom: { ...d.slabBottom, ...s.slabBottom }, slabTop: { ...d.slabTop, ...s.slabTop }, legOut: { ...d.legOut, ...s.legOut }, legIn: { ...d.legIn, ...s.legIn }, footBars: { ...d.footBars, ...s.footBars } };
 }
 
 /** A soil nail wall's inputs as saved, filled in from the defaults. */
@@ -404,5 +421,5 @@ function parseInputs(kind: string, saved: unknown) {
   if (kind === "dt-load-rating") return dtRatingInputs(saved);
   if (kind === "stm-d-region") return stmInputs(saved);
   if (kind === "pier-column") return columnInputs(saved);
-  return kind === "mse-wall" ? mseInputs(saved) : kind === "box-culvert" ? cbcInputs(saved) : kind === "elastomeric-bearing" ? bearingInputs(saved) : kind === "cantilever-wingwall" ? wingwallInputs(saved) : kind === "deck-slab" ? deckInputs(saved) : kind === "seismic-zone1" ? zone1Inputs(saved) : kind === "camber-haunch" ? haunchInputs(saved) : kind === "sign-cantilever" ? signInputs(saved) : kind === "ptfe-bearing" ? ptfeInputs(saved) : kind === "strip-seal-joint" ? stripSealInputs(saved) : kind === "approach-slab" ? approachSlabInputs(saved) : kind === "slab-bridge" ? slabBridgeInputs(saved) : kind === "pot-disc-bearing" ? hlmrInputs(saved) : kind === "modular-joint" ? modularInputs(saved) : kind === "sign-bridge" ? signBridgeInputs(saved) : kind === "signal-foundation" ? signalInputs(saved) : kind === "shoring-wall" ? shoringInputs(saved) : kind === "soil-nail-wall" ? soilNailInputs(saved) : kind === "finger-joint" ? fingerInputs(saved) : cipInputs(saved);
+  return kind === "mse-wall" ? mseInputs(saved) : kind === "box-culvert" ? cbcInputs(saved) : kind === "elastomeric-bearing" ? bearingInputs(saved) : kind === "cantilever-wingwall" ? wingwallInputs(saved) : kind === "deck-slab" ? deckInputs(saved) : kind === "seismic-zone1" ? zone1Inputs(saved) : kind === "camber-haunch" ? haunchInputs(saved) : kind === "sign-cantilever" ? signInputs(saved) : kind === "ptfe-bearing" ? ptfeInputs(saved) : kind === "strip-seal-joint" ? stripSealInputs(saved) : kind === "approach-slab" ? approachSlabInputs(saved) : kind === "slab-bridge" ? slabBridgeInputs(saved) : kind === "pot-disc-bearing" ? hlmrInputs(saved) : kind === "modular-joint" ? modularInputs(saved) : kind === "sign-bridge" ? signBridgeInputs(saved) : kind === "signal-foundation" ? signalInputs(saved) : kind === "shoring-wall" ? shoringInputs(saved) : kind === "soil-nail-wall" ? soilNailInputs(saved) : kind === "pipe-culvert" ? pipeInputs(saved) : kind === "three-sided-culvert" ? threeSidedInputs(saved) : kind === "finger-joint" ? fingerInputs(saved) : cipInputs(saved);
 }

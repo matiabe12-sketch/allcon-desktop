@@ -6,7 +6,10 @@ import { movingLoad } from "./moving";
 import { toBridgeInputs } from "./geometry";
 import { designSteelGirder, STEEL_DEFAULTS } from "../design/girders/steel";
 import { bridgeLayout, runBridge, steelFromBridge } from "../design/bridge/bridge";
-import { steelSide } from "../design/bridge/loadpath";
+import { defaultStiffness, girdersInside, longitudinalShares, steelSide, windAlong } from "../design/bridge/loadpath";
+import { BEARING_DEFAULTS } from "../design/bearings/elastomeric";
+import { girderShape } from "../design/girders/prestressed";
+import { selfWeight, steelShape } from "../design/girders/steel-section";
 
 // Steel plate girders in the Bridge: the grillage's continuous steel stage and composite stage against the Steel Girder
 // Design Check's line analysis of the same plates (itself benchmarked on FHWA Example 2A and NSBA's designs), the
@@ -93,5 +96,42 @@ describe("the Bridge's run and design link for steel girders", () => {
     const side = steelSide(b, run, 1, 0, "end", "x", "Girders");
     expect(side.dc.interior).toBeCloseTo(pier.DC / 2, 6);
     expect(side.dc1!.interior).toBeCloseTo(pier.DC1 / 2, 6);
+  });
+});
+
+describe("a steel bridge's loads on the substructure", () => {
+  const b = toBridgeInputs(D2A);
+  const run = runBridge(b);
+  const st = run.steel!;
+  it("the girders' stand-in: the deepest plates' outline, the steel design's deck, the Bridge's site wind", () => {
+    const sh = girderShape(st.standIn);
+    expect(sh.depth).toBeCloseTo(0.75 + 42 + 1.25 + (1.125 - 0.75), 6);
+    expect(st.standIn.haunch).toBeCloseTo(st.inputs.haunch, 9);
+    expect(st.standIn.site!.V).toBe(115);
+    expect(st.standIn.site!.barrierHeight).toBeGreaterThan(0);
+  });
+  it("the wind along the bridge reaches the piers and the caps' sides for steel girders", () => {
+    const shares = longitudinalShares(b, defaultStiffness(b, run, BEARING_DEFAULTS));
+    const w = windAlong(run, shares[1])!;
+    expect(w).not.toBeNull();
+    expect(w.WS5).toBeGreaterThan(0);
+    expect(w.WS3).toBeGreaterThan(w.WS5);
+    const side = steelSide(b, run, 1, 0, "end", "x", "Girders");
+    expect(side.wind).not.toBeNull();
+    // girders, haunch, deck and barrier in elevation (3.8.1.2.3a)
+    expect(side.wind!.depth).toBeCloseTo(girderShape(st.standIn).depth / 12 + (st.inputs.haunch + b.deckT) / 12 + st.standIn.site!.barrierHeight, 6);
+  });
+  it("the steel girders' ends inside an integral diaphragm are deducted: the end segment's steel and the deck to the face", () => {
+    const s = b.supports[0];
+    const a = 2 - Math.max(0, s.bearingOffset);
+    const seg = st.inputs.segments[0];
+    const deck = (trib: number) => ((b.deckT / 12) * trib + (st.inputs.haunch / 12) * (steelShape(seg).topWidth / 12)) * st.inputs.wcDeck;
+    const one = (trib: number) => selfWeight(seg) * (s.endDistance + a) + deck(trib) * a;
+    const want = 2 * one(st.inputs.S / 2 + st.inputs.overhang) + 2 * one(st.inputs.S);
+    expect(girdersInside(b, run, 0, 4)).toBeCloseTo(want, 9);
+    expect(girdersInside(b, run, 0, 4)).toBeGreaterThan(0);
+    // the pier's segment is the heavier one
+    const side = steelSide(b, run, 1, 0, "end", "x", "Girders");
+    expect(side.inDiaphragm!.wg).toBeCloseTo(selfWeight(st.inputs.segments[1]), 9);
   });
 });

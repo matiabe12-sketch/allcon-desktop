@@ -4,7 +4,8 @@ import { type FootingInputs } from "../foundations/footing";
 import { type PileInputs } from "../foundations/piles";
 import { type ShaftInputs } from "../foundations/shaft";
 import { brakingPerLane, SITE_WIND_DEFAULTS, superstructureWind } from "../girders/substructure-loads";
-import { girderSide, type GirderSide } from "../stm/cap-loads";
+import { girderSide, sideWind, type GirderSide } from "../stm/cap-loads";
+import { selfWeight, steelShape } from "../girders/steel-section";
 import type { StmInputs } from "../stm/strut-tie";
 import { bearingsFromLink, buildTemplate, HAMMERHEAD_DEFAULTS, MULTICOLUMN_DEFAULTS, type StmTemplate } from "../stm/templates";
 import type { ColumnInputs, ColumnLink } from "../piers/column";
@@ -127,6 +128,12 @@ export function defaultStiffness(b: BridgeInputs, run: BridgeRun, pad: Pick<Bear
  */
 export function girdersInside(b: BridgeInputs, run: BridgeRun, support: number, width: number) {
   const s = b.supports[support];
+  if (run.steel) {
+    const st = steelAtSupport(run, support);
+    const a = Math.max(0, width / 2 - Math.max(0, s.bearingOffset));
+    const one = (wDeck: number) => st.wg * (s.endDistance + a) + wDeck * a;
+    return 2 * one(st.wDeck.exterior) + (b.nGirders - 2) * one(st.wDeck.interior);
+  }
   const j = support === 0 ? 0 : support - 1;
   const g = run.groups.find((x) => x.spans.includes(j));
   if (!g) return 0;
@@ -593,7 +600,7 @@ export function approachOnAbutment(b: BridgeInputs, ap: Pick<ApproachSlabInputs,
  * transverse), Strength III, V and Service I; on the live load, 0.04 klf (3.8.1.3), Strength V.
  */
 export function windAlong(run: BridgeRun, share: ReturnType<typeof longitudinalShares>[number]) {
-  const g = run.groups[0]?.inputs;
+  const g = run.groups[0]?.inputs ?? run.steel?.standIn;
   if (!g) return null;
   const site = g.site ?? SITE_WIND_DEFAULTS;
   const w = superstructureWind(g, site);
@@ -634,9 +641,26 @@ export function steelSide(b: BridgeInputs, run: BridgeRun, support: number, span
     liveContinuous: null,
     liveUnbalance: null,
     liveUnbalanceStatic: null,
-    wind: null,
+    wind: run.steel ? sideWind(run.steel.standIn) : null,
     brakingPerLane: brakingPerLane(run.layout.length).perLane,
+    ...(run.steel ? { inDiaphragm: { wg: steelAtSupport(run, support).wg, endDist: s.endDistance, wDeck: steelAtSupport(run, support).wDeck } } : {}),
   };
+}
+
+/**
+ * A steel girder bridge's girders at a support, as a precast design's are read for what is cast around their ends
+ * (girdersInside, the cap's diaphragm): the steel of the segment there (klf, Table 3.5.1-1's 0.490 kcf), and the deck
+ * and haunch on an interior and an exterior girder (klf).
+ */
+export function steelAtSupport(run: BridgeRun, support: number) {
+  const i = run.steel!.inputs;
+  const X = i.spans.slice(0, support).reduce((t, L) => t + L, 0);
+  let k = 0;
+  for (let x = 0; k < i.segments.length - 1 && x + i.segments[k].length <= X; k++) x += i.segments[k].length;
+  const seg = i.segments[k];
+  const topWidth = steelShape(seg).topWidth;
+  const deck = (trib: number) => ((i.deckT / 12) * trib + (i.haunch / 12) * (topWidth / 12)) * i.wcDeck;
+  return { wg: selfWeight(seg), wDeck: { interior: deck(i.S), exterior: deck(i.S / 2 + i.overhang) } };
 }
 
 /**

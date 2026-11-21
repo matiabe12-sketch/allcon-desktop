@@ -89,6 +89,14 @@ const TRUCK = [8, 32, 32]; // kip, 14 ft apart (the shortest rear spacing gives 
 const TANDEM = [25, 25]; // kip, 4 ft apart
 export const multiplePresence = (lanes: number) => (lanes <= 1 ? 1.2 : lanes === 2 ? 1 : lanes === 3 ? 0.85 : 0.65); // T. 3.6.1.1.2-1
 
+/** A side's superstructure wind from a girder design's section and site (null when the site gives none). */
+export function sideWind(design: GirderInputs): GirderSide["wind"] {
+  const site = design.site ?? SITE_WIND_DEFAULTS;
+  if (!(site.barrierHeight > 0 || site.V > 0)) return null;
+  const w = superstructureWind(design, site);
+  return { depth: w.depth, arm: w.arm, armWL: w.armWL, deckWidth: w.deckWidth, lineIII: w.strengthIII?.line ?? null, lineV: w.strengthV.line, lineService: w.serviceI.line, V: site.V, exposure: site.exposure, Z: site.Z };
+}
+
 /**
  * Each girder's unfactored dead load reactions where a span bears on the pier, as its girder design
  * loads it: simple spans for the girder, deck, haunch and diaphragms; for girders made continuous
@@ -122,8 +130,6 @@ export function girderSide(design: GirderInputs, span: number, designId: string,
   };
   const int = at(false);
   const ext = at(true);
-  const site = design.site ?? SITE_WIND_DEFAULTS;
-  const w = superstructureWind(design, site);
   const bridgeLength = [design.L, ...design.extraSpans.map((s) => s.L)].reduce((s, L) => s + L, 0);
   return {
     designId,
@@ -143,7 +149,7 @@ export function girderSide(design: GirderInputs, span: number, designId: string,
     liveContinuous: interiorPier ? { pier, ...continuousLaneReaction(design, pier) } : null,
     liveUnbalance: interiorPier ? continuousLaneUnbalance(design, pier) : null,
     liveUnbalanceStatic: interiorPier ? continuousLaneUnbalance(design, pier, 0) : null,
-    wind: site.barrierHeight > 0 || site.V > 0 ? { depth: w.depth, arm: w.arm, armWL: w.armWL, deckWidth: w.deckWidth, lineIII: w.strengthIII?.line ?? null, lineV: w.strengthV.line, lineService: w.serviceI.line, V: site.V, exposure: site.exposure, Z: site.Z } : null,
+    wind: sideWind(design),
     brakingPerLane: brakingPerLane(bridgeLength).perLane,
     inDiaphragm: { wg, endDist: i.endDist, wDeck: deckAt },
   };

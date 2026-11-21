@@ -138,12 +138,9 @@ export async function runLoadPath(o: {
   }
   const girders = new Map<string, GirderInputs>();
   for (let gi = 0; gi < groups.length; gi++) if (girderIds[gi]) girders.set(girderIds[gi]!, run.groups[gi].inputs);
-  // A steel girder bridge: the columns read their spans and width as from a girder design (a stand-in; its wind from the
-  // precast library's default section, deeper than the steel's, so conservative).
-  if (isSteel && girderIds[0] && run.steel) {
-    const sp = run.steel.inputs.spans;
-    girders.set(girderIds[0], { ...BRIDGE_GIRDER_BASE, L: sp[0], extraSpans: sp.slice(1).map((L) => ({ L, strands: null, harped: null })), nGirders: b.nGirders, S: b.spacing, overhang: run.layout.overhang, barrierWidth: b.barrierWidth, deckT: b.deckT, barrierWeight: run.steel.inputs.loads.barrierWeight });
-  }
+  // A steel girder bridge: the columns read their spans, width, section and site wind as from a girder design (the
+  // steel girders' stand-in: the deepest segment's outline, the steel design's deck and wind).
+  if (isSteel && girderIds[0] && run.steel) girders.set(girderIds[0], run.steel.standIn);
   // A slab bridge: its spans and width for the columns' braking and wind along the bridge (column-link.ts reads them from a
   // girder design): a stand-in with the slab's spans; its depth for the wind the girder section's and the slab's (conservative).
   if (isSlab && slabId && run.slab) {

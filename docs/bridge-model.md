@@ -348,8 +348,13 @@ length along the bridge, web and flanges, as the Steel Girder Design Check takes
   - **The rest:**
     - the calc package carries the steel check's calc, checks and 509 quantities;
     - the IFC model's girders are structural steel with the steel design's pset.
-- **Not yet:**
-  - the wind along the bridge on the piers (windAlong reads a precast design's site wind; none for steel);
-  - the steel girders' ends inside an integral diaphragm deducted (girdersInside);
-  - the column links' stand-in girder section (the library's default, deeper than the steel's, so its wind is
-    conservative).
+- **The substructure's other loads** (src/lib/design/bridge, 2026-11-20):
+  - **The girders' stand-in** (steelStandIn, on the run): the steel girders as a precast design's inputs, the deepest
+    segment's outline as a custom section, the steel design's spans, deck and haunch, the site's wind from the steel
+    design (else the Bridge's environment) and the barrier's height from the rail (else the environment's).
+  - **Wind along the bridge** on the piers and abutments (windAlong) and **the caps' wind** (steelSide) from it,
+    as for precast girders (3.8.1.2.3a).
+  - **The columns' links** read the stand-in: their spans and width, and the superstructure's depth for wind, the
+    steel's (no longer the library's deeper default).
+  - **Girders inside cast concrete** (girdersInside, the cap's inDiaphragm): the steel of the segment at the support
+    (0.490 kcf) from the girder's end to the block's face, the deck and haunch from the bearing line to the face.

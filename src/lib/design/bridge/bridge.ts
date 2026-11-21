@@ -1,4 +1,6 @@
 import { designGirder, GIRDER_DEFAULTS, girderShape, liveLoad, type GirderInputs } from "../girders/prestressed";
+import { railDef } from "../decks/rails";
+import type { SiteWind } from "../girders/substructure-loads";
 import { designSteelGirder, STEEL_DEFAULTS, type SteelGirderInputs, type SteelGirderResult } from "../girders/steel";
 import { deepestSteelShape, STEEL_GIRDER_DEFAULT, type SteelSegment } from "../girders/steel-section";
 import type { GirderShape } from "../girders/sections";
@@ -68,6 +70,8 @@ export type BridgeInputs = {
   shape: string; // the girder library's id, or "steel" (a plate girder, `steel`)
   /** A steel plate girder's plates along the bridge (shape "steel"). */
   steel?: { segments: SteelSegment[]; Fyw: number; Fyf: number };
+  /** The site's wind and the barrier's height (the Bridge's environment), for a steel bridge's wind on the substructure. */
+  site?: SiteWind;
   nGirders: number;
   spacing: number; // ft, normal to the alignment
   bridgeLineOffset: number; // ft, the bridge line (the girders' center) from the alignment, + right
@@ -397,7 +401,7 @@ function runSlabBridge(b: BridgeInputs, lay: BridgeLayout, base: SlabBridgeInput
   return { layout: lay, groups: [] as { spans: number[]; inputs: GirderInputs; result: ReturnType<typeof designGirder> }[], reactions, ok: result.ok, slab: { inputs, result } as SlabRun | null, steel: null as SteelRun | null };
 }
 
-export type SteelRun = { inputs: SteelGirderInputs; result: SteelGirderResult };
+export type SteelRun = { inputs: SteelGirderInputs; result: SteelGirderResult; /** The girders as a precast design's inputs (steelStandIn). */ standIn: GirderInputs };
 
 /**
  * The Steel Girder Design Check's inputs from the Bridge: its spans (bearing to bearing), girders, deck (the haunch from
@@ -431,6 +435,39 @@ export function steelFromBridge(b: BridgeInputs, lay: BridgeLayout, base: SteelG
 }
 
 /**
+ * A steel girder bridge's girders as a precast design's inputs, for what reads a girder design's section and site (the
+ * superstructure's wind on the piers and caps, the columns' spans and width): the deepest segment's outline as a custom
+ * section, the run's spans, girders, deck and haunch; the site's wind from the steel design's (else the Bridge's).
+ */
+export function steelStandIn(b: BridgeInputs, i: SteelGirderInputs): GirderInputs {
+  const sh = deepestSteelShape(i.segments);
+  const rail = b.rail ? railDef(b.rail.type) : null;
+  const own = i.wind.V > 0;
+  const site: SiteWind = {
+    V: own ? i.wind.V : (b.site?.V ?? 0),
+    exposure: own ? i.wind.exposure : (b.site?.exposure ?? "C"),
+    Z: own ? i.wind.Z : (b.site?.Z ?? 33),
+    barrierHeight: rail ? rail.height / 12 : (b.site?.barrierHeight ?? 0),
+  };
+  return {
+    ...BRIDGE_GIRDER_BASE,
+    shape: "custom",
+    custom: { profile: sh.profile, web: sh.web, topWidth: sh.topWidth },
+    L: i.spans[0],
+    extraSpans: i.spans.slice(1).map((L) => ({ L, strands: null, harped: null })),
+    nGirders: i.nGirders,
+    S: i.S,
+    overhang: i.overhang,
+    barrierWidth: i.barrierWidth,
+    barrierWeight: i.loads.barrierWeight,
+    deckT: i.deckT,
+    haunch: i.haunch,
+    haunchSupport: undefined,
+    site,
+  };
+}
+
+/**
  * A steel girder bridge's run: the girder line designed by the Steel Girder Design Check, and each support's reactions
  * per girder (its dead loads from the continuous girder's shears, DC1 apart; the live load from the support's reaction
  * influence line with IM, by the shear distribution factor), so the substructure takes them as it takes precast girders.
@@ -445,7 +482,7 @@ function runSteelBridge(b: BridgeInputs, lay: BridgeLayout, base: SteelGirderInp
     return { support: i, name: s.name, sides: [] as { span: number; interior: typeof line; exterior: typeof line }[], ...line, continuous: s.type === "continuous-pier", totals: { DC: r.dc * b.nGirders, DW: r.dw * b.nGirders }, steel: { perGirder: line } };
   });
   const ok = result.checks.every((c) => c.ok || c.advisory);
-  return { layout: lay, groups: [] as { spans: number[]; inputs: GirderInputs; result: ReturnType<typeof designGirder> }[], reactions, ok, slab: null as SlabRun | null, steel: { inputs, result } as SteelRun | null };
+  return { layout: lay, groups: [] as { spans: number[]; inputs: GirderInputs; result: ReturnType<typeof designGirder> }[], reactions, ok, slab: null as SlabRun | null, steel: { inputs, result, standIn: steelStandIn(b, inputs) } as SteelRun | null };
 }
 
 export type SlabRun = { inputs: SlabBridgeInputs; result: SlabBridgeResult };

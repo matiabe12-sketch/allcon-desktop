@@ -133,3 +133,19 @@ describe("the gradient in the precast girder check (3.12.3, 4.6.6)", () => {
     expect(toBridgeInputs(d).gradient).toEqual({ zone: 2, asphalt: true });
   });
 });
+
+describe("the gradient at a continuous girder's pier", () => {
+  const base = { ...GIRDER_DEFAULTS, L: 100, extraSpans: [{ L: 100, strands: null, harped: null }] };
+  const r0 = designGirder(base);
+  const r1 = designGirder({ ...base, gradient: { zone: 1, asphalt: false } });
+  const pier = (r: typeof r0) => r.spans[0].interior.stations.find((s) => s.pier && s.x > 1)!;
+  it("the deck's bars take the negative gradient's hogging restraint at 0.50", () => {
+    const p = pier(r1);
+    expect(p.service.fss!).toBeGreaterThan(pier(r0).service.fss!);
+  });
+  it("the positive moment connection takes the positive gradient's sagging restraint at 0.50", () => {
+    const Mt = r1.restraint!.interior.tg![1];
+    expect(Mt).toBeGreaterThan(0);
+    expect(r1.spans[0].interior.pierRight!.Ms - r0.spans[0].interior.pierRight!.Ms).toBeCloseTo(0.5 * Mt, 6);
+  });
+});

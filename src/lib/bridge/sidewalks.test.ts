@@ -2,6 +2,11 @@ import { describe, expect, it } from "vitest";
 import { analyzeBridge, combinationsFor } from "./bridge";
 import { BRIDGE_DEFAULTS, bridgeDefinition } from "./definition";
 import { toBridgeInputs } from "./geometry";
+import { bridgeSolids } from "./solids";
+import { bridgeIfc, meshVolume, type V3 } from "../design/bridge/ifc";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { BridgeSectionSketch } from "@/components/design/bridge-section-sketch";
 import { designGirder, GIRDER_DEFAULTS } from "../design/girders/prestressed";
 import { designSteelGirder, STEEL_DEFAULTS } from "../design/girders/steel";
 import { bridgeLayout, runBridge, sidewalkLoads, slabFromBridge } from "../design/bridge/bridge";
@@ -9,7 +14,7 @@ import { designSlabBridge, SLAB_BRIDGE_DEFAULTS } from "../design/slabs/slab-bri
 import { capLoadCases, girderSide, type GirderLink } from "../design/stm/cap-loads";
 import { STM_DEFAULTS } from "../design/stm/strut-tie";
 import { deckFromBridge, designLanes } from "../design/bridge/loadpath";
-import { DECK_DEFAULTS, designDeck } from "../design/decks/deck";
+import { DECK_DEFAULTS, designDeck, sidewalkQuantities } from "../design/decks/deck";
 
 // Sidewalks on the Bridge: inside the barriers, their concrete (DC) and pedestrians (AASHTO 3.6.1.6, 0.075 ksf on those
 // wider than 2 ft) in the analysis, the lanes kept to the curbs; and the girder designs' share of them.
@@ -169,5 +174,52 @@ describe("a slab bridge's sidewalks", () => {
   it("the Bridge passes them to the slab design", () => {
     const b = toBridgeInputs(bridgeDefinition({ ...BRIDGE_DEFAULTS, spans: [30], superstructure: "slab", sidewalks: { left: 6, right: 0, depth: 8 } }));
     expect(slabFromBridge(b, bridgeLayout(b)).sidewalks).toEqual({ left: 6, right: 0, depth: 8 });
+  });
+});
+
+describe("sidewalks in the model", () => {
+  it("the 3D view: a raised slab inside each barrier", () => {
+    const a = analyzeBridge(walks);
+    const { solids, deckTop } = bridgeSolids(walks, a.generated);
+    const sw = solids.filter((s) => s.part?.startsWith("sidewalk-"));
+    expect(sw.map((s) => s.part).sort()).toEqual(["sidewalk-left", "sidewalk-right"]);
+    const left = sw.find((s) => s.part === "sidewalk-left")! as { z0: number; z1: number };
+    expect(left.z0).toBeCloseTo(deckTop, 9);
+    expect(left.z1 - left.z0).toBeCloseTo(8 / 12, 9);
+  });
+  it("the IFC model: a sidewalk swept along each edge, its volume width × depth × length", () => {
+    const b = toBridgeInputs(walks);
+    const ifc = bridgeIfc(b, runBridge(b));
+    const els = ifc.elements.filter((e) => e.name.startsWith("Sidewalk"));
+    expect(els.length).toBe(2);
+    const e = els[0];
+    const vol = Math.abs(meshVolume((e.profile as { pts: V3[] }).pts, (e.profile as { tris: [number, number, number][] }).tris));
+    expect(vol).toBeCloseTo(6 * (8 / 12) * e.length!, 1);
+  });
+  it("the typical section draws them, with the roadway between the curbs", () => {
+    const b = toBridgeInputs(walks);
+    const g = runBridge(b).groups[0].inputs;
+    const html = renderToStaticMarkup(createElement(BridgeSectionSketch, { inputs: g }));
+    expect(html).toContain("between curbs");
+    expect(html).toContain("sidewalk");
+  });
+});
+
+describe("the sidewalks' bars", () => {
+  it("the deck design checks them for shrinkage and temperature (5.10.6): #4 at 12 in by default", () => {
+    const d = designDeck({ ...DECK_DEFAULTS, rail: { ...DECK_DEFAULTS.rail!, type: "custom" }, sidewalk: { width: 6, depth: 8 } });
+    const c = d.checks.find((x) => x.id === "sidewalk-temp")!;
+    // 1.3·72·8 / (2·80·60) = 0.078 → the 0.11 in²/ft least; #4 at 12 gives 0.20
+    expect(c.demand).toBeCloseTo(0.11, 6);
+    expect(c.capacity).toBeCloseTo(0.2, 6);
+    expect(d.checks.find((x) => x.id === "sidewalk-temp-s")!.capacity).toBe(18);
+    const sparse = designDeck({ ...DECK_DEFAULTS, rail: { ...DECK_DEFAULTS.rail!, type: "custom" }, sidewalk: { width: 6, depth: 8, bars: { bar: 4, spacing: 24 } } });
+    expect(sparse.checks.find((x) => x.id === "sidewalk-temp")!.ok).toBe(false);
+  });
+  it("their quantities: concrete and bars each way over the deck's length", () => {
+    const q = sidewalkQuantities({ left: 6, right: 0, depth: 8 }, 100);
+    expect(q.cy).toBeCloseTo((6 * (8 / 12) * 100) / 27, 9);
+    // across: 101 bars × 6 ft; along: 7 bars × 100 ft; #4 at 0.668 lb/ft
+    expect(q.lb).toBeCloseTo(3.4 * 0.2 * (101 * 6 + 7 * 100), 6);
   });
 });

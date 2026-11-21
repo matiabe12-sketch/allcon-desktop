@@ -434,6 +434,14 @@ export function bridgeIfc(b: BridgeInputs, run: BridgeRun, c: BridgeComponents =
         psets: { ALLCON_Design: { DesignKind: "bridge-rail", Rail: railShape.name, PayItem: railShape.payItem } },
         sweep: frames,
       });
+      // A sidewalk inside the rail: its width from the rail's inside face, its depth on the deck.
+      const swW = side === "left" ? (b.sidewalks?.left ?? 0) : (b.sidewalks?.right ?? 0);
+      if (b.sidewalks && swW > 0 && b.sidewalks.depth > 0) {
+        const x0 = b.barrierWidth * 12;
+        const x1 = (b.barrierWidth + swW) * 12;
+        const box: [number, number][] = [[x0, 0], [x1, 0], [x1, b.sidewalks.depth], [x0, b.sidewalks.depth]];
+        els.push({ cls: "IfcSlab", type: "FLOOR", name: `Sidewalk, ${side}, span ${span.index + 1}`, part: "super", origin: [0, 0, 0], xdir: [1, 0, 0], zdir: UP, profile: { kind: "mesh", ...sweepSolid(frames, box) }, depth: 1, length: runLength(frames), material: "Concrete Class D (Bridge)", color: [...COLORS.deck], psets: { ALLCON_Design: { DesignKind: "sidewalk", Width_ft: swW, Depth_in: b.sidewalks.depth, PayItem: "601-03040 Concrete Class D (Bridge)" } } });
+      }
       // Steel tubes on a curb-and-post rail.
       for (const [t, tube] of (railShape.def?.posts?.tubes ?? []).entries()) {
         const box: [number, number][] = [[tube.x0, tube.y0], [tube.x1, tube.y0], [tube.x1, tube.y1], [tube.x0, tube.y1]];

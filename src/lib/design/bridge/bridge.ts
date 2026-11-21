@@ -147,7 +147,7 @@ export function sidewalkLoads(b: Pick<BridgeInputs, "sidewalks" | "nGirders">) {
   if (!sw || sw.left + sw.right <= 0) return undefined;
   const r = (v: number) => Math.round(v * 10000) / 10000;
   const ped = (w: number) => (w > 2 ? w : 0);
-  return { width: Math.min(sw.left, sw.right), dc: r(((sw.left + sw.right) * (sw.depth / 12) * 0.15) / b.nGirders), pl: r(((ped(sw.left) + ped(sw.right)) * 0.075) / b.nGirders) };
+  return { left: sw.left, right: sw.right, depth: sw.depth, width: Math.min(sw.left, sw.right), dc: r(((sw.left + sw.right) * (sw.depth / 12) * 0.15) / b.nGirders), pl: r(((ped(sw.left) + ped(sw.right)) * 0.075) / b.nGirders) };
 }
 
 /** The Bridge's girder as a shape: the library's, or a steel plate girder's deepest segment. */
@@ -454,6 +454,7 @@ export function steelFromBridge(b: BridgeInputs, lay: BridgeLayout, base: SteelG
     segments: st.segments.map((s) => ({ ...s, length: Math.round(((s.length * total) / sum) * 1000) / 1000 })),
     braces: base.braces.filter((x) => x < total),
     loads: { ...base.loads, mode: "computed", barrierWeight: rail ? rail.barrierWeight : base.loads.barrierWeight, fws: b.fws, sidewalk: sidewalkLoads(b) },
+    ...curveFor(b, lay, spans, base),
   };
 }
 
@@ -488,6 +489,24 @@ export function steelStandIn(b: BridgeInputs, i: SteelGirderInputs): GirderInput
     haunchSupport: undefined,
     site,
   };
+}
+
+/**
+ * A steel bridge on a curve: within 4.6.1.2.4b's limits (each span's Las / R < 0.06 rad, the bearings within 10° of
+ * radial), a line girder with the innermost girder's radius (its flanges' lateral bending the most, by the V-load
+ * method); beyond them, or where the design already chose it, the refined grid (4.6.3.3) on the centerline's radius,
+ * its girders concentric. Straight: the design's own analysis, no radius.
+ */
+function curveFor(b: BridgeInputs, lay: BridgeLayout, spans: number[], base: SteelGirderInputs): Pick<SteelGirderInputs, "radius" | "analysis"> {
+  const Rs = lay.supports.map((x) => Math.abs(x.R)).filter((R) => Number.isFinite(R) && R > 0);
+  if (!Rs.length) return { radius: 0, analysis: base.analysis };
+  const R = Math.min(...Rs);
+  const r3 = (v: number) => Math.round(v * 1000) / 1000;
+  const factor = (j: number) => (spans.length === 1 ? 1 : j === 0 || j === spans.length - 1 ? 0.9 : 0.8);
+  const skew = Math.max(...b.supports.map((x) => Math.abs(x.skew)));
+  const within = spans.every((L, j) => (factor(j) * L) / R < 0.06) && skew <= 10;
+  if (within && base.analysis !== "grid") return { radius: r3(Math.max(1, R - ((b.nGirders - 1) * b.spacing) / 2)), analysis: "line" };
+  return { radius: r3(R), analysis: "grid" };
 }
 
 /**

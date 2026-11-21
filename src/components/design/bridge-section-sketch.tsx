@@ -69,6 +69,17 @@ export function BridgeSectionSketch({ inputs }: { inputs: GirderInputs }) {
     const pts = [[edge, y0], [edge + side * w, y0], [edge + side * w, y0 + railH], [edge, y0 + railH]];
     return { side, pts, posts: null };
   });
+  // Sidewalks inside the rails (from the Bridge), raised with a curb at the roadway.
+  const sw = inputs.sidewalk;
+  const swL = sw?.left ?? 0;
+  const swR = sw?.right ?? 0;
+  const swD = (sw?.depth ?? 8) / 12;
+  const walks = [
+    ...(swL > 0 ? [[inputs.barrierWidth, inputs.barrierWidth + swL]] : []),
+    ...(swR > 0 ? [[b.W - inputs.barrierWidth - swR, b.W - inputs.barrierWidth]] : []),
+  ].map(([a, c]) => [[a, b.surface(a)], [c, b.surface(c)], [c, b.surface(c) + swD], [a, b.surface(a) + swD]] as [number, number][]);
+  const curbL = inputs.barrierWidth + swL;
+  const curbR = b.W - inputs.barrierWidth - swR;
   const yd1 = 16;
   const yd2 = 32;
   const yd3 = 48;
@@ -77,7 +88,9 @@ export function BridgeSectionSketch({ inputs }: { inputs: GirderInputs }) {
   return (
     <svg viewBox={`0 0 ${VW} ${VH}`} className="w-full" role="img" aria-label="Bridge typical section">
       <Dim x1={X(0)} x2={X(b.W)} y={yd1} label={f3(b.W)} />
-      <Dim x1={X(inputs.barrierWidth)} x2={X(b.W - inputs.barrierWidth)} y={yd2} label={`${f3(b.roadway)} between rails`} />
+      {walks.length ? <Dim x1={X(curbL)} x2={X(curbR)} y={yd2} label={`${f3(curbR - curbL)} between curbs`} /> : <Dim x1={X(inputs.barrierWidth)} x2={X(b.W - inputs.barrierWidth)} y={yd2} label={`${f3(b.roadway)} between rails`} />}
+      {swL > 0 && <Dim x1={X(inputs.barrierWidth)} x2={X(curbL)} y={yd3} label={`${f3(swL)} sidewalk`} />}
+      {swR > 0 && <Dim x1={X(curbR)} x2={X(b.W - inputs.barrierWidth)} y={yd3} label={`${f3(swR)} sidewalk`} />}
       <Dim x1={X(0)} x2={X(inputs.barrierWidth)} y={yd3} label={f3(inputs.barrierWidth)} />
       <Dim x1={X(b.W - inputs.barrierWidth)} x2={X(b.W)} y={yd3} label={f3(inputs.barrierWidth)} />
       <polygon points={deck} fill={DECK} stroke={LINE} strokeWidth="0.8" />
@@ -89,6 +102,9 @@ export function BridgeSectionSketch({ inputs }: { inputs: GirderInputs }) {
             {label(g.k)}
           </text>
         </g>
+      ))}
+      {walks.map((p, k) => (
+        <polygon key={k} points={p.map(([x, y]) => `${X(x)},${Y(y)}`).join(" ")} fill={DECK} stroke={LINE} strokeWidth="0.8" />
       ))}
       {rails.map((r) => (
         <g key={r.side}>

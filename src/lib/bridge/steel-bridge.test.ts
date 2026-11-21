@@ -135,3 +135,35 @@ describe("a steel bridge's loads on the substructure", () => {
     expect(side.inDiaphragm!.wg).toBeCloseTo(selfWeight(st.inputs.segments[1]), 9);
   });
 });
+
+describe("a steel bridge on a curve", () => {
+  it("the steel design takes the innermost girder's radius (its flanges' lateral bending, 4.6.1.2.4b)", () => {
+    const b = toBridgeInputs(D2A);
+    const straight = steelFromBridge(b, bridgeLayout(b));
+    expect(straight.radius).toBe(0);
+    // A 60° curve of 1,500 ft radius from just after the reference station, the bridge on it.
+    const curved = { ...b, alignment: { ...b.alignment, curves: [{ pi: b.alignment.refStation + 900, radius: 1500, azimuth: b.alignment.azimuth + 60 }] } };
+    const lay = bridgeLayout(curved);
+    const si = steelFromBridge(curved, lay);
+    const Rmin = Math.min(...lay.supports.map((s) => Math.abs(s.R)).filter((R) => Number.isFinite(R) && R > 0));
+    expect(si.radius).toBeCloseTo(Rmin - (3 * 10) / 2, 3);
+    const r = designSteelGirder(si);
+    expect(r.checks.some((c) => c.id === "curve-span-0")).toBe(true);
+  });
+});
+
+describe("a steel bridge on a sharp curve", () => {
+  it("beyond 4.6.1.2.4b's limits the steel design runs the refined grid on the centerline's radius", () => {
+    const b = toBridgeInputs(D2A);
+    const curved = { ...b, alignment: { ...b.alignment, curves: [{ pi: b.alignment.refStation + 700, radius: 800, azimuth: b.alignment.azimuth + 80 }] } };
+    const lay = bridgeLayout(curved);
+    const si = steelFromBridge(curved, lay);
+    const R = Math.min(...lay.supports.map((s) => Math.abs(s.R)).filter((x) => Number.isFinite(x) && x > 0));
+    expect((0.9 * 90) / R).toBeGreaterThan(0.06);
+    expect(si.analysis).toBe("grid");
+    expect(si.radius).toBeCloseTo(R, 3);
+    const r = designSteelGirder(si);
+    expect(r.checks.some((c) => c.id.startsWith("curve-span"))).toBe(false);
+    expect(r.grid).not.toBeNull();
+  });
+});

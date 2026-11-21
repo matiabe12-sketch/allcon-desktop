@@ -121,7 +121,7 @@ export type GirderInputs = {
   otherDC2: number; // klf on each girder
   /** Sidewalks (from the Bridge): the narrower one's width inside the barrier (the lanes keep to the curbs), their
    * concrete (DC2) and pedestrian load (3.6.1.6) on each girder, klf, shared equally. */
-  sidewalk?: { width: number; dc: number; pl: number };
+  sidewalk?: { width: number; dc: number; pl: number; left?: number; right?: number; depth?: number };
   /** The vertical temperature gradient (3.12.3), when considered (the Bridge's choice; CDOT BDM 14.3: where
    * appropriate): its solar zone and whether the deck has an asphalt overlay. Service I and III at γTG 0.50. */
   gradient?: GradientChoice | null;
@@ -1228,9 +1228,12 @@ function designGirderLine(i: GirderInputs, exterior: boolean, ctx: SpanContext |
       const Mcn = (negative.Mdc2 + negative.Mdw + negative.Mr) * 12;
       st.negative = negative;
       st.service.botPerm = pre.bot - Mnc / g.Sb - Mcn / comp.Sbc;
-      st.service.botTotal = st.service.botPerm - (negative.Mll * 12) / comp.Sbc;
+      // The temperature gradient at γTG 0.50 (3.12.3): its compression at the bottom where it adds, and its hogging
+      // restraint (the negative gradient's, where the positive's sags) on the deck's bars.
+      const tgHog = tgAt ? 0.5 * Math.min(0, tgAt.Mt, tgNeg * tgAt.Mt) : 0;
+      st.service.botTotal = st.service.botPerm - (negative.Mll * 12) / comp.Sbc + (tgAt ? 0.5 * Math.max(0, tgAt.pos.bot, tgAt.neg.bot) : 0);
       // Service I tension in the deck's bars (crack control): the composite section's moment.
-      const Ms = -Math.min(0, Mcn / 12 + negative.Mll);
+      const Ms = -Math.min(0, Mcn / 12 + negative.Mll + tgHog);
       st.service.fss = neg!.steelStress(Ms);
       // Fatigue I in the bottom flange near the pier.
       const MfatN = fatNeg * dfNegAt(x).fatigue;
@@ -1709,7 +1712,9 @@ function designGirderLine(i: GirderInputs, exterior: boolean, ctx: SpanContext |
       const fBottom = (-Mfe * 12) / comp.Sbc; // ksi, compression +
       const conn = positiveConnection(i, comp, Ecd);
       const MuPos = i.eta * (Mr + 1.75 * MllPos + (Mdc2 < 0 ? 0.9 : 1.25) * Mdc2 + (Mdw < 0 ? 0.65 : 1.5) * Mdw);
-      const Ms = Mr + MllPos + Mdc2 + Mdw;
+      // Service I: with the temperature gradient's sagging restraint at γTG 0.50 (3.12.3), where it's considered.
+      const MtR = c.tg ? c.tg.right : 0;
+      const Ms = Mr + MllPos + Mdc2 + Mdw + 0.5 * Math.max(0, MtR, tgNeg * MtR);
       const fs = conn.steelStress(Ms);
       const pierChecks: Check[] = [];
       const addP = (k: Omit<Check, "ok"> & { ok?: boolean }) => pierChecks.push({ ...k, ok: k.ok ?? k.demand <= k.capacity + 1e-9 });
@@ -2549,7 +2554,7 @@ export function designGirder(entered: GirderInputs) {
     piers,
     continuous: true,
     controllingSpan,
-    restraint: { interior: { Mr: I.Mr, creep: I.creepM, shrinkage: I.shrinkM, effective: I.effective }, exterior: { Mr: E.Mr, creep: E.creepM, shrinkage: E.shrinkM, effective: E.effective } },
+    restraint: { interior: { Mr: I.Mr, creep: I.creepM, shrinkage: I.shrinkM, effective: I.effective, tg: I.tgM ?? null }, exterior: { Mr: E.Mr, creep: E.creepM, shrinkage: E.shrinkM, effective: E.effective, tg: E.tgM ?? null } },
   };
 }
 

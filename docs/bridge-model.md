@@ -386,8 +386,10 @@ zone of Figure 3.12.3-1, and whether the deck has an asphalt overlay). Off by de
     restraint; not relaxed, a daily load): a positive gradient sags at the piers;
   - at γTG 0.50 (C3.4.1, with live load), the worse of the positive and negative gradients where it adds: Service I's
     compression at the girder's top and the deck's top, Service III's tension at the bottom; the calc shows each.
-- **Not yet:** the steel girder check's TG (C3.4.1: open steel girders have usually been designed without it), and
-  TG at the pier section's negative-moment checks.
+  - over a pier (continuous): the deck's bars (crack control) take the negative gradient's hogging restraint at 0.50,
+    the bottom's Service I compression the worse gradient's, and the positive moment connection's bar stress the
+    positive gradient's sagging restraint at 0.50 (Service I).
+- **Not yet:** the steel girder check's TG (C3.4.1: open steel girders have usually been designed without it).
 
 ## Sidewalks (2026-11-21)
 
@@ -432,3 +434,28 @@ Each sidewalk sits inside its edge's barrier, raised, with a curb at the roadway
 - **Tests:** src/lib/bridge/sidewalks.test.ts.
 - **Not yet:**
   - the sidewalks in the drawings, the 3D model and the quantities;
+
+## The rest of the remaining checks (2026-11-21)
+
+- **Steel girders and the temperature gradient:** nothing to add. The steel check's limit states are Service II,
+  Strength and Fatigue; Table 3.4.1-1 has no TG in Service II, γTG = 0 at Strength (C3.4.1), none in Fatigue. The
+  Bridge's grillage carries TG to the bearings and substructure at Service I.
+- **Sidewalks in the model:**
+  - the 3D view: a raised slab inside each barrier (solids.ts, "sidewalk-left/right");
+  - the IFC: a sidewalk swept along each edge with the rail (IfcSlab, Concrete Class D (Bridge), its pset);
+  - the typical section (bridge-section-sketch.tsx): the sidewalks drawn, the roadway dimensioned between the curbs;
+  - their bars: the deck design checks them for shrinkage and temperature each way (5.10.6; #4 at 12 in unless set,
+    at most 3h and 18 in apart);
+  - the quantities (sidewalkQuantities): their concrete, 601-03040 Concrete Class D (Bridge), CY over the deck's
+    length, and their bars each way, 602-00020 Reinforcing Steel (Epoxy Coated).
+- **Curved girders:** precast girders are chorded on a curve (as built). A steel bridge on a curve now passes the
+  innermost girder's radius to the Steel Girder Design Check, which takes the flanges' lateral bending by the V-load
+  method and checks 4.6.1.2.4b's limits for a line girder. Beyond those limits (a span's Las / R ≥ 0.06 rad, or bearings
+  more than 10° from radial) the Bridge sets the steel design to its refined grid (4.6.3.3: curved, concentric girders,
+  cross-frames and deck) on the centerline's radius. The Bridge's own grillage still chords the girders between
+  supports; the steel design's grid is the refined analysis the girders are checked by.
+- **FHWA NHI-04-043 fixture** (src/lib/design/girders/nhi-04-043.test.ts, from FHWA's Design Step 5.3 pages): the
+  continuous precast girder check against Table 5.3-1's interior girder: parapets and FWS within 2% (or 3 k-ft) at every
+  tenth point and the pier, HL-93 per lane within 2%, the pier's negative moment within 1.5%; the noncomposite moments
+  within 1%. The input differences (DF 0.806 with the haunch in eg against the example's 0.796; FWS shared equally) are
+  set apart in the test.

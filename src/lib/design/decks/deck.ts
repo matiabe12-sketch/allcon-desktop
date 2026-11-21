@@ -49,8 +49,21 @@ export type DeckInputs = {
   panels?: boolean; // on partial-depth precast panels: no bottom mat between the girders (quantities only)
   /** A sidewalk inside each barrier (from the Bridge): ft wide to its curb, in above the deck. Its concrete (DC), no
    * wearing surface on it, the wheels from its curb, and 0.075 ksf of pedestrians where it is wider than 2 ft (3.6.1.6). */
-  sidewalk?: { width: number; depth: number } | null;
+  sidewalk?: { width: number; depth: number; bars?: Bars } | null;
 };
+
+/** A sidewalk's bars each way when none are entered: #4 at 12 in (shrinkage and temperature, 5.10.6). */
+export const SIDEWALK_BARS: Bars = { bar: 4, spacing: 12 };
+
+/**
+ * The Bridge's sidewalks' quantities over a deck length (ft): their concrete (CY), and their bars each way (lb, 490 pcf):
+ * across at the spacing along the deck, each the sidewalk's width; along at the spacing across it, each the length.
+ */
+export function sidewalkQuantities(sw: { left: number; right: number; depth: number }, length: number, bars: Bars = SIDEWALK_BARS) {
+  const lbft = 3.4 * BARS[bars.bar].area;
+  const run = (w: number) => (w > 0 ? (Math.floor(length / (bars.spacing / 12)) + 1) * w + (Math.floor((w * 12) / bars.spacing) + 1) * length : 0);
+  return { cy: ((sw.left + sw.right) * (sw.depth / 12) * length) / 27, lb: lbft * (run(sw.left) + run(sw.right)) };
+}
 
 /** CDOT BDM Example 6.2 (Type 10 MASH, TL-4): the deck overhang's moment and tension at the curb face. */
 export const CDOT_T10_TL4 = { Mc: 19.66, T: 7.26 };
@@ -319,6 +332,16 @@ export function designDeck(entered: DeckInputs) {
   const pct = Math.min(220 / Math.sqrt(Math.max(Se, 1e-6)), 67) / 100; // AASHTO 9.7.3.2
   const distRequired = pct * area(i.botBars);
   add({ id: "long-dist", name: `Bottom longitudinal: distribution, ${Math.round(pct * 100)}% of the bottom transverse bars`, demand: distRequired, capacity: area(i.botLong), unit: "in²/ft", ref: "AASHTO 9.7.3.2" });
+
+  // --- a sidewalk's own bars: shrinkage and temperature each way (5.10.6, Eq. 5.10.6-1; 0.11 to 0.60 in²/ft, at most
+  // 3h and 18 in apart); it is cast on the deck, carried by it.
+  if (sw && sw.depth > 0) {
+    const sb = sw.bars ?? SIDEWALK_BARS;
+    const bS = sw.width * 12;
+    const req = Math.min(0.6, Math.max(0.11, (1.3 * bS * sw.depth) / (2 * (bS + sw.depth) * i.fy)));
+    add({ id: "sidewalk-temp", name: `Sidewalk: shrinkage and temperature bars each way, #${sb.bar} at ${sb.spacing} in`, demand: req, capacity: area(sb), unit: "in²/ft", ref: "AASHTO 5.10.6" });
+    add({ id: "sidewalk-temp-s", name: "Sidewalk: bar spacing ≤ 3h and 18 in", demand: sb.spacing, capacity: Math.min(3 * sw.depth, 18), unit: "in", ref: "AASHTO 5.10.6" });
+  }
 
   // --- the overhang (A13.4.1) ------------------------------------------------------------------------------
   const barrier = { x: i.barrierCg / 12, P: i.barrierWeight };

@@ -1,4 +1,5 @@
 import { hlmrCalcLines } from "../bearings/pot-disc-calc";
+import { SIDEWALK_BARS, sidewalkQuantities } from "../decks/deck";
 import { designSteelGirder, steelGirderInputs } from "../girders/steel";
 import { steelCalcLines } from "../girders/steel-calc";
 import { hlmrTakeoff } from "../bearings/pot-disc-detail";
@@ -137,6 +138,15 @@ async function gather(design: { id: string; name: string; inputs: unknown }, org
     // Its deck over its spans: the whole deck when one design carries every span.
     superPay.push(...quantities("lrfd-girder-check", i, d.name, { ...(i as { takeoff?: TakeoffSettings }).takeoff, ...(groups.length === 1 ? { length: deckFt } : {}) }));
   });
+  // Sidewalks on the deck: their concrete, Class D (Bridge), over the deck's length; and their bars each way (the deck
+  // design's, else #4 at 12 in, 5.10.6), epoxy coated as the deck's: across at the spacing along the deck, each the
+  // sidewalk's width; along at the spacing across it, each the deck's length.
+  if (b.sidewalks && b.sidewalks.left + b.sidewalks.right > 0 && b.sidewalks.depth > 0) {
+    const sb = (deck ? deckInputs(deck.inputs).sidewalk?.bars : null) ?? SIDEWALK_BARS;
+    const q = sidewalkQuantities(b.sidewalks, deckFt, sb);
+    superPay.push({ code: "601-03040", description: "Concrete Class D (Bridge)", unit: "CY", quantity: roundFor("CY", q.cy), role: "concrete" });
+    superPay.push({ code: "602-00020", description: "Reinforcing Steel (Epoxy Coated)", unit: "LB", quantity: roundFor("LB", q.lb), role: "rebar" });
+  }
   pay.push({ label: "Superstructure", lines: superPay });
 
   // --- substructure, support by support ----------------------------------------------------------------------------------

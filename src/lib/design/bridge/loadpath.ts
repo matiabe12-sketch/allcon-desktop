@@ -451,7 +451,8 @@ export function deckFromBridge(b: BridgeInputs, run: BridgeRun, current: DeckInp
   // whose overhang works hardest (Case 3's demand over capacity), designed both ways.
   const sw = b.sidewalks;
   if (!sw || sw.left + sw.right <= 0) return out;
-  const sides = [...new Set([sw.left, sw.right])].map((width) => ({ ...out, sidewalk: width > 0 ? { width, depth: sw.depth } : null }));
+  const bars = current.sidewalk?.bars; // the deck design's own sidewalk bars, kept
+  const sides = [...new Set([sw.left, sw.right])].map((width) => ({ ...out, sidewalk: width > 0 ? { width, depth: sw.depth, ...(bars ? { bars } : {}) } : null }));
   if (sides.length === 1) return sides[0];
   const ratio = (d: DeckInputs) => {
     try {

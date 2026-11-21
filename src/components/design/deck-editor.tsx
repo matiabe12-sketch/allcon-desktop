@@ -72,8 +72,9 @@ export function DeckEditor({ design, projects }: { design: { id: string; name: s
               <Field label="Wearing surface" unit="in" value={inputs.wearing} onChange={set("wearing")} step={0.5} />
               <Field label="Wearing surface unit weight" unit="pcf" value={inputs.gammaWS} scale={1000} onChange={set("gammaWS")} />
               <Field label="Utilities" unit="psf" value={inputs.utilities} scale={1000} onChange={set("utilities")} />
-              <Field label="Sidewalk inside the barrier (0: none)" unit="ft" value={inputs.sidewalk?.width ?? 0} onChange={(v) => setInputs((s) => ({ ...s, sidewalk: v > 0 ? { width: v, depth: s.sidewalk?.depth ?? 8 } : null }))} step={0.5} hint="Its concrete; the wheels from its curb; 0.075 ksf of pedestrians if wider than 2 ft (AASHTO 3.6.1.6)" />
-              {!!inputs.sidewalk?.width && <Field label="Sidewalk depth above the deck" unit="in" value={inputs.sidewalk.depth} onChange={(v) => setInputs((s) => ({ ...s, sidewalk: { width: s.sidewalk?.width ?? 0, depth: v } }))} step={1} />}
+              <Field label="Sidewalk inside the barrier (0: none)" unit="ft" value={inputs.sidewalk?.width ?? 0} onChange={(v) => setInputs((s) => ({ ...s, sidewalk: v > 0 ? { ...(s.sidewalk ?? {}), width: v, depth: s.sidewalk?.depth ?? 8 } : null }))} step={0.5} hint="Its concrete; the wheels from its curb; 0.075 ksf of pedestrians if wider than 2 ft (AASHTO 3.6.1.6)" />
+              {!!inputs.sidewalk?.width && <Field label="Sidewalk depth above the deck" unit="in" value={inputs.sidewalk.depth} onChange={(v) => setInputs((s) => ({ ...s, sidewalk: { ...(s.sidewalk ?? { width: 0 }), depth: v } }))} step={1} />}
+              {!!inputs.sidewalk?.width && <Field label="Sidewalk bars each way: spacing (#4 unless set)" unit="in" value={inputs.sidewalk.bars?.spacing ?? 12} onChange={(v) => setInputs((s) => ({ ...s, sidewalk: s.sidewalk ? { ...s.sidewalk, bars: { bar: s.sidewalk.bars?.bar ?? 4, spacing: v } } : null }))} step={1} hint="Shrinkage and temperature, AASHTO 5.10.6" />}
             </Section>
             <Section title="Concrete and bars" open>
               <Field label="f'c" unit="ksi" value={inputs.fc} onChange={set("fc")} step={0.5} />

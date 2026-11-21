@@ -131,6 +131,11 @@ export function bridgeSolids(d: BridgeDefinition, g: Generated): { solids: Solid
         solids.push({ type: "prism", kind: "barrier", ...part, section: { outline: at([[t.x0, t.y0], [t.x1, t.y0], [t.x1, t.y1], [t.x0, t.y1]]) }, segments });
     }
   }
+  // Sidewalks inside the barriers, raised on the deck.
+  const sw = d.sidewalks;
+  if (sw && sw.depth > 0)
+    for (const [side, a, c] of [["left", deck[0] + d.loads.barrierWidth, deck[0] + d.loads.barrierWidth + sw.left], ["right", deck[1] - d.loads.barrierWidth - sw.right, deck[1] - d.loads.barrierWidth]] as const)
+      if (c - a > 1e-6) solids.push({ type: "slab", kind: "deck", part: `sidewalk-${side}`, label: `Sidewalk, ${side}`, plan: strip(a, c), z0: z1, z1: z1 + sw.depth / 12 });
   return { solids, deckTop: z1 };
 }
 

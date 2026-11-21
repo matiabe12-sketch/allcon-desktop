@@ -1,4 +1,7 @@
 import { designGirder, GIRDER_DEFAULTS, girderShape, liveLoad, type GirderInputs } from "../girders/prestressed";
+import { designSteelGirder, STEEL_DEFAULTS, type SteelGirderInputs, type SteelGirderResult } from "../girders/steel";
+import { deepestSteelShape, STEEL_GIRDER_DEFAULT, type SteelSegment } from "../girders/steel-section";
+import type { GirderShape } from "../girders/sections";
 import { isAdjacent } from "../girders/sections";
 import { designSlabBridge, SLAB_BRIDGE_DEFAULTS, type SlabBridgeInputs, type SlabBridgeResult } from "../slabs/slab-bridge";
 import { continuousEndShear, continuousLaneReaction } from "../girders/substructure-loads";
@@ -62,7 +65,9 @@ export type BridgeInputs = {
   roadway: RoadwaySection;
   supports: Support[];
   // Superstructure (PGSuper's General tab)
-  shape: string; // the girder library's id
+  shape: string; // the girder library's id, or "steel" (a plate girder, `steel`)
+  /** A steel plate girder's plates along the bridge (shape "steel"). */
+  steel?: { segments: SteelSegment[]; Fyw: number; Fyf: number };
   nGirders: number;
   spacing: number; // ft, normal to the alignment
   bridgeLineOffset: number; // ft, the bridge line (the girders' center) from the alignment, + right
@@ -124,6 +129,11 @@ const rad = (d: number) => (d * Math.PI) / 180;
 const isAbutment = (t: SupportType) => t.endsWith("abutment");
 const castInAt = (s: Support | undefined) => !!s && (s.type === "integral-abutment" || s.type === "semi-integral-abutment");
 
+/** The Bridge's girder as a shape: the library's, or a steel plate girder's deepest segment. */
+export function bridgeGirderShape(b: Pick<BridgeInputs, "shape" | "steel">): GirderShape {
+  return b.shape === "steel" ? (deepestSteelShape((b.steel ?? STEEL_GIRDER_DEFAULT).segments) as GirderShape) : girderShape({ ...GIRDER_DEFAULTS, shape: b.shape });
+}
+
 /** Where every girder sits and how long it spans: the Bridge's layout. */
 export function bridgeLayout(b: BridgeInputs) {
   if (b.supports.length < 2) throw new DesignError("The bridge needs at least two supports.");
@@ -132,7 +142,7 @@ export function bridgeLayout(b: BridgeInputs) {
   if (!(b.nGirders >= 2 && b.spacing > 0)) throw new DesignError("The bridge needs at least two girders and a spacing.");
   const cache = horizontalElements(b.alignment);
   const vcs = profileGeometry(b.profile);
-  const shape = girderShape({ ...GIRDER_DEFAULTS, shape: b.shape });
+  const shape = bridgeGirderShape(b);
   // A slab bridge: no girders; the slab (deckT deep) sits on its bearing lines (docs/slab-and-box-bridges.md).
   const slab = b.superstructure === "slab";
   const depth = slab ? 0 : shape.depth; // in
@@ -234,7 +244,7 @@ export function girderInputsFor(b: BridgeInputs, lay: BridgeLayout, group: numbe
   const inner = b.supports[group[0]];
   // Harped strands that end above the section (a starting pattern for a deeper girder) brought down to
   // 11 in below its top, so a new girder design of any section can run.
-  const depth = girderShape({ ...GIRDER_DEFAULTS, shape: b.shape }).depth;
+  const depth = bridgeGirderShape(b).depth;
   const fit = <H extends { count: number; yEnd: number } | null | undefined>(h: H): H => (h && h.count > 0 && h.yEnd > depth - 6 ? { ...h, yEnd: Math.round(depth - 11) } : h);
   const out: GirderInputs = {
     ...base,
@@ -283,9 +293,10 @@ function endReaction(line: ReturnType<typeof designGirder>["interior"], L: numbe
 }
 
 /** The Bridge run: its layout, the girder check on each group of spans, and each support's reactions per girder. */
-export function runBridge(b: BridgeInputs, bases: (GirderInputs | null | undefined)[] = [], slabBase?: SlabBridgeInputs | null) {
+export function runBridge(b: BridgeInputs, bases: (GirderInputs | null | undefined)[] = [], slabBase?: SlabBridgeInputs | null, steelBase?: SteelGirderInputs | null) {
   const lay = bridgeLayout(b);
   if (b.superstructure === "slab") return runSlabBridge(b, lay, slabBase ?? null);
+  if (b.shape === "steel") return runSteelBridge(b, lay, steelBase ?? null);
   const groups = spanGroups(b).map((g, gi) => {
     const inputs = girderInputsFor(b, lay, g, bases[gi] ?? BRIDGE_GIRDER_BASE);
     const result = designGirder(inputs);
@@ -338,7 +349,7 @@ export function runBridge(b: BridgeInputs, bases: (GirderInputs | null | undefin
     return { support: i, name: s.name, sides, DC: per("DC"), DC1: per("DC1"), DW: per("DW"), LL: per("LL"), LLIM: per("LLIM"), Lane: per("Lane"), continuous, totals: { DC: tot("DC"), DW: tot("DW") } };
   });
   const ok = groups.every((g) => g.result.ok);
-  return { layout: lay, groups, reactions, ok, slab: null as SlabRun | null };
+  return { layout: lay, groups, reactions, ok, slab: null as SlabRun | null, steel: null as SteelRun | null };
 }
 
 export type BridgeRun = ReturnType<typeof runBridge>;
@@ -383,7 +394,58 @@ function runSlabBridge(b: BridgeInputs, lay: BridgeLayout, base: SlabBridgeInput
     const pick = (key: "DC" | "DC1" | "DW" | "LL" | "LLIM" | "Lane") => Math.max(int[key], ext[key]);
     return { support: i, name: s.name, sides: [] as { span: number; interior: ReturnType<typeof line>; exterior: ReturnType<typeof line> }[], DC: pick("DC"), DC1: pick("DC1"), DW: pick("DW"), LL: pick("LL"), LLIM: pick("LLIM"), Lane: pick("Lane"), continuous: s.type === "continuous-pier", totals: { DC: per.DC * W, DW: per.DW * W }, slab: { perFoot: per, tribInt, tribExt } };
   });
-  return { layout: lay, groups: [] as { spans: number[]; inputs: GirderInputs; result: ReturnType<typeof designGirder> }[], reactions, ok: result.ok, slab: { inputs, result } as SlabRun | null };
+  return { layout: lay, groups: [] as { spans: number[]; inputs: GirderInputs; result: ReturnType<typeof designGirder> }[], reactions, ok: result.ok, slab: { inputs, result } as SlabRun | null, steel: null as SteelRun | null };
+}
+
+export type SteelRun = { inputs: SteelGirderInputs; result: SteelGirderResult };
+
+/**
+ * The Steel Girder Design Check's inputs from the Bridge: its spans (bearing to bearing), girders, deck (the haunch from
+ * the slab offset, A less the deck), barriers (a CDOT rail's weight), skew and overlay; the plates along the bridge
+ * (scaled to its length); the design's own details (bracing, studs, fatigue…) kept, the cross-frames where they fit.
+ */
+export function steelFromBridge(b: BridgeInputs, lay: BridgeLayout, base: SteelGirderInputs = STEEL_DEFAULTS): SteelGirderInputs {
+  const spans = lay.spans.map((s) => Math.round(s.L * 1000) / 1000);
+  const total = spans.reduce((a, x) => a + x, 0);
+  const st = b.steel ?? STEEL_GIRDER_DEFAULT;
+  const sum = st.segments.reduce((a, s) => a + s.length, 0);
+  const rail = b.rail ? applyRail({ ...GIRDER_DEFAULTS, rail: b.rail, barrierWidth: b.barrierWidth }) : null;
+  return {
+    ...base,
+    spans,
+    nGirders: b.nGirders,
+    S: b.spacing,
+    overhang: lay.overhang,
+    barrierWidth: rail ? rail.barrierWidth : b.barrierWidth,
+    skew: Math.min(60, Math.max(...b.supports.map((s) => Math.abs(s.skew)))),
+    deckT: b.deckT,
+    sacrificial: b.sacrificial,
+    haunch: Math.max(0, b.slabOffset - b.deckT),
+    fcDeck: b.fcDeck,
+    Fyw: st.Fyw,
+    Fyf: st.Fyf,
+    segments: st.segments.map((s) => ({ ...s, length: Math.round(((s.length * total) / sum) * 1000) / 1000 })),
+    braces: base.braces.filter((x) => x < total),
+    loads: { ...base.loads, mode: "computed", barrierWeight: rail ? rail.barrierWeight : base.loads.barrierWeight, fws: b.fws },
+  };
+}
+
+/**
+ * A steel girder bridge's run: the girder line designed by the Steel Girder Design Check, and each support's reactions
+ * per girder (its dead loads from the continuous girder's shears, DC1 apart; the live load from the support's reaction
+ * influence line with IM, by the shear distribution factor), so the substructure takes them as it takes precast girders.
+ */
+function runSteelBridge(b: BridgeInputs, lay: BridgeLayout, base: SteelGirderInputs | null) {
+  const inputs = steelFromBridge(b, lay, base ?? STEEL_DEFAULTS);
+  const result = designSteelGirder(inputs);
+  const reactions = b.supports.map((s, i) => {
+    const r = result.reactions[i];
+    const LL = r.truck / (1 + inputs.IM) + r.lane;
+    const line = { DC: r.dc, DC1: r.dc1, DW: r.dw, LL, LLIM: r.truck + r.lane, Lane: r.df > 0 ? LL / r.df : 0 };
+    return { support: i, name: s.name, sides: [] as { span: number; interior: typeof line; exterior: typeof line }[], ...line, continuous: s.type === "continuous-pier", totals: { DC: r.dc * b.nGirders, DW: r.dw * b.nGirders }, steel: { perGirder: line } };
+  });
+  const ok = result.checks.every((c) => c.ok || c.advisory);
+  return { layout: lay, groups: [] as { spans: number[]; inputs: GirderInputs; result: ReturnType<typeof designGirder> }[], reactions, ok, slab: null as SlabRun | null, steel: { inputs, result } as SteelRun | null };
 }
 
 export type SlabRun = { inputs: SlabBridgeInputs; result: SlabBridgeResult };

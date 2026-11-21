@@ -16,10 +16,12 @@ const lineName = (d: BridgeDefinition, k: number) => d.geometry?.supports[k]?.na
 
 export function designTargets(d: BridgeDefinition): DesignTarget[] {
   const slab = d.superstructure === "slab";
+  const steel = d.girder.shape === "steel";
+  const girderTool = steel ? { tool: "Steel Girder Design Check", kind: "steel-girder-check" } : { tool: "LRFD Bridge Design Check", kind: "lrfd-girder-check" };
   const out: DesignTarget[] = slab
     ? [{ key: "slab", label: "Slab", tool: "Slab Bridge", kind: "slab-bridge", from: "Spans, width, the deck's thickness as its depth, barriers and loads" }]
     : [
-        { key: "girders", label: "Girders", tool: "LRFD Bridge Design Check", kind: "lrfd-girder-check", from: "Spans, girders, deck and loads" },
+        { key: "girders", label: "Girders", ...girderTool, from: steel ? "Spans, the plates, girders, deck, cross-frames and loads" : "Spans, girders, deck and loads" },
         { key: "deck", label: "Deck", tool: "Deck Slab", kind: "deck-slab", from: "Girder spacing, overhang, deck, barrier" },
       ];
   d.supports.forEach((sl, k) => out.push(sl.bearingKind === "pot" || sl.bearingKind === "disc" ? { key: `bearing-${k}`, label: `${lineName(d, k)} ${sl.bearingKind} bearings`, tool: "Pot or Disc Bearing", kind: "pot-disc-bearing", from: "The service loads on the line, its share of the forces along the bridge, the movement" } : { key: `bearing-${k}`, label: `${lineName(d, k)} bearings`, tool: "Elastomeric Bearing", kind: "elastomeric-bearing", from: "The largest bearing reaction on the line, dead and live; the expansion length" }));
@@ -33,7 +35,7 @@ export function designTargets(d: BridgeDefinition): DesignTarget[] {
   } catch {
     // laid out as one group
   }
-  if (!slab) for (let gi = 1; gi < groups; gi++) out.splice(gi, 0, { key: `girders-${gi}`, label: `Girders, group ${gi + 1}`, tool: "LRFD Bridge Design Check", kind: "lrfd-girder-check", from: "The spans past the joint, girders, deck and loads" });
+  if (!slab && !steel) for (let gi = 1; gi < groups; gi++) out.splice(gi, 0, { key: `girders-${gi}`, label: `Girders, group ${gi + 1}`, ...girderTool, from: "The spans past the joint, girders, deck and loads" });
   g.supports.forEach((s, k) => {
     const name = s.name || lineName(d, k);
     if (k === 0 || k === g.supports.length - 1) {
@@ -66,6 +68,40 @@ const STRENGTH: Selection = { kind: "combination", name: "Strength I" };
 /** The inputs a design for a target starts with (merged over the tool's defaults), and its name. */
 export function designPrefill(target: DesignTarget, d: BridgeDefinition, a: BridgeAnalysis, live: LiveLoad): { inputs: Record<string, unknown>; name: string } {
   const name = target.label;
+  if (target.kind === "steel-girder-check") {
+    // The plates along the bridge (scaled to its length), the cross-frames at the diaphragms' places, the deck and loads.
+    const st = d.girder.steel!;
+    const total = d.spans.reduce((a, b) => a + b, 0);
+    const sum = st.segments.reduce((a, s) => a + s.length, 0);
+    const braces: number[] = [];
+    let x0 = 0;
+    for (const L of d.spans) {
+      for (let k = 1; k <= d.diaphragms.perSpan; k++) braces.push(+(x0 + (L * k) / (d.diaphragms.perSpan + 1)).toFixed(3));
+      x0 += L;
+    }
+    return {
+      name,
+      inputs: {
+        spans: d.spans,
+        nGirders: d.nGirders,
+        S: d.spacing,
+        overhang: d.overhang,
+        barrierWidth: d.loads.barrierWidth,
+        skew: d.skew,
+        deckT: d.deck.thickness,
+        sacrificial: d.deck.sacrificial,
+        haunch: d.deck.haunch,
+        fcDeck: d.deck.fc,
+        wcDeck: d.deck.wc,
+        Fyw: st.Fyw,
+        Fyf: st.Fyf,
+        segments: st.segments.map((s) => ({ ...s, length: +((s.length * total) / sum).toFixed(3) })),
+        braces,
+        loads: { mode: "computed", barrierWeight: d.loads.barrierWeight, fws: d.loads.wearingSurface, dc1: 0, dc2: 0, dw: 0, sip: 15, misc: 15, otherDC1: 0, otherDC2: 0 },
+        wind: { V: d.environment?.wind ?? 0, exposure: d.environment?.exposure ?? "C", Z: Math.max(33, d.environment?.height ?? 33), lateral: true, construction: 0 },
+      },
+    };
+  }
   if (target.kind === "lrfd-girder-check")
     return {
       name,

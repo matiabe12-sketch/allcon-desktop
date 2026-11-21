@@ -1,4 +1,6 @@
 import { hlmrCalcLines } from "../bearings/pot-disc-calc";
+import { designSteelGirder, steelGirderInputs } from "../girders/steel";
+import { steelCalcLines } from "../girders/steel-calc";
 import { hlmrTakeoff } from "../bearings/pot-disc-detail";
 import { designHlmr } from "../bearings/pot-disc";
 import { slabBridgeCalcLines } from "../slabs/slab-bridge-calc";
@@ -13,7 +15,7 @@ import { bearingCalcLines } from "../bearings/elastomeric-calc";
 import type { SummaryGroup } from "../checks-summary";
 import { designDeck } from "../decks/deck";
 import { deckCalcLines } from "../decks/deck-calc";
-import { approachSlabFigures, bearingFigures, bridgeFigures, capDetailFigures, columnFigures, deckFigures, foundationFigures, girderFigures, stmFigures, takeoffFigures, wingwallFigures, type Figure } from "../figures";
+import { approachSlabFigures, bearingFigures, bridgeFigures, capDetailFigures, columnFigures, deckFigures, foundationFigures, girderFigures, steelGirderFigures, stmFigures, takeoffFigures, wingwallFigures, type Figure } from "../figures";
 import { foundationCalcLines } from "../foundations/calc";
 import { foundationInputs, type FoundationKind } from "../foundations/kinds";
 import { runFoundation } from "../foundations/run";
@@ -86,11 +88,23 @@ async function gather(design: { id: string; name: string; inputs: unknown }, org
   const deckFt = deckLengthFor(b, [await abutAt(0), await abutAt(b.supports.length - 1)]);
 
   // --- superstructure -----------------------------------------------------------------------------------------------
+  const superPartsSteel: CalcPart[] = [];
+  const superPaySteel: PayLine[] = [];
   const isSlab = b.superstructure === "slab";
-  const groups = isSlab ? [] : spanGroups(b);
+  const isSteel = !isSlab && b.shape === "steel";
+  const groups = isSlab || isSteel ? [] : spanGroups(b);
+  const steelD = isSteel ? await load(b.girderDesignIds[0] ?? null, "steel-girder-check") : null;
+  if (steelD) {
+    const i = steelGirderInputs(steelD.inputs);
+    if (full) {
+      const r = designSteelGirder(i);
+      superPartsSteel.push({ label: "Girders", name: steelD.name, lines: steelCalcLines(i, steelD.name, r, tryFig(() => steelGirderFigures(i))), checks: [{ checks: r.checks.map(aashto) }] });
+    }
+    superPaySteel.push(...quantities("steel-girder-check", i, steelD.name));
+  } else if (isSteel) missing.push("the girders");
   const girderDesigns = await Promise.all(groups.map((_, gi) => load(b.girderDesignIds[gi], "lrfd-girder-check")));
-  const superParts: CalcPart[] = [];
-  const superPay: PayLine[] = [];
+  const superParts: CalcPart[] = [...superPartsSteel];
+  const superPay: PayLine[] = [...superPaySteel];
   const deck = isSlab ? null : await load(b.deckDesignId, "deck-slab");
   // A slab bridge: its slab design (calc, checks and quantities) in place of the girders and deck.
   const slabD = isSlab ? await load(b.slabDesignId, "slab-bridge") : null;
@@ -211,7 +225,7 @@ async function gather(design: { id: string; name: string; inputs: unknown }, org
   if (approachPay.length) pay.push({ label: "Approach slabs", lines: approachPay });
 
   if (!full) return { lines: [], pay, missing };
-  const run = runBridge(b, girderDesigns.map((d) => (d ? girderInputs(d.inputs) : null)), slabD ? slabBridgeInputs(slabD.inputs) : null);
+  const run = runBridge(b, girderDesigns.map((d) => (d ? girderInputs(d.inputs) : null)), slabD ? slabBridgeInputs(slabD.inputs) : null, steelD ? steelGirderInputs(steelD.inputs) : null);
 
   // The bridge in 3D, and its plan and profile.
   const render = tryFig((): Figure => {

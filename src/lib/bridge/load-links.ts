@@ -40,7 +40,7 @@ export function linksFrom(b: BridgeInputs, before: DesignLink[], kinds: Record<s
   const add = (target: string, id: string | null | undefined, kind: string | undefined) => {
     if (id && kind) out.push({ id, target, kind });
   };
-  b.girderDesignIds.forEach((id, gi) => add(gi === 0 ? "girders" : `girders-${gi}`, id, "lrfd-girder-check"));
+  b.girderDesignIds.forEach((id, gi) => add(gi === 0 ? "girders" : `girders-${gi}`, id, b.shape === "steel" ? "steel-girder-check" : "lrfd-girder-check"));
   add("deck", b.deckDesignId, "deck-slab");
   add("slab", b.slabDesignId, "slab-bridge");
   for (const c of b.components)

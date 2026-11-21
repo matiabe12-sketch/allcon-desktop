@@ -66,7 +66,9 @@ async function describeBridgeModel(orgId: string, b: BridgeInputs, name: string)
   const verdicts0: Record<string, string> = {};
   try {
     const slabD = b.superstructure === "slab" && b.slabDesignId && isUuid(b.slabDesignId) ? await db.design.findFirst({ where: { id: b.slabDesignId, orgId, kind: "slab-bridge" }, select: { inputs: true } }) : null;
-    run = runBridge(b, b.girderDesignIds.map((id) => { const d = linked.find((x) => x.id === id); return d ? girderInputs(d.inputs) : null; }), slabD ? slabBridgeInputs(slabD.inputs) : null);
+    const steelD = b.shape === "steel" && b.girderDesignIds[0] && isUuid(b.girderDesignIds[0]) ? await db.design.findFirst({ where: { id: b.girderDesignIds[0], orgId, kind: "steel-girder-check" }, select: { inputs: true } }) : null;
+    run = runBridge(b, b.girderDesignIds.map((id) => { const d = linked.find((x) => x.id === id); return d ? girderInputs(d.inputs) : null; }), slabD ? slabBridgeInputs(slabD.inputs) : null, steelD ? steelGirderInputs(steelD.inputs) : null);
+    if (run.steel && b.girderDesignIds[0]) verdicts0[b.girderDesignIds[0]] = verdictOf(run.steel.result.checks);
     if (run.slab && b.slabDesignId) verdicts0[b.slabDesignId] = verdictOf(run.slab.result.checks);
   } catch (e) {
     return { error: e instanceof Error ? e.message : "The bridge can't be laid out." };

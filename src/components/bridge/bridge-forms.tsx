@@ -1,7 +1,8 @@
 "use client";
 
 import { Choice, Field, Toggle } from "@/components/design/design-kit";
-import { GIRDER_CHOICES, supportsFor, type BridgeDefinition, type JointChoice, BRIDGE_DEFAULTS } from "@/lib/bridge/definition";
+import { GIRDER_CHOICES, supportsFor, type BridgeDefinition, type JointChoice, BRIDGE_DEFAULTS, STEEL_GIRDER_DEFAULT } from "@/lib/bridge/definition";
+import type { SteelSegment } from "@/lib/design/girders/steel-section";
 import { applyEdit } from "@/lib/bridge/geometry";
 import { railDef, railWeight } from "@/lib/design/decks/rails";
 import { GeometryForm, PierShapesForm } from "./geometry-forms";
@@ -66,12 +67,17 @@ export function BridgeForm({ form, def, setDef: setRaw }: Props & { form: FormKe
       <>
         <Choice label="Superstructure (the Bridge design)" value={def.superstructure ?? "girders"} options={[{ value: "girders", label: "Girders under a deck" }, { value: "slab", label: "Cast-in-place slab bridge" }]} onChange={(v) => setDef((s) => ({ ...s, superstructure: v as "girders" | "slab" }))} />
         {def.superstructure === "slab" && note("A slab bridge: the deck's thickness below is the slab's depth, and the girder lines are its bearing lines at the spacing. The Slab Bridge design carries it; this section's own analysis still models girders.")}
-        <Choice label="Girder" value={def.girder.shape} options={def.girder.shape === "custom" ? [{ value: "custom", label: "Custom section" }, ...GIRDER_CHOICES] : GIRDER_CHOICES} onChange={(shape) => setDef((s) => ({ ...s, girder: { shape, fc: s.girder.fc, wc: s.girder.wc } }))} />
+        <Choice label="Girder" value={def.girder.shape} options={def.girder.shape === "custom" ? [{ value: "custom", label: "Custom section" }, ...GIRDER_CHOICES] : GIRDER_CHOICES} onChange={(shape) => setDef((s) => ({ ...s, girder: { shape, fc: s.girder.fc, wc: s.girder.wc, ...(shape === "steel" ? { steel: s.girder.steel ?? STEEL_GIRDER_DEFAULT } : {}) } }))} />
+        {def.girder.shape === "steel" && <SteelPlates def={def} setDef={setDef} />}
         <Field label="Number of girders" value={def.nGirders} onChange={(v) => set("nGirders")(Math.round(v))} />
         <Field label="Girder spacing" unit="ft" value={def.spacing} onChange={set("spacing")} step={0.25} />
         <Field label="Overhang" unit="ft" value={def.overhang} onChange={set("overhang")} step={0.25} hint="Exterior girder centerline to the deck's edge" />
-        <Field label="Girder f'c" unit="ksi" value={def.girder.fc} onChange={part("girder")("fc")} step={0.5} />
-        <Field label="Girder unit weight" unit="kcf" value={def.girder.wc} onChange={part("girder")("wc")} step={0.005} />
+        {def.girder.shape !== "steel" && (
+          <>
+            <Field label="Girder f'c" unit="ksi" value={def.girder.fc} onChange={part("girder")("fc")} step={0.5} />
+            <Field label="Girder unit weight" unit="kcf" value={def.girder.wc} onChange={part("girder")("wc")} step={0.005} />
+          </>
+        )}
         <Field label="Deck thickness, as cast" unit="in" value={def.deck.thickness} onChange={part("deck")("thickness")} step={0.25} />
         <Field label="Sacrificial thickness" unit="in" value={def.deck.sacrificial} onChange={part("deck")("sacrificial")} step={0.25} hint="A load, left out of the section" />
         <Field label="Haunch" unit="in" value={def.deck.haunch} onChange={part("deck")("haunch")} step={0.5} />
@@ -187,6 +193,52 @@ export function BridgeForm({ form, def, setDef: setRaw }: Props & { form: FormKe
         </select>
       </div>
     </>
+  );
+}
+
+/** A steel plate girder's plates along the bridge: each segment's length (scaled to the bridge's), web and flanges. */
+function SteelPlates({ def, setDef }: { def: BridgeDefinition; setDef: Props["setDef"] }) {
+  const st = def.girder.steel ?? STEEL_GIRDER_DEFAULT;
+  const total = def.spans.reduce((a, b) => a + b, 0);
+  const sum = st.segments.reduce((a, x) => a + x.length, 0);
+  const update = (segments: SteelSegment[]) => setDef((s) => ({ ...s, girder: { ...s.girder, steel: { ...st, segments } } }));
+  const cell = (k: number, value: number, put: (v: number) => SteelSegment, label: string, step = 0.125) => (
+    <input type="number" step={step} value={value} aria-label={`Segment ${k + 1} ${label}`} onChange={(e) => {
+      const v = Number(e.target.value);
+      if (Number.isFinite(v) && v > 0) update(st.segments.map((x, q) => (q === k ? put(v) : x)));
+    }} className="h-7 w-full rounded border bg-transparent px-1 text-right text-[11px] tabular-nums" />
+  );
+  return (
+    <div className="space-y-1 py-1 text-xs">
+      <p className="text-muted-foreground">Plates along the bridge from the first abutment (in; lengths in ft, scaled to the bridge&apos;s {+total.toFixed(1)} ft{Math.abs(sum - total) > 0.01 ? `, entered ${+sum.toFixed(1)}` : ""}). Fy {st.Fyf} ksi.</p>
+      <div className="grid grid-cols-[2.5rem_repeat(7,1fr)] gap-1 text-[10px] text-muted-foreground">
+        <span />
+        <span>L (ft)</span>
+        <span>D</span>
+        <span>tw</span>
+        <span>top b</span>
+        <span>top t</span>
+        <span>bot b</span>
+        <span>bot t</span>
+      </div>
+      {st.segments.map((x, k) => (
+        <div key={k} className="grid grid-cols-[2.5rem_repeat(7,1fr)] items-center gap-1">
+          <button type="button" className="text-[10px] text-muted-foreground hover:text-destructive" aria-label={`Remove segment ${k + 1}`} disabled={st.segments.length < 2} onClick={() => update(st.segments.filter((_, q) => q !== k))}>
+            {k + 1} ×
+          </button>
+          {cell(k, x.length, (v) => ({ ...x, length: v }), "length", 1)}
+          {cell(k, x.D, (v) => ({ ...x, D: v }), "web depth", 1)}
+          {cell(k, x.tw, (v) => ({ ...x, tw: v }), "web thickness", 0.0625)}
+          {cell(k, x.top.b, (v) => ({ ...x, top: { ...x.top, b: v } }), "top flange width", 1)}
+          {cell(k, x.top.t, (v) => ({ ...x, top: { ...x.top, t: v } }), "top flange thickness")}
+          {cell(k, x.bottom.b, (v) => ({ ...x, bottom: { ...x.bottom, b: v } }), "bottom flange width", 1)}
+          {cell(k, x.bottom.t, (v) => ({ ...x, bottom: { ...x.bottom, t: v } }), "bottom flange thickness")}
+        </div>
+      ))}
+      <button type="button" className="text-[11px] text-primary hover:underline" onClick={() => update([...st.segments, { ...st.segments[st.segments.length - 1] }])}>
+        Add a segment
+      </button>
+    </div>
   );
 }
 

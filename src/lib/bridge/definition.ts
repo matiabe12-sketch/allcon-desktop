@@ -1,4 +1,5 @@
 import { GIRDER_SHAPES, shapeById, type Profile } from "../design/girders/sections";
+import { STEEL_GIRDER_DEFAULT, type SteelGirder } from "../design/girders/steel-section";
 import { parseGeometry, reconcile, type BridgeGeometry } from "./geometry";
 
 // A bridge's definition: what the engineer enters and the wizard fills in, a few dozen values. The
@@ -25,7 +26,8 @@ export type BridgeDefinition = {
   continuity: "simple" | "continuous"; // for the loads after the deck (barriers, wearing surface, live load)
   // Section (midas's wizard: Section)
   /** A library shape, or "custom" with its outline (half-widths up the girder, in), web and top flange width. */
-  girder: { shape: string; fc: number; wc: number; custom?: { profile: Profile; web: number; topWidth: number } }; // ksi; kcf
+  girder: { shape: string; fc: number; wc: number; custom?: { profile: Profile; web: number; topWidth: number }; steel?: SteelGirder }; // ksi; kcf
+  /* shape "steel": a welded steel plate girder (steel), its plates along the bridge. */
   /** The Bridge design's superstructure: girders under a deck (default), or a cast-in-place slab bridge (the deck's thickness its depth, its bearing lines at the girder spacing). */
   superstructure?: "girders" | "slab";
   nGirders: number;
@@ -51,6 +53,10 @@ export type BridgeDefinition = {
 };
 
 export type DesignLink = { id: string; target: string; kind: string };
+
+/** A steel plate girder along the whole bridge: its segments' plates from the first abutment (their lengths scaled to
+ * the bridge's length), the steel's yield strengths, as the Steel Girder Design Check takes them. */
+export { STEEL_GIRDER_DEFAULT, type SteelGirder } from "../design/girders/steel-section";
 
 export const BRIDGE_DEFAULTS: BridgeDefinition = {
   spans: [120],
@@ -101,16 +107,29 @@ function parseDefinition(saved: unknown): BridgeDefinition {
   const c = obj(girder.custom);
   const profile = Array.isArray(c.profile) ? (c.profile as unknown[]).filter((p): p is [number, number] => Array.isArray(p) && p.length === 2 && p.every((v) => typeof v === "number" && Number.isFinite(v))) : [];
   const custom = girder.shape === "custom" && profile.length >= 2 ? { profile, web: num(c.web, 6, 1, 60), topWidth: num(c.topWidth, 2 * profile[profile.length - 1][1], 1, 200) } : undefined;
+  const st = obj(girder.steel);
+  const pl = (v: unknown, dflt: { b: number; t: number }) => {
+    const o = obj(v);
+    return { b: num(o.b, dflt.b, 2, 60), t: num(o.t, dflt.t, 0.25, 6) };
+  };
+  const segs = (Array.isArray(st.segments) ? st.segments : [])
+    .map(obj)
+    .slice(0, 30)
+    .map((x, k) => {
+      const dflt = STEEL_GIRDER_DEFAULT.segments[Math.min(k, 2)];
+      return { length: num(x.length, dflt.length, 1, 1000), kind: "plate" as const, D: num(x.D, dflt.D, 12, 200), tw: num(x.tw, dflt.tw, 0.25, 3), top: pl(x.top, dflt.top), bottom: pl(x.bottom, dflt.bottom) };
+    });
+  const steel = girder.shape === "steel" ? { segments: segs.length ? segs : STEEL_GIRDER_DEFAULT.segments, Fyw: num(st.Fyw, 50, 36, 100), Fyf: num(st.Fyf, 50, 36, 100) } : undefined;
   const geometry = parseGeometry(s.geometry);
   // With a geometry, the spans are its supports' stations apart.
   const geoSpans = geometry ? geometry.supports.slice(1).map((x, k) => x.station - geometry.supports[k].station) : null;
-  const shape = custom ? "custom" : typeof girder.shape === "string" && shapeById(girder.shape) ? girder.shape : d.girder.shape;
+  const shape = custom ? "custom" : steel ? "steel" : typeof girder.shape === "string" && shapeById(girder.shape) ? girder.shape : d.girder.shape;
   return {
     spans: geoSpans && geoSpans.every((L) => L >= 10 && L <= 500) ? geoSpans : spans.length ? spans : d.spans,
     skew: num(s.skew, 0, -60, 60),
     supports: supportsFor(geoSpans && geoSpans.every((L) => L >= 10 && L <= 500) ? geoSpans.length : spans.length || 1, Array.isArray(s.supports) ? (s.supports as SupportLine[]) : []),
     continuity: s.continuity === "simple" ? "simple" : "continuous",
-    girder: { shape, fc: num(girder.fc, d.girder.fc, 3, 18), wc: num(girder.wc, d.girder.wc, 0.09, 0.2), ...(custom ? { custom } : {}) },
+    girder: { shape, fc: num(girder.fc, d.girder.fc, 3, 18), wc: num(girder.wc, d.girder.wc, 0.09, 0.2), ...(custom ? { custom } : {}), ...(steel ? { steel } : {}) },
     superstructure: s.superstructure === "slab" ? "slab" : "girders",
     nGirders: Math.round(num(s.nGirders, d.nGirders, 2, 20)),
     spacing: num(s.spacing, d.spacing, 2, 20),
@@ -149,4 +168,4 @@ function parseDefinition(saved: unknown): BridgeDefinition {
   };
 }
 
-export const GIRDER_CHOICES = GIRDER_SHAPES.map((s) => ({ value: s.id, label: `${s.name}` }));
+export const GIRDER_CHOICES = [...GIRDER_SHAPES.map((s) => ({ value: s.id, label: `${s.name}` })), { value: "steel", label: "Steel plate girder" }];

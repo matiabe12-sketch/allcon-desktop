@@ -13,14 +13,14 @@ import type { FingerJointInputs } from "../joints/finger";
 import type { ModularJointInputs } from "../joints/modular";
 import type { WingwallInputs } from "../walls/wingwall";
 import type { ColumnResult } from "../piers/column";
-import { GIRDER_DEFAULTS, girderShape, type GirderInputs } from "../girders/prestressed";
+import type { GirderInputs } from "../girders/prestressed";
 import type { DeckInputs } from "../decks/deck";
 import { BEARING_DEFAULTS, type BearingInputs, type designBearing } from "../bearings/elastomeric";
 import type { HlmrInputs } from "../bearings/pot-disc";
 
 /** The pad the stiffness split takes before a bearing design is linked. */
 const BEARING_PAD_DEFAULT = BEARING_DEFAULTS;
-import { spacingAt, spanGroups, type BridgeInputs, type BridgeRun, type JointKind, type PierShape } from "./bridge";
+import { spacingAt, spanGroups, type BridgeInputs, type BridgeRun, type JointKind, type PierShape, bridgeGirderShape } from "./bridge";
 
 // The load path from a Bridge run down through its linked designs (docs/bridge-model.md): each
 // function takes a component's inputs as saved and returns them with what the Bridge decides (its
@@ -233,6 +233,7 @@ export function capFromBridge(b: BridgeInputs, run: BridgeRun, support: number, 
   const groups = spanGroups(b);
   const sideOf = (span: number, end: "start" | "end") => {
     if (run.slab) return span >= 0 && span < run.layout.spans.length ? slabSide(b, run, support, span, end, slabId ?? "slab", slabName ?? "Slab") : null;
+    if (run.steel) return span >= 0 && span < run.layout.spans.length && girderIds[0] ? steelSide(b, run, support, span, end, girderIds[0], names[0] ?? "Girders") : null;
     const gi = groups.findIndex((g) => g.includes(span));
     const id = girderIds[gi];
     if (!id) return null;
@@ -417,7 +418,7 @@ function canonical(v: unknown): string {
  * Tied to the girder design, which carries the deck's concrete and the rail in its quantities.
  */
 export function deckFromBridge(b: BridgeInputs, run: BridgeRun, current: DeckInputs, girder: { id: string; name: string } | null): DeckInputs {
-  const shape = girderShape({ ...GIRDER_DEFAULTS, shape: b.shape });
+  const shape = bridgeGirderShape(b);
   const S = Math.max(...b.supports.map((s) => spacingAt(b, s)));
   const t = b.deckT;
   return {
@@ -601,6 +602,41 @@ export function windAlong(run: BridgeRun, share: ReturnType<typeof longitudinalS
   const along = (line: number | null) => share.units.reduce((t, u) => t + u.share * c * (line ?? 0) * u.L, 0);
   const r1 = (v: number) => Math.round(v * 10) / 10;
   return { WS3: r1(along(w.strengthIII?.line ?? null)), WS5: r1(along(w.strengthV.line)), WL: r1(share.units.reduce((t, u) => t + u.share * 0.04 * u.L, 0)), WSs: r1(along(w.serviceI.line)) };
+}
+
+/**
+ * A steel girder bridge's side of a pier cap, as a precast design's would be (stm/cap-loads.ts GirderSide): each girder's
+ * dead load reactions from the Steel Girder Design Check's continuous girder (half to each side where spans bear from
+ * both), DC1 apart for the cap's construction stage; the live load placed by lanes on the cap from simple spans.
+ */
+export function steelSide(b: BridgeInputs, run: BridgeRun, support: number, span: number, end: "start" | "end", designId: string, name: string): GirderSide {
+  const s = b.supports[support];
+  const r = run.reactions[support] as BridgeRun["reactions"][number] & { steel?: { perGirder: { DC: number; DC1: number; DW: number } } };
+  const sides = [support - 1, support].filter((j) => j >= 0 && j < run.layout.spans.length).length;
+  const share = 1 / Math.max(1, sides);
+  const per = r.steel?.perGirder ?? { DC: r.DC, DC1: r.DC1, DW: r.DW };
+  const both = (v: number) => ({ interior: v * share, exterior: v * share });
+  return {
+    designId,
+    name,
+    span,
+    end,
+    n: b.nGirders,
+    S: spacingAt(b, s),
+    overhang: run.layout.overhang,
+    barrierWidth: b.barrierWidth,
+    skew: Math.abs(s.skew),
+    L: run.layout.spans[span].L,
+    continuous: false,
+    dc: both(per.DC),
+    dc1: both(per.DC1),
+    dw: both(per.DW),
+    liveContinuous: null,
+    liveUnbalance: null,
+    liveUnbalanceStatic: null,
+    wind: null,
+    brakingPerLane: brakingPerLane(run.layout.length).perLane,
+  };
 }
 
 /**

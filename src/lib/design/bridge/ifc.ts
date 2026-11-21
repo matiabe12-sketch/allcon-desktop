@@ -1,4 +1,5 @@
 import { bearingParts } from "../bearings/pot-disc-detail";
+import { bridgeGirderShape } from "./bridge";
 import type { HlmrInputs } from "../bearings/pot-disc";
 import type { AbutmentInputs } from "../foundations/abutment";
 import { ABUTMENT_DEFAULTS } from "../foundations/abutment";
@@ -10,7 +11,6 @@ import { PILE_DEFAULTS } from "../foundations/piles";
 import type { ShaftInputs } from "../foundations/shaft";
 import { SHAFT_DEFAULTS } from "../foundations/shaft";
 import { MICROPILE_DEFAULTS } from "../foundations/micropile";
-import { GIRDER_DEFAULTS, girderShape } from "../girders/prestressed";
 import type { ApproachSlabInputs } from "../approach/approach-slab";
 import { APPROACH_SLAB_DEFAULTS } from "../approach/approach-slab";
 import { railDef } from "../decks/rails";
@@ -268,7 +268,7 @@ export function bridgeIfc(b: BridgeInputs, run: BridgeRun, c: BridgeComponents =
     ...lay.supports.map((s, i): IfcPart => ({ key: `support-${i}`, type: s.type.endsWith("abutment") ? "ABUTMENT" : "PIER", name: s.name, parent: "sub" })),
   ];
   const els: IfcElement[] = [];
-  const shape = girderShape({ ...GIRDER_DEFAULTS, shape: b.shape });
+  const shape = bridgeGirderShape(b);
   const outline: [number, number][] = [...shape.profile.map(([y, hw]) => [hw / 12, y / 12] as [number, number]), ...[...shape.profile].reverse().map(([y, hw]) => [-hw / 12, y / 12] as [number, number])];
 
   // --- girders, bearings and the deck, span by span ------------------------------------------------------------------
@@ -298,8 +298,8 @@ export function bridgeIfc(b: BridgeInputs, run: BridgeRun, c: BridgeComponents =
         zdir: v3(along),
         profile: { kind: "poly", pts: outline },
         depth: r6(g.length),
-        material: `Prestressed concrete (${shape.name})`,
-        psets: designPset("lrfd-girder-check", gid, { Section: shape.name, SpanBearingToBearing: r6(g.L), PayItem: "618 (prestressed girder)" }),
+        material: b.shape === "steel" ? "Structural steel (plate girder)" : `Prestressed concrete (${shape.name})`,
+        psets: b.shape === "steel" ? designPset("steel-girder-check", c.ids?.girders?.[0] ?? null, { Section: "Steel plate girder", SpanBearingToBearing: r6(g.L), PayItem: "509 (structural steel)" }) : designPset("lrfd-girder-check", gid, { Section: shape.name, SpanBearingToBearing: r6(g.L), PayItem: "618 (prestressed girder)" }),
       });
       for (const [pt, z, s, end] of [[A, zA, sa, "start"], [B, zB, sb, "end"]] as const) {
         const k = s === sa ? span.index : span.index + 1;

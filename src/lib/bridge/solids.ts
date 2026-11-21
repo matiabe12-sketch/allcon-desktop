@@ -1,4 +1,5 @@
 import { barrierShape } from "../design/bridge/ifc";
+import { deepestSteelShape } from "../design/girders/steel-section";
 import { customShape, shapeById } from "../design/girders/sections";
 import type { BridgeDefinition } from "./definition";
 import type { Generated } from "./generate";
@@ -37,7 +38,7 @@ const rect = (width: number, depth: number, zCenter = 0): [number, number][] => 
 export function bridgeSolids(d: BridgeDefinition, g: Generated): { solids: Solid[]; deckTop: number } {
   const model = g.stage2;
   const at = new Map(model.nodes.map((n) => [n.id, [n.x, n.y, n.z] as Vec3]));
-  const shape = d.girder.custom ? customShape(d.girder.custom.profile, d.girder.custom.web, d.girder.custom.topWidth) : shapeById(d.girder.shape);
+  const shape = d.girder.shape === "steel" && d.girder.steel ? deepestSteelShape(d.girder.steel.segments) : d.girder.custom ? customShape(d.girder.custom.profile, d.girder.custom.web, d.girder.custom.topWidth) : shapeById(d.girder.shape);
   const solids: Solid[] = [];
   if (!shape) return { solids, deckTop: 0 };
   const yb = g.properties.girder.yb;

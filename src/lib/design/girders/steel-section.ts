@@ -163,3 +163,36 @@ export function selfWeight(seg: SteelSegment) {
   const A = p.top.b * p.top.t + p.bottom.b * p.bottom.t + p.D * p.tw + p.fillet;
   return (A / 144) * STEEL_UNIT_WEIGHT;
 }
+
+/** A plate girder segment as a girder outline (half-widths up the girder, in): for layouts, 3D views and the
+ * analysis model's section properties, as the precast library's shapes are. */
+export function steelShape(seg: SteelSegment, name = "Steel plate girder"): { id: string; name: string; family: "Custom"; depth: number; topWidth: number; web: number; profile: [number, number][] } {
+  const p = plates(seg);
+  const tb = p.bottom.t;
+  const top = tb + p.D;
+  const profile: [number, number][] = [
+    [0, p.bottom.b / 2],
+    [tb, p.bottom.b / 2],
+    [tb, p.tw / 2],
+    [top, p.tw / 2],
+    [top, p.top.b / 2],
+    [top + p.top.t, p.top.b / 2],
+  ];
+  return { id: "steel", name, family: "Custom", depth: top + p.top.t, topWidth: p.top.b, web: p.tw, profile };
+}
+
+/** The deepest of a steel girder's segments, as a shape. */
+export const deepestSteelShape = (segments: SteelSegment[]) => segments.map((s) => steelShape(s)).reduce((a, s) => (s.depth > a.depth ? s : a));
+
+/** A steel plate girder along a whole bridge: its segments' plates and yield strengths. */
+export type SteelGirder = { segments: SteelSegment[]; Fyw: number; Fyf: number };
+/** FHWA Example 2A's girder (two 90 ft spans; the pier's plates 54 ft long). */
+export const STEEL_GIRDER_DEFAULT: SteelGirder = {
+  segments: [
+    { length: 63, kind: "plate", D: 42, tw: 0.4375, top: { b: 14, t: 0.75 }, bottom: { b: 16, t: 1.25 } },
+    { length: 54, kind: "plate", D: 42, tw: 0.5, top: { b: 14, t: 1.125 }, bottom: { b: 16, t: 1.25 } },
+    { length: 63, kind: "plate", D: 42, tw: 0.4375, top: { b: 14, t: 0.75 }, bottom: { b: 16, t: 1.25 } },
+  ],
+  Fyw: 50,
+  Fyf: 50,
+};

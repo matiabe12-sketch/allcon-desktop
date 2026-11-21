@@ -1,4 +1,5 @@
 import "server-only";
+import { steelGirderInputs } from "../girders/steel";
 import { Prisma } from "@/generated/prisma/client";
 import { db } from "@/lib/db";
 import { designApproachSlab } from "../approach/approach-slab";
@@ -94,7 +95,9 @@ export async function runLoadPath(o: {
 
   // --- girders: one design per group of spans (none for a slab bridge: its slab design below) -------------------------
   const isSlab = b.superstructure === "slab";
-  const groups = isSlab ? [] : spanGroups(b);
+  // A steel girder bridge: one Steel Girder Design Check along the whole bridge (its line continuous where the piers are).
+  const isSteel = !isSlab && b.shape === "steel";
+  const groups = isSlab || isSteel ? [] : spanGroups(b);
   const girderIds: (string | null)[] = isSlab ? [] : groups.map((_, gi) => b.girderDesignIds[gi] ?? null);
   const bases: (GirderInputs | null)[] = [];
   const names: string[] = [];
@@ -108,7 +111,15 @@ export async function runLoadPath(o: {
   }
   const sd0 = isSlab ? await load(b.slabDesignId, "slab-bridge") : null;
   const slabBefore = slabBridgeInputs(sd0?.inputs ?? {});
-  const run = runBridge(b, bases, isSlab ? slabBefore : null);
+  const stD = isSteel ? await load(b.girderDesignIds[0] ?? null, "steel-girder-check") : null;
+  const steelBefore = steelGirderInputs(stD?.inputs ?? {});
+  const run = runBridge(b, bases, isSlab ? slabBefore : null, isSteel && stD ? steelBefore : null);
+  if (isSteel && run.steel) {
+    const next = run.steel.inputs;
+    const id = await upsert(girderKey(0), "Girders", "steel-girder-check", stD, stD ? steelBefore : {}, next, run.ok ? "all checks pass" : "some checks fail", `${prefix}, girders`);
+    girderIds.splice(0, girderIds.length, id);
+    names.splice(0, names.length, stD?.name ?? `${prefix}, girders (${kindInfo("steel-girder-check")!.name})`);
+  }
   let slabId: string | null = null;
   let slabName = "";
   if (isSlab && run.slab) {
@@ -127,6 +138,12 @@ export async function runLoadPath(o: {
   }
   const girders = new Map<string, GirderInputs>();
   for (let gi = 0; gi < groups.length; gi++) if (girderIds[gi]) girders.set(girderIds[gi]!, run.groups[gi].inputs);
+  // A steel girder bridge: the columns read their spans and width as from a girder design (a stand-in; its wind from the
+  // precast library's default section, deeper than the steel's, so conservative).
+  if (isSteel && girderIds[0] && run.steel) {
+    const sp = run.steel.inputs.spans;
+    girders.set(girderIds[0], { ...BRIDGE_GIRDER_BASE, L: sp[0], extraSpans: sp.slice(1).map((L) => ({ L, strands: null, harped: null })), nGirders: b.nGirders, S: b.spacing, overhang: run.layout.overhang, barrierWidth: b.barrierWidth, deckT: b.deckT, barrierWeight: run.steel.inputs.loads.barrierWeight });
+  }
   // A slab bridge: its spans and width for the columns' braking and wind along the bridge (column-link.ts reads them from a
   // girder design): a stand-in with the slab's spans; its depth for the wind the girder section's and the slab's (conservative).
   if (isSlab && slabId && run.slab) {
@@ -231,7 +248,7 @@ export async function runLoadPath(o: {
       const sd = await load(c.approachSlabId, "approach-slab");
       const sBefore = approachSlabInputs(sd?.inputs ?? {});
       const sNext = approachSlabFromBridge(b, k, sBefore, railEnd);
-      const next = { ...abutNext, ...approachOnAbutment(b, sNext, abutNext.length, run.groups[0]?.inputs.barrierWeight ?? 0) };
+      const next = { ...abutNext, ...approachOnAbutment(b, sNext, abutNext.length, run.groups[0]?.inputs.barrierWeight ?? run.steel?.inputs.loads.barrierWeight ?? 0) };
       c.abutmentId = await upsert(`abutment-${k}`, s.name, "abutment", d, before, next, verdictTry(() => runFoundation("abutment", next).checks), `${prefix}, ${s.name}`);
       c.approachSlabId = await upsert(`approach-${k}`, `${s.name}, approach slab`, "approach-slab", sd, sBefore, sNext, verdictTry(() => designApproachSlab(sNext).checks), `${prefix}, ${s.name} approach slab`);
       const wd = await load(c.wingwallId, "cantilever-wingwall");

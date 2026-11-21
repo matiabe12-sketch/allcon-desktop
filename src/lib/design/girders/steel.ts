@@ -1343,7 +1343,7 @@ export function designSteelGirder(i: SteelGirderInputs) {
         lane = 0.9 * lane;
       }
     }
-    return { support: sup, dc: dead((e) => e.V.dc1 + e.V.dc2), dw: dead((e) => e.V.dw), truck: df * truck * (1 + i.IM), lane: df * lane, df };
+    return { support: sup, dc: dead((e) => e.V.dc1 + e.V.dc2), dc1: dead((e) => e.V.dc1), dw: dead((e) => e.V.dw), truck: df * truck * (1 + i.IM), lane: df * lane, df };
   });
 
   // --- Camber (6.7.2): downward deflections (in) of each dead load on the section that carries it ---

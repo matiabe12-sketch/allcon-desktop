@@ -1,5 +1,6 @@
 import { modulus } from "../design/girders/prestressed";
 import { customShape, profileProps, shapeById, type GirderShape } from "../design/girders/sections";
+import { ES, selfWeight, steelShape } from "../design/girders/steel-section";
 import { bridgeLayout, type PierShape } from "../design/bridge/bridge";
 import { BRIDGE_DEFAULTS, type BridgeDefinition } from "./definition";
 import { pierFrom, toBridgeInputs } from "./geometry";
@@ -71,7 +72,7 @@ export type Generated = {
 };
 
 /** Section ids: the girder (1), composite interior (2), exterior left (3) and right (4); diaphragm 20; each pier i's cap 30 + 2i and column 31 + 2i; deck strips from 100. */
-export const isGirderSection = (sec: number) => sec >= 1 && sec <= 4;
+export const isGirderSection = (sec: number) => (sec >= 1 && sec <= 4) || (sec >= 1000 && sec < 2000);
 export const isCapSection = (sec: number) => sec >= 30 && sec < 60 && sec % 2 === 0;
 export const isColumnSection = (sec: number) => sec >= 30 && sec < 60 && sec % 2 === 1;
 
@@ -142,12 +143,27 @@ function compositeProps(g: { A: number; I: number; yb: number }, H: number, beff
 }
 
 export function generate(d: BridgeDefinition): Generated {
-  const shape = d.girder.custom ? customShape(d.girder.custom.profile, d.girder.custom.web, d.girder.custom.topWidth) : shapeById(d.girder.shape);
+  // A steel plate girder: its segments along the bridge (their lengths scaled to the bridge's), each a shape.
+  const steel = d.girder.shape === "steel" && d.girder.steel ? d.girder.steel : null;
+  const bridgeLength = d.spans.reduce((a, b) => a + b, 0);
+  const steelSegs = steel
+    ? (() => {
+        const sum = steel.segments.reduce((a, s) => a + s.length, 0);
+        let x = 0;
+        return steel.segments.map((seg, j) => {
+          const from = x;
+          x += (seg.length * bridgeLength) / sum;
+          const sh = steelShape(seg, `Steel girder, segment ${j + 1} (${seg.D}×${seg.tw} web, ${seg.top.b}×${seg.top.t} top, ${seg.bottom.b}×${seg.bottom.t} bottom)`);
+          return { seg, from, to: x, shape: sh, props: profileProps(sh.profile), weight: selfWeight(seg) };
+        });
+      })()
+    : [];
+  const shape = steel ? steelSegs.reduce((a, s) => (s.shape.depth > a.depth ? s.shape : a), steelSegs[0].shape) : d.girder.custom ? customShape(d.girder.custom.profile, d.girder.custom.web, d.girder.custom.topWidth) : shapeById(d.girder.shape);
   if (!shape) throw new ModelError("Pick a girder section.");
   if (d.supports.length !== d.spans.length + 1) throw new ModelError("The bridge needs a support line at each end of every span.");
   const nG = d.nGirders;
   const g = profileProps(shape.profile);
-  const EcG = modulus(1, d.girder.wc, d.girder.fc);
+  const EcG = steel ? ES : modulus(1, d.girder.wc, d.girder.fc);
   const EcD = modulus(1, d.deck.wc, d.deck.fc);
   const EcP = modulus(1, 0.15, d.piers.fc);
   const n = EcD / EcG;
@@ -222,7 +238,9 @@ export function generate(d: BridgeDefinition): Generated {
 
   const base = emptyModel();
   base.materials.push(
-    { id: 1, name: `Girder concrete, f'c ${d.girder.fc} ksi`, E: EcG * 144, G: (EcG * 144) / 2.4, density: d.girder.wc, alpha: 6e-6 },
+    steel
+      ? { id: 1, name: "Girder steel", E: ES * 144, G: 11200 * 144, density: 0.49, alpha: 6.5e-6 }
+      : { id: 1, name: `Girder concrete, f'c ${d.girder.fc} ksi`, E: EcG * 144, G: (EcG * 144) / 2.4, density: d.girder.wc, alpha: 6e-6 },
     { id: 2, name: `Deck concrete, f'c ${d.deck.fc} ksi`, E: EcD * 144, G: (EcD * 144) / 2.4, density: 0, alpha: 6e-6 },
     { id: 3, name: `Pier concrete, f'c ${d.piers.fc} ksi`, E: EcP * 144, G: (EcP * 144) / 2.4, density: 0.15, alpha: 6e-6 },
   );
@@ -235,10 +253,31 @@ export function generate(d: BridgeDefinition): Generated {
       return { id: 2 + k, name: `${shape.name} composite, ${label}`, A: c.A * IN2, Asy: 0, Asz: shearArea, J: (Jg + (n * c.beff * ts ** 3) / 6) * IN4, Iy: c.I * IN4, Iz: (g.Iy + (n * ts * c.beff ** 3) / 12) * IN4 };
     }),
   ];
-  // Diaphragm: a rectangle three quarters of the girder's depth.
+  // Diaphragm: a rectangle three quarters of the girder's depth; between steel girders, a cross-frame as a beam (two
+  // L5×5×1/2 chords, 4.75 in² each, three quarters of the depth apart).
   const dh = (0.75 * shape.depth) / 12;
   const dt = d.diaphragms.thickness;
-  sections.push({ id: 20, name: "Diaphragm", A: dh * dt, Asy: 0, Asz: (5 / 6) * dh * dt, J: rectJ(dh, dt), Iy: (dt * dh ** 3) / 12, Iz: (dh * dt ** 3) / 12 });
+  if (steel) {
+    const Ac = 4.75 * IN2;
+    sections.push({ id: 20, name: "Cross-frame (as a beam)", A: 2 * Ac, Asy: 0, Asz: 2 * Ac, J: 0, Iy: 2 * Ac * (dh / 2) ** 2, Iz: 2 * Ac * 0.1 });
+  } else sections.push({ id: 20, name: "Diaphragm", A: dh * dt, Asy: 0, Asz: (5 / 6) * dh * dt, J: rectJ(dh, dt), Iy: (dt * dh ** 3) / 12, Iz: (dh * dt ** 3) / 12 });
+  // A steel girder's segments: the steel alone (1000 + 10j) and composite, interior (+1), exterior (+2), right (+3).
+  steelSegs.forEach((sg, j) => {
+    const gp = sg.props;
+    const J = torsionConstant(sg.shape);
+    const As = sg.seg.D * sg.seg.tw * IN2;
+    sections.push({ id: 1000 + 10 * j, name: sg.shape.name, A: gp.A * IN2, Asy: 0, Asz: As, J: J * IN4, Iy: gp.I * IN4, Iz: gp.Iy * IN4 });
+    (["interior", "exterior", "right"] as const).forEach((side, q) => {
+      const beff = side === "interior" ? d.spacing * 12 : (d.spacing / 2 + (side === "right" ? ovR : ovL)) * 12;
+      const c = compositeProps(gp, sg.shape.depth, beff, ts, n);
+      sections.push({ id: 1000 + 10 * j + 1 + q, name: `${sg.shape.name} composite, ${side}`, A: c.A * IN2, Asy: 0, Asz: As, J: (J + (n * c.beff * ts ** 3) / 6) * IN4, Iy: c.I * IN4, Iz: (gp.Iy + (n * ts * c.beff ** 3) / 12) * IN4 });
+    });
+  });
+  /** The steel segment at a distance along the bridge. */
+  const segmentAt = (X: number) => {
+    const j = steelSegs.findIndex((sg) => X <= sg.to + 1e-9);
+    return j < 0 ? steelSegs.length - 1 : j;
+  };
   // Each pier: its cap and columns, from the geometry's pier (its own shape and column height) or the wizard's one pier.
   type PierModel = { cap: [number, number]; columns: number; spacing: number; round: boolean; size: number; depth: number; height: number; capSec: number; colSec: number; capArea: number; colArea: number };
   const pierModels = new Map<number, PierModel>();
@@ -368,9 +407,11 @@ export function generate(d: BridgeDefinition): Generated {
       const element = girderElement(k, s);
       // The deck it carries here: the mean of its two ends' widths (a flared bridge's change along the span).
       const width = (tributeAt(k, s).width + tributeAt(k, s + 1).width) / 2;
-      const wDeck = width * (d.deck.thickness / 12) * d.deck.wc + shape.topWidth * d.deck.haunch * IN2 * d.deck.wc;
+      const topWidth = steel ? steelSegs[segmentAt((stations[s] + stations[s + 1]) / 2)].seg.top.b : shape.topWidth;
+      const wDeck = width * (d.deck.thickness / 12) * d.deck.wc + topWidth * d.deck.haunch * IN2 * d.deck.wc;
       const wWearing = ((edge ? width - d.loads.barrierWidth : width) * d.loads.wearingSurface) / 1000;
-      loads.push({ stage: 1, load: { case: "Girders", kind: "uniform", element, dir: "GZ", w: -wGirder } });
+      const sj = steel ? steelSegs[segmentAt((stations[s] + stations[s + 1]) / 2)] : null;
+      loads.push({ stage: 1, load: { case: "Girders", kind: "uniform", element, dir: "GZ", w: -(sj ? sj.weight : wGirder) } });
       loads.push({ stage: 1, load: { case: "Deck and haunch", kind: "uniform", element, dir: "GZ", w: -wDeck } });
       if (wWearing > 0) loads.push({ stage: 2, load: { case: "Wearing surface", kind: "uniform", element, dir: "GZ", w: -wWearing } });
       if (edge && d.loads.barrierWeight > 0) loads.push({ stage: 2, load: { case: "Barriers", kind: "uniform", element, dir: "GZ", w: -d.loads.barrierWeight } });
@@ -430,17 +471,19 @@ export function generate(d: BridgeDefinition): Generated {
   const build = (stage: 1 | 2): Model => {
     const m: Model = { ...base, nodes: base.nodes, elements: [], loadCases: stage === 1 ? stage1Cases : stage2Cases, loads: loads.filter((l) => l.stage === stage).map((l) => l.load) };
     for (let k = 0; k < nG; k++) {
-      const sec = stage === 1 ? 1 : k === 0 ? 3 : k === nG - 1 ? (twoSides ? 4 : 3) : 2;
+      const side = stage === 1 ? 0 : k === 0 ? 2 : k === nG - 1 ? (twoSides ? 3 : 2) : 1;
+      const sec0 = stage === 1 ? 1 : k === 0 ? 3 : k === nG - 1 ? (twoSides ? 4 : 3) : 2;
       for (let s = 0; s < nS - 1; s++)
         m.elements.push({
           id: girderElement(k, s),
           type: "beam",
           mat: 1,
-          sec,
+          sec: steel ? 1000 + 10 * segmentAt((stations[s] + stations[s + 1]) / 2) + side : sec0,
           n1: girderNode(k, s),
           n2: girderNode(k, s + 1),
-          // Simple spans: a hinge in the girder just before each pier they're simple at (every pier, for the girders alone).
-          ...(pierSimple.has(s + 1) && (stage === 1 || pierSimple.get(s + 1)) ? { releases: { i: none, j: hinge } } : {}),
+          // Simple spans: a hinge in the girder just before each pier they're simple at. Precast girders are simple
+          // for their own weight and the deck at every pier; steel girders are spliced, continuous from erection.
+          ...(pierSimple.has(s + 1) && ((stage === 1 && !steel) || pierSimple.get(s + 1)) ? { releases: { i: none, j: hinge } } : {}),
         });
     }
     if (stage === 2) {

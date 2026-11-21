@@ -317,3 +317,39 @@ The owner asked that no load be counted twice as it passes down the load path. W
   - no Section 5 numbers from before the 8th edition's reorganization remain;
   - Eq. 5.4.2.4-1 everywhere (the Three-Sided Culvert's 1820√f′c fixed);
   - the Bridge's combinations follow Table 3.4.1-1.
+
+## Steel plate girders (2026-11-20)
+
+The Bridge takes a steel plate girder ("Steel plate girder" in the girder choice, its plates in a table: each segment's
+length along the bridge, web and flanges, as the Steel Girder Design Check takes them; lengths scaled to the bridge's).
+
+- **Analysis** (src/lib/bridge):
+  - **Sections:** each segment is an outline (steelShape) with its own steel and composite sections, so the grillage
+    is non-prismatic. The material is steel (E 29,000 ksi, α 6.5E-6), and n = Ec/Es.
+  - **Stage 1:** the girders are continuous for their weight and the deck where the bridge is (spliced at erection),
+    not simple as precast girders are.
+  - **Cross-frames:** a beam of two L5×5×1/2 chords in place of a concrete diaphragm.
+  - **Benchmark:** against the Steel Girder Design Check's line analysis of the same plates (itself held to FHWA
+    Example 2A and NSBA's designs):
+    - the deck on the steel, the pier's moment per klf within 1% (−1,072 against −1,080);
+    - the wearing surface on the composite bridge within 1.5% (n against the check's 3n).
+  - **Example 2A's own printed pier moments** (−1,020 per klf) don't follow from its stiffer pier plates (noted in the
+    steel check's benchmarks), so the check, not the printed table, is the reference.
+- **Designs:** the Girders link starts a Steel Girder Design Check with the bridge's spans, plates, deck, barriers,
+  wearing surface and wind, the cross-frames at the diaphragms' places. One design for the whole girder line.
+- **The Bridge's load path** (src/lib/design/bridge):
+  - **runBridge's steel run** (runSteelBridge, steelFromBridge) designs the girders by the steel check (the linked
+    design's details kept, its haunch from the slab offset). Each support takes the check's reactions per girder:
+    - dead loads from the continuous girder's shears, DC1 apart;
+    - live load from the support's influence line with IM, by the shear distribution factor.
+  - **Bearings and abutments** take these as they take precast girders'.
+  - **Pier caps:** each side takes half the pier's reaction (steelSide), with the live load placed by lanes from
+    simple spans.
+  - **The rest:**
+    - the calc package carries the steel check's calc, checks and 509 quantities;
+    - the IFC model's girders are structural steel with the steel design's pset.
+- **Not yet:**
+  - the wind along the bridge on the piers (windAlong reads a precast design's site wind; none for steel);
+  - the steel girders' ends inside an integral diaphragm deducted (girdersInside);
+  - the column links' stand-in girder section (the library's default, deeper than the steel's, so its wind is
+    conservative).

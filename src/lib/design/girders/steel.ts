@@ -1342,6 +1342,7 @@ export function designSteelGirder(i: SteelGirderInputs) {
     let lane = 0;
     const h = total / 2000;
     for (let q = 0; q < 2000; q++) lane += Math.max(0, il((q + 0.5) * h)) * 0.64 * h;
+    const ped = (pl * lane) / 0.64; // pedestrians (3.6.1.6) where they add to the reaction, per girder
     if (sup > 0 && sup < spans.length) {
       let pair = 0;
       for (let gap = 50; gap <= Math.min(250, total); gap += 2) pair = Math.max(pair, best([[8, 0], [32, 14], [32, 28], [8, 28 + gap], [32, 42 + gap], [32, 56 + gap]]));
@@ -1350,7 +1351,7 @@ export function designSteelGirder(i: SteelGirderInputs) {
         lane = 0.9 * lane;
       }
     }
-    return { support: sup, dc: dead((e) => e.V.dc1 + e.V.dc2), dc1: dead((e) => e.V.dc1), dw: dead((e) => e.V.dw), truck: df * truck * (1 + i.IM), lane: df * lane, df };
+    return { support: sup, dc: dead((e) => e.V.dc1 + e.V.dc2), dc1: dead((e) => e.V.dc1), dw: dead((e) => e.V.dw), truck: df * truck * (1 + i.IM), lane: df * lane, df, pl: ped };
   });
 
   // --- Camber (6.7.2): downward deflections (in) of each dead load on the section that carries it ---

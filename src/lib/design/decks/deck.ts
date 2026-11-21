@@ -47,6 +47,9 @@ export type DeckInputs = {
   /** Started from a girder design, which carries the deck's concrete, the rails and the waterproofing in its quantities: this design adds the bars. */
   fromGirder?: { id: string; name: string } | null;
   panels?: boolean; // on partial-depth precast panels: no bottom mat between the girders (quantities only)
+  /** A sidewalk inside each barrier (from the Bridge): ft wide to its curb, in above the deck. Its concrete (DC), no
+   * wearing surface on it, the wheels from its curb, and 0.075 ksf of pedestrians where it is wider than 2 ft (3.6.1.6). */
+  sidewalk?: { width: number; depth: number } | null;
 };
 
 /** CDOT BDM Example 6.2 (Type 10 MASH, TL-4): the deck overhang's moment and tension at the curb face. */
@@ -199,6 +202,11 @@ export function designDeck(entered: DeckInputs) {
   const W = 2 * i.overhang + (i.nGirders - 1) * i.S;
   const girders = Array.from({ length: i.nGirders }, (_, k) => i.overhang + k * i.S);
   const bw = i.barrierWidth / 12;
+  const sw = i.sidewalk && i.sidewalk.width > 0 ? i.sidewalk : null;
+  const curb = bw + (sw?.width ?? 0); // the deck's edge to the roadway's
+  const wSw = sw ? (i.gammaC * sw.depth) / 12 : 0; // ksf, the sidewalk's concrete
+  const qPL = sw && sw.width > 2 ? 0.075 : 0; // ksf, pedestrians (3.6.1.6)
+  const onWalk = (x: number) => sw !== null && ((x > bw && x < curb) || (x > W - curb && x < W - bw));
   const flangeEdge = Math.max(i.overhang - i.flange / 24, 0); // from the deck edge
   /** Slab thickness (in) across the deck: tapering in the overhangs to the flange edge. */
   const thickness = (x: number) => {
@@ -212,15 +220,21 @@ export function designDeck(entered: DeckInputs) {
   const steps = Math.ceil(W / dx);
   const DC: PointLoad[] = [];
   const DW: PointLoad[] = [];
+  const PL: PointLoad[] = [];
   for (let k = 0; k < steps; k++) {
     const x = Math.min((k + 0.5) * dx, W);
     const len = Math.min(dx, W - k * dx);
-    DC.push({ x, P: (i.gammaC * thickness(x) * len) / 12 });
-    if (x > bw && x < W - bw) DW.push({ x, P: ((i.gammaWS * i.wearing) / 12 + i.utilities) * len });
+    DC.push({ x, P: (i.gammaC * thickness(x) * len) / 12 + (onWalk(x) ? wSw * len : 0) });
+    if (x > curb && x < W - curb) DW.push({ x, P: ((i.gammaWS * i.wearing) / 12 + i.utilities) * len });
+    if (qPL && onWalk(x)) PL.push({ x, P: qPL * len });
   }
   DC.push({ x: i.barrierCg / 12, P: i.barrierWeight }, { x: W - i.barrierCg / 12, P: i.barrierWeight });
   const mDC = beam(DC);
   const mDW = beam(DW);
+  // The pedestrians on either sidewalk, each where it adds (per foot; no IM).
+  const plLeft = beam(PL.filter((p) => p.x < W / 2));
+  const plRight = beam(PL.filter((p) => p.x >= W / 2));
+  const mPL = (x: number, sign: 1 | -1) => (qPL ? [plLeft(x), plRight(x)].reduce((t, m) => t + (sign * m > 0 ? m : 0), 0) : 0);
 
   // --- the design sections -------------------------------------------------------------------------
   const positive: number[] = [];
@@ -231,9 +245,9 @@ export function designDeck(entered: DeckInputs) {
 
   // --- live load: influence lines and the trucks placed for the largest effects -------------------------
   const step = 0.1;
-  const xMin = bw + 2; // wheel 2 ft from the barrier face (3.6.1.3.1)
-  const xMax = W - bw - 2 - GAUGE;
-  const lanes = Math.max(1, Math.min(PRESENCE.length, Math.floor((W - 2 * bw) / 12)));
+  const xMin = curb + 2; // wheel 2 ft from the barrier face, or a sidewalk's curb (3.6.1.3.1)
+  const xMax = W - curb - 2 - GAUGE;
+  const lanes = Math.max(1, Math.min(PRESENCE.length, Math.floor((W - 2 * curb) / 12)));
   const grid: number[] = [];
   for (let x = xMin; x <= xMax + 1e-9; x += step) grid.push(x);
   // influence[s][p]: moment at section s from a unit load at grid point p (and p + 6 ft).
@@ -270,7 +284,7 @@ export function designDeck(entered: DeckInputs) {
     for (const x of list) {
       const MDC = mDC(x);
       const MDW = mDW(x);
-      const MLL = ((1 + IM) * truckEffect(x, sign)) / strip;
+      const MLL = ((1 + IM) * truckEffect(x, sign)) / strip + mPL(x, sign); // with the pedestrians
       const gDC = sign * MDC > 0 ? 1.25 : 0.9;
       const gDW = sign * MDW > 0 ? 1.5 : 0.65;
       const Mu = gDC * MDC + gDW * MDW + 1.75 * MLL;
@@ -317,8 +331,13 @@ export function designDeck(entered: DeckInputs) {
     }
     return m;
   };
-  const dcAt = (x: number) => barrier.P * Math.max(x - barrier.x, 0) + slabMoment(x);
-  const dwAt = (x: number) => ((i.gammaWS * i.wearing) / 12 + i.utilities) * (Math.max(x - bw, 0) ** 2 / 2);
+  const dcAt = (x: number) => barrier.P * Math.max(x - barrier.x, 0) + slabMoment(x) + (sw ? band(wSw, bw, curb, x) : 0);
+  const dwAt = (x: number) => ((i.gammaWS * i.wearing) / 12 + i.utilities) * (Math.max(x - curb, 0) ** 2 / 2);
+  /** A band's uniform load (ksf) from the deck's edge side, its moment at x (cantilever). */
+  const band = (q: number, a: number, b: number, x: number) => {
+    const hi = Math.min(b, x);
+    return hi > a ? q * (hi - a) * (x - (a + hi) / 2) : 0;
+  };
   const bar = BARS[i.topBars.bar];
   const asTop = area(i.topBars);
   const capacity = (h: number, As: number, phi: number) => {
@@ -339,12 +358,13 @@ export function designDeck(entered: DeckInputs) {
   add({ id: "oh-case2", name: "Overhang, Case 2: vertical collision", demand: case2.Mu, capacity: case2.MR, unit: "kip·ft/ft", ref: "AASHTO A13.4.1" });
   // Case 3: Strength I at the design section by the exterior girder.
   const x3 = i.overhang - d;
-  const toFace = i.overhang - bw; // exterior girder centerline to the barrier face
-  const arm = Math.max(x3 - bw - 1, 0); // wheel or line load 1 ft from the barrier face
+  const toFace = i.overhang - curb; // exterior girder centerline to the barrier face (or the sidewalk's curb)
+  const arm = Math.max(x3 - curb - 1, 0); // wheel or line load 1 ft from the barrier face (or the curb)
+  const MPL3 = qPL ? band(qPL, bw, curb, x3) : 0; // pedestrians, no IM
   const lineLoad = toFace <= 6; // 3.6.1.3.4: a 1.0 klf line load in place of the outside wheels
   const MLL3 = lineLoad ? 1.0 * arm : (WHEEL * arm) / ((45 + 10 * arm) / 12);
   const m3 = lineLoad ? 1 : 1.2;
-  const case3 = { x: x3, h: thickness(x3), MDC: dcAt(x3), MDW: dwAt(x3), MLL: MLL3, m: m3, lineLoad, Mu: 1.25 * dcAt(x3) + 1.5 * dwAt(x3) + 1.75 * m3 * (1 + IM) * MLL3, MR: 0 };
+  const case3 = { x: x3, h: thickness(x3), MDC: dcAt(x3), MDW: dwAt(x3), MLL: MLL3, MPL: MPL3, m: m3, lineLoad, Mu: 1.25 * dcAt(x3) + 1.5 * dwAt(x3) + 1.75 * m3 * (1 + IM) * MLL3 + 1.75 * MPL3, MR: 0 };
   case3.MR = capacity(case3.h, asTop, 0.9);
   add({ id: "oh-case3", name: "Overhang, Case 3: dead and live load at the girder", demand: case3.Mu, capacity: case3.MR, unit: "kip·ft/ft", ref: "AASHTO A13.4.1" });
 
@@ -372,7 +392,7 @@ export function designDeck(entered: DeckInputs) {
     endCase1,
     ok: checks.every((c) => c.ok),
     checks,
-    geometry: { W, girders, bw, flangeEdge, lanes, stripPos, stripNeg, Se },
+    geometry: { W, girders, bw, curb, flangeEdge, lanes, stripPos, stripNeg, Se },
     thickness,
     moments: { DC: mDC, DW: mDW },
     pos,

@@ -37,19 +37,20 @@ export function deckCalcLines(i: DeckInputs, title: string, figures?: { section?
   m("n\\coloneq\\frac{29000\\mathrm{ksi}}{E_c}=", "Modular ratio");
   m("f_r\\coloneq0.24\\cdot\\sqrt{\\frac{f'_{c}}{\\mathrm{ksi}}}\\cdot\\mathrm{ksi}=", "AASHTO 5.4.2.6");
 
+  const face = i.sidewalk?.width ? "sidewalk's curb" : "barrier face";
   text("Strip analysis (AASHTO 4.6.2.1)", "subheading");
   text(
-    `The transverse strip is a continuous beam on rigid supports at the ${i.nGirders} girders, with the overhangs (4.6.2.1.6). Dead loads: the slab (tapering in the overhangs), the barriers, the wearing surface between them${i.utilities ? " and utilities" : ""}. Live load: the 32 kip truck axle (wheels 6 ft apart, 2 ft from the barrier face, trucks 4 ft apart), placed for the largest effect with up to ${r.geometry.lanes} trucks and their multiple presence factors (T. 3.6.1.1.2-1), times 1.33 for dynamic load allowance (3.6.2.1), over the strip width. The largest positive moment in any span, and the largest negative at the design sections ${num(i.dSection)} in from the ${i.nGirders >= 3 ? "interior" : ""} girders' centerlines, govern.`,
+    `The transverse strip is a continuous beam on rigid supports at the ${i.nGirders} girders, with the overhangs (4.6.2.1.6). Dead loads: the slab (tapering in the overhangs), the barriers, ${i.sidewalk?.width ? `the sidewalks (${num(i.sidewalk.width)} ft wide, ${num(i.sidewalk.depth)} in deep, with 0.075 ksf of pedestrians where wider than 2 ft, AASHTO 3.6.1.6), ` : ""}the wearing surface between ${i.sidewalk?.width ? "the curbs" : "them"}${i.utilities ? " and utilities" : ""}. Live load: the 32 kip truck axle (wheels 6 ft apart, 2 ft from the ${face}, trucks 4 ft apart), placed for the largest effect with up to ${r.geometry.lanes} trucks and their multiple presence factors (T. 3.6.1.1.2-1), times 1.33 for dynamic load allowance (3.6.2.1), over the strip width. The largest positive moment in any span, and the largest negative at the design sections ${num(i.dSection)} in from the ${i.nGirders >= 3 ? "interior" : ""} girders' centerlines, govern.`,
     "note",
   );
   m("E_{pos}\\coloneq26\\mathrm{in}+6.6\\cdot\\frac{\\mathrm{in}}{\\mathrm{ft}}\\cdot S=", "Strip width, positive moment, AASHTO T. 4.6.2.1.3-1", "ft");
   m("E_{neg}\\coloneq48\\mathrm{in}+3.0\\cdot\\frac{\\mathrm{in}}{\\mathrm{ft}}\\cdot S=", "Negative moment", "ft");
   given(`M_{DCp}\\coloneq ${num(r.pos.MDC, 8)}${kft}`, `Dead load, at ${num(r.pos.x, 2)} ft (positive)`);
   given(`M_{DWp}\\coloneq ${num(r.pos.MDW, 8)}${kft}`);
-  given(`M_{LLp}\\coloneq ${num(r.pos.MLL, 8)}${kft}`, "LL + IM, per foot");
+  given(`M_{LLp}\\coloneq ${num(r.pos.MLL, 8)}${kft}`, i.sidewalk && i.sidewalk.width > 2 ? "LL + IM, per foot, and the pedestrians where they add" : "LL + IM, per foot");
   given(`M_{DCn}\\coloneq ${num(r.neg.MDC, 8)}${kft}`, `Dead load, at ${num(r.neg.x, 2)} ft (negative)`);
   given(`M_{DWn}\\coloneq ${num(r.neg.MDW, 8)}${kft}`);
-  given(`M_{LLn}\\coloneq ${num(r.neg.MLL, 8)}${kft}`, "LL + IM, per foot");
+  given(`M_{LLn}\\coloneq ${num(r.neg.MLL, 8)}${kft}`, i.sidewalk && i.sidewalk.width > 2 ? "LL + IM, per foot, and the pedestrians where they add" : "LL + IM, per foot");
   const gp = (v: number, max: number, min: number, sign: 1 | -1) => (sign * v > 0 ? max : min);
   const muPos = `${gp(r.pos.MDC, 1.25, 0.9, 1)}\\cdot M_{DCp}+${gp(r.pos.MDW, 1.5, 0.65, 1)}\\cdot M_{DWp}+1.75\\cdot M_{LLp}`;
   const muNeg = `${gp(r.neg.MDC, 1.25, 0.9, -1)}\\cdot M_{DCn}+${gp(r.neg.MDW, 1.5, 0.65, -1)}\\cdot M_{DWn}+1.75\\cdot M_{LLn}`;
@@ -145,8 +146,9 @@ export function deckCalcLines(i: DeckInputs, title: string, figures?: { section?
   given(`h_3\\coloneq ${num(case3.h, 8)}\\mathrm{in}`, "Overhang depth at the design section by the girder");
   given(`M_{DC3}\\coloneq ${num(case3.MDC, 8)}${kft}`);
   given(`M_{DW3}\\coloneq ${num(case3.MDW, 8)}${kft}`);
-  given(`M_{LL3}\\coloneq ${num(case3.MLL, 8)}${kft}`, case3.lineLoad ? "1.0 klf line load 1 ft from the barrier face, AASHTO 3.6.1.3.4" : "Wheel 1 ft from the barrier face over its strip, 45 + 10X (T. 4.6.2.1.3-1)");
-  m(`M_{u3}\\coloneq1.25\\cdot M_{DC3}+1.5\\cdot M_{DW3}+1.75\\cdot${num(case3.m)}\\cdot1.33\\cdot M_{LL3}=`, "Case 3, Strength I", "kip*ft/ft");
+  given(`M_{LL3}\\coloneq ${num(case3.MLL, 8)}${kft}`, case3.lineLoad ? `1.0 klf line load 1 ft from the ${face}, AASHTO 3.6.1.3.4` : `Wheel 1 ft from the ${face} over its strip, 45 + 10X (T. 4.6.2.1.3-1)`);
+  if (case3.MPL) given(`M_{PL3}\\coloneq ${num(case3.MPL, 8)}${kft}`, "Pedestrians on the sidewalk, 0.075 ksf (AASHTO 3.6.1.6), no IM");
+  m(`M_{u3}\\coloneq1.25\\cdot M_{DC3}+1.5\\cdot M_{DW3}+1.75\\cdot${num(case3.m)}\\cdot1.33\\cdot M_{LL3}${case3.MPL ? "+1.75\\cdot M_{PL3}" : ""}=`, "Case 3, Strength I", "kip*ft/ft");
   m("d_3\\coloneq h_3-c_t-\\frac{d_{bt}}{2}=", undefined, "in");
   m("M_{r3}\\coloneq0.9\\cdot A_{st}\\cdot f_y\\cdot\\left(d_3-\\frac{A_{st}\\cdot f_y}{2\\cdot0.85\\cdot f'_{c}}\\right)=", undefined, "kip*ft/ft");
   m(ok("M_{u3}", "M_{r3}"), "Case 3: dead and live load");

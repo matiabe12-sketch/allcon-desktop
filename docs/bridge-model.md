@@ -401,9 +401,18 @@ Each sidewalk sits inside its edge's barrier, raised, with a curb at the roadway
     live load's factors, without IM or a distribution factor (continuous as the superimposed loads are);
   - **steel check:** dc2 and the live load's envelope (llPos, llNeg, V) gain them the same way;
   - **pier caps:** the girder side's DC gains the concrete, and the lanes keep to the curbs.
+- **The substructure** (2026-11-21): each support's live load reaction per girder gains the pedestrians' (wL/2 on a
+  simple span, the continuous beam's end shears over a continuous pier; a steel line by its reaction's influence line,
+  where it adds), so the bearings and abutments take them. A pier cap places each girder's pedestrian reaction with
+  every lane arrangement (GirderSide.pl), at live load's factors, without the multiple presence factor.
+- **The deck design** (2026-11-21; DeckInputs.sidewalk, entered in the Deck Slab editor or from the Bridge):
+  - the sidewalk's concrete in the strip's dead load and the overhang's; no wearing surface on it;
+  - the wheels 2 ft from its curb (1 ft for Case 3), the lanes counted between the curbs;
+  - pedestrians, 0.075 ksf where wider than 2 ft, in the strip's live load moment where they add and in Case 3
+    (1.75 M_PL3, no IM); the collision Cases 1 and 2 at the barrier unchanged;
+  - the Bridge's link: the sidewalk if both sides match, else the side whose Case 3 works hardest (the deck design is
+    one overhang).
 - **Tests:** src/lib/bridge/sidewalks.test.ts.
 - **Not yet:**
-  - the pedestrians on the substructure's live load (the caps' and abutments' lanes take the vehicles only);
-  - the deck design's overhang with a sidewalk on it;
   - the sidewalks in the drawings, the 3D model and the quantities;
   - slab bridges' sidewalks.

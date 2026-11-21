@@ -44,6 +44,8 @@ export type GirderSide = {
    * doesn't count it again): the girder's weight per foot, its end past the bearing (ft), and the deck and haunch per foot.
    */
   inDiaphragm?: { wg: number; endDist: number; wDeck: { interior: number; exterior: number } };
+  /** Pedestrians on the sidewalks (3.6.1.6): each girder's reaction, kip, unfactored, placed with the vehicles. */
+  pl?: number;
   /** The braking force per loaded lane (3.6.4), kip, on the girder design's whole length. */
   brakingPerLane?: number;
 };
@@ -152,6 +154,7 @@ export function girderSide(design: GirderInputs, span: number, designId: string,
     wind: sideWind(design),
     brakingPerLane: brakingPerLane(bridgeLength).perLane,
     inDiaphragm: { wg, endDist: i.endDist, wDeck: deckAt },
+    ...(i.sidewalk?.pl ? { pl: i.sidewalk.pl * share } : {}),
   };
 }
 
@@ -313,7 +316,7 @@ export function capLoadCases(
         for (const w of [c - 3, c + 3]) leverShares(z, w).forEach((f, g) => (per[g] += (f * T) / 2));
         for (let q = 0; q < 20; q++) leverShares(z, c - 5 + 0.25 + q * 0.5).forEach((f, g) => (per[g] += (f * W) / 20)); // 10 ft wide
       }
-      z.forEach((zz, g) => out.push({ x: capX(s, zz), P: a.m * per[g] }));
+      z.forEach((zz, g) => out.push({ x: capX(s, zz), P: a.m * per[g] + (a.lanes > 0 ? (s.pl ?? 0) : 0) }));
     });
     return out;
   };

@@ -309,7 +309,9 @@ function endReaction(line: ReturnType<typeof designGirder>["interior"], L: numbe
   const DW = (ld.wDW * L) / 2;
   const lane = liveLoad(L, 0, 0).V;
   const laneIM = liveLoad(L, 0, 0.33).V;
-  return { DC, DC1, DW, LL: lane * line.df.shear, LLIM: laneIM * line.df.shear, Lane: lane };
+  // Pedestrians on the sidewalks (3.6.1.6), with the vehicles: on the girder's span, without IM or distribution.
+  const PL = ((ld.wPL ?? 0) * L) / 2;
+  return { DC, DC1, DW, LL: lane * line.df.shear + PL, LLIM: laneIM * line.df.shear + PL, Lane: lane, PL };
 }
 
 /** The Bridge run: its layout, the girder check on each group of spans, and each support's reactions per girder. */
@@ -356,7 +358,8 @@ export function runBridge(b: BridgeInputs, bases: (GirderInputs | null | undefin
           return r.truck.back + r.truck.ahead + r.lane.back + r.lane.ahead;
         };
         const df = Math.max(lines[0][k].df.shear, lines[1][k].df.shear);
-        return { DC: DC1 + DC2, DC1, DW, LL: lane(0) * df, LLIM: lane(0.33) * df, Lane: lane(0) };
+        const PL = (ldB.wPL ?? 0) * cB + (ldA.wPL ?? 0) * cA; // pedestrians on the continuous beam (3.6.1.6)
+        return { DC: DC1 + DC2, DC1, DW, LL: lane(0) * df + PL, LLIM: lane(0.33) * df + PL, Lane: lane(0) };
       };
       const int = side("interior");
       const ext = side("exterior");
@@ -493,8 +496,8 @@ function runSteelBridge(b: BridgeInputs, lay: BridgeLayout, base: SteelGirderInp
   const result = designSteelGirder(inputs);
   const reactions = b.supports.map((s, i) => {
     const r = result.reactions[i];
-    const LL = r.truck / (1 + inputs.IM) + r.lane;
-    const line = { DC: r.dc, DC1: r.dc1, DW: r.dw, LL, LLIM: r.truck + r.lane, Lane: r.df > 0 ? LL / r.df : 0 };
+    const LL = r.truck / (1 + inputs.IM) + r.lane + r.pl;
+    const line = { DC: r.dc, DC1: r.dc1, DW: r.dw, LL, LLIM: r.truck + r.lane + r.pl, Lane: r.df > 0 ? (r.truck / (1 + inputs.IM) + r.lane) / r.df : 0, PL: r.pl };
     return { support: i, name: s.name, sides: [] as { span: number; interior: typeof line; exterior: typeof line }[], ...line, continuous: s.type === "continuous-pier", totals: { DC: r.dc * b.nGirders, DW: r.dw * b.nGirders }, steel: { perGirder: line } };
   });
   const ok = result.checks.every((c) => c.ok || c.advisory);

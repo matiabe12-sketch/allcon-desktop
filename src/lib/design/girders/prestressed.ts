@@ -1718,7 +1718,7 @@ function designGirderLine(i: GirderInputs, exterior: boolean, ctx: SpanContext |
     comp,
     df,
     strands: { N, Aps, ybar, e, lt, ld, ldDebonded: ldOf(2.0), db: strand.db, area: strand.area, groups: groups.map(({ kind, n, A, bondFrom, kappa }) => ({ kind, n, A, bondFrom, kappa, yEnd: 0, yMid: 0 })).map((s, k) => ({ ...s, yEnd: groups[k].yAt(0), yMid: groups[k].yAt(Lg / 2) })), lastDebond },
-    loads: { wg, wDeck, wDC2, wDW, wBarrier, roadway, trib, diaphragmAt, Pdia, Lg },
+    loads: { wg, wDeck, wDC2, wDW, wPL, wBarrier, roadway, trib, diaphragmAt, Pdia, Lg },
     losses,
     gammaLL3,
     flexMid,

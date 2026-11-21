@@ -15,7 +15,7 @@ import type { ModularJointInputs } from "../joints/modular";
 import type { WingwallInputs } from "../walls/wingwall";
 import type { ColumnResult } from "../piers/column";
 import type { GirderInputs } from "../girders/prestressed";
-import type { DeckInputs } from "../decks/deck";
+import { designDeck, type DeckInputs } from "../decks/deck";
 import { BEARING_DEFAULTS, type BearingInputs, type designBearing } from "../bearings/elastomeric";
 import type { HlmrInputs } from "../bearings/pot-disc";
 
@@ -428,7 +428,7 @@ export function deckFromBridge(b: BridgeInputs, run: BridgeRun, current: DeckInp
   const shape = bridgeGirderShape(b);
   const S = Math.max(...b.supports.map((s) => spacingAt(b, s)));
   const t = b.deckT;
-  return {
+  const out: DeckInputs = {
     ...current,
     nGirders: b.nGirders,
     S,
@@ -445,7 +445,23 @@ export function deckFromBridge(b: BridgeInputs, run: BridgeRun, current: DeckInp
     ...(b.rail ? { rail: b.rail } : {}),
     panels: !!run.groups[0]?.inputs.deckPanels,
     fromGirder: girder,
+    sidewalk: null,
   };
+  // The sidewalks (the deck design is one overhang, both sides alike): the one side's if both match, else the side
+  // whose overhang works hardest (Case 3's demand over capacity), designed both ways.
+  const sw = b.sidewalks;
+  if (!sw || sw.left + sw.right <= 0) return out;
+  const sides = [...new Set([sw.left, sw.right])].map((width) => ({ ...out, sidewalk: width > 0 ? { width, depth: sw.depth } : null }));
+  if (sides.length === 1) return sides[0];
+  const ratio = (d: DeckInputs) => {
+    try {
+      const c = designDeck(d).overhang.case3;
+      return c.Mu / Math.max(c.MR, 1e-9);
+    } catch {
+      return 0;
+    }
+  };
+  return sides.reduce((a, d) => (ratio(d) > ratio(a) ? d : a));
 }
 
 /**
@@ -621,7 +637,7 @@ export function steelSide(b: BridgeInputs, run: BridgeRun, support: number, span
   const r = run.reactions[support] as BridgeRun["reactions"][number] & { steel?: { perGirder: { DC: number; DC1: number; DW: number } } };
   const sides = [support - 1, support].filter((j) => j >= 0 && j < run.layout.spans.length).length;
   const share = 1 / Math.max(1, sides);
-  const per = r.steel?.perGirder ?? { DC: r.DC, DC1: r.DC1, DW: r.DW };
+  const per: { DC: number; DC1: number; DW: number; PL?: number } = r.steel?.perGirder ?? { DC: r.DC, DC1: r.DC1, DW: r.DW };
   const both = (v: number) => ({ interior: v * share, exterior: v * share });
   return {
     designId,
@@ -642,6 +658,7 @@ export function steelSide(b: BridgeInputs, run: BridgeRun, support: number, span
     liveUnbalance: null,
     liveUnbalanceStatic: null,
     wind: run.steel ? sideWind(run.steel.standIn) : null,
+    ...(per.PL ? { pl: per.PL * share } : {}),
     brakingPerLane: brakingPerLane(run.layout.length).perLane,
     ...(run.steel ? { inDiaphragm: { wg: steelAtSupport(run, support).wg, endDist: s.endDistance, wDeck: steelAtSupport(run, support).wDeck } } : {}),
   };

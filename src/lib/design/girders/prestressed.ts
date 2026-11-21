@@ -1,4 +1,5 @@
 import { BARS, DesignError, type Check } from "../walls/cip";
+import { gradientOnGirder, negativeFactor, type GradientChoice } from "./gradient";
 import { CDOT_VEHICLES } from "../rating/vehicles";
 import { axlesOf, continuousBeam, rotationsFromCurvature, type ContinuousBeam, type EndRotations, type LiveEnvelope } from "./continuous";
 import { GIRDER_SHAPES, isAdjacent, profileProps, shapeById, widthAt, type GirderShape, type Profile, type SectionProps } from "./sections";
@@ -121,6 +122,9 @@ export type GirderInputs = {
   /** Sidewalks (from the Bridge): the narrower one's width inside the barrier (the lanes keep to the curbs), their
    * concrete (DC2) and pedestrian load (3.6.1.6) on each girder, klf, shared equally. */
   sidewalk?: { width: number; dc: number; pl: number };
+  /** The vertical temperature gradient (3.12.3), when considered (the Bridge's choice; CDOT BDM 14.3: where
+   * appropriate): its solar zone and whether the deck has an asphalt overlay. Service I and III at γTG 0.50. */
+  gradient?: GradientChoice | null;
   fws: number; // psf, future wearing surface (DW)
   overlay?: number; // in, the asphalt overlay placed on the membrane (quantities only; 0 or unset for none)
   // Shear reinforcement
@@ -840,6 +844,9 @@ export type Station = {
   fatigue: { Mfat: number; top: number; MfatNeg?: number; bot?: number };
   /** Principal tension in the web at Service III (5.9.2.3.3), where it applies: the largest over the web's elevations. */
   principal?: PrincipalTension;
+  /** The temperature gradient (3.12.3): its restraint moment (kip·ft, positive gradient), each gradient's stresses (ksi,
+   * compression +), and what is added at γTG 0.50 to Service I's tops and Service III's bottom. */
+  tg?: { Mt: number; pos: { top: number; deck: number; bot: number }; neg: { top: number; deck: number; bot: number }; top: number; deck: number; bot: number };
 };
 
 export type PrincipalTension = { ft: number; y: number; where: string; fpcx: number; tau: number; V: number; Vp: number; Q: number; bw: number };
@@ -861,6 +868,7 @@ type SpanContext = {
   live: (x: number) => LiveEnvelope; // per lane, cached
   unit: (x: number) => { M: number; V: number }; // a uniform 1 klf on every span
   restraint: { left: number; right: number }; // kip·ft, the restraint moments at its ends (this girder line)
+  tg?: { left: number; right: number }; // kip·ft, the positive temperature gradient's restraint moments at its ends
   simpleToo: boolean; // a joint at its end isn't fully effective: positive moments also as a simple span
   strengthII?: (x: number) => StrengthIIEnvelope; // CDOT: per lane, cached
 };
@@ -887,6 +895,9 @@ function designGirderLine(i: GirderInputs, exterior: boolean, ctx: SpanContext |
   const ts = i.deckT - i.sacrificial;
   const beff = (exterior ? i.S / 2 + i.overhang : i.S) * 12; // 4.6.2.6.1, the tributary width
   const comp = composite(i, shape, g, beff, nDeck);
+  // The temperature gradient (3.12.3): its self-equilibrating stresses and free curvature on this section.
+  const tg = i.gradient ? gradientOnGirder({ profile: shape.profile, H: shape.depth, hh: comp.hh, topWidth: shape.topWidth, ts: comp.ts, beff: comp.beff, n: nDeck }, comp, Ec, i.gradient.zone) : null;
+  const tgNeg = negativeFactor(!!i.gradient?.asphalt);
   const df = distributionFactors(i, g, ts, Ec / Ecd, comp.deckCg, exterior);
   // A span of a continuous bridge: stations over its whole length, loads after continuity on the
   // continuous beam. For negative moment, L is the average of the two spans at the pier (T. 4.6.2.2.1-2).
@@ -1154,12 +1165,23 @@ function designGirderLine(i: GirderInputs, exterior: boolean, ctx: SpanContext |
     const gainLL = gains && cdot ? (EP / Ec) * ((gammaLL3 * ML * epcHere) / comp.I) : 0;
     const fIII = gainLL > 0 ? prestress(xe, fpe + gain + gainLL) : fSvc;
     const botIIIps = fIII.P / g.A + fIII.Pe / g.Sb;
+    // The temperature gradient (3.12.3, 4.6.6) at γTG 0.50 with the live load (C3.4.1): its self-equilibrating
+    // stresses and, continuous, its restraint moment; the worse of the positive and negative gradients, where it adds.
+    let tgAt: Station["tg"];
+    if (tg) {
+      const X = x + (ctx?.shift ?? 0);
+      const Mt = ctx?.tg ? (ctx.tg.left * (1 - X / ctx.La) + ctx.tg.right * (X / ctx.La)) * 12 : 0; // kip·in, positive gradient
+      const at = (f: number) => ({ top: f * (tg.top + Mt / comp.Stc), deck: f * (tg.deck + (nDeck * Mt) / comp.Std), bot: f * (tg.bot - Mt / comp.Sbc) });
+      const p = at(1);
+      const q = at(tgNeg);
+      tgAt = { Mt: Mt / 12, pos: p, neg: q, top: 0.5 * Math.max(0, p.top, q.top), deck: 0.5 * Math.max(0, p.deck, q.deck), bot: 0.5 * Math.min(0, p.bot, q.bot) };
+    }
     const service = {
       topPerm: pre.top + Mnc / g.St + Mc / comp.Stc,
-      topTotal: pre.top + Mnc / g.St + (Mc + ML) / comp.Stc,
+      topTotal: pre.top + Mnc / g.St + (Mc + ML) / comp.Stc + (tgAt?.top ?? 0),
       deckPerm: (nDeck * Mc) / comp.Std,
-      deckTotal: (nDeck * (Mc + ML)) / comp.Std,
-      botIII: botIIIps - Mnc / g.Sb - Mc / comp.Sbc - (gammaLL3 * ML) / comp.Sbc, // T. 3.4.1-4
+      deckTotal: (nDeck * (Mc + ML)) / comp.Std + (tgAt?.deck ?? 0),
+      botIII: botIIIps - Mnc / g.Sb - Mc / comp.Sbc - (gammaLL3 * ML) / comp.Sbc + (tgAt?.bot ?? 0), // T. 3.4.1-4
       botDL: pre.bot - Mnc / g.Sb - Mc / comp.Sbc, // dead load alone, after losses (CDOT BDM 5.5.1.3)
     };
 
@@ -1190,7 +1212,7 @@ function designGirderLine(i: GirderInputs, exterior: boolean, ctx: SpanContext |
     // Fatigue I (T. 3.4.1-1, γ = 1.75; IM 15%, T. 3.6.2.1-1) with half the permanent stresses (T. 5.9.2.3.2a-1).
     const MfatP = fatPos * df.fatigue;
     const fatigue: Station["fatigue"] = { Mfat: MfatP, top: 0.5 * service.topPerm + (1.75 * 1.15 * MfatP * 12) / comp.Stc };
-    const st: Station = { x, label, pier, transfer, Mg, Mdeck, Mdc2, Mdw, Mll, Vdc, Vdw, Vll, release, service, Mu, phiMn, Mcr, Vu, fatigue, strengthII, strengthIIGoverns: !!strengthII && (strengthII.Mu > MuI || strengthII.Vu > VuI) };
+    const st: Station = { x, label, pier, transfer, Mg, Mdeck, Mdc2, Mdw, Mll, Vdc, Vdw, Vll, release, service, Mu, phiMn, Mcr, Vu, fatigue, strengthII, strengthIIGoverns: !!strengthII && (strengthII.Mu > MuI || strengthII.Vu > VuI), ...(tgAt ? { tg: tgAt } : {}) };
     if (negative) {
       // Negative moment: the deck's bars in tension, the girder's bottom in compression.
       const negDead = down(Mg, 1.25, 0.9) + down(Mdeck, 1.25, 0.9) + down(negative.Mdc2, 1.25, 0.9) + down(negative.Mdw, 1.5, 0.65) + negative.Mr;
@@ -1671,7 +1693,10 @@ function designGirderLine(i: GirderInputs, exterior: boolean, ctx: SpanContext |
     const Fsh = ((eDeck - eGirder) * comp.beff * tsd * Ecd) / (1 + 0.7 * psiDeck); // kip
     const ed = comp.deckCg - comp.yb;
     const shRot = rotationsFromCurvature(c.La, onGirder(() => (Fsh * ed) / 12), 800);
-    restraintLoads = { tc, tf, dPsiG, dPsiD, phi, relax, fpAvg, creep: creepRot, eDeck, eGirder, psiDeck, Fsh, ed, shrinkage: shRot };
+    // The temperature gradient's free curvature (EI·κ, kip·ft, sagging +) along the girder, for its restraint moments:
+    // a warmer top bows the girder up (hogging), so the restraint sags at the piers.
+    const tgRot = tg ? rotationsFromCurvature(c.La, onGirder(() => -(Ec * comp.I * tg.kappa) / 12), 800) : null;
+    restraintLoads = { tc, tf, dPsiG, dPsiD, phi, relax, fpAvg, creep: creepRot, eDeck, eGirder, psiDeck, Fsh, ed, shrinkage: shRot, gradient: tgRot };
 
     if (c.contRight) {
       // The joint at the right-hand pier: fully effective, and the positive moment connection.
@@ -1952,6 +1977,7 @@ export type RestraintLoads = {
   Fsh: number; // kip, the differential shrinkage force
   ed: number; // in, its eccentricity on the composite section
   shrinkage: EndRotations;
+  gradient: EndRotations | null; // the positive temperature gradient's free curvature (not relaxed: a daily load)
 };
 
 export type PierResult = {
@@ -2468,7 +2494,7 @@ export function designGirder(entered: GirderInputs) {
     if (!e) cachesII[k].set(key, (e = strengthIIAt(beam, k, x + shift[k])));
     return e;
   };
-  const ctxFor = (k: number, restraint: { left: number; right: number }, simpleToo: boolean): SpanContext => ({ index: k, n, beam, spans: Ls, La: La[k], shift: shift[k], contLeft: k > 0, contRight: k < n - 1, live: live(k), unit: unit(k), restraint, simpleToo, strengthII: cdot ? liveII(k) : undefined });
+  const ctxFor = (k: number, restraint: { left: number; right: number }, simpleToo: boolean, tgM?: number[]): SpanContext => ({ index: k, n, beam, spans: Ls, La: La[k], shift: shift[k], contLeft: k > 0, contRight: k < n - 1, live: live(k), unit: unit(k), restraint, simpleToo, strengthII: cdot ? liveII(k) : undefined, ...(tgM ? { tg: { left: tgM[k], right: tgM[k + 1] } } : {}) });
 
   const line = (ext: boolean) => {
     const zero = { left: 0, right: 0 };
@@ -2491,8 +2517,10 @@ export function designGirder(entered: GirderInputs) {
       const p = first[k - 1].pierRight!;
       return p.Mdc2 + p.Mdw + m + 0.5 * p.MllPos <= 1e-9;
     });
-    const lines = Ls.map((_, k) => solve(spanInputs(i, k), ext, ctxFor(k, { left: Mr[k], right: Mr[k + 1] }, !effective[k] || !effective[k + 1])));
-    return { lines, Mr, creepM, shrinkM, effective };
+    // The temperature gradient's restraint moments (positive gradient; elastic, a daily load), where it's considered.
+    const tgM = i.gradient && first.every((l) => l.restraintLoads?.gradient) ? beam.supportMoments(first.map((l) => l.restraintLoads!.gradient!)) : undefined;
+    const lines = Ls.map((_, k) => solve(spanInputs(i, k), ext, ctxFor(k, { left: Mr[k], right: Mr[k + 1] }, !effective[k] || !effective[k + 1], tgM)));
+    return { lines, Mr, creepM, shrinkM, effective, tgM };
   };
   const I = line(false);
   const E = line(true);

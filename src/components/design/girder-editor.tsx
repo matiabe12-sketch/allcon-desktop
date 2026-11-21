@@ -339,6 +339,18 @@ export function GirderEditor({ design, projects }: { design: { id: string; name:
               <Toggle label="Each barrier carried by its exterior girder" value={inputs.barriersOnExterior} onChange={set("barriersOnExterior")} />
               <Field label="Other DC on the composite section" unit="klf" value={inputs.otherDC2} onChange={set("otherDC2")} step={0.01} />
               <Field label="Future wearing surface (DW)" unit="psf" value={inputs.fws} onChange={set("fws")} />
+              {inputs.sidewalk && (inputs.sidewalk.dc > 0 || inputs.sidewalk.pl > 0) && (
+                <p className="py-0.5 text-[11px] text-muted-foreground">
+                  Sidewalks (from the Bridge): {fmt(inputs.sidewalk.dc, 3)} klf DC and {fmt(inputs.sidewalk.pl, 3)} klf of pedestrians on each girder; the curb {fmt(inputs.sidewalk.width, 1)} ft inside the barrier.
+                </p>
+              )}
+              <Choice
+                label="Temperature gradient (3.12.3)"
+                value={String(inputs.gradient?.zone ?? 0)}
+                options={[{ value: "0", label: "Not considered" }, ...[1, 2, 3, 4].map((z) => ({ value: String(z), label: `Zone ${z}` }))]}
+                onChange={(v) => setInputs((s) => ({ ...s, gradient: v === "0" ? null : { zone: Number(v) as 1 | 2 | 3 | 4, asphalt: !!s.gradient?.asphalt } }))}
+              />
+              {inputs.gradient && <Toggle label="Asphalt overlay (negative gradient × −0.20)" value={inputs.gradient.asphalt} onChange={(v) => setInputs((s) => ({ ...s, gradient: s.gradient ? { ...s.gradient, asphalt: v } : null }))} />}
             </Section>
             <Section title="Shear and longitudinal reinforcement">
               <Rows

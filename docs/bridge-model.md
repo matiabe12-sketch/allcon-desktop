@@ -378,7 +378,16 @@ zone of Figure 3.12.3-1, and whether the deck has an asphalt overlay). Off by de
 - **Combinations** (Table 3.4.1-1, C3.4.1): 0.50 TG in Service I and III (with live load), none in Strength.
 - **Tests:** temperature-gradient.test.ts: the section's parts against hand integration; two equal spans' pier moment
   1.5·E·I·α·gradient (sagging for a positive gradient); the Bridge's cases and factors.
-- **Not yet:** the girder designs' own TG stresses (the prestressed and steel checks don't take the gradient).
+- **The precast girder check** (2026-11-21; GirderInputs.gradient, set from the Bridge or in the girder editor;
+  src/lib/design/girders/gradient.ts):
+  - on the composite section: the uniform part and the free curvature, and what is left, the self-equilibrating stresses
+    E·α·(T − Tu − G·(y − ȳ)) at the deck's top, the girder's top and its bottom (4.6.6);
+  - continuous girders: the free curvature restrained by the continuous beam (three-moment equation, as the creep
+    restraint; not relaxed, a daily load): a positive gradient sags at the piers;
+  - at γTG 0.50 (C3.4.1, with live load), the worse of the positive and negative gradients where it adds: Service I's
+    compression at the girder's top and the deck's top, Service III's tension at the bottom; the calc shows each.
+- **Not yet:** the steel girder check's TG (C3.4.1: open steel girders have usually been designed without it), and
+  TG at the pier section's negative-moment checks.
 
 ## Sidewalks (2026-11-21)
 

@@ -374,18 +374,28 @@ export function girderCalcLines(entered: GirderInputs, title: string, figures?: 
   m(cont ? "M_{cp}\\coloneq M_{DC2}+M_{DW}+M_{CR}=" : "M_{cp}\\coloneq M_{DC2}+M_{DW}=", "On the composite section", "kip*ft");
   m("f_{tp}\\coloneq\\frac{P_e}{A_g}-\\frac{P_e\\cdot e_p}{S_t}+\\frac{M_{nc}}{S_t}+\\frac{M_{cp}}{S_{tc}}=", "Top of the girder, permanent loads", "ksi");
   m(ok("f_{tp}", "0.45\\cdot f'_{c}"), "Service I, AASHTO T. 5.9.2.3.2a-1");
-  m("f_{tt}\\coloneq f_{tp}+\\frac{M_{LL}}{S_{tc}}=", "All loads", "ksi");
+  const tgm = midStation.tg;
+  if (tgm && i.gradient) {
+    text(`Temperature gradient (AASHTO 3.12.3, zone ${i.gradient.zone}; 4.6.6):- T1 and T2 from Table 3.12.3-1 on the composite section, its self-equilibrating stresses${cont ? ` and, continuous, the restraint moment of its free curvature (${num(tgm.Mt, 3)} kip·ft here, positive gradient)` : ""}; the negative gradient ${i.gradient.asphalt ? "−0.20" : "−0.30"} times the positive. Positive: top of the deck ${num(tgm.pos.deck, 3)}, top of the girder ${num(tgm.pos.top, 3)}, bottom ${num(tgm.pos.bot, 3)} ksi; negative: ${num(tgm.neg.deck, 3)}, ${num(tgm.neg.top, 3)}, ${num(tgm.neg.bot, 3)} ksi (compression +). The worse where it adds, at γTG = 0.50 with the live load (C3.4.1).`, "note");
+    given(`f_{TGt}\\coloneq ${num(tgm.top, 6)}\\mathrm{ksi}`, "0.50 TG, top of the girder");
+    given(`f_{TGd}\\coloneq ${num(tgm.deck, 6)}\\mathrm{ksi}`, "0.50 TG, top of the deck");
+    given(`f_{TGb}\\coloneq ${num(tgm.bot, 6)}\\mathrm{ksi}`, "0.50 TG, bottom of the girder");
+  }
+  const tgT = tgm && i.gradient ? "+f_{TGt}" : "";
+  const tgD = tgm && i.gradient ? "+f_{TGd}" : "";
+  const tgB = tgm && i.gradient ? "+f_{TGb}" : "";
+  m(`f_{tt}\\coloneq f_{tp}+\\frac{M_{LL}}{S_{tc}}${tgT}=`, "All loads", "ksi");
   m(ok("f_{tt}", "0.60\\cdot f'_{c}"), "Service I, φw = 1.0, AASHTO T. 5.9.2.3.2a-1");
   m("f_{dp}\\coloneq\\frac{n\\cdot M_{cp}}{S_{td}}=", "Top of the deck, permanent loads", "ksi");
   m(ok("f_{dp}", "0.45\\cdot f'_{cd}"), "Service I");
-  m("f_{dt}\\coloneq\\frac{n\\cdot\\left(M_{cp}+M_{LL}\\right)}{S_{td}}=", "All loads", "ksi");
+  m(`f_{dt}\\coloneq\\frac{n\\cdot\\left(M_{cp}+M_{LL}\\right)}{S_{td}}${tgD}=`, "All loads", "ksi");
   m(ok("f_{dt}", "0.60\\cdot f'_{cd}"), "Service I");
   m(`\\gamma_{L3}\\coloneq ${num(g.gammaLL3)}`, gains ? "Service III with refined losses and elastic gains (T. 3.4.1-4)" : "Service III (T. 3.4.1-4)");
   if (cdot && gains) {
     m("\\Delta_{pLL}\\coloneq\\frac{E_p}{E_c}\\cdot\\frac{\\gamma_{L3}\\cdot M_{LL}\\cdot e_{pc}}{I_c}=", "The live load's elastic gain, CDOT BDM 5.5.1.1", "ksi");
     m("P_3\\coloneq A_{ps}\\cdot\\left(f_{pe}+\\Delta_{pEG}+\\Delta_{pLL}\\right)=", undefined, "kip");
-    m("f_{b3}\\coloneq\\frac{P_3}{A_g}+\\frac{P_3\\cdot e_p}{S_b}-\\frac{M_{nc}}{S_b}-\\frac{M_{cp}+\\gamma_{L3}\\cdot M_{LL}}{S_{bc}}=", "Bottom, Service III", "ksi");
-  } else m("f_{b3}\\coloneq\\frac{P_e}{A_g}+\\frac{P_e\\cdot e_p}{S_b}-\\frac{M_{nc}}{S_b}-\\frac{M_{cp}+\\gamma_{L3}\\cdot M_{LL}}{S_{bc}}=", "Bottom, Service III", "ksi");
+    m(`f_{b3}\\coloneq\\frac{P_3}{A_g}+\\frac{P_3\\cdot e_p}{S_b}-\\frac{M_{nc}}{S_b}-\\frac{M_{cp}+\\gamma_{L3}\\cdot M_{LL}}{S_{bc}}${tgB}=`, "Bottom, Service III", "ksi");
+  } else m(`f_{b3}\\coloneq\\frac{P_e}{A_g}+\\frac{P_e\\cdot e_p}{S_b}-\\frac{M_{nc}}{S_b}-\\frac{M_{cp}+\\gamma_{L3}\\cdot M_{LL}}{S_{bc}}${tgB}=`, "Bottom, Service III", "ksi");
   const tl = i.exposure === "moderate" ? "\\min\\left(0.19\\cdot\\sqrt{\\frac{f'_{c}}{\\mathrm{ksi}}},0.6\\right)\\cdot\\mathrm{ksi}" : i.exposure === "severe" ? "\\min\\left(0.0948\\cdot\\sqrt{\\frac{f'_{c}}{\\mathrm{ksi}}},0.3\\right)\\cdot\\mathrm{ksi}" : "0\\mathrm{ksi}";
   m(ok("-f_{b3}", tl), `Tension, AASHTO T. 5.9.2.3.2b-1 (${i.exposure === "moderate" ? "not worse than moderate corrosion" : i.exposure === "severe" ? "severe corrosive conditions" : "no tension"})`);
   if (cdot) {

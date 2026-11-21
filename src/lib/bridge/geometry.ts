@@ -251,6 +251,7 @@ export function toBridgeInputs(d: BridgeDefinition): BridgeInputs {
     shape: d.girder.shape === "custom" ? BRIDGE_GIRDER_BASE.shape : d.girder.shape,
     ...(d.girder.shape === "steel" && d.girder.steel ? { steel: d.girder.steel } : {}),
     ...(d.sidewalks && d.sidewalks.left + d.sidewalks.right > 0 ? { sidewalks: d.sidewalks } : {}),
+    gradient: d.environment.gradientZone ? { zone: d.environment.gradientZone, asphalt: !!d.environment.asphalt } : null,
     site: { V: d.environment.wind, exposure: d.environment.exposure, Z: Math.max(33, d.environment.height), barrierHeight: d.environment.barrierHeight },
     superstructure: d.superstructure === "slab" ? "slab" : "girders",
     nGirders: d.nGirders,

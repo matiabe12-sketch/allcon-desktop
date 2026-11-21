@@ -72,6 +72,8 @@ export type BridgeInputs = {
   steel?: { segments: SteelSegment[]; Fyw: number; Fyf: number };
   /** The site's wind and the barrier's height (the Bridge's environment), for a steel bridge's wind on the substructure. */
   site?: SiteWind;
+  /** The temperature gradient (3.12.3) when the Bridge considers it: its solar zone and whether there is an asphalt overlay. */
+  gradient?: { zone: 1 | 2 | 3 | 4; asphalt: boolean } | null;
   nGirders: number;
   spacing: number; // ft, normal to the alignment
   bridgeLineOffset: number; // ft, the bridge line (the girders' center) from the alignment, + right
@@ -293,6 +295,7 @@ export function girderInputsFor(b: BridgeInputs, lay: BridgeLayout, group: numbe
     // Live load deflection (AASHTO 2.5.2.6.2, optional there): checked on the Bridge's girders, the conservative choice (L/800 unless the design sets its own limit).
     llDeflection: true,
     sidewalk: sidewalkLoads(b),
+    gradient: b.gradient ?? null,
     // The girders' ends cast into an integral or semi-integral abutment's diaphragm (their connection steel counts at the bearing, 5.7.3.5).
     endsCastIn: { left: castInAt(b.supports[group[0]]), right: castInAt(b.supports[group[group.length - 1] + 1]) },
   };

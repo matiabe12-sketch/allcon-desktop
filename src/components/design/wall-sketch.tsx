@@ -257,12 +257,17 @@ export function UStairSketch({ inputs, result }: { inputs: CipInputs; result: Ci
 /** An MSE wall's section, to scale: facing, reinforced zone with its layers, the active zone, the
  * backslope, the ground in front and the main dimensions. */
 export function MseSketch({ inputs, result }: { inputs: MseInputs; result: MseResult }) {
-  const { H, L } = inputs;
+  const { H } = inputs;
+  const Lb = inputs.L;
+  const T = result.geometry.T; // the reinforced zone's width at the top (L at the bottom)
+  const L = T;
+  const Lmax = Math.max(T, ...result.internal.layers.map((l) => l.Lz));
   const tanB = Math.tan((result.soil.beta * Math.PI) / 180);
   const tp = inputs.panelT / 12;
-  const span = Math.max(L, H);
+  const span = Math.max(Lmax, H);
+  const anchor = result.rail.anchor && inputs.rail;
   const xmin = -0.35 * span;
-  const xmax = L + 0.45 * span;
+  const xmax = Lmax + 0.3 * span;
   const rise = Math.min((xmax - tp) * tanB, 0.5 * span);
   const ymin = -0.12 * span;
   const ymax = H + rise + 0.12 * span;
@@ -322,12 +327,12 @@ export function MseSketch({ inputs, result }: { inputs: MseInputs; result: MseRe
       {/* Retained fill and foundation */}
       <polygon points={pts([[L + tp, 0], [L + tp, top(L + tp)], ...surface.filter(([x]) => x > L + tp), [xmax, ymin + 0.02 * span], [xmin, ymin + 0.02 * span], [xmin, emb], [0, emb], [0, -pad], [L + tp, -pad]])} fill="url(#mse-soil)" />
       {/* Reinforced zone */}
-      <polygon points={pts([[tp, 0], [tp, H], ...surface.filter(([x]) => x > tp && x < L + tp), [L + tp, top(L + tp)], [L + tp, 0]])} fill="url(#mse-fill)" stroke="#a1887f" strokeWidth="0.6" strokeDasharray="4 3" />
+      <polygon points={pts([[tp, 0], [tp, H], ...surface.filter(([x]) => x > tp && x < L + tp), [L + tp, top(L + tp)], [Lb + tp, 0]])} fill="url(#mse-fill)" stroke="#a1887f" strokeWidth="0.6" strokeDasharray="4 3" />
       <polyline points={pts(surface)} fill="none" stroke="#8a6a4f" strokeWidth="1.2" />
       <polyline points={pts([[xmin, emb], [0, emb]])} fill="none" stroke="#8a6a4f" strokeWidth="1.2" />
       {/* Layers */}
       {result.internal.layers.map((l) => (
-        <line key={l.z} x1={X(tp)} y1={Y(H - l.z)} x2={X(tp + L)} y2={Y(H - l.z)} stroke={extensible ? "#16a34a" : "#475569"} strokeWidth="1.3" />
+        <line key={l.z} x1={X(tp)} y1={Y(H - l.z)} x2={X(tp + l.Lz)} y2={Y(H - l.z)} stroke={extensible ? "#16a34a" : "#475569"} strokeWidth="1.3" />
       ))}
       {/* Active zone */}
       <polyline points={pts(active)} fill="none" stroke="#dc2626" strokeWidth="1" strokeDasharray="5 3" />
@@ -337,11 +342,21 @@ export function MseSketch({ inputs, result }: { inputs: MseInputs; result: MseRe
         <line key={k} x1={X(0)} y1={Y((k + 1) * 5)} x2={X(tp)} y2={Y((k + 1) * 5)} stroke="#3f3f46" strokeWidth="0.6" />
       ))}
       <rect x={X(-0.25)} y={Y(0)} width={(tp + 0.5) * s} height={pad * s} fill="#d4d4d8" stroke="#3f3f46" strokeWidth="0.8" />
-      {dim(tp, -0.07 * span, tp + L, -0.07 * span, `L = ${fmtFt(L)}`, "below")}
+      {dim(tp, -0.07 * span, tp + Lb, -0.07 * span, `L = ${fmtFt(Lb)}`, "below")}
+      {anchor && (
+        <g>
+          {/* The moment slab, its coping and the barrier (the slab's top at the wall's top) */}
+          <polygon points={pts([[0, H], [anchor.B, H], [anchor.B, H - anchor.ts / 12], [anchor.copingWidth / 12, H - anchor.ts / 12], [anchor.copingWidth / 12, H - (anchor.ts + anchor.copingDepth) / 12], [0, H - (anchor.ts + anchor.copingDepth) / 12]])} fill="#e4e4e7" stroke="#3f3f46" strokeWidth="0.8" />
+          <polygon points={pts([[0, H], [0, H + anchor.barrierH / 12], [Math.min(0.6, anchor.barrierWidth / 24), H + anchor.barrierH / 12], [anchor.barrierWidth / 12, H]])} fill="#d4d4d8" stroke="#3f3f46" strokeWidth="0.8" />
+          <text x={X(anchor.B) + 4} y={Y(H) - 4} fontSize="9" className="fill-muted-foreground">
+            moment slab {fmtFt(anchor.B)}
+          </text>
+        </g>
+      )}
       {dim(-0.18 * span, 0, -0.18 * span, H, `H = ${fmtFt(H)}`, "left")}
       {emb > 0 && dim(-0.06 * span, 0, -0.06 * span, emb, `${fmtFt(inputs.embedment)}`, "left")}
       <text x={X(tp + L * 0.5)} y={Y(H * 0.5) + 3} fontSize="10" textAnchor="middle" className="fill-muted-foreground">
-        {result.internal.layers.length} layers @ {fmtFt(inputs.Sv)}
+        {result.internal.layers.length} layers{inputs.zoned ? " by zones" : ` @ ${fmtFt(inputs.Sv)}`}
       </text>
       <text x={X(active[active.length - 1][0]) + 4} y={Y(H) + 12} fontSize="9" fill="#dc2626">
         active zone

@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { DesignError } from "./cip";
-import { activeLength, designMseWall, inextensibleH1, layerFactors, MSE_DEFAULTS, panelFlexure, pulloutLength, REINFORCEMENTS, type MseInputs } from "./mse";
+import { activeLength, designMseWall, inextensibleH1, layerFactors, MSE_DEFAULTS as CDOT_DEFAULTS, MSE_LEGACY, panelFlexure, pulloutLength, REINFORCEMENTS, type MseInputs } from "./mse";
+
+// The plain AASHTO wall these tests were written for (the CDOT options off).
+const MSE_DEFAULTS = { ...CDOT_DEFAULTS, ...MSE_LEGACY } as MseInputs;
 
 // The engine against the MSE workbook (Design Check.xlsx) wherever its formulas agree with AASHTO.
 // The workbook takes the retained fill's φ and γ from the reinforced fill (34°, 135 pcf) and a wall
@@ -95,8 +98,8 @@ describe("MSE wall, internal stability", () => {
     near(l.sigmaV, 0.135 * 6.25 + 0.13 * S);
     near(l.Tstr, 2.5 * Ka * (1.35 * l.sigmaV + 1.75 * 0.135 * 2));
     near(l.LA, (21 - 6.25) * Math.tan(((45 - 17) * Math.PI) / 180));
-    near(l.Pr, 0.9 * 0.67 * Math.tan((34 * Math.PI) / 180) * 0.8 * l.sigmaV * 2 * 1 * (15 - l.LA));
-    near(l.Tr, 0.9 * 5 * 1);
+    near(l.Pr, 0.7 * 0.67 * Math.tan((34 * Math.PI) / 180) * 0.8 * l.sigmaV * 2 * 1 * (15 - l.LA));
+    near(l.Tr, 0.8 * 5 * 1); // AASHTO 10th: geogrid tensile 0.80, geosynthetic pullout 0.70
     // Tributary heights add up to the wall.
     near(r.internal.layers.reduce((s, x) => s + x.Svi, 0), 21);
   });
@@ -109,7 +112,8 @@ describe("MSE wall, internal stability", () => {
 
   it("works out every reinforcement type and passes with the defaults", () => {
     for (const k of REINFORCEMENTS) {
-      const r = designMseWall({ ...MSE_DEFAULTS, reinforcement: k.id } as MseInputs);
+      // AASHTO 10th's φ (geogrid 0.80, geostrip 0.55) needs stronger products than the old default 5 kip/ft.
+      const r = designMseWall({ ...MSE_DEFAULTS, reinforcement: k.id, ...(k.id === "geostrip" ? { Tal: 8 } : k.id === "geogrid" ? { Tal: 6 } : {}) } as MseInputs);
       expect(r.checks.filter((c) => !c.ok).map((c) => c.id)).toEqual([]);
     }
   });

@@ -54,7 +54,7 @@ import { SIGN_DEFAULTS, type SignInputs } from "./signs/cantilever";
 import { stmInputs } from "./stm/strut-tie";
 import { TAKEOFF_KINDS, takeoffSettings } from "./takeoff/types";
 import { CIP_DEFAULTS, DEFAULT_FACTORS, type CipInputs, type Combo } from "./walls/cip";
-import { MSE_DEFAULTS, MSE_FACTORS, type MseInputs } from "./walls/mse";
+import { MSE_DEFAULTS, MSE_FACTORS, MSE_LEGACY, type MseInputs } from "./walls/mse";
 import { WINGWALL_DEFAULTS, type WingwallInputs } from "./walls/wingwall";
 import { steelGirderInputs } from "./girders/steel";
 
@@ -165,7 +165,20 @@ export function cipInputs(saved: unknown): CipInputs {
 /** An MSE wall's inputs as saved, filled in from the defaults. */
 export function mseInputs(saved: unknown): MseInputs {
   const s = (saved && typeof saved === "object" ? saved : {}) as Partial<MseInputs>;
-  return { ...MSE_DEFAULTS, ...s, factors: { ...MSE_FACTORS, ...(s.factors ?? {}) } };
+  // A wall saved before the CDOT options keeps the plain AASHTO wall it was designed as.
+  const legacy = !!saved && typeof saved === "object" && "H" in saved && !("base" in saved); // a wall saved before them (a new one has nothing saved)
+  const d = { ...MSE_DEFAULTS, ...(legacy ? MSE_LEGACY : {}) };
+  return {
+    ...d,
+    ...s,
+    factors: { ...MSE_FACTORS, ...(s.factors ?? {}) },
+    rf: { ...d.rf!, ...(s.rf ?? {}) },
+    hma: { ...d.hma!, ...(s.hma ?? {}) },
+    site: { ...d.site!, ...(s.site ?? {}) },
+    rail: { ...d.rail!, ...(s.rail ?? {}), copingBar: { ...d.rail!.copingBar, ...(s.rail?.copingBar ?? {}) } },
+    zones: Array.isArray(s.zones) ? s.zones : d.zones,
+    segments: Array.isArray(s.segments) ? s.segments : d.segments,
+  };
 }
 
 /** A box culvert's inputs as saved, filled in from the defaults. Saved before bars were a choice:

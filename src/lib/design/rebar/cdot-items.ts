@@ -109,6 +109,7 @@ export const CDOT_ITEMS: PayItem[] = [
   item("512-00118", "Bearing Device (Special)", "EACH"),
   // 515 Waterproofing
   item("515-00120", "Waterproofing (Membrane)", "SY"),
+  item("420-00000", "Geomembrane", "SY"),
   item("403-09210", "Stone Matrix Asphalt", "TON"),
   item("601-25730", "Precast Concrete Deck Panel (3 Inch)", "SY"),
   // 518 Joints
@@ -173,7 +174,7 @@ export const TOOL_PAY_ITEMS: Record<string, Partial<Record<QuantityRole, string[
   "box-culvert": { concrete: ["601-03030", "601-01030"], rebar: ["602-00000", "602-00020"], waterproofing: ["515-00120"], excavation: ["206-00000"], backfill: ["206-00100", "206-00200", "206-00065"], bedding: ["206-01000"], removal: ["202-00495"] },
   "cip-cantilever-wall": { concrete: ["601-03050", "601-03055", "601-01050"], rebar: ["602-00000", "602-00020"], excavation: ["206-00000"], backfill: ["206-00100", "206-00200"] },
   "cantilever-wingwall": { concrete: ["601-03056", "601-03040", "601-03050"], rebar: ["602-00020", "602-00000"] },
-  "mse-wall": { facing: ["504-04420", "504-04410", "504-04430"], "soil-reinforcement": ["206-00360"], backfill: ["206-00100", "206-00200"], excavation: ["206-00000"], concrete: ["601-01000"], rebar: ["602-00000"] },
+  "mse-wall": { facing: ["504-04420", "504-04410", "504-04430"], "soil-reinforcement": ["206-00360"], backfill: ["206-00100", "206-00200"], excavation: ["206-00000"], waterproofing: ["420-00000"], concrete: ["601-01000", "601-03050"], rebar: ["602-00000", "602-00020"] },
   "deck-slab": { concrete: ["601-03056", "601-03040", "601-04100", "601-05001"], rebar: ["602-00020", "602-00000"], waterproofing: ["515-00120"], rail: ["606-10900", "606-10905", "606-11035", "606-11037", "606-11005"] },
   "lrfd-girder-check": { concrete: ["601-03056", "601-03040"], rebar: ["602-00020", "602-00000"], waterproofing: ["515-00120"], asphalt: ["403-09210"], panels: ["601-25730"], rail: ["606-10900", "606-10905", "606-11035", "606-11037", "606-11005"], girder: ["618-01154", "618-01992", "618-01994", "618-01995", "618-01137", "618-01145", "618-01163", "618-01172", "618-01181", "618-01190", "618-00142", "618-00154", "618-00163", "618-00172", "618-00184"] },
   "pier-column": { concrete: ["601-03040", "601-03041", "601-03000"], rebar: ["602-00020", "602-00000", "602-00010", "602-00011", "602-00025"], excavation: ["206-00000"], backfill: ["206-00200", "206-00100"] },

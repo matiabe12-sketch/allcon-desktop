@@ -4,29 +4,47 @@
 // panel. Kip, foot and ksf throughout; the panel's dimensions, bars and covers in inches.
 
 import { BARS, coulombKa, DesignError, liveLoadHeq, type Bars, type Check } from "./cip";
+import { BASE_SLOPE, cdotMinLength, cdotQuantities, truncatedMinLength, wallSegments, type MseBase, type WallPoint } from "./mse-quantities";
+import { designAnchorSlab, RAIL_NONE, type MseRail } from "./mse-rail";
 
 export type Reinforcement = "geogrid" | "geostrip" | "steelstrip" | "steelgrid";
 
-export const REINFORCEMENTS: { id: Reinforcement; name: string; extensible: boolean; alpha: number; phiT: number; phiTEE: number }[] = [
-  // α: scale effect correction (AASHTO 11.10.6.3.2); φ for tensile resistance, AASHTO T. 11.5.7-1 and 11.5.8-1.
-  { id: "geogrid", name: "Geogrid", extensible: true, alpha: 0.8, phiT: 0.9, phiTEE: 1.2 },
-  { id: "geostrip", name: "Geosynthetic strip", extensible: true, alpha: 0.6, phiT: 0.9, phiTEE: 1.2 },
-  { id: "steelstrip", name: "Ribbed steel strip", extensible: false, alpha: 1.0, phiT: 0.75, phiTEE: 1.0 },
-  { id: "steelgrid", name: "Steel grid", extensible: false, alpha: 1.0, phiT: 0.65, phiTEE: 0.85 },
+/**
+ * α: scale effect correction (AASHTO 11.10.6.3.2). Resistance factors by AASHTO LRFD 10th: tensile φT and pullout φPO
+ * at the strength limit state (Table 11.5.7-1), and with earthquake loading (11.5.8): geosynthetic tensile and pullout
+ * 1.0, metallic strips 1.0 and grids 0.85 in tension, metallic pullout 1.20.
+ */
+export const REINFORCEMENTS: { id: Reinforcement; name: string; extensible: boolean; alpha: number; phiT: number; phiTEE: number; phiPO: number; phiPOEE: number }[] = [
+  { id: "geogrid", name: "Geogrid", extensible: true, alpha: 0.8, phiT: 0.8, phiTEE: 1.0, phiPO: 0.7, phiPOEE: 1.0 },
+  { id: "geostrip", name: "Geosynthetic strip", extensible: true, alpha: 0.6, phiT: 0.55, phiTEE: 1.0, phiPO: 0.7, phiPOEE: 1.0 },
+  { id: "steelstrip", name: "Ribbed steel strip", extensible: false, alpha: 1.0, phiT: 0.75, phiTEE: 1.0, phiPO: 0.9, phiPOEE: 1.2 },
+  { id: "steelgrid", name: "Steel grid", extensible: false, alpha: 1.0, phiT: 0.65, phiTEE: 0.85, phiPO: 0.9, phiPOEE: 1.2 },
 ];
 
-/** Pullout resistance factors, static and extreme event (AASHTO T. 11.5.7-1, 11.5.8-1). */
-export const PHI_PO = 0.9;
-export const PHI_PO_EE = 1.2;
+export type MseFactors = { evMax: number; evMin: number; eh: number; ls: number; lsEE: number; dwMax?: number; dwMin?: number };
+export const MSE_FACTORS: MseFactors = { evMax: 1.35, evMin: 1.0, eh: 1.5, ls: 1.75, lsEE: 0.5, dwMax: 1.5, dwMin: 0.65 };
 
-export type MseFactors = { evMax: number; evMin: number; eh: number; ls: number; lsEE: number };
-export const MSE_FACTORS: MseFactors = { evMax: 1.35, evMin: 1.0, eh: 1.5, ls: 1.75, lsEE: 0.5 };
+/** Geosynthetics as CDOT's design charts take them (B-504-H): ultimate strength (kip/ft) and creep reduction RF_CR. */
+export type GeoProduct = "pp4800" | "hdpe7800" | "hdpe12000" | "hdpe14400" | "custom";
+export const GEO_PRODUCTS: { id: GeoProduct; name: string; Tult: number; RFcr: number }[] = [
+  { id: "pp4800", name: "4,800 lb/ft PP woven geotextile", Tult: 4.8, RFcr: 1.8 },
+  { id: "hdpe7800", name: "7,800 lb/ft HDPE geogrid", Tult: 7.8, RFcr: 2.55 },
+  { id: "hdpe12000", name: "12,000 lb/ft HDPE geogrid", Tult: 12, RFcr: 2.55 },
+  { id: "hdpe14400", name: "14,400 lb/ft HDPE geogrid", Tult: 14.4, RFcr: 2.55 },
+  { id: "custom", name: "As entered (Tal)", Tult: 0, RFcr: 0 },
+];
+/** A band of layers from the one above down to `bottom` (ft below the top): their spacing and product. */
+export type MseZone = { bottom: number; Sv: number; product: GeoProduct };
 
 export type MseInputs = {
   // Geometry
   H: number; // design height, top of the leveling pad to the top of the wall, ft
   L: number; // reinforcement length, ft
   embedment: number; // ft
+  frontSlope?: number; // H:1V of the ground in front of the wall (0 = level)
+  erosion?: boolean; // the soil in front may erode or be excavated later (AASHTO 11.10.2.2: 2 ft least, else 1 ft on level ground)
+  frost?: number; // ft, frost penetration where the soil below is frost-susceptible (0: none)
+  onRock?: boolean; // on a rock foundation: AASHTO 11.10.2.2's least embedment doesn't apply
   backslope: number; // H:1V, 0 = level
   wallType: "wall" | "abutment";
   // Soils
@@ -77,6 +95,18 @@ export type MseInputs = {
   phiSEE: number;
   eccDivisor: number; // e ≤ L / eccDivisor (3: AASHTO 11.6.3.3; 4: older practice)
   factors: MseFactors;
+  // CDOT B-504 options (absent in walls saved before them: the plain AASHTO wall)
+  base?: MseBase; // core (uniform length), or a truncated base on a ¾:1 soil or ½:1 rock cut (L at the bottom)
+  extendTop?: boolean; // the top two layers twice as long (B-504-D1: roadway tension cracks)
+  zoned?: boolean; // spacing and product by zones down the wall
+  zones?: MseZone[];
+  topProduct?: GeoProduct | "same"; // the top two layers' product (B-504-D1: 4,800 lb/ft woven geotextile)
+  rf?: { id: number; cr: number; d: number }; // geosynthetic reduction factors (AASHTO 11.10.6.4.3b); cr for "As entered"
+  hma?: { t: number; gamma: number }; // pavement on the wall, in and kcf, a DW surcharge
+  cdotSeismic?: boolean; // no seismic analysis: CDOT B-504-A C (seismic zones 1–3, with the EQ details)
+  rail?: MseRail;
+  site?: { excH: number; theta: number }; // the excavation's height at the wall layout line (ft), the ground's angle (deg)
+  segments?: WallPoint[];
 };
 
 export const MSE_DEFAULTS: MseInputs = {
@@ -99,8 +129,8 @@ export const MSE_DEFAULTS: MseInputs = {
   fpga: 1.6,
   khFactor: 1,
   reinforcement: "geogrid",
-  Sv: 2.5,
-  topLayer: 1.25,
+  Sv: 2, // under 12 in of pavement (2.5 ft before the CDOT options)
+  topLayer: 0.75, // the top two layers 1 ft apart under the barrier (1.25 ft before the CDOT options)
   Rc: 1,
   Tal: 5,
   fyReinf: 65,
@@ -127,7 +157,24 @@ export const MSE_DEFAULTS: MseInputs = {
   phiSEE: 1.0,
   eccDivisor: 3,
   factors: MSE_FACTORS,
+  base: "core",
+  extendTop: true,
+  zoned: true,
+  zones: [
+    { bottom: 2.5, Sv: 1, product: "custom" }, // closer under the barrier: each takes less of the impact (Web Doc 326 pd × At)
+    { bottom: 100, Sv: 2, product: "custom" },
+  ],
+  topProduct: "pp4800", // CDOT B-504-D1: 4,800 lb/ft woven geotextile
+  rf: { id: 1.3, cr: 2.55, d: 1.1 },
+  hma: { t: 12, gamma: 0.14 },
+  cdotSeismic: true,
+  rail: { ...RAIL_NONE, kind: "anchor-slab", B: 7, copingBar: { bar: 6, spacing: 5 } },
+  site: { excH: 8, theta: 30 },
+  segments: [],
 };
+
+/** What a wall saved before the CDOT options had: none of them. */
+export const MSE_LEGACY: Partial<MseInputs> = { Sv: 2.5, topLayer: 1.25, base: "core", extendTop: false, zoned: false, topProduct: "same", hma: { t: 0, gamma: 0.14 }, cdotSeismic: false, rail: RAIL_NONE, segments: [] };
 
 const rad = (d: number) => (d * Math.PI) / 180;
 const deg = (r: number) => (r * 180) / Math.PI;
@@ -154,6 +201,26 @@ export function abutmentHeq(H: number) {
   if (H <= 5) return 4;
   for (let k = 1; k < table.length; k++) if (H <= table[k][0]) return table[k - 1][1] + ((table[k][1] - table[k - 1][1]) * (H - table[k - 1][0])) / (table[k][0] - table[k - 1][0]);
   return 2;
+}
+
+/**
+ * The least front-face embedment (AASHTO LRFD 10th 11.10.2.2): 2.0 ft on sloping ground (4H:1V or steeper) or where
+ * the soil in front may erode or be excavated, 1.0 ft on level ground without; not less than the frost depth; and
+ * Table C11.10.2.2-1's guide by the slope in front (H/20 level, H/10 abutments, H/10 at 3H:1V, H/7 at 2H:1V, H/5 at
+ * 1.5H:1V). None on rock (the article's "unless constructed on rock foundations"; the guide still shown).
+ */
+export function embedmentRule(i: Pick<MseInputs, "H" | "wallType" | "frontSlope" | "erosion" | "frost" | "onRock">) {
+  const s = i.frontSlope ?? 0;
+  const sloping = s > 0 && s <= 4;
+  const level = !(s > 0) || s > 4;
+  const [div, slopeName] = level ? [i.wallType === "abutment" ? 10 : 20, "level"] : s >= 3 ? [10, "3H:1V"] : s >= 2 ? [7, "2H:1V"] : [5, s >= 1.5 ? "1.5H:1V" : "1.5H:1V (steeper than the table)"];
+  const erosion = i.erosion ?? true;
+  const least = i.onRock ? 0 : sloping || erosion ? 2 : 1;
+  const frost = Math.max(0, i.frost ?? 0);
+  const guide = i.H / div;
+  const required = Math.max(least, frost, guide);
+  const parts = [i.onRock ? "on rock: no least depth" : `${least} ft least (${sloping ? "sloping ground" : erosion ? "erosion or future excavation possible" : "level, no erosion"})`, ...(frost > 0 ? [`frost ${frost} ft`] : []), `H/${div} (${slopeName}${level && i.wallType === "abutment" ? ", abutment" : ""})`];
+  return { required, least, frost, div, guide, sloping, note: parts.join(", ") };
 }
 
 /** Thickness lost to corrosion over the design life, both faces, galvanized steel (AASHTO 11.10.6.4.2a), in. */
@@ -235,6 +302,15 @@ export function designMseWall(i: MseInputs) {
   const f = i.factors;
   if (!(H > 0) || !(L > 0)) throw new DesignError("The wall needs a height and a reinforcement length");
   if (!(Sv > 0) || !(i.topLayer > 0) || i.topLayer >= H) throw new DesignError("The reinforcement layers don't fit in the wall's height");
+  const baseType: MseBase = i.base ?? "core";
+  const slope = BASE_SLOPE[baseType];
+  const T = L + slope * H; // the reinforced zone's width at the top (L at the bottom)
+  const dwMax = f.dwMax ?? 1.5;
+  const dwMin = f.dwMin ?? 0.65;
+  const qDW = ((i.hma?.t ?? 0) / 12) * (i.hma?.gamma ?? 0); // pavement, ksf
+  const seismicOn = i.seismic && !i.cdotSeismic;
+  const zones = i.zoned && i.zones?.length ? [...i.zones].sort((a, b) => a.bottom - b.bottom) : null;
+  if (zones?.some((zn) => !(zn.Sv > 0))) throw new DesignError("Give every zone a spacing");
 
   // --- soil ------------------------------------------------------------------------------------
   const beta = i.backslope > 0 ? deg(Math.atan(1 / i.backslope)) : 0;
@@ -242,20 +318,24 @@ export function designMseWall(i: MseInputs) {
   const delta = i.delta ?? beta;
   const Ka = coulombKa(i.phiRet, beta, 90, delta); // retained fill, at the back of the reinforced zone (11.10.5.2)
   const KaInt = rankineKa(i.phiR); // reinforced fill, internal stability (11.10.6.2.1)
-  const h = H + L * tan(beta); // height at the back of the reinforced zone
+  const h = H + T * tan(beta); // height at the back of the reinforced zone
   const heq = i.liveLoad ? (i.wallType === "abutment" ? abutmentHeq(H) : liveLoadHeq(H, i.trafficDistance)) : 0;
   const mu = tan(Math.min(i.phiR, i.phiF)); // the weaker of the reinforced fill and the foundation (11.10.5.3)
 
   // --- external loads (per ft; moments about the center of the base, overturning positive) -------
-  const EV1 = i.gammaR * H * L;
-  const EV2 = 0.5 * L * (L * tan(beta)) * i.gammaR; // the slope over the reinforced zone, centroid L/6 behind the center
+  const EV1 = i.gammaR * (H * L + 0.5 * slope * H * H); // a truncated base: the triangle over the cut too
+  const EV1arm = slope > 0 ? (0.5 * slope * H * H * (L + (slope * H) / 3 - L / 2)) / (H * L + 0.5 * slope * H * H) : 0; // its c.g. behind the base's center
+  const EV2 = 0.5 * T * (T * tan(beta)) * i.gammaR; // the slope over the reinforced zone, at 2T/3
+  const EV2arm = (2 * T) / 3 - L / 2;
+  const DWV = qDW * T;
+  const DWH = qDW * Ka * H;
   const PEH = 0.5 * i.gammaRet * Ka * h ** 2;
   const EHH = PEH * cos(beta);
   const EHV = PEH * sin(beta);
-  const LSV = i.gammaR * heq * L;
+  const LSV = i.gammaR * heq * T;
   const LSH = i.gammaRet * heq * Ka * H;
   let seismic: { kh: number; thetaMO: number; KAE: number; PIR: number; PAE: number; PEQ: number; MEQ: number } | null = null;
-  if (i.seismic) {
+  if (seismicOn) {
     const kh = i.khFactor * i.fpga * i.pga;
     const thetaMO = deg(Math.atan(kh));
     if (i.phiRet - thetaMO - beta < 0) throw new DesignError("Mononobe–Okabe doesn't apply (φ < β + θMO): the backslope is too steep for this seismic coefficient");
@@ -266,22 +346,32 @@ export function designMseWall(i: MseInputs) {
     const MEQ = Math.max(PAE * (h / 3) + 0.5 * PIR * (H / 2), 0.5 * PAE * (h / 3) + PIR * (H / 2));
     seismic = { kh, thetaMO, KAE, PIR, PAE, PEQ, MEQ };
   }
-  const group = (ev: number, eh: number, lsv: number, lsh: number, eq: number): MseGroup => {
-    const V = lsv * LSV + ev * (EV1 + EV2) + eh * EHV;
-    const Hh = lsh * LSH + eh * EHH + eq * (seismic?.PEQ ?? 0);
-    const M = eh * (EHH * (h / 3) - EHV * (L / 2)) - ev * EV2 * (L / 6) + lsh * LSH * (H / 2) + eq * (seismic?.MEQ ?? 0);
+  const group = (ev: number, eh: number, lsv: number, lsh: number, eq: number, dwv: number, dwh: number): MseGroup => {
+    const V = lsv * LSV + ev * (EV1 + EV2) + eh * EHV + dwv * DWV;
+    const Hh = lsh * LSH + eh * EHH + eq * (seismic?.PEQ ?? 0) + dwh * DWH;
+    const M = eh * (EHH * (h / 3) - EHV * (T - L / 2)) - ev * (EV1 * EV1arm + EV2 * EV2arm) - lsv * LSV * (T / 2 - L / 2) - dwv * DWV * (T / 2 - L / 2) + lsh * LSH * (H / 2) + dwh * DWH * (H / 2) + eq * (seismic?.MEQ ?? 0);
     const e = M / V;
     return { V, H: Hh, M, e, sigma: V / (L - 2 * Math.abs(e)) };
   };
   const groups = {
-    StrMax: group(f.evMax, f.eh, f.ls, f.ls, 0), // bearing: live load over the reinforced zone
-    StrMin: group(f.evMin, f.eh, 0, f.ls, 0), // sliding and eccentricity
-    ...(seismic ? { EEMax: group(1, 0, f.lsEE, f.lsEE, 1), EEMin: group(1, 0, 0, f.lsEE, 1) } : {}),
+    StrMax: group(f.evMax, f.eh, f.ls, f.ls, 0, dwMax, dwMax), // bearing: live load over the reinforced zone
+    StrMin: group(f.evMin, f.eh, 0, f.ls, 0, dwMin, dwMax), // sliding and eccentricity
+    ...(seismic ? { EEMax: group(1, 0, f.lsEE, f.lsEE, 1, dwMax, dwMax), EEMin: group(1, 0, 0, f.lsEE, 1, dwMin, dwMax) } : {}),
   } as { StrMax: MseGroup; StrMin: MseGroup; EEMax?: MseGroup; EEMin?: MseGroup };
 
-  add({ id: "geom-length", name: "Reinforcement length", demand: Math.max(0.7 * H, 8), capacity: L, unit: "ft", ref: "AASHTO 11.10.2.1", note: "L ≥ 0.7H and 8 ft" });
-  const embedMin = Math.max(2, i.wallType === "abutment" ? H / 10 : H / 20);
-  add({ id: "geom-embed", name: "Embedment", demand: embedMin, capacity: i.embedment, unit: "ft", ref: "AASHTO 11.10.2.2", note: i.wallType === "abutment" ? "H/10, 2 ft min." : "H/20, 2 ft min." });
+  if (baseType === "core") {
+    const aashto = Math.max(0.7 * H, 8);
+    const cdot = cdotMinLength(H);
+    const meetsCdot = L >= aashto - 1e-9 || L >= cdot - 1e-9;
+    add({ id: "geom-length", name: "Reinforcement length", demand: aashto, capacity: L, unit: "ft", ref: "AASHTO 11.10.2.1", note: L < aashto - 1e-9 && meetsCdot ? `L ≥ 0.7H and 8 ft; CDOT B-504-D1 allows ${cdot} ft at this height` : "L ≥ 0.7H and 8 ft", ...(L < aashto - 1e-9 && meetsCdot ? { advisory: true } : {}) });
+  } else {
+    add({ id: "geom-length", name: `Truncated base: length at the bottom (${baseType === "truncated-soil" ? "¾:1 soil" : "½:1 rock"} cut)`, demand: truncatedMinLength(H), capacity: L, unit: "ft", ref: "CDOT B-504-A C note 6", note: "0.45 DH and 4 ft" });
+    add({ id: "geom-global", name: "Global stability of the truncated base: FS 1.3 (φ 0.75), by the geotechnical engineer", demand: 1.3, capacity: 1.3, unit: "", ref: "CDOT B-504-A C note 6; AASHTO 11.6.3.7", advisory: true });
+  }
+  if (i.seismic && i.cdotSeismic) add({ id: "geom-seismic", name: "No seismic analysis: seismic zones 1–3 with CDOT's earthquake details", demand: 0, capacity: 0, unit: "", ref: "CDOT B-504-A C note 5", advisory: true });
+  const emb = embedmentRule(i);
+  const embedMin = emb.required;
+  add({ id: "geom-embed", name: "Embedment", demand: embedMin, capacity: i.embedment, unit: "ft", ref: "AASHTO 11.10.2.2, Table C11.10.2.2-1", note: emb.note });
   const eAllow = L / i.eccDivisor;
   add({ id: "ext-ecc-str", name: "Eccentricity, Strength I", demand: Math.abs(groups.StrMin.e), capacity: eAllow, unit: "ft", ref: "AASHTO 11.6.3.3" });
   add({ id: "ext-brg-str", name: "Bearing, Strength I", demand: groups.StrMax.sigma, capacity: i.phiB * i.qn, unit: "ksf", ref: "AASHTO 11.10.5.4" });
@@ -310,21 +400,33 @@ export function designMseWall(i: MseInputs) {
   const S = 0.5 * 0.7 * H * tan(beta); // the backslope as a surcharge (Fig. 11.10.6.2.1-2)
   const sigmaS = i.gammaRet * S;
   const sigmaLS = i.gammaR * heq;
+  const zoneAt = (z: number) => (zones ? (zones.find((zn) => z < zn.bottom - 1e-9) ?? zones[zones.length - 1]) : null);
   const zs: number[] = [];
-  for (let z = i.topLayer; z < H - 1e-9 && zs.length < 200; z += Sv) zs.push(z);
+  for (let z = i.topLayer; z < H - 1e-9 && zs.length < 200; z += zoneAt(z)?.Sv ?? Sv) zs.push(z);
+  const rf = i.rf ?? { id: 1.3, cr: 2.55, d: 1.1 };
+  // Each layer's product (geosynthetics): its long-term strength and ultimate (AASHTO 11.10.6.4.3b, Tal = Tult / RF).
+  const productOf = (k: number, z: number) => {
+    if (!kind.extensible) return { id: "steel", name: kind.name, Tal, Tult: Tal, RFcr: 1 };
+    const id = k < 2 && i.topProduct && i.topProduct !== "same" ? i.topProduct : zones ? zoneAt(z)!.product : "custom";
+    const g = GEO_PRODUCTS.find((x) => x.id === id) ?? GEO_PRODUCTS[GEO_PRODUCTS.length - 1];
+    if (g.id === "custom") return { id: g.id, name: "As entered", Tal, Tult: Tal * rf.id * rf.cr * rf.d, RFcr: rf.cr };
+    return { id: g.id, name: g.name, Tal: g.Tult / (rf.id * g.RFcr * rf.d), Tult: g.Tult, RFcr: g.RFcr };
+  };
+  const lengthAt = (k: number, z: number) => (L + slope * (H - z)) * (i.extendTop && k < 2 ? 2 : 1);
   const trib = zs.map((z, k) => (k === zs.length - 1 ? H : (z + zs[k + 1]) / 2) - (k === 0 ? 0 : (zs[k - 1] + z) / 2));
   const Wa = i.gammaR * activeArea(kind.extensible, H, i.phiR, beta);
   const Pi = seismic ? seismic.kh * Wa : 0; // AASHTO 11.10.7.2
   const base = zs.map((z, k) => {
     const { krKa, Fstar } = layerFactors(i, z);
     const kr = krKa * KaInt;
-    const sigmaV = i.gammaR * z + sigmaS; // unfactored, no live load (pullout)
+    const sigmaV = i.gammaR * z + sigmaS + qDW; // unfactored, no live load (pullout)
     const LA = activeLength(kind.extensible, H, z, i.phiR, beta);
-    return { z, Svi: trib[k], krKa, kr, Fstar, sigmaV, LA, Le: Math.max(0, L - LA) };
+    const Lz = lengthAt(k, z);
+    return { z, Svi: trib[k], krKa, kr, Fstar, sigmaV, LA, Lz, Le: Math.max(0, Lz - LA), product: productOf(k, z) };
   });
   const sumLe = base.reduce((s, l) => s + l.Le, 0);
   const layers = base.map((l) => {
-    const sigmaHStr = l.kr * (f.evMax * l.sigmaV + f.ls * sigmaLS);
+    const sigmaHStr = l.kr * (f.evMax * (l.sigmaV - qDW) + dwMax * qDW + f.ls * sigmaLS);
     const sigmaHSer = l.kr * (l.sigmaV + sigmaLS);
     const sigmaHEE = l.kr * (l.sigmaV + f.lsEE * sigmaLS);
     const Tstr = sigmaHStr * l.Svi;
@@ -332,12 +434,12 @@ export function designMseWall(i: MseInputs) {
     const Tmd = seismic && sumLe > 0 ? (Pi * l.Le) / sumLe : 0;
     const Tee = sigmaHEE * l.Svi + Tmd;
     const unit = l.Fstar * kind.alpha * l.sigmaV * C * Rc; // pullout per ft of embedment, before φ
-    const Pr = PHI_PO * unit * l.Le;
-    const PrEE = PHI_PO_EE * 0.8 * unit * l.Le; // F* at 80% under seismic loading (11.10.7.2)
-    const LeReq = pulloutLength(Tstr, PHI_PO, l.Fstar, kind.alpha, l.sigmaV, C, Rc);
-    const Tr = kind.phiT * Tal * Rc;
-    const TrEE = kind.phiTEE * Tal * Rc;
-    return { ...l, sigmaHStr, sigmaHSer, sigmaHEE, Tstr, Tser, Tmd, Tee, Pr, PrEE, LeReq, LReq: LeReq + l.LA, Tr, TrEE, talReq: Tstr / (kind.phiT * Rc) };
+    const Pr = kind.phiPO * unit * l.Le;
+    const PrEE = kind.phiPOEE * 0.8 * unit * l.Le; // F* at 80% under seismic loading (11.10.7.2)
+    const LeReq = pulloutLength(Tstr, kind.phiPO, l.Fstar, kind.alpha, l.sigmaV, C, Rc);
+    const Tr = kind.phiT * l.product.Tal * Rc;
+    const TrEE = kind.phiTEE * l.product.Tal * Rc;
+    return { ...l, unit, sigmaHStr, sigmaHSer, sigmaHEE, Tstr, Tser, Tmd, Tee, Pr, PrEE, LeReq, LReq: LeReq + l.LA, Tr, TrEE, talReq: Tstr / (kind.phiT * Rc) };
   });
   const worst = <K extends keyof (typeof layers)[number]>(dem: K, cap: K) => layers.reduce((w, l) => ((l[dem] as number) / (l[cap] as number) > (w[dem] as number) / (w[cap] as number) ? l : w), layers[0]);
   const at = (z: number) => `layer at ${+z.toFixed(2)} ft`;
@@ -352,6 +454,65 @@ export function designMseWall(i: MseInputs) {
     add({ id: "int-rupture-ee", name: `Rupture, Extreme Event I (${at(ruE.z)})`, demand: ruE.Tee, capacity: ruE.TrEE, unit: "kip/ft", ref: "AASHTO 11.10.7.2" });
   }
 
+  // --- a barrier on top (AASHTO 11.10.10.2; NCHRP Web Doc 326 / Report 663 as CDOT BDM 11, 13.5.4 ask) ----------
+  const rail = i.rail ?? RAIL_NONE;
+  let anchor: ReturnType<typeof designAnchorSlab> | null = null;
+  const impact: { z: number; k: number; Fs: number; Fp: number; Fy: number; P: number; demandR: number; R: number; o: number[] }[] = [];
+  if (rail.kind === "anchor-slab") {
+    anchor = designAnchorSlab(rail, { phiFill: i.phiR, fc: i.fc, fy: i.fy });
+    const lv = anchor.level;
+    add({ id: "rail-slide", name: `Moment slab sliding (${lv.label}): φ W tan φr`, demand: lv.Ls, capacity: anchor.phiP, unit: "kip", ref: `${lv.ref}; Eq. 9-1, 9-2` });
+    add({ id: "rail-ot", name: `Moment slab overturning about point ${rail.rotation}`, demand: anchor.Mo, capacity: anchor.phiM, unit: "kip·ft", ref: `${lv.ref}; Eq. 9-3, 9-4` });
+    add({ id: "rail-coping", name: `Coping flexure at its critical section, Ld over ${lv.BL} ft`, demand: anchor.coping.Mu, capacity: anchor.coping.phiMn, unit: "kip·ft", ref: "NCHRP Web Doc 326 9.1.3; AASHTO 5.6.3.2" });
+    add({ id: "rail-width", name: "Moment slab width", demand: lv.Wmin, capacity: rail.B, unit: "ft", ref: "NCHRP Web Doc 326 Table 9-1", advisory: true });
+    add({ id: "rail-height", name: "Barrier height", demand: lv.Hmin, capacity: rail.barrierH, unit: "in", ref: "NCHRP Web Doc 326 Table 9-1", advisory: true });
+    add({ id: "rail-joints", name: "Monolithic length between joints (20 to 60 ft)", demand: 20, capacity: rail.Lj, unit: "ft", ref: "NCHRP Report 663 I-1.4.1", ok: rail.Lj >= 20 && rail.Lj <= 60, advisory: true });
+    // The impact on the top two layers: the static earth pressure plus the dynamic pressure over its band, pullout
+    // over the full length (Eqs. 9-6, 9-7) and yield (9-14); a geosynthetic's dynamic part without creep (AASHTO Eq. 11.10.10.2-1).
+    // Each band's pressure (the first h1 below the top, then the next h2) goes to the layers by the part of their
+    // tributary height inside it: Web Doc 326's pd × At, the reinforcement's own tributary area.
+    const bands: [number, number][] = [
+      [0, lv.h[0]],
+      [lv.h[0], lv.h[0] + lv.h[1]],
+    ];
+    const tribOf = (k: number) => [k === 0 ? 0 : (layers[k - 1].z + layers[k].z) / 2, k === layers.length - 1 ? H : (layers[k].z + layers[k + 1].z) / 2] as const;
+    const overlap = ([a, b]: readonly [number, number], [c, d]: [number, number]) => Math.max(0, Math.min(b, d) - Math.max(a, c));
+    layers.forEach((l, k) => {
+      const t = tribOf(k);
+      const o = bands.map((b) => overlap(t, b));
+      if (o[0] + o[1] <= 1e-9) return;
+      const Fs = l.kr * l.sigmaV * l.Svi;
+      const Fp = (lv.pdp[0] * o[0] + lv.pdp[1] * o[1]) / 1000;
+      const Fy = (lv.pdy[0] * o[0] + lv.pdy[1] * o[1]) / 1000;
+      const P = 1.0 * l.unit * l.Lz;
+      const demandR = Fs + Fy / (kind.extensible ? l.product.RFcr : 1);
+      const R = (kind.extensible ? kind.phiTEE : 1.0) * l.product.Tal * Rc;
+      impact.push({ z: l.z, k, Fs, Fp, Fy, P, demandR, R, o });
+      add({ id: `int-impact-pullout-${k + 1}`, name: `Barrier impact, pullout of layer ${k + 1} (at ${+l.z.toFixed(2)} ft, full length)`, demand: Fs + Fp, capacity: P, unit: "kip/ft", ref: `${lv.ref}; Eq. 9-6` });
+      add({ id: `int-impact-yield-${k + 1}`, name: `Barrier impact, rupture of layer ${k + 1}`, demand: demandR, capacity: R, unit: "kip/ft", ref: kind.extensible ? "AASHTO 11.10.10.2-1; Web Doc 326 Eq. 9-14" : `${lv.ref}; Eq. 9-14` });
+    });
+  } else if (rail.kind === "post-beam") {
+    layers.slice(0, 2).forEach((l, k) => {
+      const Fs = l.kr * l.sigmaV * l.Svi;
+      const Fd = 0.15; // 300 lb/ft, half to each of the top two layers
+      const P = kind.phiPOEE * l.unit * l.Le;
+      const demandR = Fs + Fd / (kind.extensible ? l.product.RFcr : 1);
+      const R = kind.phiTEE * l.product.Tal * Rc;
+      impact.push({ z: l.z, k, Fs, Fp: Fd, Fy: Fd, P, demandR, R, o: [0, 0] });
+      add({ id: `int-impact-pullout-${k + 1}`, name: `Post-and-beam barrier, pullout of layer ${k + 1}`, demand: Fs + Fd, capacity: P, unit: "kip/ft", ref: "AASHTO 11.10.10.2" });
+      add({ id: `int-impact-yield-${k + 1}`, name: `Post-and-beam barrier, rupture of layer ${k + 1}`, demand: demandR, capacity: R, unit: "kip/ft", ref: "AASHTO 11.10.10.2" });
+    });
+    add({ id: "rail-posts", name: "Posts at least 3 ft from the wall face, 5 ft deep, missing the reinforcement where possible", demand: 3, capacity: 3, unit: "ft", ref: "AASHTO 11.10.10.2", advisory: true });
+  }
+
+  // --- CDOT quantities per foot (B-504-Q3, Q4, Q7) and along the wall ---------------------------------------------
+  const site = i.site ?? { excH: H / 2, theta: 30 };
+  const cdot = cdotQuantities({ base: baseType, DH: H, L, H: site.excH, theta: site.theta });
+  const reinfSY = layers.reduce((t, l) => t + l.Lz, 0) * (kind.extensible ? Rc : 1) / 9; // SY/LF of geosynthetic (per ft of wall)
+  const slabCY = rail.kind === "anchor-slab" ? (rail.B * (rail.ts / 12) + (rail.copingWidth / 12) * (rail.copingDepth / 12)) / 27 : 0;
+  const segments = i.segments && i.segments.length >= 2 ? wallSegments(i.segments, { base: baseType, H, L, theta: site.theta }) : null;
+  if (segments && segments.segments.length) add({ id: "geom-segments", name: "Every segment within the designed section's height", demand: segments.maxDH, capacity: H, unit: "ft", ref: "CDOT B-504-I1, I3 (wall segment table)" });
+
   // --- facing panel ----------------------------------------------------------------------------
   // The largest factored pressure behind the panel spans between the connections: horizontally
   // between them along the wall, vertically between the layers; w l²/8 on both faces (one mat of bars).
@@ -365,7 +526,7 @@ export function designMseWall(i: MseInputs) {
   const dV = t - i.panelCover - dbV / 2;
   const dH = t - i.panelCover - dbV - dbH / 2;
   const spanH = i.panelSpan / 12;
-  const spanV = Sv;
+  const spanV = zones ? Math.max(...zones.map((zn) => zn.Sv)) : Sv; // the vertical span between layers
   const face = (span: number, d: number, bars: Bars) => panelFlexure({ Mu: (pu * span ** 2) / 8, Ms: (ps * span ** 2) / 8, t, d, bars, fc: i.fc, fy: i.fy, n, exposure: i.exposure });
   const panel = {
     pu,
@@ -408,7 +569,10 @@ export function designMseWall(i: MseInputs) {
     ok: checks.every((c) => c.ok),
     checks,
     soil: { beta, delta, Ka, KaInt, h, heq, mu, ...(seismic ? { kh: seismic.kh, thetaMO: seismic.thetaMO, KAE: seismic.KAE } : {}) },
-    loads: { EV1, EV2, PEH, EHH, EHV, LSV, LSH, ...(seismic ? { PIR: seismic.PIR, PAE: seismic.PAE, PEQ: seismic.PEQ, MEQ: seismic.MEQ } : {}) },
+    loads: { EV1, EV2, PEH, EHH, EHV, LSV, LSH, DWV, DWH, qDW, ...(seismic ? { PIR: seismic.PIR, PAE: seismic.PAE, PEQ: seismic.PEQ, MEQ: seismic.MEQ } : {}) },
+    geometry: { base: baseType, slope, T, bearingTsf: groups.StrMax.sigma / 2 },
+    rail: { kind: rail.kind, anchor, impact },
+    quantities: { cdot, reinfSY, geomembraneSY: cdot ? cdot.PLG / 9 : 0, facingSF: H, slabCY, segments },
     groups,
     limits: { eAllow, eAllowEE, embedMin },
     internal: { kind, Es, Rc, Tal, C, S, sigmaS, sigmaLS, H1: kind.extensible ? null : inextensibleH1(H, beta), Wa, Pi, sumLe, layers },

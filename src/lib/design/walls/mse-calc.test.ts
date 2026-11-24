@@ -4,8 +4,10 @@ import { WORKSHEET_TOLERANCE } from "../calc-style";
 import { DEFAULT_SETTINGS, evaluateSheet, type SheetItem, type Value } from "@/lib/calcs/evaluate";
 import { layout } from "@/lib/calcs/library/templates";
 import { readingOrder } from "@/lib/calcs/types";
-import { designMseWall, MSE_DEFAULTS, type MseInputs } from "./mse";
+import { designMseWall, MSE_DEFAULTS as CDOT_DEFAULTS, MSE_LEGACY, type MseInputs } from "./mse";
 import { mseCalcLines } from "./mse-calc";
+// The plain AASHTO wall these tests were written for (the CDOT options off).
+const MSE_DEFAULTS = { ...CDOT_DEFAULTS, ...MSE_LEGACY } as MseInputs;
 
 // The calc package, worked out by Calcs, agrees with the design engine.
 
@@ -33,6 +35,10 @@ describe("MSE wall calc package", () => {
     ["a level wall with ribbed steel strips", { ...MSE_DEFAULTS, backslope: 0, reinforcement: "steelstrip", wallType: "wall", H: 24, L: 17 }],
     ["a steel grid wall without live load or seismic", { ...MSE_DEFAULTS, reinforcement: "steelgrid", liveLoad: false, seismic: false, delta: 10 }],
     ["a geosynthetic strip wall that fails", { ...MSE_DEFAULTS, reinforcement: "geostrip", L: 12, Tal: 3 }],
+    ["CDOT's defaults (pavement, moment slab, products, top layers doubled)", CDOT_DEFAULTS],
+    ["a truncated base on rock with zones, pavement and seismic analyzed", { ...CDOT_DEFAULTS, base: "truncated-rock", H: 20, L: 9, zoned: true, cdotSeismic: false, rail: { ...CDOT_DEFAULTS.rail!, kind: "none" }, segments: [{ station: 0, DH: 12, excH: 6 }, { station: 80, DH: 20, excH: 10 }] }],
+    ["steel strips under a TL-5 barrier on a moment slab, a truncated soil base", { ...CDOT_DEFAULTS, reinforcement: "steelstrip", base: "truncated-soil", L: 10, H: 22, rail: { ...CDOT_DEFAULTS.rail!, level: "TL-5-1", B: 7, rotation: "B", rotX: 6, precast: true } }],
+    ["a post-and-beam barrier on a level geogrid wall", { ...CDOT_DEFAULTS, backslope: 0, wallType: "wall", rail: { ...CDOT_DEFAULTS.rail!, kind: "post-beam" } }],
   ] as [string, MseInputs][]) {
     it(`works out ${name} with no errors, matching the engine`, () => {
       const r = designMseWall(inputs);
@@ -47,18 +53,33 @@ describe("MSE wall calc package", () => {
         close(c.value(`M_{${key}}\\coloneq`, "kip*ft/ft"), g.M);
         close(c.value(`\\sigma_{${key}}\\coloneq`, "ksf"), g.sigma);
       }
-      if (inputs.seismic) close(c.value("K_{AE}\\coloneq"), r.soil.KAE!);
+      if (r.groups.EEMax) close(c.value("K_{AE}\\coloneq"), r.soil.KAE!);
       r.internal.layers.forEach((l, idx) => {
         const k = idx + 1;
         close(c.value(`T_{${k}}\\coloneq`, "kip/ft"), l.Tstr);
         close(c.value(`L_{A${k}}\\coloneq`, "ft"), l.LA);
         close(c.value(`P_{r${k}}\\coloneq`, "kip/ft"), l.Pr);
-        if (inputs.seismic) {
+        if (r.groups.EEMax) {
           close(c.value(`T_{ee${k}}\\coloneq`, "kip/ft"), l.Tee);
           close(c.value(`P_{rEE${k}}\\coloneq`, "kip/ft"), l.PrEE);
         }
       });
-      close(c.value("T_r\\coloneq", "kip/ft"), r.internal.layers[0].Tr);
+      const perLayer = r.internal.kind.extensible && r.internal.layers.some((l) => l.product.id !== "custom");
+      if (perLayer) r.internal.layers.forEach((l, idx) => close(c.value(`T_{r${idx + 1}}\\coloneq`, "kip/ft"), l.Tr));
+      else close(c.value("T_r\\coloneq", "kip/ft"), r.internal.layers[0].Tr);
+      const q = r.quantities.cdot;
+      if (q) {
+        close(c.value("EM_1\\coloneq", "yd^3"), q.EM1);
+        close(c.value("BM_1\\coloneq", "yd^3"), q.BM1);
+        close(c.value("MRS\\coloneq", "yd^3"), q.MRS);
+        close(c.value("PLG\\coloneq", "ft"), q.PLG);
+      }
+      const a = r.rail.anchor;
+      if (a) {
+        close(c.value("W_{ms}\\coloneq", "kip"), a.W);
+        close(c.value("M_{ui}\\coloneq", "kip*ft"), a.coping.Mu);
+      }
+      r.rail.impact.forEach((m) => close(c.value(`P_{f${m.k + 1}}\\coloneq`, "kip/ft"), m.P));
       close(c.value("p_u\\coloneq", "ksf"), r.panel.pu);
       for (const [k, p] of [["vp", r.panel.vertPos], ["vn", r.panel.vertNeg], ["hp", r.panel.horPos], ["hn", r.panel.horNeg]] as const) {
         close(c.value(`M_{r${k}}\\coloneq`, "kip*ft/ft"), p.MR);

@@ -7,7 +7,7 @@ import { bridgeSection, deckLength } from "../girders/bridge-deck";
 import type { SignInputs } from "../signs/cantilever";
 import type { StripSealInputs } from "../joints/strip-seal";
 import type { CipInputs } from "../walls/cip";
-import type { MseInputs } from "../walls/mse";
+import { designMseWall, type MseInputs } from "../walls/mse";
 import { designWingwall, wingwallBarSets, type WingwallInputs } from "../walls/wingwall";
 import { bar } from "../stm/aashto";
 import type { Pt } from "../stm/geometry";
@@ -680,19 +680,37 @@ export function deckTakeoff(i: DeckInputs, lengthFt = 100): Takeoff {
 // MSE wall (CDOT B-504 worksheets): facing, reinforced soil and leveling pad
 
 export function mseTakeoff(i: MseInputs, lengthFt = 100): Takeoff {
-  const facing = i.H * lengthFt;
-  const mrs = (i.L * i.H * lengthFt) / 27;
+  // CDOT's quantities (B-504-Q3, Q4, Q7): per foot at the design section, or summed over the wall's segments.
+  const r = designMseWall(i);
+  const seg = r.quantities.segments && r.quantities.segments.segments.length ? r.quantities.segments : null;
+  const q = r.quantities.cdot;
+  if (seg) lengthFt = seg.length;
+  const facing = seg ? seg.facing : i.H * lengthFt;
+  const mrs = seg ? seg.MRS : (q ? q.MRS : (i.L * i.H) / 27) * lengthFt;
   const padW = i.panelT / 12 + 1; // 6 in each side of the panel
   const padH = 0.5;
-  const concrete: ConcreteItem[] = [{ label: "Leveling pad", cy: (padW * padH * lengthFt) / 27, basis: `${fit(padW)} ft wide by 6 in deep, ${lengthFt} ft long`, math: `\\left(${inT(i.panelT)}+2\\cdot 6\\mathrm{in}\\right)\\cdot 6\\mathrm{in}\\cdot ${ftT(lengthFt)}`, ref: "Leveling pad: the panel plus 6 in each side × 6 in deep × length" }];
+  const concrete: ConcreteItem[] = [{ label: "Leveling pad", cy: (padW * padH * lengthFt) / 27, basis: `${fit(padW)} ft wide by 6 in deep, ${fit(lengthFt)} ft long`, math: `\\left(${inT(i.panelT)}+2\\cdot 6\\mathrm{in}\\right)\\cdot 6\\mathrm{in}\\cdot ${ftT(lengthFt)}`, ref: "Leveling pad: the panel plus 6 in each side × 6 in deep × length" }];
+  const rail = i.rail;
+  if (rail && rail.kind === "anchor-slab") concrete.push({ label: "Moment slab and coping", cy: r.quantities.slabCY * lengthFt, basis: `${fit(rail.B)} ft by ${fit(rail.ts)} in slab and a ${fit(rail.copingWidth)} by ${fit(rail.copingDepth)} in coping, ${fit(lengthFt)} ft (Class D (Wall) per B-504-Q1)`, math: `\\left(${ftT(rail.B)}\\cdot ${inT(rail.ts)}+${inT(rail.copingWidth)}\\cdot ${inT(rail.copingDepth)}\\right)\\cdot ${ftT(lengthFt)}`, ref: "Moment slab: width × thickness, plus the coping, × length" });
   const sch = schedule([], concrete);
+  // As math: each a cross-section's area (ft² per foot of wall) × length; the segments as terms.
+  const areaT = (a: number) => `${num(a)}\\mathrm{ft}^{2}`;
+  const per = (f: (x: NonNullable<typeof q>) => number, sq = 1) => (seg ? { terms: seg.segments.map((g) => `${areaT(((g.q ? f(g.q) : 0) * 27) / sq)}\\cdot ${ftT(g.length)}`) } : q ? { math: `${areaT((f(q) * 27) / sq)}\\cdot ${ftT(lengthFt)}` } : {});
+  const how = seg ? `summed over ${seg.segments.length} segments, ${fit(seg.length)} ft (B-504-I1/I3)` : `${fit(lengthFt)} ft at the design section`;
   const quantities: Takeoff["quantities"] = {
-    facing: { value: facing, basis: `${i.H} ft from the leveling pad to the top by ${lengthFt} ft`, math: `${ftT(i.H)}\\cdot ${ftT(lengthFt)}`, ref: "height from the leveling pad to the top × length" },
-    "soil-reinforcement": { value: mrs, basis: `the reinforced zone, ${i.L} ft deep by ${i.H} ft high by ${lengthFt} ft`, math: `${ftT(i.L)}\\cdot ${ftT(i.H)}\\cdot ${ftT(lengthFt)}`, ref: "the reinforced zone: reinforcement length × height × length" },
+    facing: { value: facing, basis: seg ? `design height × length, ${how}` : `${i.H} ft from the leveling pad to the top by ${fit(lengthFt)} ft`, ...(seg ? { terms: seg.segments.map((g) => `${ftT(g.DH)}\\cdot ${ftT(g.length)}`) } : { math: `${ftT(i.H)}\\cdot ${ftT(lengthFt)}` }), ref: "height from the leveling pad to the top × length" },
+    "soil-reinforcement": { value: mrs, basis: `MRS = DH × RL / 27 per foot (${q?.sheet ?? "B-504"}), ${how}`, ...(seg ? { terms: seg.segments.map((g) => `${ftT(g.DH)}\\cdot ${ftT(g.q?.RL ?? g.L)}\\cdot ${ftT(g.length)}`) } : q ? { math: `${ftT(i.H)}\\cdot ${ftT(q.RL)}\\cdot ${ftT(lengthFt)}` } : { math: `${ftT(i.L)}\\cdot ${ftT(i.H)}\\cdot ${ftT(lengthFt)}` }), ref: "the reinforced zone: design height × (average) reinforcement length × length" },
+    ...(q
+      ? {
+          excavation: { value: seg ? seg.EM1 : q.EM1 * lengthFt, basis: `EM1 = ${fit(q.EM1)} CY/LF (${q.sheet}: ${fit(q.H)} ft cut at the layout line, ground at ${fit(i.site?.theta ?? 30)}°), ${how}`, ...per((x) => x.EM1), ref: `${q.sheet}: the cut's area to the wall's template (toe cover 1'-6") × length` },
+          backfill: { value: seg ? seg.BM1 : q.BM1 * lengthFt, basis: `BM1 = ${fit(q.BM1)} CY/LF, Class 1 (${q.sheet}), ${how}`, ...per((x) => x.BM1), ref: `${q.sheet}: Class 1 backfill's area within the pay limits × length` },
+          waterproofing: { value: (seg ? seg.PLG : q.PLG * lengthFt) / 9, basis: `geomembrane, PLG = ${fit(q.PLG)} ft/LF (${q.sheet}), ${how}`, ...(seg ? { terms: seg.segments.map((g) => `${ftT(g.q?.PLG ?? 0)}\\cdot ${ftT(g.length)}`) } : { math: `${ftT(q.PLG)}\\cdot ${ftT(lengthFt)}` }), ref: `${q.sheet}: the geomembrane's pay length × length` },
+        }
+      : {}),
   };
   const H = i.H * 12;
   const view: DetailView = { title: "Typical section", polys: [{ pts: rect(0, 0, i.panelT, H), style: "concrete" }, { pts: rect(-6, -6, i.panelT + 6, 0), style: "concrete" }, { pts: rect(i.panelT, 0, i.panelT + i.L * 12, H), style: "earth" }], lines: Array.from({ length: Math.max(1, Math.floor((i.H - i.topLayer) / i.Sv) + 1) }, (_, k) => ({ pts: [[i.panelT, H - (i.topLayer + k * i.Sv) * 12], [i.panelT + i.L * 12, H - (i.topLayer + k * i.Sv) * 12]] as Pt[], mark: "", kind: "secondary" as const })), dots: [], labels: [{ x: i.panelT + i.L * 6, y: H + 8, text: `Reinforced zone, L = ${i.L} ft`, anchor: "middle" }] };
-  return { what: "MSE retaining wall", schedule: sch, quantities, views: [view], notes: ["The facing panels' own bars are part of the facing (504) and aren't scheduled. Structure excavation and backfill outside the reinforced zone follow the B-504 worksheets for the site."], length: { label: "Wall length", value: lengthFt, unit: "ft" } };
+  return { what: "MSE retaining wall", schedule: sch, quantities, views: [view], notes: ["The facing panels' own bars are part of the facing (504) and aren't scheduled; the moment slab's and coping's bars are detailed on the B-504 sheets (602).", "Excavation, backfill, MRS and geomembrane by CDOT's B-504 quantity sheets; earth removal outside their limits is roadway (unclassified) excavation.", ...(seg ? ["The length comes from the wall's segments."] : [])], length: { label: seg ? "Wall length (from the segments)" : "Wall length", value: lengthFt, unit: "ft" } };
 }
 
 // ---------------------------------------------------------------------------------------------

@@ -1,4 +1,4 @@
-import { maxLines } from "@/lib/calcs/library/fit";
+import { maxLines, sumLines } from "@/lib/calcs/library/fit";
 import type { Line } from "@/lib/calcs/library/templates";
 import { checksSummary } from "../checks-summary";
 import { COLOR_NOTE, INPUT_COLOR, isInput, num } from "../calc-style";
@@ -37,7 +37,6 @@ export function mseCalcLines(i: MseInputs, title: string, figures?: { section?: 
   const perLayerT = products;
   const varLength = layers.some((l) => Math.abs(l.Lz - i.L) > 1e-9);
   const n = layers.length;
-  const each = (fn: (k: number) => string, sep = "+") => layers.map((_, k) => fn(k + 1)).join(sep);
 
   text(title.toUpperCase(), "heading");
   text(`Mechanically stabilized earth wall with ${kind.name.toLowerCase()} reinforcement and precast concrete facing panels, per foot of wall. AASHTO LRFD Bridge Design Specifications (9th ed.), Section 11.10. External moments are taken about the center of the base, overturning positive.`);
@@ -93,7 +92,8 @@ export function mseCalcLines(i: MseInputs, title: string, figures?: { section?: 
     else m(ok("\\max\\left(0.7\\cdot H,8\\mathrm{ft}\\right)", "L"), "Minimum length, AASHTO 11.10.2.1");
   }
   m("T_z\\coloneq L+s_c\\cdot H=", "The reinforced zone's width at the top", "ft");
-  if (i.seismic && i.cdotSeismic) text("No seismic analysis: seismic performance zones 1–3 with CDOT's earthquake details (B-504-A C note 5).", "note");
+  if (i.seismic && i.cdotSeismic && i.wallType !== "abutment") text("No seismic analysis: seismic performance zones 1–3 with CDOT's earthquake details (B-504-A C note 5), with no liquefaction or sensitive clay and the wall not part of a larger slope (AASHTO 11.5.4.2).", "note");
+  if (i.seismic && i.cdotSeismic && i.wallType === "abutment") text("Seismic analysis kept: AASHTO 11.5.4.2's no-analysis option doesn't apply to a wall supporting a structure designed for seismic loads (an abutment).", "note");
   m(`d_{emb}\\coloneq ${num(i.embedment)}\\mathrm{ft}`, "Embedment");
   const emb = embedmentRule(i);
   m(ok(`\\max\\left(${num(emb.least)}\\mathrm{ft},${num(emb.frost)}\\mathrm{ft},\\frac{H}{${emb.div}}\\right)`, "d_{emb}"), `Least embedment, AASHTO 10th 11.10.2.2 and Table C11.10.2.2-1: ${emb.note}`);
@@ -268,7 +268,7 @@ export function mseCalcLines(i: MseInputs, title: string, figures?: { section?: 
     text("Internal stability: Extreme Event I", "subheading");
     m(kind.extensible ? "A_a\\coloneq\\frac{1}{2}\\cdot H^{2}\\cdot\\tan\\left(45\\mathrm{deg}-\\frac{\\phi_r}{2}\\right)=" : `A_a\\coloneq ${i.H <= 0.5 * r.internal.H1! ? "0.3\\cdot H^{2}" : "0.3\\cdot H_1\\cdot H-0.075\\cdot H_1^{2}"}=`, "Active zone area", "ft^2");
     m("P_i\\coloneq k_h\\cdot\\gamma_r\\cdot A_a=", "Inertia of the active zone, AASHTO 11.10.7.2", "kip/ft");
-    m(`L_{esum}\\coloneq ${each((k) => `L_{e${k}}`)}=`, undefined, "ft");
+    lines.push(...sumLines("L", "esum", layers.map((_, k) => `L_{e${k + 1}}`), { unit: "ft" }));
     text("Pi spread over the layers by their resistant lengths; F* at 80% under seismic loading.", "note");
     layers.forEach((_, idx) => {
       const k = idx + 1;

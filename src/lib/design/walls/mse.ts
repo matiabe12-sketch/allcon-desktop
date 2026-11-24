@@ -308,7 +308,10 @@ export function designMseWall(i: MseInputs) {
   const dwMax = f.dwMax ?? 1.5;
   const dwMin = f.dwMin ?? 0.65;
   const qDW = ((i.hma?.t ?? 0) / 12) * (i.hma?.gamma ?? 0); // pavement, ksf
-  const seismicOn = i.seismic && !i.cdotSeismic;
+  // CDOT's no-analysis option (B-504-A C note 5, AASHTO 11.5.4.2) doesn't extend to a wall that supports a structure
+  // designed for seismic loading: an MSE abutment carries the bridge, so it's analyzed regardless.
+  const noAnalysis = !!i.cdotSeismic && i.wallType !== "abutment";
+  const seismicOn = i.seismic && !noAnalysis;
   const zones = i.zoned && i.zones?.length ? [...i.zones].sort((a, b) => a.bottom - b.bottom) : null;
   if (zones?.some((zn) => !(zn.Sv > 0))) throw new DesignError("Give every zone a spacing");
 
@@ -375,7 +378,9 @@ export function designMseWall(i: MseInputs) {
     add({ id: "geom-length", name: `Truncated base: length at the bottom (${baseType === "truncated-soil" ? "¾:1 soil" : "½:1 rock"} cut)`, demand: truncatedMinLength(H), capacity: L, unit: "ft", ref: "CDOT B-504-A C note 6", note: "0.45 DH and 4 ft" });
     add({ id: "geom-global", name: "Global stability of the truncated base: FS 1.3 (φ 0.75), by the geotechnical engineer", demand: 1.3, capacity: 1.3, unit: "", ref: "CDOT B-504-A C note 6; AASHTO 11.6.3.7", advisory: true });
   }
-  if (i.seismic && i.cdotSeismic) add({ id: "geom-seismic", name: "No seismic analysis: seismic zones 1–3 with CDOT's earthquake details", demand: 0, capacity: 0, unit: "", ref: "CDOT B-504-A C note 5", advisory: true });
+  if (i.seismic && noAnalysis) add({ id: "geom-seismic", name: "No seismic analysis: seismic zones 1–3 with CDOT's earthquake details, provided there's no liquefaction or sensitive clay and the wall isn't part of a larger slope", demand: 0, capacity: 0, unit: "", ref: "CDOT B-504-A C note 5; AASHTO 11.5.4.2", advisory: true });
+  if (i.seismic && i.cdotSeismic && !noAnalysis) add({ id: "geom-seismic", name: "Seismic analysis kept: the no-analysis option doesn't apply to a wall supporting a structure designed for seismic loads (an abutment)", demand: 0, capacity: 0, unit: "", ref: "AASHTO 11.5.4.2", advisory: true });
+  if (baseType !== "core" && beta > 0) add({ id: "geom-trunc-slope", name: "Backslope over a truncated base: the slope's earth pressure is taken at the top width; CDOT's basis for this case isn't stated (B-504-C2, C3), so confirm per project", demand: 0, capacity: 0, unit: "", ref: "CDOT B-504-C2, C3", advisory: true });
   const emb = embedmentRule(i);
   const embedMin = emb.required;
   add({ id: "geom-embed", name: "Embedment", demand: embedMin, capacity: i.embedment, unit: "ft", ref: "AASHTO 11.10.2.2, Table C11.10.2.2-1", note: emb.note });

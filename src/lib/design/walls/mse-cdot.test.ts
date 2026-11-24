@@ -192,10 +192,16 @@ describe("the MSE wall with CDOT's options", () => {
     expect(t.quantities["soil-reinforcement"]!.value).toBeCloseTo(s.MRS, 9);
     expect(t.quantities.excavation!.terms).toHaveLength(2);
   });
-  it("CDOT's seismic note replaces the analysis; the new defaults work out", () => {
-    const r = designMseWall(MSE_DEFAULTS);
-    expect(r.groups.EEMax).toBeUndefined();
-    expect(r.checks.some((c) => c.id === "geom-seismic")).toBe(true);
+  it("CDOT's no-analysis option: a retaining wall skips the seismic analysis; an abutment keeps it (AASHTO 11.5.4.2); the defaults work out", () => {
+    const wall = designMseWall({ ...MSE_DEFAULTS, wallType: "wall" });
+    expect(wall.groups.EEMax).toBeUndefined();
+    expect(wall.checks.find((c) => c.id === "geom-seismic")!.name).toMatch(/No seismic analysis/);
+    const r = designMseWall(MSE_DEFAULTS); // an abutment
+    expect(MSE_DEFAULTS.wallType).toBe("abutment");
+    expect(r.groups.EEMax).toBeDefined();
+    expect(r.checks.find((c) => c.id === "geom-seismic")!.name).toMatch(/kept/);
+    // A backslope over a truncated base is flagged for project-specific review.
+    expect(designMseWall({ ...MSE_DEFAULTS, base: "truncated-soil", L: 9.45 }).checks.some((c) => c.id === "geom-trunc-slope")).toBe(true);
     expect(r.quantities.cdot!.sheet).toBe("B-504-Q7");
     expect(r.geometry.bearingTsf).toBeCloseTo(r.groups.StrMax.sigma / 2, 12);
     expect(r.checks.filter((c) => !c.ok && !c.advisory).map((c) => c.id)).toEqual([]);

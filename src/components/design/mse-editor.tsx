@@ -98,8 +98,8 @@ export function MseEditor({ design, projects }: { design: { id: string; name: st
               <Toggle label="Live load surcharge" value={inputs.liveLoad} onChange={set("liveLoad")} />
               {inputs.liveLoad && inputs.wallType === "wall" && <Field label="Wall to edge of traffic" unit="ft" value={inputs.trafficDistance} onChange={set("trafficDistance")} />}
               <Toggle label="Seismic (Extreme Event I)" value={inputs.seismic} onChange={set("seismic")} />
-              {inputs.seismic && <Toggle label="No analysis: seismic zones 1–3 with CDOT's EQ details (B-504-A C)" value={!!inputs.cdotSeismic} onChange={set("cdotSeismic")} />}
-              {inputs.seismic && !inputs.cdotSeismic && (
+              {inputs.seismic && <Toggle label={inputs.wallType === "abutment" ? "No analysis option (doesn't apply to an abutment: AASHTO 11.5.4.2)" : "No analysis: seismic zones 1–3 with CDOT's EQ details (B-504-A C)"} value={!!inputs.cdotSeismic} onChange={set("cdotSeismic")} />}
+              {inputs.seismic && (!inputs.cdotSeismic || inputs.wallType === "abutment") && (
                 <>
                   <Field label="PGA" unit="g" value={inputs.pga} onChange={set("pga")} step={0.005} />
                   <Field label="Site factor Fpga" value={inputs.fpga} onChange={set("fpga")} step={0.1} />

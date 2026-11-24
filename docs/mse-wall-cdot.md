@@ -38,9 +38,13 @@ Walls saved before these options keep the plain AASHTO wall they were designed a
      CDOT's 9.709 (soil) and 8.963 (rock), with the charts' inputs.
    - The least bottom length is 0.45 DH or 4 ft. Global stability (FS 1.3, φ 0.75) is noted as the geotechnical
      engineer's (B-504-A C note 6).
+   - A backslope over a truncated base is flagged for project-specific review: CDOT's basis for that case (B-504-C2,
+     C3) isn't stated, and the tool takes the slope's earth pressure at the top width.
 5. **CDOT defaults** for a new wall:
    - 12 in of HMA at 140 pcf as a DW surcharge (factors 1.5 and 0.65);
-   - no seismic analysis in seismic zones 1–3 with CDOT's earthquake details (B-504-A C note 5), as an option;
+   - no seismic analysis in seismic zones 1–3 with CDOT's earthquake details (B-504-A C note 5), as an option. It is
+     limited by AASHTO 11.5.4.2: it never applies to a wall supporting a structure designed for seismic loads, so an
+     MSE abutment is still analyzed, with a note saying why (2026-11-24);
    - the factored bearing pressure in TSF for the geotechnical report;
    - B-504-D1's 6, 7 and 8 ft least lengths for short walls, shown when AASHTO's 0.7H and 8 ft isn't met.
 6. **Wall segments**: points along the wall (station, design height, excavation height).

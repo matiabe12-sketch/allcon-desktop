@@ -99,6 +99,17 @@ The impact dominates the pile forces, so they scale with Ld. At the same spread 
 
 The vertical pile's compression scales the same way: 43.3 kips at 5 ft for 54 kips, 64.2 kips for TL-4-2.
 
+**Equations (on the sheet, beside the design table):**
+
+| No. | Equation | Where | Reference |
+|---|---|---|---|
+| A1 | T = 9.970 s (Ld / 54) | tension on the battered pile, kips; s = pile spacing (ft); V2's 9.970 kip/ft for 54 kips | V2, scaled by Ld |
+| A2 | C = 8.663 s (Ld / 54) | compression on the vertical pile, kips | V2, scaled by Ld |
+| A3 | φ α_b π d L_b ≥ T, φ = 1.0 | bond beyond the casing; α_b = 16.5 psi nominal (unless the geotechnical report gives more), d = 8 in | AASHTO 11.5.8 (extreme event); FHWA NHI-05-039 |
+| A4 | L_b = T / (φ α_b π d) ≥ 10 ft | least bond length L1 = L2 | from A3 |
+| A5 | s = φ α_b π d L_b / (9.970 Ld / 54) | spacing for a given bond length | from A1, A3 |
+| A6 | Ld per test level | B-504-A C Table 4 (Web Doc 326 Table 9-1) | |
+
 **Caveats:**
 - The bar (#18 Grade 75, 4.0 in², 300 kips nominal) isn't the limit for TL-3 and TL-4.
 - These are scaled estimates. The final sheet should show the three-force solution for each test level, with the

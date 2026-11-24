@@ -75,6 +75,49 @@ interpolating z = 14 and 16).
 
 ---
 
+## Equations (on the sheets: external on H1, internal on H2)
+
+Per foot of wall. γ_EV, γ_EH, γ_LS, γ_DW are the load factors (Strength I: 1.35 or 1.00, 1.50, 1.75, 1.50 or 0.65).
+
+**External stability (H1, tables E)**
+
+| No. | Equation | Where | Reference |
+|---|---|---|---|
+| E1 | Ka = tan²(45° − φ/2) | level retained fill; under a backslope, Coulomb's Ka with δ = β | AASHTO 11.10.5.2 |
+| E2 | P_EH = ½ γ_f Ka h² | h = DH + L tan β, the height at the back of the reinforced zone | AASHTO 11.10.5.2 |
+| E3 | P_LS = γ_f h_eq Ka DH, h_eq = 2.0 ft | traffic over the wall | B-504-A C Table 1 |
+| E4 | P_DW = q_DW Ka DH, V_DW = q_DW L | q_DW = 185 psf (rail anchor slab), 140 psf (roadway) | B-504-A C Note 7 |
+| E5 | V = γ_EV γ_r DH L + γ_DW V_DW (+ γ_LS γ_r h_eq L for bearing) | core wall | AASHTO 11.10.5 |
+| E6 | V = γ_EV γ_r (DH L_b + ½ s DH²) + … | truncated base: s = ¾ (soil) or ½ (rock), L_b = bottom length | CDOT method |
+| E7 | e = [γ_EH P_EH (h/3) + γ_LS P_LS (DH/2) + γ_DW P_DW (DH/2)] / V ≤ e_max = L/3 | moments about the center of the base (truncated: of the bottom; all weight there) | AASHTO 11.6.3.3 |
+| E8 | BP = V / (L − 2e) | Meyerhof; factored, in TSF on the tables | AASHTO 11.6.3.2 |
+| E9 | φ_τ V tan φ_min ≥ γ_EH P_EH cos β + γ_LS P_LS + γ_DW P_DW | φ_τ = 1.0; V with γ_EV = 1.00, no live load; φ_min the weaker of the reinforced fill and the foundation | AASHTO 11.10.5.3 |
+
+**Internal stability (H2, tables I)**
+
+| No. | Equation | Where | Reference |
+|---|---|---|---|
+| I1 | σ_v = γ_r z + q_DW (+ γ_r h_eq for σ_H) | z below the top of the wall | AASHTO 11.10.6.2.1 |
+| I2 | σ_H = k_r [γ_EV γ_r z + γ_DW q_DW + γ_LS γ_r h_eq] | factored | AASHTO Eq. 11.10.6.2.1-1 |
+| I3 | k_r = Ka (extensible); k_r = Ka (1.7 − 0.5 z/20) for steel strips, to 1.2 Ka below 20 ft | Ka of the reinforced fill (E1, level) | AASHTO Fig. 11.10.6.2.1-3 |
+| I4 | T_max = σ_H S_v | S_v the layer's tributary height | AASHTO Eq. 11.10.6.2.1-2 |
+| I5 | T_al = T_ult / (RF_ID RF_CR RF_D) | RF_ID 1.3, RF_D 1.1, RF_CR 2.55 (HDPE) or 1.8 (PP, PET) | AASHTO 11.10.6.4.3b |
+| I6 | φ T_al R_c ≥ T_max | φ = 0.80 geotextiles, geogrids; 0.55 geostrips; 0.75 steel strips | AASHTO 11.10.6.4.1, Table 11.5.7-1 |
+| I7 | P′ = φ F* α σ_v C, with C = 2 | φ = 0.70 geosynthetics, 0.90 steel; F* = 0.67 tan φ, α = 0.8 (geogrids), 0.6 (geotextiles, geostrips); steel strips F* = 1.2 + log Cu at the top to tan φ at 20 ft, α = 1.0 | AASHTO Eq. 11.10.6.3.2-1, Fig. 11.10.6.3.2-2 |
+| I8 | P′ L_e R_c ≥ T_max | | AASHTO 11.10.6.3.2 |
+| I9 | L_e = RL − L_a; L_a = (DH − z) tan(45° − φ/2) (extensible); L_a = min(0.3 H1, 0.6 (DH − z)) (inextensible) | active zone | AASHTO Fig. 11.10.6.3.1-1 |
+| I10 | σ_H,GRS = σ_H / 0.7^(S_v / 6 d_max) | GRS walls (O tables) | FHWA-HRT-11-026 Eq. 31 |
+
+**Barrier on a moment slab (H1, table R)**
+
+| No. | Equation | Where | Reference |
+|---|---|---|---|
+| R1 | F_y = p_dy A_t | p_dy over band h1, then p_dy2 over band h2; A_t the layer's tributary height inside each band | Web Doc 326 9.2 |
+| R2 | F_s = k_r σ_v S_v | the static load on the layer | AASHTO 11.10.6.2.1 |
+| R3 | T_ult ≥ (F_s RF_CR + F_y) RF_ID RF_D / φ, φ = 1.0 | geosynthetics: the dynamic part without creep | AASHTO Eq. 11.10.10.2-1 |
+| R4 | φ T_al R_c ≥ F_s + F_y, φ = 1.0 (strips), 0.85 (grids) | steel | AASHTO 11.5.8 |
+| R5 | φ P′ L R_c ≥ F_s + F_pd, F_pd = p_dp A_t | pullout over the full length L, φ = 1.0 (geosynthetics), 1.20 (steel) | AASHTO 11.10.10.2; Web Doc 326 Eq. 9-6 |
+
 ## 3. Tables E: external stability by design height
 
 #### Table E-A: Rail anchor slab (12 in slab and 3 in HMA: 185 psf as DW)

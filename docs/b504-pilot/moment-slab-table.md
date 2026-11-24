@@ -38,6 +38,17 @@ Today V1 shows the slab with no stated test level, load or check.
 **Least weight for sliding.** Sliding alone sets the least weight per foot of slab system:
 W/Lj ≥ Ls / (tan φr × Lj). This is the quickest way to see whether a slab can work at a given length.
 
+**Equations (on the sheet, as a block beside the figure):**
+
+| No. | Equation | Where | Reference |
+|---|---|---|---|
+| V1 | φ W tan φr ≥ Ls, φ = 1.0 | sliding; W over Lj ≤ 60 ft | Web Doc 326 Eq. 9-1, 9-2 |
+| V2 | tan φr = tan φ (cast in place); ⅔ tan φ (precast) | φ of the Class 1 backfill | Web Doc 326 9.1 |
+| V3 | φ W l ≥ Ls h, φ = 1.0 | overturning about point A (separator) or B (coping bears) | Web Doc 326 Eq. 9-3, 9-4 |
+| V4 | W/Lj ≥ Ls / (Lj tan φr) | least weight per foot | from V1 |
+| V5 | Mu = Ld (He + d_c) | d_c = depth to the critical section (6 in to the coping's base); over BL | Web Doc 326 9.1; AASHTO 13 |
+| V6 | φ Mn = φ As fy (d − a/2), a = As fy / (0.85 f′c BL), φ = 0.9 | coping and slab transverse bars over BL | AASHTO 5.6.3.2 |
+
 | Test level | Ls (kips) | Least weight per ft, Lj = 30 ft (klf) | Least weight per ft, Lj = 60 ft (klf) |
 |---|---|---|---|
 | TL-3 | 23 | 1.14 | 0.57 |

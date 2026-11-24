@@ -324,9 +324,15 @@ export function designMseWall(i: MseInputs) {
 
   // --- external loads (per ft; moments about the center of the base, overturning positive) -------
   const EV1 = i.gammaR * (H * L + 0.5 * slope * H * H); // a truncated base: the triangle over the cut too
-  const EV1arm = slope > 0 ? (0.5 * slope * H * H * (L + (slope * H) / 3 - L / 2)) / (H * L + 0.5 * slope * H * H) : 0; // its c.g. behind the base's center
+  // A truncated base, by CDOT's method (B-504 design charts): the whole weight acts at the center of the bottom length,
+  // and only the earth pressure and surcharges overturn about it. Most of the soil over the cut bears on the cut, not on
+  // the base, so its weight isn't counted as resisting behind the center (that would swing the resultant to the heel).
+  const centered = slope > 0;
+  const EV1arm = 0; // a core wall's reinforced zone is centered on its base; a truncated base's taken at the center
   const EV2 = 0.5 * T * (T * tan(beta)) * i.gammaR; // the slope over the reinforced zone, at 2T/3
-  const EV2arm = (2 * T) / 3 - L / 2;
+  const EV2arm = centered ? 0 : (2 * T) / 3 - L / 2;
+  const EHVarm = centered ? 0 : T - L / 2;
+  const topArm = centered ? 0 : T / 2 - L / 2; // surcharges over the top
   const DWV = qDW * T;
   const DWH = qDW * Ka * H;
   const PEH = 0.5 * i.gammaRet * Ka * h ** 2;
@@ -349,9 +355,10 @@ export function designMseWall(i: MseInputs) {
   const group = (ev: number, eh: number, lsv: number, lsh: number, eq: number, dwv: number, dwh: number): MseGroup => {
     const V = lsv * LSV + ev * (EV1 + EV2) + eh * EHV + dwv * DWV;
     const Hh = lsh * LSH + eh * EHH + eq * (seismic?.PEQ ?? 0) + dwh * DWH;
-    const M = eh * (EHH * (h / 3) - EHV * (T - L / 2)) - ev * (EV1 * EV1arm + EV2 * EV2arm) - lsv * LSV * (T / 2 - L / 2) - dwv * DWV * (T / 2 - L / 2) + lsh * LSH * (H / 2) + dwh * DWH * (H / 2) + eq * (seismic?.MEQ ?? 0);
+    const M = eh * (EHH * (h / 3) - EHV * EHVarm) - ev * (EV1 * EV1arm + EV2 * EV2arm) - lsv * LSV * topArm - dwv * DWV * topArm + lsh * LSH * (H / 2) + dwh * DWH * (H / 2) + eq * (seismic?.MEQ ?? 0);
     const e = M / V;
-    return { V, H: Hh, M, e, sigma: V / (L - 2 * Math.abs(e)) };
+    const Beff = L - 2 * Math.abs(e);
+    return { V, H: Hh, M, e, sigma: Beff > 0 ? V / Beff : Infinity }; // the resultant outside the base: no bearing width
   };
   const groups = {
     StrMax: group(f.evMax, f.eh, f.ls, f.ls, 0, dwMax, dwMax), // bearing: live load over the reinforced zone

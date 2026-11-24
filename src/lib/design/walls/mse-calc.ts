@@ -105,7 +105,7 @@ export function mseCalcLines(i: MseInputs, title: string, figures?: { section?: 
   // --- external loads -------------------------------------------------------------------------
   text("External stability: loads", "subheading");
   m("EV_1\\coloneq\\gamma_r\\cdot\\left(H\\cdot L+\\frac{1}{2}\\cdot s_c\\cdot H^{2}\\right)=", truncated ? "Reinforced zone, the base's rectangle and the triangle over the cut" : "Reinforced zone, at the center", "kip/ft");
-  m("a_{EV1}\\coloneq\\frac{\\frac{1}{2}\\cdot s_c\\cdot H^{2}\\cdot\\left(L+\\frac{s_c\\cdot H}{3}-\\frac{L}{2}\\right)}{H\\cdot L+\\frac{1}{2}\\cdot s_c\\cdot H^{2}}=", "Its c.g. behind the base's center", "ft");
+  m("a_{EV1}\\coloneq0\\mathrm{ft}", truncated ? "Taken at the bottom's center (CDOT B-504 method: the soil over the cut bears on the cut)" : "At the base's center");
   if (slope) m("EV_2\\coloneq\\frac{1}{2}\\cdot T_z\\cdot T_z\\cdot\\tan\\left(\\beta\\right)\\cdot\\gamma_r=", "Backslope over the reinforced zone, at 2T/3", "kip/ft");
   else m("EV_2\\coloneq0\\frac{\\mathrm{kip}}{\\mathrm{ft}}");
   m("P_{EH}\\coloneq\\frac{1}{2}\\cdot\\gamma_{rt}\\cdot K_a\\cdot h^{2}=", "Earth pressure, at h/3, inclined at β (AASHTO 11.10.5.2)", "kip/ft");
@@ -143,9 +143,16 @@ export function mseCalcLines(i: MseInputs, title: string, figures?: { section?: 
 
   // --- external groups and checks -------------------------------------------------------------
   text("External stability: load groups", "subheading");
-  m("a_{EH}\\coloneq T_z-\\frac{L}{2}=", "Arm of EH_V, behind the base's center", "ft");
-  m("a_{EV2}\\coloneq\\frac{2\\cdot T_z}{3}-\\frac{L}{2}=", "Arm of EV_2", "ft");
-  m("a_{T}\\coloneq\\frac{T_z}{2}-\\frac{L}{2}=", "Arm of the surcharges over the top", "ft");
+  if (truncated) {
+    text("Truncated base (CDOT's B-504 method): the whole weight acts at the center of the bottom length L; only the earth pressure and the surcharges overturn about it.", "note");
+    m("a_{EH}\\coloneq0\\mathrm{ft}", "EH_V at the bottom's center");
+    m("a_{EV2}\\coloneq0\\mathrm{ft}", "EV_2 at the bottom's center");
+    m("a_{T}\\coloneq0\\mathrm{ft}", "The surcharges at the bottom's center");
+  } else {
+    m("a_{EH}\\coloneq T_z-\\frac{L}{2}=", "Arm of EH_V, behind the base's center", "ft");
+    m("a_{EV2}\\coloneq\\frac{2\\cdot T_z}{3}-\\frac{L}{2}=", "Arm of EV_2", "ft");
+    m("a_{T}\\coloneq\\frac{T_z}{2}-\\frac{L}{2}=", "Arm of the surcharges over the top", "ft");
+  }
   const group = (key: string, name: string, ev: string, eh: string, lsv: string, lsh: string, withEq: boolean, dwv = dw ? "\\gamma_{DWmax}" : "0", dwh = dw ? "\\gamma_{DWmax}" : "0") => {
     text(name, "note");
     m(`V_{${key}}\\coloneq ${lsv}\\cdot LS_V+${ev}\\cdot\\left(EV_1+EV_2\\right)+${eh}\\cdot EH_V+${dwv}\\cdot DW_V=`, undefined, "kip/ft");

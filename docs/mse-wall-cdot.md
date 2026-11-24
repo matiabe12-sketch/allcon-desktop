@@ -32,6 +32,10 @@ Walls saved before these options keep the plain AASHTO wall they were designed a
    - On a truncated base, L is the length at the bottom; each layer's length grows along the cut.
    - The reinforced triangle's weight counts; the earth pressure acts at the top's width; bearing, eccentricity and
      sliding are taken on the bottom width.
+   - By CDOT's method (the B-504 design charts), the whole weight acts at the bottom's center and only the earth
+     pressure and surcharges overturn (fixed 2026-11-24). The first version put the triangle over the cut behind the
+     center, which swung the resultant to the heel: 24.6 TSF at DH = 40 ft, where CDOT prints 9.709. Now 4% within
+     CDOT's 9.709 (soil) and 8.963 (rock), with the charts' inputs.
    - The least bottom length is 0.45 DH or 4 ft. Global stability (FS 1.3, φ 0.75) is noted as the geotechnical
      engineer's (B-504-A C note 6).
 5. **CDOT defaults** for a new wall:
@@ -69,8 +73,8 @@ Walls saved before these options keep the plain AASHTO wall they were designed a
 
 ## Judgment calls
 
-- **Truncated base:** the retained soil over the cut isn't counted in resisting overturning, which is conservative;
-  global stability stays with the geotechnical engineer.
+- **Truncated base:** all weight at the bottom's center (CDOT's method); the soil over the cut isn't counted in
+  resisting overturning, because it bears on the cut. Global stability stays with the geotechnical engineer.
 - **The impact's dynamic force** is Web Doc 326's pd × At. Each band's pressure (the first h1 below the top, 2.25 or
   1.6 ft, then the next h2, 2.5 ft) goes to the layers by the part of their tributary height inside it, so the bands
   are always shared out in full. Where one layer covers the first band, as in NCHRP 663 Appendix J, that layer takes it

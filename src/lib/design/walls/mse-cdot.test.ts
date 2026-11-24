@@ -134,6 +134,19 @@ describe("the MSE wall with CDOT's options", () => {
     expect(r.checks.find((c) => c.id === "geom-length")!.demand).toBeCloseTo(7.2, 9);
     expect(r.checks.some((c) => c.id === "geom-global")).toBe(true);
   });
+  it("a truncated base's bearing by CDOT's method (whole weight at the bottom's center): B-504-H2's 9.709 and 8.963 TSF at DH = 40 ft", () => {
+    // The charts' own inputs: Class 1 at 125 pcf and 34° on both sides, roadway with 3 in HMA, 2 ft surcharge.
+    const chart = { ...PLAIN, gammaR: 0.125, gammaRet: 0.125, phiR: 34, phiRet: 34, phiF: 34, delta: null, wallType: "wall" as const, trafficDistance: 1, liveLoad: true, seismic: false, backslope: 0, hma: { t: 3, gamma: 0.14 }, H: 40, embedment: 2 };
+    const soil = designMseWall({ ...chart, base: "truncated-soil", L: 18 });
+    const rock = designMseWall({ ...chart, base: "truncated-rock", L: 18 });
+    for (const [r, cdot] of [[soil, 9.709], [rock, 8.963]] as const) {
+      expect(r.groups.StrMax.e).toBeGreaterThan(0); // toward the toe, not swung to the heel
+      expect(r.geometry.bearingTsf / cdot).toBeCloseTo(1, 1); // within 5%
+    }
+    // A core wall keeps its moments about the center: B-504-H2's 4.721 TSF.
+    const core = designMseWall({ ...chart, base: "core", L: 28 });
+    expect(core.geometry.bearingTsf / 4.721).toBeCloseTo(1, 1);
+  });
   it("zones and products: each layer's spacing and long-term strength Tult / (RFID RFCR RFD); the top two at 2 × RL", () => {
     const r = designMseWall({ ...PLAIN, seismic: false, zoned: true, zones: [{ bottom: 8, Sv: 2, product: "hdpe7800" }, { bottom: 100, Sv: 1.5, product: "hdpe12000" }], topProduct: "pp4800", extendTop: true, rf: { id: 1.3, cr: 2.55, d: 1.1 }, topLayer: 1 });
     const L = r.internal.layers;

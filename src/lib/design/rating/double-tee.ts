@@ -54,7 +54,12 @@ export type DtInputs = {
   // harp: strands harped (from a standard), their centroid above the bottom at the ends and from `at` × span to midspan.
   prestress: { mode: "back-calculate" | "known"; strands: number; harp?: { end: number; mid: number; at: number } | null };
   options: {
-    solveWithOverlay: boolean; // the asphalt in place while the force is solved
+    /**
+     * The asphalt in place while the force is solved. Off by default: the solve rebuilds the original
+     * design, under the dead load of its time (BRM 1.7.2(A)); an overlay added later is rated, not
+     * designed for. On only where the overlay is known to be original.
+     */
+    solveWithOverlay: boolean;
     lldfInterior: "table" | "sd"; // SSHB Table 3.23.1 (S/7.0, S/5.5) or the multi-beam S/D of 3.23.4.3
     roundStrands: boolean; // whole strands, the jacking force rounded down to the kip
     legalLldf: "single" | "multi";
@@ -65,8 +70,9 @@ export type DtInputs = {
      */
     tensionLimit: number | null;
     /**
-     * With a back-calculated prestress: the final tension isn't rated at all. BRM 1.7.2 sets the
-     * prestress by strength, so service tension on an assumed prestress isn't a rating.
+     * With a back-calculated prestress: the final tension doesn't govern the rating. BRM 1.7.2 sets the
+     * prestress by strength, so service tension on an assumed prestress isn't a rating; it is still
+     * computed at the code limit, 6√f′c, and reported for information. The default.
      */
     ignoreTension: boolean;
     lossLumpSum: number; // ksi, SSHB 9.16.2.2
@@ -106,12 +112,12 @@ export const DT_DEFAULTS: DtInputs = {
   materials: { fc: 6, fci: 4, strand: '1/2" 250 ksi stress-relieved', fpu: 250, aps: 0.144, gammaStar: 0.4, jackingRatio: 0.7, lowRelaxation: false, strandsPerRowPerStem: 2, firstRow: 2, rowSpacing: 2 },
   prestress: { mode: "back-calculate", strands: 0 },
   options: {
-    solveWithOverlay: true,
+    solveWithOverlay: false,
     lldfInterior: "table",
     roundStrands: true,
     legalLldf: "single",
-    tensionLimit: 1,
-    ignoreTension: false,
+    tensionLimit: null,
+    ignoreTension: true,
     lossLumpSum: 45,
     poi: "tenth",
     solveAt: "points",
@@ -134,7 +140,9 @@ export const EP = 28500; // ksi, strand: BrR's value (SSHB 9.16.2.1.2 gives 28,0
 /** Modulus of rupture, ksi: 0.24√f′c, BrR's value (SSHB 9.15.2.3's 7.5√f′c psi is 1% less). */
 export const ruptureModulus = (fc: number) => 0.24 * Math.sqrt(fc);
 /** The final tension limit, ksi. */
-export const finalTension = (i: Pick<DtInputs, "options" | "materials">) => i.options.tensionLimit ?? (6 * Math.sqrt(i.materials.fc * 1000)) / 1000;
+export const finalTension = (i: Pick<DtInputs, "options" | "materials">) => i.options.tensionLimit ?? codeTension(i.materials.fc);
+/** The code's final tension limit, 6√f′c psi (SSHB 9.15.2.2), ksi. */
+export const codeTension = (fc: number) => (6 * Math.sqrt(fc * 1000)) / 1000;
 /** Whether the final tension is left out of the rating: asked for, with a back-calculated prestress (BRM 1.7.2). */
 export const tensionIgnored = (i: Pick<DtInputs, "options" | "prestress">) => !!i.options.ignoreTension && i.prestress.mode === "back-calculate";
 
@@ -577,7 +585,8 @@ export function rateDoubleTee(i: DtInputs) {
   const np = EP / Ec(m.fc);
   const transfer = (x: number) => Math.min(1, (Math.min(x, L - x) + ext) / lt);
   const ignoreT = tensionIgnored(i);
-  type PointResult = { x: number; check: RatingCheck; inv: number; opr: number | null; C: number; Dl: number; LL: number };
+  /** info: computed and reported, but not a rating (the final tension on a back-calculated prestress). */
+  type PointResult = { x: number; check: RatingCheck; inv: number; opr: number | null; C: number; Dl: number; LL: number; info?: true };
   const rateGirder = (g: Girder, v: Vehicle) => {
     const design = v.cls === "design";
     const df = design ? g.dfMulti : i.options.legalLldf === "single" ? g.dfSingle : g.dfMulti;
@@ -605,9 +614,9 @@ export function rateDoubleTee(i: DtInputs) {
       const k12 = 12;
       const fbD = -P / sec.A - (P * e) / sec.Sb + (M1 * k12) / sec.Sb + ((M2 + Mp) * k12) / Sb2;
       const fbL = (LLm * k12) / Sb2;
-      const ftLim = finalTension(i);
-      const tInv = (ftLim - fbD) / fbL;
-      if (!ignoreT) out.push({ x, check: "tension", inv: tInv, opr: null, C: ftLim, Dl: fbD, LL: fbL }); // inventory only (MBE 6B.5.3.3)
+      // Inventory only (MBE 6B.5.3.3). Ignored: at the code limit, for information.
+      const ftLim = ignoreT ? codeTension(m.fc) : finalTension(i);
+      out.push({ x, check: "tension", inv: (ftLim - fbD) / fbL, opr: null, C: ftLim, Dl: fbD, LL: fbL, ...(ignoreT ? { info: true as const } : {}) });
       const ftD = P / sec.A - (P * e) / sec.St + (M1 * k12) / sec.St + ((M2 + Mp) * k12) / St2;
       const ftL = (LLm * k12) / St2;
       out.push({ x, check: "compression", inv: (0.6 * m.fc - ftD) / ftL, opr: null, C: 0.6 * m.fc, Dl: ftD, LL: ftL });
@@ -631,13 +640,15 @@ export function rateDoubleTee(i: DtInputs) {
         out.push({ x, check: "shear", inv: (sh.phiVn - 1.3 * sh.Vd) / (2.17 * sh.VL), opr: (sh.phiVn - 1.3 * sh.Vd) / (1.3 * sh.VL), C: sh.phiVn, Dl: sh.Vd, LL: sh.VL });
       }
     }
-    const inv = out.reduce((a, c) => (c.inv < a.inv ? c : a));
+    const rated = out.filter((c) => !c.info);
+    const inv = rated.reduce((a, c) => (c.inv < a.inv ? c : a));
+    const tInfo = out.filter((c) => c.info).reduce<PointResult | null>((a, c) => (!a || c.inv < a.inv ? c : a), null);
     const oprList = out.filter((c) => c.opr !== null) as (PointResult & { opr: number })[];
     const opr = oprList.reduce((a, c) => (c.opr < a.opr ? c : a));
     const flex = out.filter((c) => c.check === "flexure");
     const flexInv = flex.reduce((a, c) => (c.inv < a.inv ? c : a));
     const flexOpr = flex.reduce((a, c) => (c.opr! < a.opr! ? c : a));
-    return { g: g.name, df, inv, opr, flexInv, flexOpr, points: out };
+    return { g: g.name, df, inv, opr, flexInv, flexOpr, tInfo, points: out };
   };
   const shearAt = (g: Girder, x: number, VL: number, dl: { M: number; V: number }, P: number, h: number, d: number, MLL: number, cg: number) => {
     // Vci = 0.6√f'c b'd + Vd + Vi·Mcr/Mmax; Vcw = (3.5√f'c + 0.3 fpc) b'd + Vp; Vs = Av fy d/s (≤ 8√f'c b'd); φ = 0.90.
@@ -668,7 +679,9 @@ export function rateDoubleTee(i: DtInputs) {
     const govInv = per.reduce((a, c) => (c.inv.inv < a.inv.inv ? c : a));
     const govOpr = per.reduce((a, c) => (c.opr.opr < a.opr.opr ? c : a));
     const t = tons(v);
-    return { name: v.name, cls: v.cls, tons: t, per, govInv, govOpr, invTons: govInv.inv.inv * t, oprTons: govOpr.opr.opr * t, posting: posting(govOpr.opr.opr, v.cls, i.bridge.nearInterstate) };
+    // The lowest final tension for information (tension ignored), with its girder.
+    const tInfo = per.filter((p) => p.tInfo).reduce<{ g: string; pt: NonNullable<(typeof per)[number]["tInfo"]> } | null>((a, p) => (!a || p.tInfo!.inv < a.pt.inv ? { g: p.g, pt: p.tInfo! } : a), null);
+    return { name: v.name, cls: v.cls, tons: t, per, govInv, govOpr, tInfo, invTons: govInv.inv.inv * t, oprTons: govOpr.opr.opr * t, posting: posting(govOpr.opr.opr, v.cls, i.bridge.nearInterstate) };
   });
 
   // --- the hand method at midspan (absolute maximum live load moment with the midspan dead load), as a check ---
@@ -804,7 +817,7 @@ export function dtInputsFromBridgeFile(b: Record<string, any>): DtInputs {
     prestress: { mode: "back-calculate", strands: 0 },
     options: {
       ...d.options,
-      solveWithOverlay: o.solve_with_overlay !== false,
+      solveWithOverlay: typeof o.solve_with_overlay === "boolean" ? o.solve_with_overlay : d.options.solveWithOverlay,
       lldfInterior: o.lldf_interior === "multibeam_S_over_D" ? "sd" : "table",
       roundStrands: o.round_strands !== false,
       legalLldf: o.legal_lldf === "multi" ? "multi" : "single",

@@ -73,7 +73,7 @@ function methodNote(i: DtInputs, r: ReturnType<typeof rateDoubleTee>, text: (t: 
   );
   if (back)
     text(
-      `No plans:- There are no design plans or shop drawings for this bridge. The geometry (${andList(["span", "number and spacing of units", "flange and stem dimensions", i.deck.present && "deck", "asphalt", curbs.length > 0 && "curbs", sw.length > 0 && "sidewalks", "railings", "diaphragms"])}) comes from ${records.length ? records.join(" and ") : "the field records"}. The material properties are those the BRM gives for a bridge built in ${i.bridge.yearBuilt}. Because the prestress is not known, it is back-calculated per BRM 1.7.2(A): it is set so that every girder's HS-20 inventory rating factor for strength flexure is at least 1.0${i.options.roundStrands ? ", then rounded up to whole strands" : ""}, under the dead loads used in the rating${i.options.solveWithOverlay ? "" : " (without the asphalt while solving)"}. This assumes the girders were designed for HS-20.${
+      `No plans:- There are no design plans or shop drawings for this bridge. The geometry (${andList(["span", "number and spacing of units", "flange and stem dimensions", i.deck.present && "deck", "asphalt", curbs.length > 0 && "curbs", sw.length > 0 && "sidewalks", "railings", "diaphragms"])}) comes from ${records.length ? records.join(" and ") : "the field records"}. The material properties are those the BRM gives for a bridge built in ${i.bridge.yearBuilt}. Because the prestress is not known, it is back-calculated per BRM 1.7.2(A): it is set so that every girder's HS-20 inventory rating factor for strength flexure is at least 1.0${i.options.roundStrands ? ", then rounded up to whole strands" : ""}, ${i.options.solveWithOverlay ? "under the dead loads used in the rating, the asphalt included as original to the bridge" : "under the dead load of the original design, without the asphalt: an overlay added later is rated, not designed for, so it lowers the ratings"}. This assumes the girders were designed for HS-20.${
         sw.length && i.loads.sidewalkMountable ? " The prestress is set with trucks between the curbs, the cases the original design would have used; trucks on the mountable sidewalk are then rated with that prestress, not used to set it." : ""
       } The service checks then use this prestress. ${checkStandard(i).summary.replace(/ \(standard: /g, " (the standard's: ")}`,
     );
@@ -88,7 +88,7 @@ function methodNote(i: DtInputs, r: ReturnType<typeof rateDoubleTee>, text: (t: 
   text(
     `Checks:- The girders are rated for flexural strength (SSHB 9.17) and for concrete stresses at service (SSHB 9.15.2.2, MBE 6B.5.3.3): ${tensionIgnored(i) ? "" : "tension at the bottom of the girder, and "}compression in the girder${i.deck.present ? " and the deck" : ""}. ${
       tensionIgnored(i)
-        ? "The final tension in the girder is not rated. The prestress is back-calculated for strength (BRM 1.7.2), so a tension check on it would only test the assumed prestress, not the bridge: the final tension limit is ignored, and strength flexure governs the ratings."
+        ? "The final tension in the girder is not rated. The prestress is back-calculated for strength (BRM 1.7.2), so a tension check on it would only test the assumed prestress, not the bridge, and the strength back-calculation is a lower bound on the prestress of girders designed to service limits. The tension at the code limit, 6√f′c (SSHB 9.15.2.2), is reported for information; the bridge's service performance is shown by its inspection history (no flexural cracking or other load-induced distress, MBE 6.1.4)."
         : tension === 1 && back
         ? "The final tension limit is 1.0 ksi. The code limit, 6√f′c (SSHB 9.15.2.2), is set aside so that strength flexure controls the back-calculated prestress (BRM 1.7.2)."
         : tension === null
@@ -223,8 +223,10 @@ export function dtRatingCalcLines(i: DtInputs, title: string, figures?: { sectio
 
   // 4. Stress limits
   text("4. Stress limits (MBE 6B.5.3.3)", "subheading");
-  if (tensionIgnored(i)) text("Final tension in the girder: not rated. The prestress is back-calculated for strength (BRM 1.7.2), so the final tension limit is ignored.", "note");
-  else if (i.options.tensionLimit === null) m("f_t\\coloneq\\frac{6}{1000}\\cdot\\sqrt{1000\\cdot\\frac{f'_{c}}{\\mathrm{ksi}}}\\cdot\\mathrm{ksi}=", "Final tension, 6√f′c psi (SSHB 9.15.2.2)", "ksi");
+  if (tensionIgnored(i)) {
+    text("Final tension in the girder: not rated. The prestress is back-calculated for strength (BRM 1.7.2), so the final tension limit is ignored in the rating; the tension at 6√f′c is shown for information.", "note");
+    m("f_t\\coloneq\\frac{6}{1000}\\cdot\\sqrt{1000\\cdot\\frac{f'_{c}}{\\mathrm{ksi}}}\\cdot\\mathrm{ksi}=", "Final tension, 6√f′c psi (SSHB 9.15.2.2), for information", "ksi");
+  } else if (i.options.tensionLimit === null) m("f_t\\coloneq\\frac{6}{1000}\\cdot\\sqrt{1000\\cdot\\frac{f'_{c}}{\\mathrm{ksi}}}\\cdot\\mathrm{ksi}=", "Final tension, 6√f′c psi (SSHB 9.15.2.2)", "ksi");
   else m(`f_t\\coloneq ${num(i.options.tensionLimit)}\\mathrm{ksi}`, i.options.tensionLimit === 1 && back ? TENSION_NOTE : "Final tension, as entered (SSHB 9.15.2.2)");
   m("f_{c1}\\coloneq0.6\\cdot f'_{c}=", "Compression under all loads", "ksi");
   m("f_{c2}\\coloneq0.4\\cdot f'_{c}=", "Compression under live load plus half the prestress and dead load", "ksi");
@@ -322,7 +324,7 @@ export function dtRatingCalcLines(i: DtInputs, title: string, figures?: { sectio
   const St2 = g.csec ? "S_{tc}" : "S_t";
   m(`f_{bD}\\coloneq-\\frac{P_x}{A_g}-\\frac{P_x\\cdot e}{S_b}+\\frac{M_{D1}}{S_b}+\\frac{M_{D2}+M_{ped}}{${Sb2}}=`, "Bottom stress from prestress and dead load (tension positive)", "ksi");
   m(`f_{bL}\\coloneq\\frac{M_{L,HS}}{${Sb2}}=`, "Bottom stress from live load", "ksi");
-  if (!tensionIgnored(i)) m("RF_{t,HS}\\coloneq\\frac{f_t-f_{bD}}{f_{bL}}=", "Concrete tension, inventory");
+  m("RF_{t,HS}\\coloneq\\frac{f_t-f_{bD}}{f_{bL}}=", tensionIgnored(i) ? "Concrete tension, inventory: for information, not a rating (BRM 1.7.2)" : "Concrete tension, inventory");
   m(`f_{tD}\\coloneq\\frac{P_x}{A_g}-\\frac{P_x\\cdot e}{S_t}+\\frac{M_{D1}}{S_t}+\\frac{M_{D2}+M_{ped}}{${St2}}=`, "Top stress from prestress and dead load (compression positive)", "ksi");
   m(`f_{tL}\\coloneq\\frac{M_{L,HS}}{${St2}}=`, "Top stress from live load", "ksi");
   m("RF_{c1,HS}\\coloneq\\frac{f_{c1}-f_{tD}}{f_{tL}}=", "Concrete compression under all loads, inventory");

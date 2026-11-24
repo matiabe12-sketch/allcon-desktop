@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { dtRatingInputs } from "../kinds";
 import fixtures from "./cdot-bridges.json";
-import { DT_DEFAULTS, dtInputsFromBridgeFile, isSidewalkTruckCase, rateDoubleTee, type DtInputs } from "./double-tee";
+import { DT_DEFAULTS, codeTension, dtInputsFromBridgeFile, isSidewalkTruckCase, rateDoubleTee, type DtInputs } from "./double-tee";
 import { CDOT_VEHICLES, laneAt, tons, trainAt, trainMax } from "./vehicles";
 
 // The double-tee LFR rating, against the rating scripts' results for five CDOT bridges without plans
@@ -32,7 +33,7 @@ type Expected = {
   ratings: { name: string; Mw: number; gov: string; per: { g: string; inv: number; opr: number }[] }[];
 };
 it("sets the prestress with trucks between the curbs, then rates trucks on a mountable sidewalk with it", () => {
-  const i: DtInputs = { ...DT_DEFAULTS, span: 22, structureLength: 23, loads: { ...DT_DEFAULTS.loads, sidewalks: [{ width: 5, thk: 8 }], sidewalkMountable: true, pedestrians: true } };
+  const i: DtInputs = { ...DT_DEFAULTS, span: 22, structureLength: 23, loads: { ...DT_DEFAULTS.loads, sidewalks: [{ width: 5, thk: 8 }], sidewalkMountable: true, pedestrians: true }, options: { ...DT_DEFAULTS.options, solveWithOverlay: true } };
   const r = rateDoubleTee(i);
   expect(isSidewalkTruckCase(r.solve.gov)).toBe(false);
   const hs = r.ratings[0];
@@ -59,15 +60,38 @@ describe("curbs", () => {
   });
 });
 
-it("ignores the final tension when asked, for a back-calculated prestress only (BRM 1.7.2)", () => {
-  const i: DtInputs = { ...DT_DEFAULTS, options: { ...DT_DEFAULTS.options, ignoreTension: true } };
+it("by default doesn't rate the final tension on a back-calculated prestress, but reports it at 6√f′c (BRM 1.7.2)", () => {
+  const i: DtInputs = { ...DT_DEFAULTS, loads: { ...DT_DEFAULTS.loads, asphalt: 0 } };
+  expect(i.options.ignoreTension).toBe(true);
   const r = rateDoubleTee(i);
   const hs = r.ratings[0];
-  expect(hs.per.flatMap((p) => p.points).some((q) => q.check === "tension")).toBe(false);
+  const t = hs.per.flatMap((p) => p.points).filter((q) => q.check === "tension");
+  expect(t.length).toBeGreaterThan(0);
+  expect(t.every((q) => q.info && Math.abs(q.C - codeTension(i.materials.fc)) < 1e-12)).toBe(true);
+  expect(hs.tInfo!.pt.inv).toBeCloseTo(Math.min(...t.map((q) => q.inv)), 12);
   expect(hs.govInv.inv.inv).toBeGreaterThanOrEqual(1 - 1e-9);
   expect(hs.govInv.inv.check).toBe("flexure");
+  // Known strands: the tension is rated.
   const known = rateDoubleTee({ ...i, prestress: { mode: "known", strands: r.solve.nStrands } });
-  expect(known.ratings[0].per.flatMap((p) => p.points).some((q) => q.check === "tension")).toBe(true);
+  const kt = known.ratings[0].per.flatMap((p) => p.points).filter((q) => q.check === "tension");
+  expect(kt.length).toBeGreaterThan(0);
+  expect(kt.some((q) => q.info)).toBe(false);
+  expect(known.ratings[0].tInfo).toBeNull();
+});
+
+it("by default solves without the asphalt (the original design) and rates with it (BRM 1.7.2(A))", () => {
+  const exact = { ...DT_DEFAULTS.options, roundStrands: false };
+  const bare = rateDoubleTee({ ...DT_DEFAULTS, loads: { ...DT_DEFAULTS.loads, asphalt: 0 }, options: exact });
+  const paved = rateDoubleTee({ ...DT_DEFAULTS, loads: { ...DT_DEFAULTS.loads, asphalt: 4 }, options: exact });
+  // The same prestress: the overlay isn't designed for…
+  near(paved.solve.nStrands, bare.solve.nStrands, 1e-9, "strands");
+  // …so it lowers the HS-20 rating below 1.0.
+  const flex = (r: ReturnType<typeof rateDoubleTee>) => Math.min(...r.ratings[0].per.map((p) => p.flexInv.inv));
+  near(flex(bare), 1, 1e-6, "bare");
+  expect(flex(paved)).toBeLessThan(0.99);
+  // With the asphalt taken as original, it's designed for: 1.0 again.
+  const orig = rateDoubleTee({ ...DT_DEFAULTS, loads: { ...DT_DEFAULTS.loads, asphalt: 4 }, options: { ...exact, solveWithOverlay: true } });
+  near(flex(orig), 1, 1e-6, "original asphalt");
 });
 
 describe.each(fixtures as unknown as { name: string; bridge: Record<string, unknown>; expected: Expected }[])("CDOT bridge $name", (f) => {
@@ -129,7 +153,7 @@ describe.each(fixtures as unknown as { name: string; bridge: Record<string, unkn
 
 describe("the back-calculation over the points of interest (as BrR rates)", () => {
   it("rates HS-20 inventory at exactly 1.0 in flexure before rounding to whole strands", () => {
-    const i: DtInputs = { ...DT_DEFAULTS, options: { ...DT_DEFAULTS.options, roundStrands: false } };
+    const i: DtInputs = { ...DT_DEFAULTS, options: { ...DT_DEFAULTS.options, roundStrands: false, solveWithOverlay: true } };
     const r = rateDoubleTee(i);
     near(r.solve.govRF, 1, 1e-6, "RF");
     const hs = r.ratings.find((x) => x.name === "HS-20")!;
@@ -139,5 +163,20 @@ describe("the back-calculation over the points of interest (as BrR rates)", () =
     const r = rateDoubleTee(DT_DEFAULTS);
     expect(r.solve.govRF).toBeGreaterThanOrEqual(1 - 1e-9);
     expect(Number.isInteger(Math.round(r.solve.nStrands * 1e9) / 1e9)).toBe(true);
+  });
+});
+
+describe("saved ratings", () => {
+  it("a new one takes the defaults: solved without the asphalt, final tension for information", () => {
+    const o = dtRatingInputs({}).options;
+    expect([o.solveWithOverlay, o.ignoreTension, o.tensionLimit]).toEqual([false, true, null]);
+  });
+  it("one saved before the defaults changed keeps what it was rated with", () => {
+    const o = dtRatingInputs({ options: { roundStrands: true } }).options;
+    expect([o.solveWithOverlay, o.ignoreTension, o.tensionLimit]).toEqual([true, false, 1]);
+  });
+  it("one saved with the settings keeps them", () => {
+    const o = dtRatingInputs({ options: { solveWithOverlay: false, ignoreTension: true, tensionLimit: null } }).options;
+    expect([o.solveWithOverlay, o.ignoreTension, o.tensionLimit]).toEqual([false, true, null]);
   });
 });

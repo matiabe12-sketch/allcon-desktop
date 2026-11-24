@@ -348,7 +348,7 @@ export function DtRatingEditor({ design, projects }: { design: { id: string; nam
               <DtStandardPanel
                 i={i}
                 onApply={(r) => setInputs((s) => applyStandard(s, r))}
-                onBackCalculate={() => setInputs((s) => ({ ...s, prestress: { ...s.prestress, mode: "back-calculate", harp: null }, options: { ...s.options, tensionLimit: 1 } }))}
+                onBackCalculate={() => setInputs((s) => ({ ...s, prestress: { ...s.prestress, mode: "back-calculate", harp: null }, options: { ...s.options, ignoreTension: true, tensionLimit: null } }))}
               />
               <Choice
                 label="Prestress"
@@ -364,7 +364,7 @@ export function DtRatingEditor({ design, projects }: { design: { id: string; nam
               ) : (
                 <>
                   <Toggle label="Whole strands (force rounded down to the kip)" value={i.options.roundStrands} onChange={(v) => opt({ roundStrands: v })} />
-                  <Toggle label="Asphalt in place while solving" value={i.options.solveWithOverlay} onChange={(v) => opt({ solveWithOverlay: v })} />
+                  <Toggle label="Asphalt in place while solving (only if original)" value={i.options.solveWithOverlay} onChange={(v) => opt({ solveWithOverlay: v })} />
                   <Choice
                     label="Solve"
                     value={i.options.solveAt}
@@ -404,7 +404,7 @@ export function DtRatingEditor({ design, projects }: { design: { id: string; nam
                 label="Final tension limit, girder"
                 value={i.options.ignoreTension && i.prestress.mode === "back-calculate" ? "ignored" : i.options.tensionLimit === null ? "code" : i.options.tensionLimit === 1 ? "brm" : "entered"}
                 options={[
-                  ...(i.prestress.mode === "back-calculate" ? [{ value: "ignored", label: "Ignored (strength governs, BRM 1.7.2)" }] : []),
+                  ...(i.prestress.mode === "back-calculate" ? [{ value: "ignored", label: "Not rated; 6√f′c shown for information (BRM 1.7.2)" }] : []),
                   { value: "brm", label: "1 ksi (strength governs, BRM 1.7.2)" },
                   { value: "code", label: `6√f′c (${finalTension({ ...i, options: { ...i.options, tensionLimit: null } }).toFixed(3)} ksi)` },
                   { value: "entered", label: "Entered" },
@@ -412,7 +412,7 @@ export function DtRatingEditor({ design, projects }: { design: { id: string; nam
                 onChange={(v) =>
                   opt(
                     v === "ignored"
-                      ? { ignoreTension: true }
+                      ? { ignoreTension: true, tensionLimit: null }
                       : { ignoreTension: false, tensionLimit: v === "code" ? null : v === "brm" ? 1 : finalTension(i) === 1 ? 0.8 : finalTension(i) },
                   )
                 }
@@ -572,12 +572,17 @@ function Results({ i, r, brr, setBrr, df, setDf }: { i: DtInputs; r: DtRating; b
           <span>
             {CHECK_LABEL[hs.govInv.inv.check]} governs HS-20 inventory ({f3(hs.govInv.inv.inv)} on {hs.govInv.g} at {f2(hs.govInv.inv.x)} ft), not flexure, with the final tension limit at {finalTension(i).toFixed(3)} ksi. BrR will report the same.{" "}
             {s.mode === "back-calculate"
-              ? "With a back-calculated prestress that defeats the back-calculation (BRM 1.7.2 sets the prestress by strength): under Rating options, set the final tension limit to Ignored."
+              ? "With a back-calculated prestress that defeats the back-calculation (BRM 1.7.2 sets the prestress by strength): under Rating options, set the final tension limit to “Not rated” (the default)."
               : "Accept the service rating, or check the tension limit."}
           </span>
         </div>
       )}
 
+      {hs.tInfo && (
+        <p className="px-1 text-xs text-muted-foreground">
+          For information, not a rating: final tension at 6√f′c ({hs.tInfo.pt.C.toFixed(3)} ksi) gives HS-20 inventory {f3(hs.tInfo.pt.inv)} on {hs.tInfo.g} at {f2(hs.tInfo.pt.x)} ft. The prestress is back-calculated for strength (BRM 1.7.2), so this tests the assumed prestress, not the bridge; service performance is shown by the inspection history.
+        </p>
+      )}
       <Card>
         <CardContent className="overflow-x-auto py-2">
           <p className="pb-1 text-xs font-semibold">Ratings, every girder and point (MBE 6B.4.1, 6B.5.3)</p>

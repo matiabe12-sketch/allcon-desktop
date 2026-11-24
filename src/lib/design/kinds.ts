@@ -410,6 +410,9 @@ export function dtRatingInputs(saved: unknown): DtInputs {
   const s = (saved && typeof saved === "object" ? saved : {}) as Partial<DtInputs>;
   const d = DT_DEFAULTS;
   const o = s.options ?? ({} as Partial<DtInputs["options"]>);
+  // A design saved before these defaults changed keeps what it was rated with (solved with the
+  // asphalt, final tension 1 ksi and rated); a new one takes the defaults.
+  const legacy = !!s.options;
   const out: DtInputs = {
     ...d,
     ...s,
@@ -438,8 +441,9 @@ export function dtRatingInputs(saved: unknown): DtInputs {
       ...o,
       stirrups: { ...d.options.stirrups, ...(o.stirrups ?? {}) },
       dfOverride: o.dfOverride ? { ...o.dfOverride } : null,
-      tensionLimit: typeof o.tensionLimit === "number" ? o.tensionLimit : o.tensionLimit === null ? null : d.options.tensionLimit,
-      ignoreTension: o.ignoreTension === true,
+      solveWithOverlay: typeof o.solveWithOverlay === "boolean" ? o.solveWithOverlay : legacy ? true : d.options.solveWithOverlay,
+      tensionLimit: typeof o.tensionLimit === "number" ? o.tensionLimit : o.tensionLimit === null ? null : legacy ? 1 : d.options.tensionLimit,
+      ignoreTension: typeof o.ignoreTension === "boolean" ? o.ignoreTension : legacy ? false : d.options.ignoreTension,
     },
     brrDf: Object.fromEntries((["intSingle", "intMulti", "extSingle", "extMulti"] as const).map((k) => [k, typeof s.brrDf?.[k] === "number" && s.brrDf[k]! > 0 ? s.brrDf[k] : null])) as DtInputs["brrDf"],
     review: { ...d.review, ...(s.review ?? {}), items: Array.isArray(s.review?.items) ? s.review.items : [] },

@@ -103,7 +103,8 @@ these field by field):
   BRM 1.4(O); the force the greater of what the factored moment and the cracking moment need
   (BRM 1.7.2).
 - Options, as in yesterday's files: whole strands (the jacking force rounded down to the kip) or the
-  exact force; the asphalt in place or removed while solving.
+  exact force; the asphalt in place or removed while solving (removed by default since Nov 2026,
+  below).
 - Reported: the force and strand centroid to enter in BrR, the equivalent strands, and the resulting
   ratings with the current dead loads.
 
@@ -259,7 +260,26 @@ Added in the desktop copy (not pushed):
   check on an assumed prestress tests the assumption, not the bridge); the calc package says why, and
   the BrR input sheet gives BrR 10 ksi so tension can't govern there either. Needed where the 1 ksi
   limit still governs (AUR08.0-J.3, a 45 in section with an 8 1/2 in deck: tension 0.912 against
-  flexure 1.000). The default stays 1 ksi.
+  flexure 1.000).
+
+**Defaults changed (Nov 2026)** for a back-calculated prestress:
+
+- **Solved without the asphalt.** The back-calculation rebuilds the original design (BRM 1.7.2(A),
+  the design moment), so it uses the dead load of that design; an overlay added later is rated, not
+  designed for, and lowers the ratings (HS-20 inventory can fall below 1.0 where it's thick). Before,
+  the solve included today's overlay, which gave it strands of its own and kept HS-20 at 1.0 however
+  thick it was. "Asphalt in place while solving (only if original)" turns it back on for a bridge
+  whose overlay is known to be original.
+- **Final tension not rated; reported at 6√f′c for information.** On the 1982 standard (45 rows,
+  known strands) the real designs were governed by service tension, rating 1.04–1.59 on strength
+  alone, and the strength back-calculation found 0–7 fewer strands than the designer used: it is a
+  lower bound on the prestress, so a tension check on it tests the assumption. The 1 ksi limit
+  (neither the code nor off) is no longer the default. The tension at the code limit is still
+  computed and shown in the editor and the calc package, marked for information, and the package
+  cites the inspection history (MBE 6.1.4) for service performance. The BrR input sheet still gives
+  BrR 10 ksi.
+- Ratings saved before the change keep the settings they were rated with; new ones take the
+  defaults. Known strands (a standard or plans) are rated in tension as before.
 - **The 1982 double-tee standard** (`dt-standard.ts`): the CDOH Double T Bridge Standard (Dwg. B-3,
   45 spans and widths, transcribed and checked: each row's forces and ratios give whole strands). The
   editor compares the bridge with it (year built 1982 or later, span, width, units, unit width, stem

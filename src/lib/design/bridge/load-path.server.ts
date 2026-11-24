@@ -9,7 +9,8 @@ import { designDeck } from "../decks/deck";
 import { abutmentInputs, footingInputs, pileFoundationInputs, shaftInputs } from "../foundations/kinds";
 import { runFoundation } from "../foundations/run";
 import type { GirderInputs } from "../girders/prestressed";
-import { approachSlabInputs, bearingInputs, deckInputs, designInputs, girderInputs, hlmrInputs, kindInfo, slabBridgeInputs, stripSealInputs, wingwallInputs, modularInputs, fingerInputs } from "../kinds";
+import { approachSlabInputs, bearingInputs, deckInputs, designInputs, girderInputs, hlmrInputs, kindInfo, slabBridgeInputs, stripSealInputs, wingwallInputs, modularInputs, fingerInputs, scourInputs } from "../kinds";
+import { designScour } from "../scour/scour";
 import { designStripSeal } from "../joints/strip-seal";
 import { designModular } from "../joints/modular";
 import { designFinger, sizeFinger } from "../joints/finger";
@@ -91,6 +92,22 @@ export async function runLoadPath(o: {
     } catch (e) {
       return e instanceof Error ? e.message : "can't be worked out";
     }
+  };
+
+  // --- scour: a linked Bridge Scour design's total scour at each pier, for its foundation ---------------------------------
+  const scourD = await load(b.scourDesignId, "bridge-scour");
+  const scourRes = (() => {
+    if (!scourD) return null;
+    try {
+      return designScour(scourInputs(scourD.inputs));
+    } catch {
+      return null;
+    }
+  })();
+  /** The scour design flood's total scour (ft) at a support, rounded to 0.1 ft; null without a design or element there. */
+  const scourAt = (k: number) => {
+    const e = scourRes?.elements.find((x) => x.support === k);
+    return e ? Math.round(e.floods[0].total * 10) / 10 : null;
   };
 
   // --- girders: one design per group of spans (none for a slab bridge: its slab design below) -------------------------
@@ -348,6 +365,10 @@ export async function runLoadPath(o: {
         }
       fNext = kind === "spread-footing" ? footingFromColumn(baseCol, fBefore as ReturnType<typeof footingInputs>, colNext) : kind === "pile-foundation" ? pilesFromColumn(baseCol, fBefore as ReturnType<typeof pileFoundationInputs>, colNext) : shaftFromColumn(baseCol, fBefore as ReturnType<typeof shaftInputs>, colNext);
       if (kind === "drilled-shaft") fNext = { ...fNext, D: Math.max((fNext as ReturnType<typeof shaftInputs>).D, s.pier.columnShape === "round" ? s.pier.columnSize : 0) };
+      // Scour (a linked Bridge Scour design): the scour design flood's total scour at this pier, below the ground at
+      // its foundation (AASHTO 2.6.4.4.2): a footing's or shaft's scour depth, piles' unsupported length.
+      const sc = scourAt(k);
+      if (sc !== null) fNext = kind === "pile-foundation" ? { ...fNext, unsupported: sc } : { ...fNext, scour: sc };
     }
     c.foundationId = await upsert(`foundation-${k}`, `${s.name}, foundation`, kind, fd, fBefore, fNext, colResult ? verdictTry(() => runFoundation(kind, fNext).checks) : "the column's base forces are needed first", `${prefix}, ${s.name} foundation`);
   }

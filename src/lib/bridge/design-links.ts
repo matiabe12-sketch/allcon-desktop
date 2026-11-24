@@ -1,4 +1,5 @@
 import type { BridgeAnalysis, Selection } from "./bridge";
+import { SCOUR_DEFAULTS } from "../design/scour/scour";
 import type { BridgeDefinition } from "./definition";
 import { spanGroups } from "../design/bridge/bridge";
 import { geometryOf, toBridgeInputs } from "./geometry";
@@ -51,6 +52,9 @@ export function designTargets(d: BridgeDefinition): DesignTarget[] {
       out.push({ key: `foundation-${k}`, label: `${name} foundation`, tool: f === "spread-footing" ? "Spread Footing" : f === "pile-foundation" ? "Pile Foundation" : "Drilled Shaft", kind: f, from: "The column's base forces (start the cap and column first)" });
     }
   });
+  // Over water: the scour at each pier and abutment (Bridge Scour, HEC-18), its hydraulics from the hydraulic report; its
+  // design flood's total scour goes to each pier's foundation.
+  out.push({ key: "scour", label: "Scour", tool: "Bridge Scour", kind: "bridge-scour", from: "The piers' columns and the abutments (the floods' hydraulics from the hydraulic report)" });
   return out;
 }
 
@@ -68,6 +72,20 @@ const STRENGTH: Selection = { kind: "combination", name: "Strength I" };
 /** The inputs a design for a target starts with (merged over the tool's defaults), and its name. */
 export function designPrefill(target: DesignTarget, d: BridgeDefinition, a: BridgeAnalysis, live: LiveLoad): { inputs: Record<string, unknown>; name: string } {
   const name = target.label;
+  if (target.kind === "bridge-scour") {
+    // Each pier's columns (a bent of round columns, or a single one) and each abutment; the hydraulics left as the
+    // tool's defaults until the hydraulic report's are entered.
+    const g = geometryOf(d);
+    const piers = g.supports.flatMap((s, k) => {
+      if (k === 0 || k === g.supports.length - 1 || !s.pier) return [];
+      const p = s.pier;
+      const dia = p.columnSize / 12;
+      const shape = p.columns > 1 ? "columns" : p.columnShape === "round" ? "circular" : "square";
+      return [{ ...SCOUR_DEFAULTS.piers[0], name: s.name || lineName(d, k), support: k, shape, a: dia, L: p.columnShape === "round" ? dia : (p.columnDepth || p.columnSize) / 12, columns: { n: p.columns, spacing: p.columnSpacing } }];
+    });
+    const abutments = [0, g.supports.length - 1].map((k) => ({ ...SCOUR_DEFAULTS.abutments[0], name: g.supports[k].name || lineName(d, k), support: k }));
+    return { inputs: { ...SCOUR_DEFAULTS, piers, abutments }, name };
+  }
   if (target.kind === "steel-girder-check") {
     // The plates along the bridge (scaled to its length), the cross-frames at the diaphragms' places, the deck and loads.
     const st = d.girder.steel!;

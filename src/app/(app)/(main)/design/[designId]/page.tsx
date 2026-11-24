@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { ApproachSlabEditor } from "@/components/design/approach-slab-editor";
 import { SlabBridgeEditor } from "@/components/design/slab-bridge-editor";
 import { PotDiscEditor } from "@/components/design/pot-disc-editor";
-import { fingerInputs, hlmrInputs, modularInputs, shoringInputs, signalInputs, signBridgeInputs, soilNailInputs, pipeInputs, threeSidedInputs, grsInputs, noiseWallInputs, headwallInputs, highMastInputs } from "@/lib/design/kinds";
+import { fingerInputs, hlmrInputs, modularInputs, shoringInputs, signalInputs, signBridgeInputs, soilNailInputs, pipeInputs, threeSidedInputs, grsInputs, noiseWallInputs, headwallInputs, highMastInputs, scourInputs } from "@/lib/design/kinds";
 import { SignBridgeEditor } from "@/components/design/sign-bridge-editor";
 import { SignalEditor } from "@/components/design/signal-editor";
 import { ShoringEditor } from "@/components/design/shoring-editor";
@@ -13,6 +13,7 @@ import { GrsEditor } from "@/components/design/grs-editor";
 import { HeadwallEditor } from "@/components/design/headwall-editor";
 import { HighMastEditor } from "@/components/design/high-mast-editor";
 import { NoiseWallEditor } from "@/components/design/noise-wall-editor";
+import { ScourEditor } from "@/components/design/scour-editor";
 import { ThreeSidedEditor } from "@/components/design/three-sided-editor";
 import { FingerJointEditor, ModularJointEditor } from "@/components/design/joint-editors";
 import { slabBridgeInputs } from "@/lib/design/kinds";
@@ -114,6 +115,12 @@ export default async function DesignEditorPage({ params }: PageProps<"/design/[d
     return (
       <PageBody>
         <GrsEditor design={{ ...base, inputs: grsInputs(design.inputs) }} projects={projects} />
+      </PageBody>
+    );
+  if (design.kind === "bridge-scour")
+    return (
+      <PageBody>
+        <ScourEditor design={{ ...base, inputs: scourInputs(design.inputs) }} projects={projects} />
       </PageBody>
     );
   if (design.kind === "noise-wall")

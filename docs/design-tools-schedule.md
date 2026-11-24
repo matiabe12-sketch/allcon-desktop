@@ -38,7 +38,7 @@ Candidates for a later schedule, to agree before any is built:
 
 | Tool | Scope | Main references | Notes |
 |---|---|---|---|
-| Bridge scour | Pier, abutment and contraction scour at a stream crossing, the design and check floods; the scour depths passed to the shafts, piles and footings | FHWA HEC-18, AASHTO 2.6.4.4.2, 3.7.5, CDOT Drainage Design Manual | Recommended first: every stream crossing needs it, and it feeds the existing foundation tools |
+| Bridge scour | Pier, abutment and contraction scour at a stream crossing, the design and check floods; the scour depths passed to the shafts, piles and footings | FHWA HEC-18, AASHTO 2.6.4.4.2, 3.7.5, CDOT Drainage Design Manual | **Built 2026-11-23** (docs/bridge-scour.md) |
 | MSE wall moment slab | The traffic barrier on an MSE wall: the moment slab's sliding and overturning, and the added load on the top reinforcement | AASHTO 11.10.10.2, 13, CDOT BDM 11 | Inside the existing MSE Wall tool |
 | Truss sign bridges | Three- or four-chord box truss spans on the existing posts and shafts | AASHTO LRFD-LTS | Lower value: CDOT's S-614-50 standard is a monotube, already built |
 | Segmental block walls | Modular block (SRW) walls with geogrid, the facing connection | AASHTO 11.10, NCMA | Common on private and municipal work, less so on CDOT |

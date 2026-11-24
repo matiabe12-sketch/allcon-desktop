@@ -21,6 +21,7 @@ export function withLinks(b: BridgeInputs, links: DesignLink[]): BridgeInputs {
     ...b,
     girderDesignIds: Array.from({ length: groups }, (_, gi) => id(gi === 0 ? "girders" : `girders-${gi}`)),
     deckDesignId: id("deck"),
+    scourDesignId: id("scour"),
     slabDesignId: id("slab"),
     components: b.supports.map((_, k) => {
       const c: BridgeInputs["components"][number] = { support: k };

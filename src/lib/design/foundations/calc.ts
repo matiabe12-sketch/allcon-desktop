@@ -76,6 +76,11 @@ export function foundationCalcLines(kind: FoundationKind, inputs: unknown, title
     m(`t_f\\coloneq ${num(i.t)}\\mathrm{in}`, "Thickness");
     m(`D_f\\coloneq ${num(i.Df)}\\mathrm{ft}`, "Ground to the base");
     m(ok("3\\mathrm{ft}", "D_f"), "Embedment, CDOT BDM 10.4.2");
+    const sc = Math.max(0, i.scour ?? 0);
+    if (sc > 0) {
+      m(`d_{sc}\\coloneq ${num(sc)}\\mathrm{ft}`, "Total scour below the ground, the scour design flood (a Bridge Scour design)");
+      m(ok("d_{sc}", "D_f"), "Base below the scour, AASHTO 10.6.1.2; the soil above the scour isn't counted");
+    }
     const g = r.cases.filter((c) => c.lc.limit !== "service").reduce<(typeof r.cases)[number] | null>((a, b) => (!a || b.qeq / b.qR > a.qeq / a.qR ? b : a), null);
     if (!g) return;
     text(`Bearing:- the governing case, ${g.lc.name}, with the footing's and soil's weight at their largest factors; the effective dimensions B′ = B − 2eB, L′ = L − 2eL (AASHTO 10.6.1.3, FHWA NHI-06-089 Eqs. 8-7, 8-8).`);
@@ -103,7 +108,7 @@ export function foundationCalcLines(kind: FoundationKind, inputs: unknown, title
       m(`C_{w\\gamma}\\coloneq ${num(g.nb.Cwg)}`);
       m(`d_q\\coloneq ${num(g.nb.dq)}`, "Depth factor, NHI Table 8-6 (1.0 unless chosen)");
       m("q_{c}\\coloneq c_s\\cdot N_c\\cdot s_c=", "Cohesion term", "ksf");
-      m("q_{q}\\coloneq\\gamma_a\\cdot D_f\\cdot N_q\\cdot s_q\\cdot d_q\\cdot C_{wq}=", "Surcharge term", "ksf");
+      m(sc > 0 ? "q_{q}\\coloneq\\gamma_a\\cdot\\max\\left(D_f-d_{sc},0\\mathrm{ft}\\right)\\cdot N_q\\cdot s_q\\cdot d_q\\cdot C_{wq}=" : "q_{q}\\coloneq\\gamma_a\\cdot D_f\\cdot N_q\\cdot s_q\\cdot d_q\\cdot C_{wq}=", sc > 0 ? "Surcharge term, from the scoured ground" : "Surcharge term", "ksf");
       m("q_{g}\\coloneq0.5\\cdot\\gamma_b\\cdot\\min\\left(B',L'\\right)\\cdot N_{\\gamma}\\cdot s_{\\gamma}\\cdot C_{w\\gamma}=", "Weight term", "ksf");
       m("q_n\\coloneq q_{c}+q_{q}+q_{g}=", "AASHTO Eq. 10.6.3.1.2a-1, NHI Eq. 8-6", "ksf");
       void f;
@@ -166,6 +171,9 @@ export function foundationCalcLines(kind: FoundationKind, inputs: unknown, title
   }
 
   function shaft(i: ShaftInputs) {
+    const sc = Math.max(0, i.scour ?? 0);
+    if (sc > 0)
+      text(`Scour:- ${num(sc)} ft below the ground at the shaft (the scour design flood's total scour, a Bridge Scour design). The soil above it is left out of the side resistance, the overburden and the lateral support (AASHTO 2.6.4.4.2, 10.7.3.6)${sc > i.topDepth ? `; ${num(sc - i.topDepth)} ft of the shaft stands free above the scoured ground` : ""}.`);
     shaftWorked(writer(lines), i, designShaft(i));
   }
 

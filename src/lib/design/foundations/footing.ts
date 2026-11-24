@@ -46,6 +46,9 @@ export type FootingInputs = {
   phi: number; // deg
   gammaBelow: number; // pcf, total
   Dw: number; // ft, ground to the water table
+  /** ft below the ground at the footing: the scour design flood's total scour (a Bridge Scour design); the base must be
+   * below it (AASHTO 10.6.1.2), and the soil above it isn't counted (0 or unset: none). */
+  scour?: number;
   depthFactor: boolean;
   qn: number; // ksf, entered nominal bearing resistance
   phiB: number; // bearing resistance factor (AASHTO Table 10.5.5.2.2-1)
@@ -88,6 +91,7 @@ export const FOOTING_DEFAULTS: FootingInputs = {
   phi: 34,
   gammaBelow: 125,
   Dw: 30,
+  scour: 0,
   depthFactor: false,
   qn: 30,
   phiB: 0.45,
@@ -306,11 +310,15 @@ export function designFooting(i: FootingInputs) {
   const cB = i.colShape === "round" ? Math.sqrt(colArea) : i.colB / 12; // ft
   const cL = i.colShape === "round" ? Math.sqrt(colArea) : i.colL / 12;
   const Wf = A * tF * i.gammaC; // kip
-  const Ws = Math.max(0, A - colArea) * Math.max(0, i.Df - tF) * (i.gammaAbove / 1000);
+  // Scour: the ground is lowered by it for the soil over the footing, the bearing's embedment and the passive resistance.
+  const sc = Math.max(0, i.scour ?? 0);
+  const DfS = Math.max(0, i.Df - sc); // ft, the base below the scoured ground
+  const Ws = Math.max(0, A - colArea) * Math.max(0, i.Df - tF - sc) * (i.gammaAbove / 1000);
 
   add({ id: "embedment", name: "Footing base at least 3 ft below the ground", demand: 3, capacity: i.Df, unit: "ft", ref: "CDOT BDM 10.4.2, 11.4", ok: i.onRock || i.Df >= 3, advisory: i.onRock });
   add({ id: "depth", name: "Footing at least 2'-6\" deep", demand: 30, capacity: i.t, unit: "in", ref: "CDOT BDM 11.4" });
   add({ id: "cover", name: "Cover over the footing's top", demand: 2, capacity: i.Df - i.t / 12, unit: "ft", ref: "CDOT BDM 11.4", advisory: i.onRock });
+  if (sc > 0) add({ id: "scour", name: "Footing base below the scour design flood's total scour", demand: sc, capacity: i.Df, unit: "ft", ref: "AASHTO 10.6.1.2, 2.6.4.4.2", ok: i.Df > sc || i.onRock, advisory: i.onRock });
 
   // --- the geotechnical checks, each case ----------------------------------------------------------------------
   const cases = i.cases.map((lc) => {
@@ -328,7 +336,7 @@ export function designFooting(i: FootingInputs) {
     const Bp = Math.max(0.01, i.B - 2 * eBb);
     const Lp = Math.max(0.01, i.L - 2 * eLb);
     const qeq = Vmax / (Bp * Lp);
-    const nb = i.bearing === "computed" ? nominalBearing({ c: i.c, phi: i.phi, gammaAbove: i.gammaAbove, gammaBelow: i.gammaBelow, Df: i.Df, Dw: i.Dw, B: Bp, L: Lp, depthFactor: i.depthFactor }) : null;
+    const nb = i.bearing === "computed" ? nominalBearing({ c: i.c, phi: i.phi, gammaAbove: i.gammaAbove, gammaBelow: i.gammaBelow, Df: DfS, Dw: Math.max(0, i.Dw - sc), B: Bp, L: Lp, depthFactor: i.depthFactor }) : null;
     const qn = nb ? nb.qn : i.qn;
     const phiB = lc.limit === "extreme" ? 1.0 : i.phiB;
     // Sliding with the least vertical load.
@@ -337,7 +345,7 @@ export function designFooting(i: FootingInputs) {
     const Kp = Math.tan(rad(45 + i.phi / 2)) ** 2;
     const g = i.gammaAbove / 1000;
     const width = lc.HB >= lc.HL ? i.L : i.B;
-    const Rep = i.passive ? 0.5 * Kp * g * (i.Df ** 2 - Math.max(0, i.Df - tF) ** 2) * width : 0;
+    const Rep = i.passive ? 0.5 * Kp * g * (DfS ** 2 - Math.max(0, DfS - tF) ** 2) * width : 0;
     const phiTau = lc.limit === "extreme" ? 1.0 : i.phiTau;
     const phiEp = lc.limit === "extreme" ? 1.0 : i.phiEp;
     const RR = phiTau * Rtau + phiEp * Rep;

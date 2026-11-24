@@ -48,6 +48,9 @@ export type ShaftInputs = {
   EIfactor: number; // effective stiffness / Ec·Ig
   tolerable: number; // in
   layers: ShaftLayer[]; // from the ground surface down
+  /** ft below the ground at the shaft: the scour design flood's total scour (from a Bridge Scour design), the soil above
+   * it gone for side resistance, overburden and lateral support (AASHTO 2.6.4.4.2, 10.7.3.6; 0 or unset: none). */
+  scour?: number;
   cases: ShaftCase[];
   /** The column on it (the Bridge sets it): an undersized shaft's bars run up into the column (CDOT BDM Figure 11-13). */
   column?: ColumnCage | null;
@@ -60,6 +63,7 @@ export const SHAFT_DEFAULTS: ShaftInputs = {
   D: 42,
   length: 38,
   topDepth: 2,
+  scour: 0,
   cover: 3,
   bar: 9,
   bars: 16,
@@ -174,16 +178,37 @@ export function shaftAxial(i: ShaftInputs) {
   return { rows, Rs, RRs, RRup, qp, Rp, phiP, RR: RRs + phiP * Rp, Ap, perim, tipLayer: tl, svTip };
 }
 
-export function designShaft(i: ShaftInputs) {
+/**
+ * A shaft after scour: the layers from the scoured surface down, the shaft's top measured from it, and the length of
+ * shaft standing free above it where the scour reaches below the top.
+ */
+export function scouredShaft(i: ShaftInputs) {
+  const s = Math.max(0, i.scour ?? 0);
+  if (!s) return { inputs: i, free: 0 };
+  const layers: ShaftLayer[] = [];
+  let z = 0;
+  for (const l of i.layers) {
+    const a = z;
+    const b = z + l.thickness;
+    if (b > s) layers.push({ ...l, thickness: b - Math.max(a, s) });
+    z = b;
+  }
+  return { inputs: { ...i, layers, topDepth: Math.max(0, i.topDepth - s) }, free: Math.max(0, s - i.topDepth) };
+}
+
+export function designShaft(original: ShaftInputs) {
+  const { inputs: i, free } = scouredShaft(original);
   if (!(i.D > 0 && i.length > 0)) throw new DesignError("The shaft needs a diameter and a length.");
   if (!i.cases.length) throw new DesignError("Enter at least one load case.");
   const checks: Check[] = [];
   const add = (c: Omit<Check, "ok"> & { ok?: boolean }) => checks.push({ ...c, ok: c.ok ?? c.demand <= c.capacity });
   add({ id: "diameter", name: "Diameter at least 24 in (bridges)", demand: 24, capacity: i.D, unit: "in", ref: "CDOT BDM 10.6.1.1", ok: i.D >= 24 });
-  add({ id: "top", name: "Top of the shaft under a single column at least 2 ft below the ground", demand: 2, capacity: i.topDepth, unit: "ft", ref: "CDOT BDM 10.6.1.1", advisory: true });
+  add({ id: "top", name: "Top of the shaft under a single column at least 2 ft below the ground", demand: 2, capacity: original.topDepth, unit: "ft", ref: "CDOT BDM 10.6.1.1", advisory: true });
+  if (original.scour) add({ id: "scour", name: `Scour: ${original.scour} ft below the ground (the scour design flood), the soil above it not counted${free > 0 ? `; ${free.toFixed(2)} ft of shaft stands free` : ""}`, demand: original.scour, capacity: original.topDepth + i.length, unit: "ft", ref: "AASHTO 2.6.4.4.2, 10.7.3.6", advisory: true });
   add({ id: "ld", name: "Length to diameter, typically under 25", demand: (i.length * 12) / i.D, capacity: 25, unit: "", ref: "CDOT BDM 10.6.1.1", advisory: true });
 
-  const ax = shaftAxial(i);
+  // Axial resistance over the length in the ground (below any scour that reaches past the shaft's top).
+  const ax = shaftAxial(free > 0 ? { ...i, length: Math.max(0.01, i.length - free) } : i);
   const D = i.D / 12;
   const Wshaft = ((Math.PI * D * D) / 4) * i.length * i.gammaC;
   const factored = i.cases.filter((c) => c.limit !== "service");
@@ -218,7 +243,8 @@ export function designShaft(i: ShaftInputs) {
       z = b;
     }
   }
-  const lat = (c: ShaftCase) => analyzeLateral({ length: i.length, D: i.D, EI, Q: c.P, head: { kind: "free", H: c.H, M: c.M }, layers: toLayers(below) });
+  // Scour below the shaft's top: the shaft stands free over that length (no lateral support).
+  const lat = (c: ShaftCase) => analyzeLateral({ length: i.length, D: i.D, EI, Q: c.P, head: { kind: "free", H: c.H, M: c.M }, layers: [...(free > 0 ? [{ thickness: free, model: { kind: "none" as const } }] : []), ...toLayers(below)] });
   const sec = columnSection({ shape: "round", T: i.D, W: i.D, cover: i.cover, bar: i.bar, bars: i.bars, barsT: 0, barsL: 0, barsEnd: 0, tieBar: i.tieBar, transverse: i.transverse, fc: i.fc, fy: i.fy });
   const db = BARS[i.bar].dia;
   const Dr = i.D - 2 * (i.cover + BARS[i.tieBar].dia) - db;

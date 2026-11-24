@@ -97,6 +97,8 @@ export type BridgeInputs = {
   slabDesignId?: string | null;
   /** The deck slab's design (the deck between the girders, the overhang and the rail), set and created by the Bridge. */
   deckDesignId?: string | null;
+  /** A Bridge Scour design (HEC-18): its scour design flood's total scour at each pier goes to the pier's foundation. */
+  scourDesignId?: string | null;
   // The linked designs (the Bridge sets their layout and loads)
   girderDesignIds: (string | null)[]; // one per group of spans (continuous across continuous piers)
   components: { support: number; bearingId?: string | null; abutmentId?: string | null; approachSlabId?: string | null; wingwallId?: string | null; jointId?: string | null; capId?: string | null; columnId?: string | null; foundationId?: string | null; foundationKind?: "spread-footing" | "pile-foundation" | "drilled-shaft" | null; jointKind?: JointKind | null }[];

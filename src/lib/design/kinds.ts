@@ -37,6 +37,7 @@ import { GRS_DEFAULTS, type GrsInputs } from "./grs/abutment";
 import { HEADWALL_DEFAULTS, type HeadwallInputs } from "./culverts/headwall";
 import { HIGH_MAST_DEFAULTS, type HighMastInputs } from "./signals/highmast";
 import { NOISE_WALL_DEFAULTS, type NoiseWallInputs } from "./noisewall/wall";
+import { SCOUR_DEFAULTS, type ScourInputs } from "./scour/scour";
 import { THREE_SIDED_DEFAULTS, type ThreeSidedInputs } from "./culverts/three-sided";
 import { LRFR_DEFAULTS } from "./girders/lrfr";
 import { MODULAR_DEFAULTS, type ModularJointInputs } from "./joints/modular";
@@ -60,7 +61,7 @@ import { steelGirderInputs } from "./girders/steel";
 // The Design section's categories and design types: highway structures to AASHTO LRFD, grouped
 // by element. What can be designed, and what's coming next.
 
-export type DesignKind = "pipe-headwall" | "high-mast-foundation" | "grs-abutment" | "noise-wall" | "pipe-culvert" | "three-sided-culvert" | "soil-nail-wall" | "shoring-wall" | "signal-foundation" | "sign-bridge" | "modular-joint" | "finger-joint" | "lrfd-girder-check" | "steel-girder-check" | "slab-bridge" | "dt-load-rating" | "stm-d-region" | "cip-cantilever-wall" | "mse-wall" | "cantilever-wingwall" | "box-culvert" | "deck-slab" | "seismic-zone1" | "pier-column" | "camber-haunch" | "sign-cantilever" | "elastomeric-bearing" | "ptfe-bearing" | "pot-disc-bearing" | "strip-seal-joint" | "approach-slab" | "spread-footing" | "pile-foundation" | "drilled-shaft" | "micropile" | "abutment";
+export type DesignKind = "bridge-scour" | "pipe-headwall" | "high-mast-foundation" | "grs-abutment" | "noise-wall" | "pipe-culvert" | "three-sided-culvert" | "soil-nail-wall" | "shoring-wall" | "signal-foundation" | "sign-bridge" | "modular-joint" | "finger-joint" | "lrfd-girder-check" | "steel-girder-check" | "slab-bridge" | "dt-load-rating" | "stm-d-region" | "cip-cantilever-wall" | "mse-wall" | "cantilever-wingwall" | "box-culvert" | "deck-slab" | "seismic-zone1" | "pier-column" | "camber-haunch" | "sign-cantilever" | "elastomeric-bearing" | "ptfe-bearing" | "pot-disc-bearing" | "strip-seal-joint" | "approach-slab" | "spread-footing" | "pile-foundation" | "drilled-shaft" | "micropile" | "abutment";
 
 export const CATEGORIES: { id: string; name: string; kinds: { id: DesignKind; name: string; short: string; description: string; available: boolean }[] }[] = [
   {
@@ -130,6 +131,13 @@ export const CATEGORIES: { id: string; name: string; kinds: { id: DesignKind; na
     name: "Seismic",
     kinds: [
       { id: "seismic-zone1", name: "Seismic Zone 1 Check", short: "Connection forces, support lengths, confinement", description: "A bridge in Seismic Zone 1, where no seismic analysis is required: the zone, horizontal connection forces at each support, minimum support lengths, and confinement spirals in the columns' plastic hinge regions. AASHTO LRFD 3.10.6, 3.10.9.2, 4.7.4.4 and 5.11.", available: true },
+    ],
+  },
+  {
+    id: "hydraulics",
+    name: "Hydraulics",
+    kinds: [
+      { id: "bridge-scour", name: "Bridge Scour", short: "Contraction, pier and abutment scour by HEC-18", description: "Bridge scour by FHWA HEC-18 (2012) as CDOT requires it (DDM 10.6, Scour Program Manual 3.4.5): live-bed or clear-water contraction scour and pressure flow, local pier scour (CSU equation with debris, multiple columns and the wide-pier factor), NCHRP 24-20 abutment scour, and the total and minimum scour elevation at each pier and abutment for the scour design and check floods.", available: true },
     ],
   },
   {
@@ -263,6 +271,22 @@ export function highMastInputs(saved: unknown): HighMastInputs {
 export function grsInputs(saved: unknown): GrsInputs {
   const s = (saved && typeof saved === "object" ? saved : {}) as Partial<GrsInputs>;
   return { ...GRS_DEFAULTS, ...s };
+}
+
+/** A bridge scour design's inputs as saved, filled in from the defaults. */
+export function scourInputs(saved: unknown): ScourInputs {
+  const s = (saved && typeof saved === "object" ? saved : {}) as Partial<ScourInputs>;
+  const d = SCOUR_DEFAULTS;
+  return {
+    ...d,
+    ...s,
+    floods: (Array.isArray(s.floods) && s.floods.length ? s.floods : d.floods).map((f, k) => {
+      const b = d.floods[Math.min(k, d.floods.length - 1)];
+      return { ...b, ...f, contraction: { ...b.contraction, ...(f?.contraction ?? {}) }, pressure: { ...b.pressure, ...(f?.pressure ?? {}) } };
+    }),
+    piers: (Array.isArray(s.piers) ? s.piers : d.piers).map((p) => ({ ...d.piers[0], ...p, columns: { ...d.piers[0].columns, ...(p?.columns ?? {}) }, debris: { ...d.piers[0].debris, ...(p?.debris ?? {}) }, flow: Array.isArray(p?.flow) && p.flow.length ? p.flow : d.piers[0].flow })),
+    abutments: (Array.isArray(s.abutments) ? s.abutments : d.abutments).map((a) => ({ ...d.abutments[0], ...a, flow: Array.isArray(a?.flow) && a.flow.length ? a.flow : d.abutments[0].flow })),
+  };
 }
 
 /** A noise wall's inputs as saved, filled in from the defaults. */
@@ -453,5 +477,5 @@ function parseInputs(kind: string, saved: unknown) {
   if (kind === "dt-load-rating") return dtRatingInputs(saved);
   if (kind === "stm-d-region") return stmInputs(saved);
   if (kind === "pier-column") return columnInputs(saved);
-  return kind === "mse-wall" ? mseInputs(saved) : kind === "box-culvert" ? cbcInputs(saved) : kind === "elastomeric-bearing" ? bearingInputs(saved) : kind === "cantilever-wingwall" ? wingwallInputs(saved) : kind === "deck-slab" ? deckInputs(saved) : kind === "seismic-zone1" ? zone1Inputs(saved) : kind === "camber-haunch" ? haunchInputs(saved) : kind === "sign-cantilever" ? signInputs(saved) : kind === "ptfe-bearing" ? ptfeInputs(saved) : kind === "strip-seal-joint" ? stripSealInputs(saved) : kind === "approach-slab" ? approachSlabInputs(saved) : kind === "slab-bridge" ? slabBridgeInputs(saved) : kind === "pot-disc-bearing" ? hlmrInputs(saved) : kind === "modular-joint" ? modularInputs(saved) : kind === "sign-bridge" ? signBridgeInputs(saved) : kind === "signal-foundation" ? signalInputs(saved) : kind === "shoring-wall" ? shoringInputs(saved) : kind === "soil-nail-wall" ? soilNailInputs(saved) : kind === "pipe-culvert" ? pipeInputs(saved) : kind === "grs-abutment" ? grsInputs(saved) : kind === "pipe-headwall" ? headwallInputs(saved) : kind === "high-mast-foundation" ? highMastInputs(saved) : kind === "noise-wall" ? noiseWallInputs(saved) : kind === "three-sided-culvert" ? threeSidedInputs(saved) : kind === "finger-joint" ? fingerInputs(saved) : cipInputs(saved);
+  return kind === "mse-wall" ? mseInputs(saved) : kind === "box-culvert" ? cbcInputs(saved) : kind === "elastomeric-bearing" ? bearingInputs(saved) : kind === "cantilever-wingwall" ? wingwallInputs(saved) : kind === "deck-slab" ? deckInputs(saved) : kind === "seismic-zone1" ? zone1Inputs(saved) : kind === "camber-haunch" ? haunchInputs(saved) : kind === "sign-cantilever" ? signInputs(saved) : kind === "ptfe-bearing" ? ptfeInputs(saved) : kind === "strip-seal-joint" ? stripSealInputs(saved) : kind === "approach-slab" ? approachSlabInputs(saved) : kind === "slab-bridge" ? slabBridgeInputs(saved) : kind === "pot-disc-bearing" ? hlmrInputs(saved) : kind === "modular-joint" ? modularInputs(saved) : kind === "sign-bridge" ? signBridgeInputs(saved) : kind === "signal-foundation" ? signalInputs(saved) : kind === "shoring-wall" ? shoringInputs(saved) : kind === "soil-nail-wall" ? soilNailInputs(saved) : kind === "pipe-culvert" ? pipeInputs(saved) : kind === "grs-abutment" ? grsInputs(saved) : kind === "pipe-headwall" ? headwallInputs(saved) : kind === "high-mast-foundation" ? highMastInputs(saved) : kind === "noise-wall" ? noiseWallInputs(saved) : kind === "bridge-scour" ? scourInputs(saved) : kind === "three-sided-culvert" ? threeSidedInputs(saved) : kind === "finger-joint" ? fingerInputs(saved) : cipInputs(saved);
 }

@@ -33,6 +33,21 @@ describe("bridge scour calc package", () => {
       piers: [{ ...SCOUR_DEFAULTS.piers[0], shape: "columns" as const, debris: { on: true, shape: "triangular" as const, W: 20, H: 4 } }],
       abutments: [{ ...SCOUR_DEFAULTS.abutments[0], type: "wingwall" as const, LBf: 0.85 }],
     }],
+    ["the FDOT method at an angle, and a cohesive bed's contraction over a flood's duration", {
+      ...SCOUR_DEFAULTS,
+      floods: SCOUR_DEFAULTS.floods.map((f, k) => ({ ...f, contraction: { ...f.contraction, cohesive: { on: true, tauc: 0.05, n: 0.025, zdot: k ? 0 : 0.1, hours: 48 } } })),
+      piers: [{ ...SCOUR_DEFAULTS.piers[0], method: "fdot" as const, shape: "square" as const, L: 20, flow: SCOUR_DEFAULTS.piers[0].flow.map((f) => ({ ...f, angle: 15 })) }],
+    }],
+    ["a pile cap in the flow on exposed piles (Case 1)", {
+      ...SCOUR_DEFAULTS,
+      piers: [{ ...SCOUR_DEFAULTS.piers[0], shape: "square" as const, a: 4, L: 20, complex: { ...SCOUR_DEFAULTS.piers[0].complex!, on: true, capWidth: 12, capLength: 30, T: 4, capBottom: 96, piles: { on: true, across: 3, rows: 2, d: 1.5, S: 4.5, square: true } } }],
+    }],
+    ["an exposed footing (Case 2)", {
+      ...SCOUR_DEFAULTS,
+      piers: [{ ...SCOUR_DEFAULTS.piers[0], a: 4, L: 20, complex: { ...SCOUR_DEFAULTS.piers[0].complex!, on: true, capWidth: 10, capLength: 25, T: 4, capBottom: 92 } }],
+    }],
+    ["a cohesive bed at the pier", { ...SCOUR_DEFAULTS, piers: [{ ...SCOUR_DEFAULTS.piers[0], material: { kind: "cohesive" as const, Vc: 4, K: 0, S: 0, GSN: 0, omega: 0 } }] }],
+    ["erodible rock at the pier, with abrasion", { ...SCOUR_DEFAULTS, piers: [{ ...SCOUR_DEFAULTS.piers[0], material: { kind: "rock" as const, Vc: 0, K: 0.5, S: 0.004, GSN: 0.02, omega: 30 } }] }],
   ];
   for (const [name, inputs] of cases)
     it(`works out ${name} with no errors, matching the engine`, () => {

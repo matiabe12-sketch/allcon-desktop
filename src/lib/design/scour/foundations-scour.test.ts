@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { designShaft, scouredShaft, SHAFT_DEFAULTS } from "../foundations/shaft";
 import { designFooting, FOOTING_DEFAULTS } from "../foundations/footing";
+import { designPiles, PILE_DEFAULTS } from "../foundations/piles";
+import { ABUTMENT_DEFAULTS, designAbutment } from "../foundations/abutment";
 import { analyzeBridge } from "../../bridge/bridge";
 import { BRIDGE_DEFAULTS, bridgeDefinition, supportsFor } from "../../bridge/definition";
 import { designPrefill, designTargets } from "../../bridge/design-links";
@@ -40,6 +42,52 @@ describe("a spread footing with scour", () => {
     const shallow = designFooting({ ...FOOTING_DEFAULTS, Df: 4, scour: 5 });
     expect(shallow.checks.find((c) => c.id === "scour")!.ok).toBe(false);
     expect(designFooting({ ...FOOTING_DEFAULTS, Df: 8 }).checks.some((c) => c.id === "scour")).toBe(false);
+  });
+});
+
+describe("the check flood's scour at the Extreme Event (AASHTO 2.6.4.4.2, 10.5.5.3.2)", () => {
+  it("a spread footing's top must be at or below the check flood's scour (AASHTO 10.6.1.2)", () => {
+    const top = FOOTING_DEFAULTS.Df - FOOTING_DEFAULTS.t / 12;
+    expect(designFooting({ ...FOOTING_DEFAULTS, scour: 1, scourCheck: top - 0.5 }).checks.find((c) => c.id === "scour")!.ok).toBe(true);
+    const deep = designFooting({ ...FOOTING_DEFAULTS, scour: 1, scourCheck: top + 0.5 }).checks.find((c) => c.id === "scour")!;
+    expect(deep.ok).toBe(false);
+    expect(deep.demand).toBeCloseTo(top + 0.5, 9);
+  });
+  it("a drilled shaft's Extreme Event case is checked with the deeper scour; Strength keeps the design flood's", () => {
+    const cases = [...SHAFT_DEFAULTS.cases, { name: "Extreme Event II", limit: "extreme" as const, P: 700, M: 300, H: 30, uplift: 0 }];
+    const r = designShaft({ ...SHAFT_DEFAULTS, cases, scour: 3, scourCheck: 9 });
+    const same = designShaft({ ...SHAFT_DEFAULTS, cases, scour: 3 });
+    const check = r.checks.find((c) => c.id === "axial-check")!;
+    expect(check).toBeDefined();
+    expect(r.checks.some((c) => c.id === "scour-check")).toBe(true);
+    expect(r.checks.find((c) => c.id === "axial")!.capacity).toBeCloseTo(same.checks.find((c) => c.id === "axial")!.capacity, 6);
+    expect(check.capacity).toBeLessThan(designShaft({ ...SHAFT_DEFAULTS, cases, scour: 3, scourCheck: 4 }).checks.find((c) => c.id === "axial-check")!.capacity);
+    expect(same.checks.some((c) => c.id === "axial-check" || c.id === "scour-check")).toBe(false);
+  });
+  it("piles: the Extreme Event cases take the check flood's unsupported length", () => {
+    const cases = [...PILE_DEFAULTS.cases, { ...PILE_DEFAULTS.cases[0], name: "Extreme Event II", limit: "extreme" as const }];
+    const run = (cs: typeof cases, chk: number) => JSON.stringify(designPiles({ ...PILE_DEFAULTS, cases: cs, unsupported: 0, unsupportedCheck: chk }).checks);
+    expect(run(PILE_DEFAULTS.cases, 8)).toBe(run(PILE_DEFAULTS.cases, 0)); // no Extreme Event case: no effect
+    expect(run(cases, 8)).not.toBe(run(cases, 0));
+  });
+});
+
+describe("an abutment's foundation with the abutment's scour", () => {
+  it("a footing abutment: its top at or below the check flood's scour", () => {
+    const i = { ...ABUTMENT_DEFAULTS, type: "seat" as const, foundation: "footing" as const };
+    const top = i.Df - i.footT;
+    const ok = designAbutment({ ...i, scour: 0.5, scourCheck: Math.max(0.1, top - 0.5) });
+    expect(ok.checks.find((c) => c.id === "scour-footing")!.ok).toBe(true);
+    const bad = designAbutment({ ...i, scour: 0.5, scourCheck: top + 1 });
+    expect(bad.checks.find((c) => c.id === "scour-footing")!.ok).toBe(false);
+    expect(bad.checks.some((c) => c.id === "scour")).toBe(true);
+  });
+  it("piles under the abutment lose lateral support down to the scour", () => {
+    const i = { ...ABUTMENT_DEFAULTS, type: "seat" as const, foundation: "piles" as const };
+    const a = designAbutment(i);
+    const b = designAbutment({ ...i, scour: i.Df + 6 });
+    expect(JSON.stringify(b.checks)).not.toBe(JSON.stringify(a.checks));
+    expect(b.checks.find((c) => c.id === "scour")!.name).toMatch(/no lateral support/);
   });
 });
 

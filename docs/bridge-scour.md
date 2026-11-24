@@ -38,6 +38,21 @@ Kind `bridge-scour`, `src/lib/design/scour/`, in the catalog's new "Hydraulics" 
   yc = (q2/(Ku D50^(1/3)))^(6/7) (Eq. 8.6), or by a cohesive floodplain's τc (Eq. 8.7); ymax = α yc (Eq. 8.3),
   ys = ymax − y0.
 - **Non-erodible rock:** an element's scour stops at the top of rock where one is given (SPM; HEC-18 4.7).
+- **FDOT method (7.3, chosen per pier):** a* = Ksf a_proj (Ksf for square noses by the angle, L at most 12a); Vc by
+  Eqs. 7.12-7.14, Vlp = max(5Vc, 0.6 (g y1)^0.5); f1, f2, f3 (Eqs. 7.8-7.10); the four regions (none below 0.4Vc,
+  clear-water to Vc, linear to the live-bed peak at Vlp, the peak beyond).
+- **Complex piers (7.5):** a footing or pile cap in the flow, by superposition: the stem by Kh pier (Figure 7.6's fit);
+  the cap as Case 1 (bottom above the bed after the stem's scour: an equivalent full-depth pier by Figure 7.7's fit, y2
+  at most 3.5 apc) or Case 2 (on or below it: the full width in the flow below its top, Eqs. 7.25-7.27); exposed piles
+  by Ksp, Km and Kh pg (Figures 7.11-7.13; y3 at most 3.5 a*pg). The bed under the cap is first lowered by degradation
+  and contraction scour (h0 from the cap's bottom elevation).
+- **Cohesive beds:** contraction by the critical shear stress (Eq. 6.6), and with an initial erosion rate and the
+  flood's duration, the scour reached in that time (Eq. 6.8); piers by Eq. 7.35 with the bed's critical velocity
+  (both from erosion tests).
+- **Erodible rock (7.13):** quarrying and plucking by the erodibility index (Pc = K^0.75, the approach stream power,
+  where the pier's falls to Pc), plus abrasion GSN x cumulative stream power.
+- **The scour plot:** each element's datum and minimum scour elevation for every flood, abutment to abutment, in the
+  tool and the calc package (SPM 3.4.5.5).
 
 ## Judgment calls
 
@@ -51,6 +66,10 @@ Kind `bridge-scour`, `src/lib/design/scour/`, in the catalog's new "Hydraulics" 
 4. **Medium dunes:** K3 1.2 (the table's 1.2 to 1.1, the upper end).
 
 ## Validation
+
+- HEC-18's FDOT Example 6 (23.1 ft), complex pier Examples 3 (exposed footing: 0.6 + 14.8 = 15.4 ft) and 4
+  (Woodrow Wilson: stem 3.2, cap 12.8, piles 21.24 ft; ours within 3%, the figures' fits against reading by eye), the
+  cohesive pier example (12.2 ft) and the rock example (0.38 m).
 
 - HEC-18's worked examples: pressure flow Examples 1–3 (5.27 and 8.05 ft), pier Examples 1, 2 and 7 (9.9, 28.3,
   8.9 ft; a*d 3.78 and 7.3 ft), abutment Examples 3–5 (12.6, 10.4 ft; yc 5.1 ft).
@@ -72,9 +91,18 @@ Kind `bridge-scour`, `src/lib/design/scour/`, in the catalog's new "Hydraulics" 
   - piles: their unsupported length.
 - The foundation tools take the same `scour` input on their own.
 
+## The foundations: design and check floods
+
+- The load path passes each pier's design flood total and the check flood's (the largest flood's) total: footing and
+  shaft `scour` / `scourCheck`, piles `unsupported` / `unsupportedCheck`; each abutment's to the Abutment tool.
+- Strength and Service use the design flood's scour, the Extreme Event cases the check flood's (AASHTO 2.6.4.4.2,
+  resistance factors 1.0 by 10.5.5.3.2): the shaft's axial, uplift and lateral analyses per case; the piles' unsupported
+  length per case; the footing's bearing from the scoured ground per case.
+- A spread footing's top must be at or below the check flood's scour (AASHTO 10.6.1.2).
+- The Abutment tool: bearing from the scoured ground, the footing's top check, and the piles, micropiles and shafts
+  without lateral support down to the scour.
+
 ## Not yet
 
-- The check flood's scour at the Extreme Event in the foundations (only the design flood's is passed).
-- Abutment foundations (the Abutment tool's piles) taking the abutments' scour.
-- The FDOT (Sheppard–Melville) pier method, complex piers (exposed footings and pile caps, 7.5), scour in cohesive soils
-  and erodible rock (HEC-18 Chapter 4, NCHRP 717), and the scour plot on the Bridge Hydraulic Information sheet.
+- Debris on an FDOT pier (HEC-18 doesn't validate the effective width for it; noted, not prevented).
+- Skewed and staggered pile groups use the two rows and one column nearest the projection plane (HEC-18's simplification).

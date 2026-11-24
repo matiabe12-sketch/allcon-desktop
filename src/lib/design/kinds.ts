@@ -282,9 +282,9 @@ export function scourInputs(saved: unknown): ScourInputs {
     ...s,
     floods: (Array.isArray(s.floods) && s.floods.length ? s.floods : d.floods).map((f, k) => {
       const b = d.floods[Math.min(k, d.floods.length - 1)];
-      return { ...b, ...f, contraction: { ...b.contraction, ...(f?.contraction ?? {}) }, pressure: { ...b.pressure, ...(f?.pressure ?? {}) } };
+      return { ...b, ...f, contraction: { ...b.contraction, ...(f?.contraction ?? {}), cohesive: { ...b.contraction.cohesive!, ...(f?.contraction?.cohesive ?? {}) } }, pressure: { ...b.pressure, ...(f?.pressure ?? {}) } };
     }),
-    piers: (Array.isArray(s.piers) ? s.piers : d.piers).map((p) => ({ ...d.piers[0], ...p, columns: { ...d.piers[0].columns, ...(p?.columns ?? {}) }, debris: { ...d.piers[0].debris, ...(p?.debris ?? {}) }, flow: Array.isArray(p?.flow) && p.flow.length ? p.flow : d.piers[0].flow })),
+    piers: (Array.isArray(s.piers) ? s.piers : d.piers).map((p) => ({ ...d.piers[0], ...p, columns: { ...d.piers[0].columns, ...(p?.columns ?? {}) }, debris: { ...d.piers[0].debris, ...(p?.debris ?? {}) }, material: { ...d.piers[0].material!, ...(p?.material ?? {}) }, complex: { ...d.piers[0].complex!, ...(p?.complex ?? {}), piles: { ...d.piers[0].complex!.piles, ...(p?.complex?.piles ?? {}) } }, flow: Array.isArray(p?.flow) && p.flow.length ? p.flow : d.piers[0].flow })),
     abutments: (Array.isArray(s.abutments) ? s.abutments : d.abutments).map((a) => ({ ...d.abutments[0], ...a, flow: Array.isArray(a?.flow) && a.flow.length ? a.flow : d.abutments[0].flow })),
   };
 }

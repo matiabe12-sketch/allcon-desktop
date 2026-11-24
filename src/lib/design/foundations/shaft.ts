@@ -51,6 +51,9 @@ export type ShaftInputs = {
   /** ft below the ground at the shaft: the scour design flood's total scour (from a Bridge Scour design), the soil above
    * it gone for side resistance, overburden and lateral support (AASHTO 2.6.4.4.2, 10.7.3.6; 0 or unset: none). */
   scour?: number;
+  /** ft below the ground: the scour design check flood's total scour, for the Extreme Event cases (AASHTO 2.6.4.4.2,
+   * 10.5.5.3.2); 0 or unset: the design flood's. */
+  scourCheck?: number;
   cases: ShaftCase[];
   /** The column on it (the Bridge sets it): an undersized shaft's bars run up into the column (CDOT BDM Figure 11-13). */
   column?: ColumnCage | null;
@@ -64,6 +67,7 @@ export const SHAFT_DEFAULTS: ShaftInputs = {
   length: 38,
   topDepth: 2,
   scour: 0,
+  scourCheck: 0,
   cover: 3,
   bar: 9,
   bars: 16,
@@ -196,19 +200,44 @@ export function scouredShaft(i: ShaftInputs) {
   return { inputs: { ...i, layers, topDepth: Math.max(0, i.topDepth - s) }, free: Math.max(0, s - i.topDepth) };
 }
 
+/** The layers from the shaft's top down (what's above it cut off). */
+function layersBelowTop(i: ShaftInputs) {
+  const below: ShaftLayer[] = [];
+  let z = 0;
+  for (const l of i.layers) {
+    const a = z;
+    const b = z + l.thickness;
+    const from = Math.max(a, i.topDepth);
+    if (b > from) below.push({ ...l, thickness: b - from });
+    z = b;
+  }
+  return below;
+}
+
 export function designShaft(original: ShaftInputs) {
-  const { inputs: i, free } = scouredShaft(original);
+  // The ground as each case sees it: the scour design flood's scour for Strength and Service, the check flood's for
+  // the Extreme Event (AASHTO 2.6.4.4.2, 10.5.5.3.2).
+  const scenario = (sc: number) => {
+    const s = scouredShaft({ ...original, scour: sc });
+    const ax = shaftAxial(s.free > 0 ? { ...s.inputs, length: Math.max(0.01, s.inputs.length - s.free) } : s.inputs);
+    return { ...s, ax, below: layersBelowTop(s.inputs), scour: sc };
+  };
+  const design = scenario(Math.max(0, original.scour ?? 0));
+  const checkFlood = (original.scourCheck ?? 0) > design.scour ? scenario(original.scourCheck!) : design;
+  const of = (c: ShaftCase) => (c.limit === "extreme" ? checkFlood : design);
+  const { inputs: i, free } = design;
   if (!(i.D > 0 && i.length > 0)) throw new DesignError("The shaft needs a diameter and a length.");
   if (!i.cases.length) throw new DesignError("Enter at least one load case.");
   const checks: Check[] = [];
   const add = (c: Omit<Check, "ok"> & { ok?: boolean }) => checks.push({ ...c, ok: c.ok ?? c.demand <= c.capacity });
   add({ id: "diameter", name: "Diameter at least 24 in (bridges)", demand: 24, capacity: i.D, unit: "in", ref: "CDOT BDM 10.6.1.1", ok: i.D >= 24 });
   add({ id: "top", name: "Top of the shaft under a single column at least 2 ft below the ground", demand: 2, capacity: original.topDepth, unit: "ft", ref: "CDOT BDM 10.6.1.1", advisory: true });
+  if (checkFlood !== design) add({ id: "scour-check", name: `Scour at the check flood: ${checkFlood.scour} ft below the ground, for the Extreme Event cases${checkFlood.free > 0 ? `; ${checkFlood.free.toFixed(2)} ft of shaft stands free` : ""}`, demand: checkFlood.scour, capacity: original.topDepth + i.length, unit: "ft", ref: "AASHTO 2.6.4.4.2, 10.5.5.3.2", advisory: true });
   if (original.scour) add({ id: "scour", name: `Scour: ${original.scour} ft below the ground (the scour design flood), the soil above it not counted${free > 0 ? `; ${free.toFixed(2)} ft of shaft stands free` : ""}`, demand: original.scour, capacity: original.topDepth + i.length, unit: "ft", ref: "AASHTO 2.6.4.4.2, 10.7.3.6", advisory: true });
   add({ id: "ld", name: "Length to diameter, typically under 25", demand: (i.length * 12) / i.D, capacity: 25, unit: "", ref: "CDOT BDM 10.6.1.1", advisory: true });
 
   // Axial resistance over the length in the ground (below any scour that reaches past the shaft's top).
-  const ax = shaftAxial(free > 0 ? { ...i, length: Math.max(0.01, i.length - free) } : i);
+  const ax = design.ax;
   const D = i.D / 12;
   const Wshaft = ((Math.PI * D * D) / 4) * i.length * i.gammaC;
   const factored = i.cases.filter((c) => c.limit !== "service");
@@ -218,11 +247,17 @@ export function designShaft(original: ShaftInputs) {
     const g = pick(factored, (c) => c.P);
     const f = g.limit === "strength" ? 1.25 : 1;
     const Pu = g.P + f * Wshaft;
-    const RR = g.limit === "extreme" ? ax.Rs + ax.Rp : ax.RR;
+    const RR = g.limit === "extreme" ? of(g).ax.Rs + of(g).ax.Rp : ax.RR;
     add({ id: "axial", name: `Axial compression: side and tip (${g.name})`, demand: Pu, capacity: RR, unit: "kip", ref: "AASHTO 10.8.3.5" });
+    // The Extreme Event cases at the check flood's deeper scour, if the governing case above isn't one.
+    const ext = factored.filter((c) => c.limit === "extreme");
+    if (checkFlood !== design && ext.length && g.limit !== "extreme") {
+      const e = pick(ext, (c) => c.P);
+      add({ id: "axial-check", name: `Axial compression at the check flood's scour (${e.name})`, demand: e.P + Wshaft, capacity: checkFlood.ax.Rs + checkFlood.ax.Rp, unit: "kip", ref: "AASHTO 10.8.3.5, 10.5.5.3.2" });
+    }
     const u = pick(factored, (c) => c.uplift);
     if (u.uplift > 0) {
-      const RRup = (u.limit === "extreme" ? Math.min(0.8, 1) * ax.Rs : ax.RRup) + 0.9 * Wshaft;
+      const RRup = (u.limit === "extreme" ? Math.min(0.8, 1) * of(u).ax.Rs : ax.RRup) + 0.9 * Wshaft;
       add({ id: "uplift", name: `Uplift: side resistance and the shaft's weight (${u.name})`, demand: u.uplift, capacity: RRup, unit: "kip", ref: u.limit === "extreme" ? "AASHTO 10.8.3.7, CDOT BDM 10.3.3" : "AASHTO 10.8.3.7" });
     }
   }
@@ -231,20 +266,11 @@ export function designShaft(original: ShaftInputs) {
   const Ec = 120000 * i.gammaC ** 2 * i.fc ** 0.33;
   const Ig = (Math.PI * i.D ** 4) / 64;
   const EI = i.EIfactor * Ec * Ig;
-  // The layers from the shaft's top: cut off what's above it.
-  const below: typeof i.layers = [];
-  {
-    let z = 0;
-    for (const l of i.layers) {
-      const a = z;
-      const b = z + l.thickness;
-      const from = Math.max(a, i.topDepth);
-      if (b > from) below.push({ ...l, thickness: b - from });
-      z = b;
-    }
-  }
-  // Scour below the shaft's top: the shaft stands free over that length (no lateral support).
-  const lat = (c: ShaftCase) => analyzeLateral({ length: i.length, D: i.D, EI, Q: c.P, head: { kind: "free", H: c.H, M: c.M }, layers: [...(free > 0 ? [{ thickness: free, model: { kind: "none" as const } }] : []), ...toLayers(below)] });
+  // Each case on its ground; scour below the shaft's top leaves the shaft free over that length (no lateral support).
+  const lat = (c: ShaftCase) => {
+    const sc = of(c);
+    return analyzeLateral({ length: i.length, D: i.D, EI, Q: c.P, head: { kind: "free", H: c.H, M: c.M }, layers: [...(sc.free > 0 ? [{ thickness: sc.free, model: { kind: "none" as const } }] : []), ...toLayers(sc.below)] });
+  };
   const sec = columnSection({ shape: "round", T: i.D, W: i.D, cover: i.cover, bar: i.bar, bars: i.bars, barsT: 0, barsL: 0, barsEnd: 0, tieBar: i.tieBar, transverse: i.transverse, fc: i.fc, fy: i.fy });
   const db = BARS[i.bar].dia;
   const Dr = i.D - 2 * (i.cover + BARS[i.tieBar].dia) - db;

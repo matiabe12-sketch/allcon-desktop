@@ -199,6 +199,12 @@ export type AbutmentInputs = {
   gammaBelow: number; // pcf
   Dw: number; // ft below the footing's base... from the ground in front
   Df: number; // ft, ground in front to the footing's base
+  /** ft below the ground in front: the abutment's total scour at the scour design flood (a Bridge Scour design), and
+   * at the check flood (0 or unset: none / the design flood's). The soil above it is gone for the foundation's lateral
+   * support and the footing's bearing; a footing's top must be at or below the check flood's (AASHTO 10.6.1.2). An
+   * integral abutment's cap is taken at the ground in front (conservative). */
+  scour?: number;
+  scourCheck?: number;
   phiB: number;
   phiTau: number;
 };
@@ -327,6 +333,8 @@ export const ABUTMENT_DEFAULTS: AbutmentInputs = {
   gammaBelow: 125,
   Dw: 30,
   Df: 4,
+  scour: 0,
+  scourCheck: 0,
   phiB: 0.45,
   phiTau: 0.8,
 };
@@ -430,6 +438,25 @@ export function designAbutment(i: AbutmentInputs) {
   const checks: Check[] = [];
   const add = (c: Omit<Check, "ok"> & { ok?: boolean }) => checks.push({ ...c, ok: c.ok ?? c.demand <= c.capacity });
   const integral = i.type === "integral-piles" || i.type === "integral-shafts" || i.type === "integral-micropiles";
+  // Scour below the foundation's base (the footing's or cap's): the top of each pile's or shaft's soil gone over it.
+  const scour = Math.max(0, i.scour ?? 0);
+  const scourChk = Math.max(scour, i.scourCheck ?? 0);
+  const scourBelowBase = Math.max(0, scour - (integral ? 0 : i.Df));
+  const scoured = (layers: Layer[]): Layer[] => {
+    if (!(scourBelowBase > 0)) return layers;
+    const out: Layer[] = [{ thickness: scourBelowBase, model: { kind: "none" } }];
+    let rem = scourBelowBase;
+    for (const l of layers) {
+      if (rem >= l.thickness) {
+        rem -= l.thickness;
+        continue;
+      }
+      out.push(rem > 0 ? { ...l, thickness: l.thickness - rem } : l);
+      rem = 0;
+    }
+    return out;
+  };
+  if (scour > 0) add({ id: "scour", name: `Scour: ${scour} ft below the ground in front (the scour design flood), ${scourBelowBase > 0 ? `${scourBelowBase.toFixed(2)} ft below the ${integral ? "cap" : "base"}: no lateral support there` : "above the base"}`, demand: scour, capacity: scour, unit: "ft", ref: "AASHTO 2.6.4.4.2", advisory: true });
   const ec = 120000 * i.gammaC ** 2 * i.fc ** 0.33;
   const beta1 = Math.min(0.85, Math.max(0.65, 0.85 - (i.fc - 4) * 0.05));
   const common = { fc: i.fc, fy: i.fy, Es: 29000, phiF: 0.9, exposure: i.exposure, n: 29000 / ec, beta1 };
@@ -592,7 +619,7 @@ export function designAbutment(i: AbutmentInputs) {
       add({ id: "embed", name: "Pile embedment into the cap, for information: the BDM 10.5.3 fixed-head length (the design takes a pin)", demand: Math.round(fixityEmbedment(s, i.Fy, i.fc)), capacity: i.embed, unit: "in", ref: "CDOT BDM 10.5.3, 11.3.1", advisory: true });
       const layers: Layer[] = [...(i.prebore > 0 ? [pea] : []), ...toLayers(i.soil).map((l, k) => (k === 0 && i.prebore > 0 ? { ...l, thickness: Math.max(0, l.thickness - i.prebore) } : l))];
       // BDM 11.3.1: a pin is taken to form between the cap and the pile; the pile's head moves with the cap.
-      const push = pushed((y) => analyzeLateral({ length: i.pileLength, D: s.bf, EI: 29000 * s.Iy, Q: Pu, head: { kind: "displaced", y, pinned: true }, layers }), n);
+      const push = pushed((y) => analyzeLateral({ length: i.pileLength, D: s.bf, EI: 29000 * s.Iy, Q: Pu, head: { kind: "displaced", y, pinned: true }, layers: scoured(layers) }), n);
       const lat = push.lat;
       // Buckling: the length without confinement plus the depth to fixity, K = 2.1 (pinned head free to sway, fixed below).
       const unconfined = i.peaGravel ? 0 : i.prebore;
@@ -623,7 +650,7 @@ export function designAbutment(i: AbutmentInputs) {
       const ID = mp.casingOD - 2 * mp.casingT;
       const Ic = (Math.PI / 64) * (mp.casingOD ** 4 - ID ** 4);
       const Zc = (mp.casingOD ** 3 - ID ** 3) / 6;
-      const push = pushed((y) => analyzeLateral({ length: mp.cased + mp.bond, D: mp.casingOD, EI: 29000 * Ic, Q: PmaxS, head: { kind: "displaced", y, pinned: true }, layers: toLayers(i.soil) }), n * rowsMP);
+      const push = pushed((y) => analyzeLateral({ length: mp.cased + mp.bond, D: mp.casingOD, EI: 29000 * Ic, Q: PmaxS, head: { kind: "displaced", y, pinned: true }, layers: scoured(toLayers(i.soil)) }), n * rowsMP);
       const lat = push.lat;
       const Pr = r.checks.find((c) => c.id === "cased-comp")?.capacity ?? r.checks.find((c) => c.id === "uncased-comp")?.capacity ?? 0;
       const Mr = 1.0 * Math.min(mp.casingFy, 80) * Zc / 12; // kip·ft, the casing (AASHTO 6.12.2.2.3, φf 1.0)
@@ -635,7 +662,7 @@ export function designAbutment(i: AbutmentInputs) {
       add({ id: "shaft-d", name: "Shaft diameter at least 24 in", demand: 24, capacity: i.shaftD, unit: "in", ref: "CDOT BDM 10.6.1.1" });
       const Ec = ec;
       const EI = 0.5 * Ec * ((Math.PI * i.shaftD ** 4) / 64);
-      const push = pushed((y) => analyzeLateral({ length: i.shaftLength, D: i.shaftD, EI, Q: Pu, head: { kind: "displaced", y, pinned: true }, layers: toLayers(i.soil) }), n);
+      const push = pushed((y) => analyzeLateral({ length: i.shaftLength, D: i.shaftD, EI, Q: Pu, head: { kind: "displaced", y, pinned: true }, layers: scoured(toLayers(i.soil)) }), n);
       const lat = push.lat;
       const sec = columnSection({ shape: "round", T: i.shaftD, W: i.shaftD, cover: i.cover, bar: i.shaftBar, bars: i.shaftBars, barsT: 0, barsL: 0, barsEnd: 0, tieBar: 5, transverse: "spiral", fc: i.fc, fy: i.fy });
       const res = sec.resistance(Pu, lat.Mmax * 12, 0);
@@ -939,7 +966,9 @@ export function designAbutment(i: AbutmentInputs) {
       add({ id: "ecc", name: `Eccentricity (${worstE.c.name}${endStrip})`, demand: Math.abs(worstE.e), capacity: B / 3, unit: "ft", ref: "AASHTO 10.6.3.3, 11.6.3.3" });
       const bmax = strength[0];
       const Bp = Math.max(0.01, B - 2 * Math.abs(bmax.e));
-      const nb = nominalBearing({ c: i.c, phi: i.phi, gammaAbove: i.backfillGamma, gammaBelow: i.gammaBelow, Df: i.Df, Dw: i.Dw, B: Bp, L: 1e6, depthFactor: false });
+      const nb = nominalBearing({ c: i.c, phi: i.phi, gammaAbove: i.backfillGamma, gammaBelow: i.gammaBelow, Df: Math.max(0, i.Df - scour), Dw: i.Dw, B: Bp, L: 1e6, depthFactor: false });
+      // AASHTO 10.6.1.2: the footing's top at or below the scour check flood's scour.
+      if (scourChk > 0) add({ id: "scour-footing", name: `Footing's top at or below the scour check flood's total scour (${scourChk} ft)`, demand: scourChk, capacity: i.Df - i.footT, unit: "ft", ref: "AASHTO 10.6.1.2, 2.6.4.4.2" });
       let qeq = bmax.V / Bp;
       if (oneWing > 0) {
         const M = Mlong(bmax.c);
@@ -999,7 +1028,7 @@ export function designAbutment(i: AbutmentInputs) {
       // unless set strong (`seatPileAxis`): neither AASHTO nor the CDOT BDM sets a seat abutment's pile orientation, so
       // the weak axis is the default (the conservative choice; the owner's rule, 2026-11-20).
       const strong = i.seatPileAxis === "strong";
-      const lat = analyzeLateral({ length: i.pileLength, D: strong ? s.bf : s.d, EI: 29000 * (strong ? s.Ix : s.Iy), Q: Math.max(Pfront, Pback), pm, head: { kind: "fixed", H: Hp }, layers: toLayers(i.soil) });
+      const lat = analyzeLateral({ length: i.pileLength, D: strong ? s.bf : s.d, EI: 29000 * (strong ? s.Ix : s.Iy), Q: Math.max(Pfront, Pback), pm, head: { kind: "fixed", H: Hp }, layers: scoured(toLayers(i.soil)) });
       const ax = axialResistance(s, i.Fy, 0);
       const fxx = flexuralResistance(s, i.Fy, strong ? "x" : "y");
       const inter = strong ? interaction(Math.max(Pfront, Pback), PHI_PILE.combinedAxial * ax.Pn, lat.Mmax * 12, fxx.Mn, 0, 1, fxx.compact) : interaction(Math.max(Pfront, Pback), PHI_PILE.combinedAxial * ax.Pn, 0, 1, lat.Mmax * 12, fxx.Mn, fxx.compact);

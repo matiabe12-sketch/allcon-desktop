@@ -28,6 +28,9 @@ export type ScourFlood = {
     W2: number; // ft, its width less the piers'
     y0: number; // ft, its existing average depth
     armor: boolean; // live-bed limited by armoring: the smaller of the live-bed and clear-water depths (6.3 Note 8)
+    /** A cohesive bed (6.7): ultimate scour by its critical shear stress (Eq. 6.6), and, with the initial erosion rate
+     * (ft/hr) and the flood's duration (hr), the scour reached in that time (Eq. 6.8). Off: the granular equations. */
+    cohesive?: { on: boolean; tauc: number; n: number; zdot: number; hours: number };
   };
   pressure: {
     on: boolean; // the water surface upstream reaches the low chord
@@ -41,8 +44,30 @@ export type ScourFlood = {
 export type PierShape = "square" | "round" | "circular" | "sharp" | "columns";
 export type BedCondition = "clear" | "plane" | "small-dunes" | "medium-dunes" | "large-dunes";
 
+/** A pier's footing or pile cap and its piles (HEC-18 7.5, complex piers), when they're in or may come into the flow. */
+export type ComplexPier = {
+  on: boolean;
+  capWidth: number; // ft, the cap's (footing's) width normal to the flow (apc)
+  capLength: number; // ft, along the flow
+  T: number; // ft, its thickness
+  capBottom: number; // ft El., its bottom
+  f: number; // ft, its overhang upstream of the pier stem
+  ks: number; // ft, bed roughness for the velocity on an exposed footing (D84 for sand, 3.5 D84 for gravel)
+  capShape: "square" | "round";
+  /** Columns across the flow, rows along it, the pile's width (ft), spacing center to center (ft). */
+  piles: { on: boolean; across: number; rows: number; d: number; S: number; square: boolean };
+};
+
+/** The bed at a pier: granular (HEC-18 7.2 or FDOT 7.3), cohesive (Eq. 7.35, by its critical velocity, ft/s), or
+ * erodible rock (7.13: Erodibility Index K, the energy slope S; abrasion by GSN, ft per unit stream power, × Ω). */
+export type PierMaterial = { kind: "granular" | "cohesive" | "rock"; Vc: number; K: number; S: number; GSN: number; omega: number };
+
 export type ScourPier = {
   name: string;
+  /** HEC-18's CSU equation (7.2), or the FDOT methodology (7.3, Sheppard–Melville), for granular beds. */
+  method?: "hec18" | "fdot";
+  material?: PierMaterial;
+  complex?: ComplexPier;
   support?: number; // the Bridge's support (0 the first abutment), when linked
   shape: PierShape;
   a: number; // ft, width (a column's diameter for "columns")
@@ -128,14 +153,140 @@ export function contractionScour(c: ScourFlood["contraction"], p: ScourFlood["pr
     const y2p = live ? (c.armor ? Math.min(liveY2(p.Qb, Que, hue), clearY2(p.Qb)) : liveY2(p.Qb, Que, hue)) : clearY2(p.Qb);
     pressure = { t, ht, hw, y2: y2p, ys: Math.max(0, y2p + t - p.hb), overtopping };
   }
-  return { V, Vc, live, Dm, fall, Vstar, k1, yLive, yClear, y2, ys, pressure, governs: pressure && pressure.ys > ys ? ("pressure" as const) : ("contraction" as const), depth: Math.max(ys, pressure?.ys ?? 0) };
+  // A cohesive bed (6.7): the ultimate scour by its critical shear stress (Eq. 6.6, Briaud 2011) in place of the granular
+  // equations; with an initial erosion rate and a duration, the scour reached in that time (Eq. 6.8).
+  let cohesive: { V2: number; ult: number; ys: number; timed: boolean } | null = null;
+  const co = c.cohesive;
+  if (co?.on) {
+    if (!(co.tauc > 0 && co.n > 0)) throw new DesignError("A cohesive bed needs its critical shear stress and Manning n.");
+    const V2 = c.Q2 / (c.W2 * c.y0);
+    const ult = Math.max(0, 0.94 * c.y1 * ((1.83 * V2) / Math.sqrt(g * c.y1) - (1.486 * Math.sqrt(co.tauc / 1.94)) / (g * co.n * c.y1 ** (1 / 3))));
+    const timed = co.zdot > 0 && co.hours > 0 && ult > 0;
+    cohesive = { V2, ult, ys: timed ? co.hours / (1 / co.zdot + co.hours / ult) : ult, timed };
+  }
+  const ysBed = cohesive ? cohesive.ys : ys;
+  return { V, Vc, live, Dm, fall, Vstar, k1, yLive, yClear, y2, ys: ysBed, granular: ys, cohesive, pressure, governs: pressure && pressure.ys > ysBed ? ("pressure" as const) : ("contraction" as const), depth: Math.max(ysBed, pressure?.ys ?? 0) };
 }
 
 const K1_SHAPE: Record<Exclude<PierShape, "columns">, number> = { square: 1.1, round: 1.0, circular: 1.0, sharp: 0.9 };
 const K3_BED: Record<BedCondition, number> = { clear: 1.1, plane: 1.1, "small-dunes": 1.1, "medium-dunes": 1.2, "large-dunes": 1.3 };
 
-/** Local pier scour by the HEC-18 (CSU) equation (Eqs. 7.1/7.3), with its factors. */
-export function pierScour(pier: ScourPier, flow: ScourPier["flow"][number], D50mm: number) {
+/** FDOT methodology (HEC-18 7.3): the critical velocity (Eqs. 7.12–7.14), the live-bed peak (7.11), and the four regions. */
+export function fdotPier(aStar: number, y1: number, V1: number, D50mm: number) {
+  const Dmm = Math.min(100, Math.max(0.1, D50mm));
+  const ustar = Dmm < 1 ? 0.0377 + 0.041 * Dmm ** 1.4 : 0.1 * Math.sqrt(Dmm) - 0.0213 / Dmm; // ft/s (Ku 1.0)
+  const D = ft(Dmm);
+  const Vc = 5.75 * ustar * Math.log10((5.53 * y1) / D);
+  const Vlp = Math.max(5 * Vc, 0.6 * Math.sqrt(g * y1));
+  const f1 = Math.tanh((y1 / aStar) ** 0.4);
+  const r = aStar / D;
+  const f3 = r ** 1.13 / (10.6 + 0.4 * r ** 1.33);
+  const ysC = 2.5 * f1 * f3 * aStar;
+  const ysLp = 2.2 * f1 * aStar;
+  let ys: number;
+  let region: string;
+  if (V1 < 0.4 * Vc) [ys, region] = [0, "I (V1 < 0.4Vc, no scour)"];
+  else if (V1 <= Vc) [ys, region] = [(1 - 1.2 * Math.log(V1 / Vc) ** 2) * ysC, "II (clear-water)"];
+  else if (V1 >= Vlp) [ys, region] = [ysLp, "IV (live-bed peak)"];
+  else [ys, region] = [ysC + ((V1 - Vc) / (Vlp - Vc)) * (ysLp - ysC), "III (live-bed)"];
+  return { ustar, Vc, Vlp, f1, f3, ysC, ysLp, ys, region };
+}
+
+/** Kh pier (HEC-18 Figure 7.6's fit): the pier stem's share over a cap or footing, by h1/a and f/a. */
+export function khPier(h1a: number, fa: number) {
+  const x = Math.max(-1, Math.min(2, h1a));
+  const v = 0.4075 - 0.0669 * fa - (0.4271 - 0.0778 * fa) * x + (0.1615 - 0.0455 * fa) * x * x - (0.0269 - 0.012 * fa) * x ** 3;
+  return Math.max(0, Math.min(1, v));
+}
+
+/** A complex pier by the superposition of its components (HEC-18 7.5): the stem, the cap or footing, the pile group.
+ * h0: the cap's bottom above the bed at the start (after degradation and contraction scour), ft. */
+export function complexPier(pier: ScourPier, flow: ScourPier["flow"][number], D50mm: number, h0: number) {
+  const cx = pier.complex!;
+  const { y1, V1 } = flow;
+  const th = (Math.abs(flow.angle) * Math.PI) / 180;
+  const K3 = K3_BED[pier.bed];
+  const Dft = ft(D50mm);
+  const csu = (K1: number, K2: number, a: number, y: number, V: number, Kw = 1) => 2.0 * K1 * K2 * K3 * Kw * a * (y / a) ** 0.35 * (V / Math.sqrt(g * y)) ** 0.43;
+  const K2of = (L: number, a: number) => (Math.cos(th) + Math.min(L / a, 12) * Math.sin(th)) ** 0.65;
+  const kw = (y: number, a: number, V: number) => {
+    const Fr = V / Math.sqrt(g * y);
+    if (!pier.wide || !(y < 0.8 * a && Fr < 1 && a > 50 * Dft)) return 1;
+    return Math.min(1, V / criticalVelocity(y, D50mm) < 1 ? 2.58 * (y / a) ** 0.34 * Fr ** 0.65 : (y / a) ** 0.13 * Fr ** 0.25);
+  };
+  // The pier stem (7.5.3, Eq. 7.23): a full-depth pier's scour times Kh pier.
+  const a = pier.a;
+  const angled = Math.abs(flow.angle) > 5;
+  const K1s = angled || pier.shape === "columns" ? 1 : K1_SHAPE[pier.shape];
+  const h1 = h0 + cx.T;
+  const Kh = khPier(h1 / a, cx.f / a);
+  const ysPier = Kh * csu(K1s, K2of(Math.max(pier.L, a), a), a, y1, V1);
+  // The cap or footing (7.5.4).
+  const y2 = y1 + ysPier / 2;
+  const V2 = (V1 * y1) / y2;
+  const h2 = h0 + ysPier / 2;
+  const K1c = angled ? 1 : cx.capShape === "square" ? 1.1 : 1.0;
+  const K2c = K2of(Math.max(cx.capLength, cx.capWidth), cx.capWidth);
+  let cap: { case: 1 | 2; aStar: number; y: number; V: number; Kw: number; ys: number };
+  if (h2 > 0) {
+    // Case 1: its bottom above the bed: an equivalent full-depth pier (Figure 7.7's fit, y2 at most 3.5 apc; Eq. 7.24).
+    const yc = Math.min(y2, 3.5 * cx.capWidth);
+    const ratio = Math.exp(-2.705 + 0.51 * Math.log(cx.T / yc) - 2.783 * (h2 / yc) ** 3 + 1.751 / Math.exp(h2 / yc));
+    const aStar = ratio * cx.capWidth;
+    const Kw = kw(y2, aStar, V2);
+    cap = { case: 1, aStar, y: y2, V: V2, Kw, ys: csu(K1c, K2c, aStar, y2, V2, Kw) };
+  } else {
+    // Case 2: on or below the bed: the full width in the flow below its top (Eqs. 7.25, 7.26).
+    const yf = Math.max(0.01, h1 + ysPier / 2);
+    const Vf = (V2 * Math.log((10.93 * yf) / cx.ks + 1)) / Math.log((10.93 * y2) / cx.ks + 1);
+    const Kw = kw(y2, cx.capWidth, V2);
+    cap = { case: 2, aStar: cx.capWidth, y: yf, V: Vf, Kw, ys: csu(K1c, K2c, cx.capWidth, yf, Vf, Kw) };
+  }
+  // The pile group (7.5.5), Case 1 only (Case 2's footing component includes it, Eq. 7.27).
+  let group: { aproj: number; Ksp: number; Km: number; aStar: number; h3: number; y3: number; V3: number; Kh: number; ys: number } | null = null;
+  const pg = cx.piles;
+  if (cap.case === 1 && pg.on && pg.across > 0 && pg.rows > 0 && pg.d > 0) {
+    const h3 = h0 + (ysPier + cap.ys) / 2;
+    const y3 = y1 + (ysPier + cap.ys) / 2;
+    const V3 = (V1 * y1) / y3;
+    const aligned = Math.abs(flow.angle) < 1e-6;
+    // Projected widths: the collapsed group if aligned; else the non-overlapping projections of the two rows and one
+    // column nearest the projection plane (Figure 7.10).
+    let aproj: number;
+    if (aligned) aproj = pg.across * pg.d;
+    else {
+      const w = pg.square ? pg.d * (Math.cos(th) + Math.sin(th)) : pg.d;
+      const pts: number[] = [];
+      for (let r = 0; r < Math.min(2, pg.rows); r++) for (let c = 0; c < pg.across; c++) pts.push(c * pg.S * Math.cos(th) - r * pg.S * Math.sin(th));
+      for (let r = 2; r < pg.rows; r++) pts.push(-r * pg.S * Math.sin(th));
+      const iv = pts.map((p) => [p - w / 2, p + w / 2]).sort((u, v) => u[0] - v[0]);
+      aproj = 0;
+      let end = -Infinity;
+      for (const [lo, hi] of iv) {
+        if (hi > end) aproj += hi - Math.max(lo, end);
+        end = Math.max(end, hi);
+      }
+    }
+    const Sd = pg.S / pg.d;
+    const Ksp = 1 - (4 / 3) * (1 - 1 / (aproj / pg.d)) * (1 - Sd ** -0.6); // Figure 7.11's fit
+    const Km = aligned ? 0.9 + 0.1 * pg.rows - 0.0714 * (pg.rows - 1) * (2.4 - 1.1 * Sd + 0.1 * Sd * Sd) : 1; // Figure 7.12's
+    const aStar = aproj * Ksp * Km; // Eq. 7.28
+    const y3c = Math.min(y3, 3.5 * aStar);
+    const x = Math.max(0, Math.min(1, h3 / y3c));
+    const Khpg = Math.max(0, 3.08 * x - 5.23 * x * x + 5.25 * x ** 3 - 2.1 * x ** 4) ** (1 / 0.65); // Figure 7.13's
+    const K1p = pg.square ? 1.1 : 1.0;
+    const ys = Khpg * 2.0 * K1p * K3 * aStar * (y3c / aStar) ** 0.35 * (V3 / Math.sqrt(g * y3c)) ** 0.43; // Eq. 7.31
+    group = { aproj, Ksp, Km, aStar, h3, y3: y3c, V3, Kh: Khpg, ys };
+  }
+  return { h0, h1, Kh, ysPier, cap, group, ys: ysPier + cap.ys + (group?.ys ?? 0) };
+}
+
+/**
+ * Local pier scour: HEC-18's CSU equation (Eqs. 7.1/7.3) with its factors, or FDOT's (7.3); a complex pier by
+ * superposition (7.5); a cohesive bed by Eq. 7.35; erodible rock by the Erodibility Index method and abrasion (7.13).
+ * `bedDrop`: degradation and contraction scour, lowering the bed under a cap or footing first (7.5.2).
+ */
+export function pierScour(pier: ScourPier, flow: ScourPier["flow"][number], D50mm: number, bedDrop = 0) {
   const { y1, V1 } = flow;
   if (!(pier.a > 0 && y1 > 0 && V1 >= 0)) throw new DesignError(`${pier.name}: give its width and the flow's depth and velocity.`);
   const th = (Math.abs(flow.angle) * Math.PI) / 180;
@@ -187,7 +338,41 @@ export function pierScour(pier: ScourPier, flow: ScourPier["flow"][number], D50m
   const ys = groupFactor * 2.0 * K1 * K2 * K3 * Kw * a * (y1 / a) ** 0.35 * Fr ** 0.43; // Eq. 7.3
   // The rule of thumb (Eq. 7.2) for round-nosed piers aligned with the flow: shown, not applied (it would lower scour).
   const limit = (Fr <= 0.8 ? 2.4 : 3.0) * a;
-  return { a, ad, L, K1, K2, K3, Kw, Fr, Vc, wideApplies, groupFactor, ys, limit, notes };
+  const hec = { a, ad, L, K1, K2, K3, Kw, Fr, Vc, wideApplies, groupFactor, ys, limit, notes };
+  const none = { complex: null, fdot: null, rock: null };
+  const mat = pier.material?.kind ?? "granular";
+  // A cohesive bed (Eq. 7.35, Briaud 2011), by the material's critical velocity.
+  if (mat === "cohesive") {
+    const m = pier.material!;
+    if (!(m.Vc > 0)) throw new DesignError(`${pier.name}: give the cohesive bed's critical velocity.`);
+    const ysC = 2.2 * K1 * K2 * a ** 0.65 * Math.max(0, (2.6 * V1 - m.Vc) / Math.sqrt(g)) ** 0.7;
+    return { ...hec, ...none, ys: groupFactor * ysC, method: "cohesive" as const, notes: [...notes, `cohesive bed (Eq. 7.35), Vc ${m.Vc} ft/s`] };
+  }
+  // Erodible rock (7.13): quarrying and plucking by the Erodibility Index K (Eqs. 7.37–7.40, in SI), plus abrasion (7.41).
+  if (mat === "rock") {
+    const m = pier.material!;
+    if (!(m.K > 0 && m.S > 0)) throw new DesignError(`${pier.name}: give the rock's erodibility index and the energy slope.`);
+    const Pc = m.K ** 0.75; // kW/m², Eq. 7.38
+    const tau = 9810 * (y1 * 0.3048) * m.S; // Pa, γ y S
+    const Pa = (7.853 * 1000 * (tau / 1000) ** 1.5) / 1000; // kW/m², Eq. 7.39
+    const ratio = Math.max(0, Math.log((8.42 * Pa) / Pc) / 0.712); // ys/b where P (Eq. 7.40) falls to Pc
+    const plucking = ratio * a;
+    const abrasion = Math.max(0, m.GSN) * Math.max(0, m.omega);
+    return { ...hec, ...none, ys: plucking + abrasion, method: "rock" as const, rock: { Pc, tau, Pa, ratio, plucking, abrasion }, notes: [...notes, `rock: K ${m.K}, Pc ${Pc.toFixed(2)} kW/m², Pa ${Pa.toFixed(3)} kW/m²${abrasion > 0 ? `, abrasion ${abrasion.toFixed(2)} ft` : ""}`] };
+  }
+  // A complex pier (7.5), each component by HEC-18's equation.
+  if (pier.complex?.on && pier.shape !== "columns") {
+    const cx = complexPier(pier, flow, D50mm, pier.complex.capBottom - (pier.datum - bedDrop));
+    return { ...hec, ...none, ys: cx.ys, method: "complex" as const, complex: cx, notes: [...notes, `complex pier: stem ${cx.ysPier.toFixed(2)} + ${cx.cap.case === 1 ? "cap" : "footing"} ${cx.cap.ys.toFixed(2)}${cx.group ? ` + piles ${cx.group.ys.toFixed(2)}` : ""} ft`] };
+  }
+  // FDOT (7.3): a* = Ksf · a_proj (Eqs. 7.15–7.18), L/a at most 12 as HEC-18's example takes it.
+  if (pier.method === "fdot") {
+    const Ksf = pier.shape === "square" ? 0.86 + 0.97 * Math.abs(th - Math.PI / 4) ** 4 : 1.0;
+    const aproj = cols && !solidCols ? a : a * Math.cos(th) + Math.min(L, 12 * a) * Math.sin(th);
+    const fd = fdotPier(Ksf * aproj, y1, V1, D50mm);
+    return { ...hec, ...none, ys: groupFactor * fd.ys, method: "fdot" as const, fdot: { ...fd, Ksf, aproj, aStar: Ksf * aproj }, notes: [...notes, `FDOT region ${fd.region}, a* ${(Ksf * aproj).toFixed(2)} ft${pier.debris.on ? "; the debris's effective width isn't validated for FDOT (HEC-18 7.7.3)" : ""}`] };
+  }
+  return { ...hec, ...none, method: "hec18" as const };
 }
 
 // NCHRP 24-20 amplification factors, read from HEC-18 Figures 8.9 to 8.12 (the solid design curves), as
@@ -258,7 +443,7 @@ export function designScour(i: ScourInputs) {
     return rock !== null && Number.isFinite(rock) && e < rock ? { elevation: rock, rockLimited: true } : { elevation: e, rockLimited: false };
   };
   const piers = i.piers.map((p) => {
-    const local = i.floods.map((f, k) => pierScour(p, p.flow[k] ?? p.flow[0], i.D50));
+    const local = i.floods.map((f, k) => pierScour(p, p.flow[k] ?? p.flow[0], i.D50, f.ltd + (p.contraction ? contraction[k].depth : 0)));
     const floods = i.floods.map((f, k) => {
       const cs = p.contraction ? contraction[k].depth : 0;
       const total = f.ltd + cs + local[k].ys;
@@ -289,6 +474,10 @@ export type ScourResult = ReturnType<typeof designScour>;
 
 /** A pier's flow for a flood, as the defaults give it. */
 const pierFlow = (y1: number, V1: number) => ({ y1, V1, angle: 0 });
+/** Off by default: a granular bed, no cap or footing in the flow. */
+export const COHESIVE_OFF = { on: false, tauc: 0.05, n: 0.025, zdot: 0, hours: 0 };
+export const MATERIAL_DEFAULT: PierMaterial = { kind: "granular", Vc: 0, K: 0, S: 0.002, GSN: 0, omega: 0 };
+export const COMPLEX_OFF: ComplexPier = { on: false, capWidth: 8, capLength: 30, T: 4, capBottom: 92, f: 2.5, ks: 0.01, capShape: "square", piles: { on: false, across: 3, rows: 2, d: 1.5, S: 4.5, square: false } };
 
 /**
  * Defaults: HEC-18's own example values where it has them (a 100-year design flood and a 500-year check flood on a
@@ -300,11 +489,11 @@ export const SCOUR_DEFAULTS: ScourInputs = {
   tauc: 0,
   nFloodplain: 0.035,
   floods: [
-    { name: "Scour design flood (Q100)", ltd: 0, contraction: { mode: "auto", Q1: 2000, W1: 40, y1: 10, S1: 0.002, Q2: 2800, W2: 40, y0: 10, armor: false }, pressure: { on: false, hu: 10, hb: 8, T: 3, Qb: 2800 } },
-    { name: "Scour design check flood (Q500)", ltd: 0, contraction: { mode: "auto", Q1: 2600, W1: 40, y1: 11.5, S1: 0.002, Q2: 3800, W2: 40, y0: 10, armor: false }, pressure: { on: false, hu: 11.5, hb: 8, T: 3, Qb: 3800 } },
+    { name: "Scour design flood (Q100)", ltd: 0, contraction: { mode: "auto", Q1: 2000, W1: 40, y1: 10, S1: 0.002, Q2: 2800, W2: 40, y0: 10, armor: false, cohesive: COHESIVE_OFF }, pressure: { on: false, hu: 10, hb: 8, T: 3, Qb: 2800 } },
+    { name: "Scour design check flood (Q500)", ltd: 0, contraction: { mode: "auto", Q1: 2600, W1: 40, y1: 11.5, S1: 0.002, Q2: 3800, W2: 40, y0: 10, armor: false, cohesive: COHESIVE_OFF }, pressure: { on: false, hu: 11.5, hb: 8, T: 3, Qb: 3800 } },
   ],
   piers: [
-    { name: "Pier 2", support: undefined, shape: "round", a: 3, L: 30, columns: { n: 3, spacing: 12 }, bed: "clear", wide: false, contraction: true, debris: { on: false, shape: "rectangular", W: 10, H: 3 }, datum: 100, rock: null, flow: [pierFlow(10, 7), pierFlow(11.5, 8)] },
+    { name: "Pier 2", support: undefined, shape: "round", a: 3, L: 30, columns: { n: 3, spacing: 12 }, bed: "clear", wide: false, contraction: true, debris: { on: false, shape: "rectangular", W: 10, H: 3 }, datum: 100, rock: null, flow: [pierFlow(10, 7), pierFlow(11.5, 8)], method: "hec18", material: MATERIAL_DEFAULT, complex: COMPLEX_OFF },
   ],
   abutments: [
     { name: "Abutment 1", type: "spill-through", LBf: 0.6, datum: 105, rock: null, flow: [{ q1: 5.7, q2: 10.1, y1: 3.5, y0: 3.5 }, { q1: 7, q2: 13, y1: 4.5, y0: 4.5 }] },

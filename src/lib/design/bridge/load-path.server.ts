@@ -104,10 +104,11 @@ export async function runLoadPath(o: {
       return null;
     }
   })();
-  /** The scour design flood's total scour (ft) at a support, rounded to 0.1 ft; null without a design or element there. */
+  /** The scour design flood's and the check flood's total scour (ft) at a support, to 0.1 ft; null without a design or element there. */
   const scourAt = (k: number) => {
     const e = scourRes?.elements.find((x) => x.support === k);
-    return e ? Math.round(e.floods[0].total * 10) / 10 : null;
+    const r1 = (v: number) => Math.round(v * 10) / 10;
+    return e ? { design: r1(e.floods[0].total), check: r1(Math.max(...e.floods.map((f) => f.total))) } : null;
   };
 
   // --- girders: one design per group of spans (none for a slab bridge: its slab design below) -------------------------
@@ -225,7 +226,10 @@ export async function runLoadPath(o: {
     // An abutment's design first: a semi-integral abutment's end diaphragm rides on the bearings.
     const abut = s.type.endsWith("abutment") ? await load(c.abutmentId, "abutment") : null;
     const abutBefore = abut ? abutmentInputs(abut.inputs) : abutmentInputs({});
-    const abutNext = s.type.endsWith("abutment") ? abutmentFromBridge(b, run, k, abutBefore, { braking: shares[k].braking, windLong: windAlong(run, shares[k]) }) : null;
+    // With a linked Bridge Scour design, the abutment's design- and check-flood scour, below the ground in front.
+    const abScour = scourAt(k);
+    const abutBase = s.type.endsWith("abutment") ? abutmentFromBridge(b, run, k, abutBefore, { braking: shares[k].braking, windLong: windAlong(run, shares[k]) }) : null;
+    const abutNext = abutBase && abScour ? { ...abutBase, scour: abScour.design, scourCheck: abScour.check } : abutBase;
     // Its wingwalls, where the Bridge has them: their geometry and bars, so their Section B forces reach the abutment.
     const wdPre = abutNext ? await load(c.wingwallId, "cantilever-wingwall") : null;
     if (abutNext && wdPre) {
@@ -368,7 +372,7 @@ export async function runLoadPath(o: {
       // Scour (a linked Bridge Scour design): the scour design flood's total scour at this pier, below the ground at
       // its foundation (AASHTO 2.6.4.4.2): a footing's or shaft's scour depth, piles' unsupported length.
       const sc = scourAt(k);
-      if (sc !== null) fNext = kind === "pile-foundation" ? { ...fNext, unsupported: sc } : { ...fNext, scour: sc };
+      if (sc) fNext = kind === "pile-foundation" ? { ...fNext, unsupported: sc.design, unsupportedCheck: sc.check } : { ...fNext, scour: sc.design, scourCheck: sc.check };
     }
     c.foundationId = await upsert(`foundation-${k}`, `${s.name}, foundation`, kind, fd, fBefore, fNext, colResult ? verdictTry(() => runFoundation(kind, fNext).checks) : "the column's base forces are needed first", `${prefix}, ${s.name} foundation`);
   }

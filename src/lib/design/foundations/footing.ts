@@ -46,9 +46,12 @@ export type FootingInputs = {
   phi: number; // deg
   gammaBelow: number; // pcf, total
   Dw: number; // ft, ground to the water table
-  /** ft below the ground at the footing: the scour design flood's total scour (a Bridge Scour design); the base must be
-   * below it (AASHTO 10.6.1.2), and the soil above it isn't counted (0 or unset: none). */
+  /** ft below the ground at the footing: the scour design flood's total scour (a Bridge Scour design), the soil above it
+   * not counted at Strength and Service (0 or unset: none). */
   scour?: number;
+  /** ft below the ground: the scour design check flood's total scour, for the Extreme Event cases; the footing's top
+   * must be at or below it (AASHTO 10.6.1.2). 0 or unset: the design flood's. */
+  scourCheck?: number;
   depthFactor: boolean;
   qn: number; // ksf, entered nominal bearing resistance
   phiB: number; // bearing resistance factor (AASHTO Table 10.5.5.2.2-1)
@@ -92,6 +95,7 @@ export const FOOTING_DEFAULTS: FootingInputs = {
   gammaBelow: 125,
   Dw: 30,
   scour: 0,
+  scourCheck: 0,
   depthFactor: false,
   qn: 30,
   phiB: 0.45,
@@ -310,19 +314,26 @@ export function designFooting(i: FootingInputs) {
   const cB = i.colShape === "round" ? Math.sqrt(colArea) : i.colB / 12; // ft
   const cL = i.colShape === "round" ? Math.sqrt(colArea) : i.colL / 12;
   const Wf = A * tF * i.gammaC; // kip
-  // Scour: the ground is lowered by it for the soil over the footing, the bearing's embedment and the passive resistance.
+  // Scour: the ground is lowered by it for the soil over the footing, the bearing's embedment and the passive resistance;
+  // the design flood's at Strength and Service, the check flood's at the Extreme Event (AASHTO 2.6.4.4.2).
   const sc = Math.max(0, i.scour ?? 0);
-  const DfS = Math.max(0, i.Df - sc); // ft, the base below the scoured ground
-  const Ws = Math.max(0, A - colArea) * Math.max(0, i.Df - tF - sc) * (i.gammaAbove / 1000);
+  const scChk = Math.max(sc, i.scourCheck ?? 0);
+  const scourOf = (limit: string) => (limit === "extreme" ? scChk : sc);
+  const WsAt = (d: number) => Math.max(0, A - colArea) * Math.max(0, i.Df - tF - d) * (i.gammaAbove / 1000);
+  const Ws = WsAt(sc);
 
   add({ id: "embedment", name: "Footing base at least 3 ft below the ground", demand: 3, capacity: i.Df, unit: "ft", ref: "CDOT BDM 10.4.2, 11.4", ok: i.onRock || i.Df >= 3, advisory: i.onRock });
   add({ id: "depth", name: "Footing at least 2'-6\" deep", demand: 30, capacity: i.t, unit: "in", ref: "CDOT BDM 11.4" });
   add({ id: "cover", name: "Cover over the footing's top", demand: 2, capacity: i.Df - i.t / 12, unit: "ft", ref: "CDOT BDM 11.4", advisory: i.onRock });
-  if (sc > 0) add({ id: "scour", name: "Footing base below the scour design flood's total scour", demand: sc, capacity: i.Df, unit: "ft", ref: "AASHTO 10.6.1.2, 2.6.4.4.2", ok: i.Df > sc || i.onRock, advisory: i.onRock });
+  // AASHTO 10.6.1.2: the footing's top at or below the scour check flood's scour (where scour can reach it).
+  if (scChk > 0) add({ id: "scour", name: `Footing's top at or below the scour check flood's total scour (${scChk} ft)`, demand: scChk, capacity: i.Df - tF, unit: "ft", ref: "AASHTO 10.6.1.2, 2.6.4.4.2", ok: i.Df - tF >= scChk - 1e-9 || i.onRock, advisory: i.onRock });
 
   // --- the geotechnical checks, each case ----------------------------------------------------------------------
   const cases = i.cases.map((lc) => {
     const f = weightFactors(lc.limit);
+    const scL = scourOf(lc.limit);
+    const Ws = WsAt(scL);
+    const DfS = Math.max(0, i.Df - scL); // ft, the base below the scoured ground
     const MBb = lc.MB + lc.HB * tF; // kip·ft at the base
     const MLb = lc.ML + lc.HL * tF;
     const Vmax = lc.P + f.maxDC * Wf + f.maxEV * Ws;
@@ -336,7 +347,7 @@ export function designFooting(i: FootingInputs) {
     const Bp = Math.max(0.01, i.B - 2 * eBb);
     const Lp = Math.max(0.01, i.L - 2 * eLb);
     const qeq = Vmax / (Bp * Lp);
-    const nb = i.bearing === "computed" ? nominalBearing({ c: i.c, phi: i.phi, gammaAbove: i.gammaAbove, gammaBelow: i.gammaBelow, Df: DfS, Dw: Math.max(0, i.Dw - sc), B: Bp, L: Lp, depthFactor: i.depthFactor }) : null;
+    const nb = i.bearing === "computed" ? nominalBearing({ c: i.c, phi: i.phi, gammaAbove: i.gammaAbove, gammaBelow: i.gammaBelow, Df: DfS, Dw: Math.max(0, i.Dw - scL), B: Bp, L: Lp, depthFactor: i.depthFactor }) : null;
     const qn = nb ? nb.qn : i.qn;
     const phiB = lc.limit === "extreme" ? 1.0 : i.phiB;
     // Sliding with the least vertical load.

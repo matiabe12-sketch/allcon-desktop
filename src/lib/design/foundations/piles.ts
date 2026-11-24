@@ -71,6 +71,9 @@ export type PileInputs = {
   weakAlong: "B" | "L"; // loads along this direction bend the piles about their weak axis
   length: number; // ft, below the cap
   unsupported: number; // ft, the length without soil below the cap (scour, a prebore, water)
+  /** ft, the unsupported length at the scour design check flood, for the Extreme Event cases (AASHTO 2.6.4.4.2,
+   * 10.5.5.3.2); 0 or unset: the design flood's. */
+  unsupportedCheck?: number;
   driving: "good" | "severe";
   Rn: number; // kip, nominal geotechnical axial resistance per pile
   phiDyn: number;
@@ -118,6 +121,7 @@ export const PILE_DEFAULTS: PileInputs = {
   weakAlong: "B",
   length: 35,
   unsupported: 0,
+  unsupportedCheck: 0,
   driving: "good",
   Rn: 450,
   phiDyn: 0.65,
@@ -209,9 +213,12 @@ export function designPiles(i: PileInputs) {
   const spacingRatio = (dir: "B" | "L") => ((dir === "B" ? i.sB : i.sL) * 12) / width;
   const pmOf = (dir: "B" | "L") => Array.from({ length: rows(dir) }, (_, r) => (rows(dir) === 1 ? (spacingRatio(dir) <= 5 ? pMultiplier(1, spacingRatio(dir)) : 1) : pMultiplier(r + 1, spacingRatio(dir))));
   const layers = toLayers(i.soil);
-  const allLayers: Layer[] = [...(i.unsupported > 0 ? [{ thickness: i.unsupported, model: { kind: "none" as const } }] : []), ...layers];
+  // The length without soil: the design flood's at Strength and Service, the check flood's (if more) at the Extreme Event.
+  const unsOf = (limit: string) => (limit === "extreme" ? Math.max(i.unsupported, i.unsupportedCheck ?? 0) : i.unsupported);
+  const layersFor = (u: number): Layer[] => [...(u > 0 ? [{ thickness: u, model: { kind: "none" as const } }] : []), ...layers];
   const EIof = (dir: "B" | "L") => 29000 * (i.weakAlong === dir ? s.Iy : s.Ix);
-  const lateral = (dir: "B" | "L", H: number, Q: number) => {
+  const lateral = (dir: "B" | "L", H: number, Q: number, uns = i.unsupported) => {
+    const allLayers = layersFor(uns);
     if (Math.abs(H) < 1e-9) return null;
     const pms = pmOf(dir);
     const avg = pms.reduce((t, v) => t + v, 0) / pms.length;
@@ -234,8 +241,8 @@ export function designPiles(i: PileInputs) {
     const loadsMin = pileLoad(Vmin);
     const Pmax = Math.max(...loadsMax);
     const Pmin = Math.min(...loadsMin);
-    const latB = micro ? null : lateral("B", lc.HB, Pmax);
-    const latL = micro ? null : lateral("L", lc.HL, Pmax);
+    const latB = micro ? null : lateral("B", lc.HB, Pmax, unsOf(lc.limit));
+    const latL = micro ? null : lateral("L", lc.HL, Pmax, unsOf(lc.limit));
     return { lc, MBb, MLb, Vmax, Vmin, loadsMax, Pmax, Pmin, latB, latL };
   });
 
@@ -293,7 +300,8 @@ export function designPiles(i: PileInputs) {
     const Mweak = i.weakAlong === "B" ? MuBdir : MuLdir;
     const Mstrong = i.weakAlong === "B" ? MuLdir : MuBdir;
     const zFix = Math.max(c.latB?.group.zZero ?? 0, c.latL?.group.zZero ?? 0);
-    const KL = i.unsupported > 0 ? (i.unsupported + zFix) * 12 : 0;
+    const uns = unsOf(c.lc.limit);
+    const KL = uns > 0 ? (uns + zFix) * 12 : 0;
     const ax = axialResistance(s, i.Fy, KL);
     const Pr = PHI_PILE.combinedAxial * ax.Pn;
     const Mrx = PHI_PILE.flexure * flexX.Mn;

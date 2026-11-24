@@ -4,9 +4,10 @@ import { useMemo, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { designScour, SCOUR_DEFAULTS, type BedCondition, type PierShape, type ScourAbutment, type ScourFlood, type ScourInputs, type ScourMode, type ScourPier } from "@/lib/design/scour/scour";
+import { COHESIVE_OFF, COMPLEX_OFF, designScour, MATERIAL_DEFAULT, SCOUR_DEFAULTS, type BedCondition, type ComplexPier, type PierMaterial, type PierShape, type ScourAbutment, type ScourFlood, type ScourInputs, type ScourMode, type ScourPier } from "@/lib/design/scour/scour";
 import { DesignError } from "@/lib/design/walls/cip";
 import { ChecksTable, Choice, DesignErrorCard, DesignHeader, Field, fmt, Section, Toggle } from "./design-kit";
+import { ScourPlot } from "./scour-plot";
 
 // Bridge scour: the bed, each flood's contraction (and pressure flow), the piers and the abutments on the left; the
 // totals and minimum scour elevations at every element, and each element's working, on the right, saved as you go.
@@ -22,6 +23,15 @@ const SHAPES = [
   { value: "circular" as PierShape, label: "Circular cylinder (K1 1.0)" },
   { value: "sharp" as PierShape, label: "Sharp nose (K1 0.9)" },
   { value: "columns" as PierShape, label: "Multiple columns (a bent)" },
+];
+const METHODS = [
+  { value: "hec18" as const, label: "HEC-18 (CSU) equation" },
+  { value: "fdot" as const, label: "FDOT method (HEC-18 7.3)" },
+];
+const MATERIALS = [
+  { value: "granular" as PierMaterial["kind"], label: "Sand or gravel" },
+  { value: "cohesive" as PierMaterial["kind"], label: "Cohesive (clay, silt)" },
+  { value: "rock" as PierMaterial["kind"], label: "Erodible rock" },
 ];
 const BEDS = [
   { value: "clear" as BedCondition, label: "Clear-water (K3 1.1)" },
@@ -45,6 +55,9 @@ export function ScourEditor({ design, projects }: { design: { id: string; name: 
 
   const setFlood = (k: number, f: (x: ScourFlood) => ScourFlood) => setInputs((s) => ({ ...s, floods: s.floods.map((x, j) => (j === k ? f(x) : x)) }));
   const setPier = (k: number, f: (x: ScourPier) => ScourPier) => setInputs((s) => ({ ...s, piers: s.piers.map((x, j) => (j === k ? f(x) : x)) }));
+  const setCoh = (k: number, f: (c: typeof COHESIVE_OFF) => typeof COHESIVE_OFF) => setFlood(k, (x) => ({ ...x, contraction: { ...x.contraction, cohesive: f(x.contraction.cohesive ?? COHESIVE_OFF) } }));
+  const setMat = (k: number, f: (m: PierMaterial) => PierMaterial) => setPier(k, (x) => ({ ...x, material: f(x.material ?? MATERIAL_DEFAULT) }));
+  const setCx = (k: number, f: (c: ComplexPier) => ComplexPier) => setPier(k, (x) => ({ ...x, complex: f(x.complex ?? COMPLEX_OFF) }));
   const setAbut = (k: number, f: (x: ScourAbutment) => ScourAbutment) => setInputs((s) => ({ ...s, abutments: s.abutments.map((x, j) => (j === k ? f(x) : x)) }));
   const flows = <T,>(list: T[], fill: T) => inputs.floods.map((_, k) => list[k] ?? list[list.length - 1] ?? fill);
 
@@ -74,6 +87,17 @@ export function ScourEditor({ design, projects }: { design: { id: string; name: 
                 <Field label="Width W2, less the piers" unit="ft" value={f.contraction.W2} onChange={(v) => setFlood(k, (x) => ({ ...x, contraction: { ...x.contraction, W2: v } }))} />
                 <Field label="Existing depth y0" unit="ft" value={f.contraction.y0} onChange={(v) => setFlood(k, (x) => ({ ...x, contraction: { ...x.contraction, y0: v } }))} step={0.1} />
                 <Toggle label="Armoring limits live-bed scour (the smaller depth)" value={f.contraction.armor} onChange={(v) => setFlood(k, (x) => ({ ...x, contraction: { ...x.contraction, armor: v } }))} />
+                <Toggle label="Cohesive bed (HEC-18 6.7)" value={!!f.contraction.cohesive?.on} onChange={(v) => setCoh(k, (c) => ({ ...c, on: v }))} />
+                {f.contraction.cohesive?.on && (
+                  <>
+                    <Field label="Critical shear stress τc" unit="psf" value={f.contraction.cohesive.tauc} onChange={(v) => setCoh(k, (c) => ({ ...c, tauc: v }))} step={0.01} hint="From erosion tests (Eq. 6.6)" />
+                    <Field label="Manning n at the bridge" value={f.contraction.cohesive.n} onChange={(v) => setCoh(k, (c) => ({ ...c, n: v }))} step={0.005} />
+                    <div className="grid grid-cols-2 gap-x-2">
+                      <Field label="Initial rate (0: ultimate)" unit="ft/hr" value={f.contraction.cohesive.zdot} onChange={(v) => setCoh(k, (c) => ({ ...c, zdot: v }))} step={0.01} />
+                      <Field label="Flood duration" unit="hr" value={f.contraction.cohesive.hours} onChange={(v) => setCoh(k, (c) => ({ ...c, hours: v }))} />
+                    </div>
+                  </>
+                )}
                 <Toggle label="Pressure flow (the low chord submerged)" value={f.pressure.on} onChange={(v) => setFlood(k, (x) => ({ ...x, pressure: { ...x.pressure, on: v } }))} />
                 {f.pressure.on && (
                   <>
@@ -101,11 +125,50 @@ export function ScourEditor({ design, projects }: { design: { id: string; name: 
                 ) : (
                   <Field label="Length L" unit="ft" value={p.L} onChange={(v) => setPier(k, (x) => ({ ...x, L: v }))} />
                 )}
+                <Choice label="Bed material at the pier" value={p.material?.kind ?? "granular"} options={MATERIALS} onChange={(v) => setMat(k, (m) => ({ ...m, kind: v }))} />
+                {(p.material?.kind ?? "granular") === "granular" && <Choice label="Method" value={p.method ?? "hec18"} options={METHODS} onChange={(v) => setPier(k, (x) => ({ ...x, method: v }))} />}
+                {p.material?.kind === "cohesive" && <Field label="Critical velocity Vc" unit="ft/s" value={p.material.Vc} onChange={(v) => setMat(k, (m) => ({ ...m, Vc: v }))} step={0.1} hint="From erosion tests; Eq. 7.35" />}
+                {p.material?.kind === "rock" && (
+                  <>
+                    <div className="grid grid-cols-2 gap-x-2">
+                      <Field label="Erodibility index K" value={p.material.K} onChange={(v) => setMat(k, (m) => ({ ...m, K: v }))} step={0.1} hint="HEC-18 7.13" />
+                      <Field label="Energy slope" unit="ft/ft" value={p.material.S} onChange={(v) => setMat(k, (m) => ({ ...m, S: v }))} step={0.0005} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-x-2">
+                      <Field label="Abrasion GSN (0: none)" unit="ft" value={p.material.GSN} onChange={(v) => setMat(k, (m) => ({ ...m, GSN: v }))} step={0.01} hint="Per unit of cumulative stream power, from slake durability tests" />
+                      <Field label="Cumulative stream power Ω" value={p.material.omega} onChange={(v) => setMat(k, (m) => ({ ...m, omega: v }))} />
+                    </div>
+                  </>
+                )}
                 <Choice label="Bed condition" value={p.bed} options={BEDS} onChange={(v) => setPier(k, (x) => ({ ...x, bed: v }))} />
                 <Field label="Datum (thalweg or floodplain)" unit="ft El." value={p.datum} onChange={(v) => setPier(k, (x) => ({ ...x, datum: v }))} step={0.5} />
                 <Field label="Top of non-erodible rock (0: none)" unit="ft El." value={p.rock ?? 0} onChange={(v) => setPier(k, (x) => ({ ...x, rock: v > 0 ? v : null }))} step={0.5} />
                 <Toggle label="In the contracted channel (add contraction scour)" value={p.contraction} onChange={(v) => setPier(k, (x) => ({ ...x, contraction: v }))} />
                 <Toggle label="Wide-pier factor Kw where it applies (judgment)" value={p.wide} onChange={(v) => setPier(k, (x) => ({ ...x, wide: v }))} />
+                {p.shape !== "columns" && (p.material?.kind ?? "granular") === "granular" && <Toggle label="Footing or pile cap in the flow (complex pier, 7.5)" value={!!p.complex?.on} onChange={(v) => setCx(k, (c) => ({ ...c, on: v }))} />}
+                {p.shape !== "columns" && (p.material?.kind ?? "granular") === "granular" && p.complex?.on && (
+                  <>
+                    <div className="grid grid-cols-2 gap-x-2">
+                      <Field label="Cap width" unit="ft" value={p.complex.capWidth} onChange={(v) => setCx(k, (c) => ({ ...c, capWidth: v }))} />
+                      <Field label="Cap length" unit="ft" value={p.complex.capLength} onChange={(v) => setCx(k, (c) => ({ ...c, capLength: v }))} />
+                      <Field label="Thickness T" unit="ft" value={p.complex.T} onChange={(v) => setCx(k, (c) => ({ ...c, T: v }))} step={0.25} />
+                      <Field label="Overhang f" unit="ft" value={p.complex.f} onChange={(v) => setCx(k, (c) => ({ ...c, f: v }))} step={0.25} />
+                    </div>
+                    <Field label="Bottom of cap or footing" unit="ft El." value={p.complex.capBottom} onChange={(v) => setCx(k, (c) => ({ ...c, capBottom: v }))} step={0.5} hint="Its height above the bed after degradation and contraction scour sets Case 1 or 2" />
+                    <Choice label="Cap nose" value={p.complex.capShape} options={[{ value: "square" as const, label: "Square (K1 1.1)" }, { value: "round" as const, label: "Round (K1 1.0)" }]} onChange={(v) => setCx(k, (c) => ({ ...c, capShape: v }))} />
+                    <Field label="Bed roughness ks" unit="ft" value={p.complex.ks} onChange={(v) => setCx(k, (c) => ({ ...c, ks: v }))} step={0.005} hint="D84 for sand, 3.5 D84 for gravel (an exposed footing, Eq. 7.26)" />
+                    <Toggle label="Piles exposed below the cap" value={p.complex.piles.on} onChange={(v) => setCx(k, (c) => ({ ...c, piles: { ...c.piles, on: v } }))} />
+                    {p.complex.piles.on && (
+                      <div className="grid grid-cols-2 gap-x-2">
+                        <Field label="Piles across" value={p.complex.piles.across} onChange={(v) => setCx(k, (c) => ({ ...c, piles: { ...c.piles, across: Math.max(1, Math.round(v)) } }))} />
+                        <Field label="Rows along" value={p.complex.piles.rows} onChange={(v) => setCx(k, (c) => ({ ...c, piles: { ...c.piles, rows: Math.max(1, Math.round(v)) } }))} />
+                        <Field label="Pile width" unit="ft" value={p.complex.piles.d} onChange={(v) => setCx(k, (c) => ({ ...c, piles: { ...c.piles, d: v } }))} step={0.25} />
+                        <Field label="Spacing" unit="ft" value={p.complex.piles.S} onChange={(v) => setCx(k, (c) => ({ ...c, piles: { ...c.piles, S: v } }))} step={0.25} />
+                      </div>
+                    )}
+                    {p.complex.piles.on && <Toggle label="Square piles (K1 1.1)" value={p.complex.piles.square} onChange={(v) => setCx(k, (c) => ({ ...c, piles: { ...c.piles, square: v } }))} />}
+                  </>
+                )}
                 <Toggle label="Debris on the pier (HEC-18 7.7)" value={p.debris.on} onChange={(v) => setPier(k, (x) => ({ ...x, debris: { ...x.debris, on: v } }))} />
                 {p.debris.on && (
                   <>
@@ -228,11 +291,17 @@ export function ScourEditor({ design, projects }: { design: { id: string; name: 
                 </Card>
                 <Card>
                   <CardContent className="py-3">
+                    <p className="mb-2 text-xs font-semibold">Scour elevations under each element</p>
+                    <ScourPlot elements={r.elements} />
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="py-3">
                     <p className="mb-2 text-xs font-semibold">Contraction scour</p>
                     <div className="space-y-1 text-xs">
                       {r.contraction.map((c, k) => (
                         <p key={k}>
-                          <span className="font-medium">{inputs.floods[k].name}:</span> V {fmt(c.V, 2)} ft/s against Vc {fmt(c.Vc, 2)} ft/s, {c.live ? `live-bed (k1 ${c.k1})` : "clear-water"}; y2 {fmt(c.y2, 2)} ft, scour {fmt(c.ys, 2)} ft
+                          <span className="font-medium">{inputs.floods[k].name}:</span> V {fmt(c.V, 2)} ft/s against Vc {fmt(c.Vc, 2)} ft/s, {c.live ? `live-bed (k1 ${c.k1})` : "clear-water"}; {c.cohesive ? `cohesive bed: ultimate ${fmt(c.cohesive.ult, 2)} ft${c.cohesive.timed ? `, ${fmt(c.cohesive.ys, 2)} ft in the flood` : ""}` : `y2 ${fmt(c.y2, 2)} ft`}, scour {fmt(c.ys, 2)} ft
                           {c.pressure ? `; pressure flow: t ${fmt(c.pressure.t, 2)} ft, scour ${fmt(c.pressure.ys, 2)} ft${c.pressure.overtopping ? " (overtopping)" : ""}; ${c.governs} governs` : ""}.
                         </p>
                       ))}
@@ -249,8 +318,15 @@ export function ScourEditor({ design, projects }: { design: { id: string; name: 
                             <span className="font-medium">
                               {pier.name}, {inputs.floods[k].name}:
                             </span>{" "}
-                            a {fmt(l.a, 2)} ft, Fr {fmt(l.Fr, 2)}, K1 {fmt(l.K1, 2)}, K2 {fmt(l.K2, 2)}, K3 {fmt(l.K3, 2)}
-                            {l.Kw < 1 ? `, Kw ${fmt(l.Kw, 2)}` : ""}: ys {fmt(l.ys, 2)} ft{l.notes.length ? ` (${l.notes.join("; ")})` : ""}.
+                            {l.method === "hec18" ? (
+                              <>
+                                a {fmt(l.a, 2)} ft, Fr {fmt(l.Fr, 2)}, K1 {fmt(l.K1, 2)}, K2 {fmt(l.K2, 2)}, K3 {fmt(l.K3, 2)}
+                                {l.Kw < 1 ? `, Kw ${fmt(l.Kw, 2)}` : ""}
+                              </>
+                            ) : (
+                              { fdot: "FDOT method", complex: "complex pier", cohesive: "cohesive bed", rock: "erodible rock" }[l.method]
+                            )}
+                            : ys {fmt(l.ys, 2)} ft{l.notes.length ? ` (${l.notes.join("; ")})` : ""}.
                           </p>
                         )),
                       )}

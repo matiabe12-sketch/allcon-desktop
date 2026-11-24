@@ -19,6 +19,8 @@ import { ApproachSlabSketch } from "@/components/design/approach-slab-sketch";
 import { BridgePlan, BridgeProfile } from "@/components/design/bridge-sketch";
 import type { BridgeInputs, BridgeLayout } from "./bridge/bridge";
 import { FoundationSketch, LateralPlot } from "@/components/design/foundation-sketch";
+import { ScourPlot } from "@/components/design/scour-plot";
+import { designScour, type ScourInputs } from "./scour/scour";
 import type { FoundationKind } from "./foundations/kinds";
 import { runFoundation } from "./foundations/run";
 import { designApproachSlab, type ApproachSlabInputs } from "./approach/approach-slab";
@@ -146,6 +148,8 @@ export function dtFigures(i: DtInputs) {
 }
 
 export const approachSlabFigures = (i: ApproachSlabInputs) => ({ section: figure(<ApproachSlabSketch inputs={i} result={designApproachSlab(i)} />) });
+
+export const scourFigures = (i: ScourInputs) => ({ plot: figure(<ScourPlot elements={designScour(i).elements} />) });
 
 export function foundationFigures(kind: FoundationKind, i: object) {
   const r = runFoundation(kind, i);

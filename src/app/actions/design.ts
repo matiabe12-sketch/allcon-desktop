@@ -47,7 +47,7 @@ import { columnCalcLines } from "@/lib/design/piers/column-calc";
 import { columnLinkFrom } from "@/lib/design/piers/column-link";
 import { zone1CalcLines } from "@/lib/design/seismic/zone1-calc";
 import { cbcCalcLines } from "@/lib/design/culverts/cbc-calc";
-import { approachSlabFigures, foundationFigures, bearingFigures, capDetailFigures, takeoffFigures, cbcFigures, cipFigures, uStairFigures, columnFigures, deckFigures, dtFigures, girderFigures, haunchFigures, mseFigures, signFigures, steelGirderFigures, stmFigures, stripSealFigures, wingwallFigures } from "@/lib/design/figures";
+import { approachSlabFigures, foundationFigures, scourFigures, bearingFigures, capDetailFigures, takeoffFigures, cbcFigures, cipFigures, uStairFigures, columnFigures, deckFigures, dtFigures, girderFigures, haunchFigures, mseFigures, signFigures, steelGirderFigures, stmFigures, stripSealFigures, wingwallFigures } from "@/lib/design/figures";
 import { girderSide, type GirderSide } from "@/lib/design/stm/cap-loads";
 import { nodeLpSolver } from "@/lib/design/stm/lp-node";
 import { designStm, stmInputs, type StmInputs } from "@/lib/design/stm/strut-tie";
@@ -337,7 +337,7 @@ export async function createCalcFromDesign(designId: string, variant?: "asd" | "
                       : design.kind === "grs-abutment"
                         ? grsCalcLines(grsInputs(design.inputs), design.name, figures(() => takeoffFigures(grsTakeoff(grsInputs(design.inputs)))))
                       : design.kind === "bridge-scour"
-                        ? scourCalcLines(scourInputs(design.inputs), design.name)
+                        ? scourCalcLines(scourInputs(design.inputs), design.name, figures(() => scourFigures(scourInputs(design.inputs))))
                       : design.kind === "noise-wall"
                         ? noiseWallCalcLines(noiseWallInputs(design.inputs), design.name, figures(() => takeoffFigures(noiseWallTakeoff(noiseWallInputs(design.inputs)))))
                       : design.kind === "pipe-culvert"

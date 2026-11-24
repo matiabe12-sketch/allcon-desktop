@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { abutmentScour, alphaFor, contractionScour, criticalVelocity, designScour, fallVelocity, pierScour, SCOUR_DEFAULTS, type ScourAbutment, type ScourPier } from "./scour";
+import { abutmentScour, alphaFor, complexPier, contractionScour, criticalVelocity, designScour, fallVelocity, fdotPier, khPier, pierScour, SCOUR_DEFAULTS, type ScourAbutment, type ScourPier } from "./scour";
 
 // Bridge scour against FHWA HEC-18, 5th Edition (FHWA-HIF-12-003): its worked examples in Chapters 6 to 8, printed
 // results to the precision HEC-18 prints them.
@@ -163,5 +163,92 @@ describe("Floyd Hill West (CDOT), against FHWA Hydraulic Toolbox", () => {
     expect(r.yc).toBeCloseTo(6.87, 2);
     expect(Math.abs(r.alpha - 1.45)).toBeLessThan(0.03);
     expect(Math.abs(r.ys - 3.11)).toBeLessThan(0.15);
+  });
+});
+
+describe("FDOT pier method (HEC-18 7.3)", () => {
+  it("Example 6: Example 2's pier at 20° (a* 20.2 ft, Vc 5.2, Vlp 26.0, f1 0.64, f3 0.65): ys 23.1 ft", () => {
+    const r = pierScour(pier({ shape: "round", a: 4, L: 59, bed: "plane", method: "fdot" }), { y1: 10.2, V1: 11.02, angle: 20 }, 7.3);
+    expect(r.method).toBe("fdot");
+    expect(r.fdot!.aStar).toBeCloseTo(20.2, 1);
+    expect(r.fdot!.Vc).toBeCloseTo(5.2, 1);
+    expect(r.fdot!.Vlp).toBeCloseTo(26.0, 0);
+    expect(r.fdot!.f1).toBeCloseTo(0.64, 2);
+    expect(r.fdot!.f3).toBeCloseTo(0.65, 2);
+    expect(r.fdot!.ysC).toBeCloseTo(21.0, 0);
+    expect(r.fdot!.ysLp).toBeCloseTo(28.5, 0);
+    expect(r.ys).toBeCloseTo(23.1, 1);
+  });
+  it("its four regions: none below 0.4Vc, clear-water peaking at Vc, the live-bed peak from Vlp", () => {
+    const at = (V: number) => fdotPier(10, 10, V, 1).ys;
+    const { Vc, Vlp, ysC, ysLp } = fdotPier(10, 10, 1, 1);
+    expect(at(0.39 * Vc)).toBe(0);
+    expect(at(Vc)).toBeCloseTo(ysC, 9);
+    expect(at(0.9 * Vc)).toBeLessThan(ysC);
+    expect(at(Vlp * 1.2)).toBeCloseTo(ysLp, 9);
+  });
+});
+
+describe("complex piers (HEC-18 7.5)", () => {
+  const cap = { on: true, capShape: "square" as const, ks: 0.024, piles: { on: false, across: 0, rows: 0, d: 0, S: 0, square: false } };
+  it("Kh pier (Figure 7.6): 0.062 at h1/a 1.30, f/a 0.27; 0.06 at 1.23, 0.625", () => {
+    expect(khPier(41.5 / 32, 8.62 / 32)).toBeCloseTo(0.062, 3);
+    expect(khPier(4.92 / 4, 2.5 / 4)).toBeCloseTo(0.065, 2);
+  });
+  it("Example 3, an exposed footing (Case 2): stem 0.6 ft, footing 14.8 ft, total 15.4 ft", () => {
+    const p = pier({ shape: "round", a: 4, L: 59, bed: "plane", complex: { ...cap, capWidth: 8, capLength: 65, T: 5.25, capBottom: 0, f: 2.5 } });
+    const r = complexPier(p, { y1: 10.2, V1: 11.02, angle: 0 }, 7.3, -0.33);
+    expect(r.cap.case).toBe(2);
+    expect(r.ysPier).toBeCloseTo(0.6, 0);
+    expect(r.cap.ys).toBeCloseTo(14.8, 1);
+    expect(r.ys).toBeCloseTo(15.4, 1);
+  });
+  it("Example 4, Woodrow Wilson: a pile cap in the flow (Case 1) on 4 × 3 piles: stem 3.2, cap 12.8, piles 21.24 ft", () => {
+    const p = pier({ shape: "square", a: 32, L: 32, bed: "plane", complex: { ...cap, capWidth: 53.25, capLength: 53.25, T: 16, capBottom: 0, f: 8.62, piles: { on: true, across: 4, rows: 3, d: 5.5, S: 13.75, square: false } } });
+    const r = complexPier(p, { y1: 51.8, V1: 11.2, angle: 0 }, 0.2, 25.5);
+    expect(r.Kh).toBeCloseTo(0.062, 3);
+    expect(r.ysPier).toBeCloseTo(3.2, 0);
+    expect(r.cap.case).toBe(1);
+    expect(r.cap.aStar).toBeCloseTo(3.7, 0); // Figure 7.7 read by eye; its fit gives 3.84
+    expect(r.cap.ys / 12.8).toBeCloseTo(1, 1);
+    expect(r.group!.Ksp).toBeCloseTo(0.58, 2);
+    expect(r.group!.Km).toBeCloseTo(1.16, 2);
+    expect(r.group!.aStar).toBeCloseTo(14.8, 0); // HEC-18 rounds Ksp to 0.58
+    expect(r.group!.Kh).toBeCloseTo(0.79, 2);
+    expect(r.group!.V3).toBeCloseTo(9.7, 1);
+    expect(r.group!.ys / 21.24).toBeCloseTo(1, 1);
+  });
+  it("in the tool: h0 from the cap's bottom and the bed lowered by degradation and contraction scour", () => {
+    const p = pier({ shape: "round", a: 4, L: 59, bed: "plane", datum: 100, complex: { ...cap, capWidth: 8, capLength: 65, T: 5.25, capBottom: 99.67, f: 2.5 } });
+    const r = pierScour(p, { y1: 10.2, V1: 11.02, angle: 0 }, 7.3, 2);
+    expect(r.method).toBe("complex");
+    expect(r.complex!.h0).toBeCloseTo(-0.33 + 2, 6);
+  });
+});
+
+describe("cohesive soils and erodible rock (HEC-18 6.7, 7.12, 7.13)", () => {
+  it("pier in a cohesive bed (Eq. 7.35): a 4 ft pier, V1 11.02 ft/s, Vc 10.5 ft/s: ys 12.2 ft", () => {
+    const r = pierScour(pier({ shape: "round", a: 4, L: 4, material: { kind: "cohesive", Vc: 10.5, K: 0, S: 0, GSN: 0, omega: 0 } }), { y1: 10.2, V1: 11.02, angle: 0 }, 1);
+    expect(r.method).toBe("cohesive");
+    expect(r.ys).toBeCloseTo(12.2, 1);
+  });
+  it("erodible rock (7.13): K 2.4, y 3.5 m, S 0.0035, b 0.76 m: Pc 1.93, Pa 0.327 kW/m², ys 0.38 m", () => {
+    const m = 1 / 0.3048;
+    const r = pierScour(pier({ shape: "round", a: 0.76 * m, L: 0.76 * m, material: { kind: "rock", Vc: 0, K: 2.4, S: 0.0035, GSN: 0, omega: 0 } }), { y1: 3.5 * m, V1: 5, angle: 0 }, 1);
+    expect(r.rock!.Pc).toBeCloseTo(1.93, 2);
+    expect(r.rock!.Pa).toBeCloseTo(0.327, 3);
+    expect(r.ys / m).toBeCloseTo(0.38, 2);
+  });
+  it("contraction in a cohesive bed (Eq. 6.6) and its time rate (Eq. 6.8)", () => {
+    const c = { mode: "auto" as const, Q1: 2000, W1: 40, y1: 10, S1: 0.002, Q2: 2800, W2: 40, y0: 10, armor: false };
+    const off = { on: false, hu: 10, hb: 8, T: 3, Qb: 2800 };
+    const V2 = 2800 / 400;
+    const ult = 0.94 * 10 * ((1.83 * V2) / Math.sqrt(32.2 * 10) - (1.486 * Math.sqrt(0.05 / 1.94)) / (32.2 * 0.025 * 10 ** (1 / 3)));
+    const r = contractionScour({ ...c, cohesive: { on: true, tauc: 0.05, n: 0.025, zdot: 0, hours: 0 } }, off, 1);
+    expect(r.cohesive!.ult).toBeCloseTo(ult, 9);
+    expect(r.ys).toBeCloseTo(ult, 9);
+    const t = contractionScour({ ...c, cohesive: { on: true, tauc: 0.05, n: 0.025, zdot: 0.1, hours: 48 } }, off, 1);
+    expect(t.ys).toBeCloseTo(48 / (1 / 0.1 + 48 / ult), 9);
+    expect(t.ys).toBeLessThan(ult);
   });
 });

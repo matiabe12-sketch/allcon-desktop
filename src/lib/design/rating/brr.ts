@@ -155,7 +155,7 @@ export function brrInputSheet(i: DtInputs, r: DtRating): BrrGroup[] {
     ...(r.condition.units.length
       ? [
           {
-            title: "7a. Condition, as inspected (MBE 6.1.4)",
+            title: "7a. Condition, as inspected (MBE 6.1.2)",
             rows: r.condition.units.map((c): BrrRow => [
               `${c.g}`,
               `Mn ${f(c.intact.Mn, 1)} → ${f(c.inspected.Mn, 1)} kip·ft at ${f(c.at, 2)} ft; A*s ${f(c.intact.As, 3)} → ${f(c.inspected.As, 3)} in²`,

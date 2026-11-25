@@ -182,7 +182,7 @@ describe("saved ratings", () => {
   });
 });
 
-describe("condition from the inspection (MBE 6.1.4)", () => {
+describe("condition from the inspection (MBE 6.1.2)", () => {
   const base: DtInputs = { ...DT_DEFAULTS, span: 30, structureLength: 30.5 };
   const unit = (u: Partial<DtUnitCondition> & { unit: number }): DtUnitCondition => ({ ...NO_UNIT_CONDITION, ...u });
   const withCond = (c: Partial<DtInputs["condition"]>): DtInputs => ({ ...base, condition: { ...DT_DEFAULTS.condition, ...c } });
@@ -258,7 +258,7 @@ describe("condition from the inspection (MBE 6.1.4)", () => {
   it("the calc package states the condition and compares as designed with as inspected", () => {
     const lines = dtRatingCalcLines(withCond({ units: [unit({ unit: 3, lostStrands: 2, note: "2 strands broken at an impact" })] }), "Test");
     const t = lines.map((l) => ("text" in l ? l.text : "") + ("ref" in l && l.ref ? l.ref : "")).join("\n");
-    expect(t).toMatch(/Condition:- The bridge is rated in its condition at the latest inspection \(MBE 6\.1\.4\)/);
+    expect(t).toMatch(/Condition:- The bridge is rated in its condition at the latest inspection \(MBE 6\.1\.2\)/);
     expect(t).toMatch(/as designed and as inspected/);
     expect(t).toMatch(/G3: 2 strands broken at an impact\. Rated with 2 strands broken or missing over the whole span/);
   });

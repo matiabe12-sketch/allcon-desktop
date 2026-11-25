@@ -89,7 +89,7 @@ export type DtInputs = {
     stirrups: { bar: number; legs: number; spacing: number; fy: number }; // for shear, per stem
     dfOverride: { intSingle: number; intMulti: number; extSingle: number; extMulti: number } | null;
   };
-  /** What the inspection found, rated on the section as it stands (MBE 6.1.4); the back-calculation stays on the intact bridge. */
+  /** What the inspection found, rated on the section as it stands (MBE 6.1.2); the back-calculation stays on the intact bridge. */
   condition: DtCondition;
   /** The latest SIA's element table, notes and maintenance items: prompts for the condition, never applied. */
   siaCondition: SiaConditionData | null;
@@ -590,7 +590,7 @@ export function rateDoubleTee(i: DtInputs) {
     const r = Math.min(x, L - x) / (harp.at * L);
     return r >= 1 ? harp.mid : harp.end + (harp.mid - harp.end) * r;
   };
-  // The inspection's damage at x on a unit (MBE 6.1.4): strand area lost over the zone and a development
+  // The inspection's damage at x on a unit (MBE 6.1.2): strand area lost over the zone and a development
   // length past each end of it (a broken or corroded strand re-anchors over that length, SSHB 9.28), the
   // top lost over the zone, the judgment factor everywhere. The strand centroid stays the intact one.
   const cond = i.condition ?? DT_DEFAULTS.condition;

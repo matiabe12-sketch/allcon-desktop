@@ -111,7 +111,7 @@ function methodNote(i: DtInputs, r: ReturnType<typeof rateDoubleTee>, text: (t: 
   if (r.condition.active) {
     const dmg = cond.units.filter(unitDamaged);
     text(
-      `Condition:- The bridge is rated in its condition at the latest inspection (MBE 6.1.4).${back ? " The prestress is still back-calculated on the intact bridge, since the original design had none of this damage; the damage then lowers the ratings." : ""}${
+      `Condition:- The bridge is rated in its condition at the latest inspection (MBE 6.1.2).${back ? " The prestress is still back-calculated on the intact bridge, since the original design had none of this damage; the damage then lowers the ratings." : ""}${
         dmg.length
           ? ` Damaged strands are removed from the unit's prestressing steel over the damaged length and a development length (${num(r.condition.ldDev, 2)} ft) past each end of it, where they cannot yet carry their full stress (SSHB 9.28); concrete lost from the top reduces the depth and the compression flange.${dmg.some((c) => c.factor < 1) ? " Where the damage cannot be measured, a judgment factor reduces the unit's capacity; its reason is given below." : ""}`
           : ""
@@ -239,7 +239,7 @@ export function dtRatingCalcLines(i: DtInputs, title: string, figures?: { sectio
       cu.topLoss > 0 && `${num(cu.topLoss)} in lost from the top`,
       cu.factor < 1 && `a judgment factor of ${num(cu.factor)}`,
     ].filter(Boolean);
-    given(`M_{nx}\\coloneq ${num(Mnx, 9)}${kft}`, `As inspected at x = ${num(x, 2)} ft (MBE 6.1.4): ${parts.join(", ")}${cu.zone ? `, from ${num(cu.zone.from, 2)} to ${num(cu.zone.to, 2)} ft` : ""}. The remaining section's strength, from the same equations`);
+    given(`M_{nx}\\coloneq ${num(Mnx, 9)}${kft}`, `As inspected at x = ${num(x, 2)} ft (MBE 6.1.2): ${parts.join(", ")}${cu.zone ? `, from ${num(cu.zone.from, 2)} to ${num(cu.zone.to, 2)} ft` : ""}. The remaining section's strength, from the same equations`);
   } else if (!developed) given(`M_{nx}\\coloneq ${num(Mnx, 9)}${kft}`, `The strands are not fully developed at x = ${num(x, 2)} ft, so f*su is reduced (SSHB 9.28)`);
   else m("M_{nx}\\coloneq M_n=", `The strands are fully developed at x = ${num(x, 2)} ft`, "kip*ft");
 
@@ -410,7 +410,7 @@ export function dtRatingCalcLines(i: DtInputs, title: string, figures?: { sectio
     );
 
   if (r.condition.active && r.condition.asDesigned) {
-    text("Condition: as designed and as inspected (MBE 6.1.4)", "subheading");
+    text("Condition: as designed and as inspected (MBE 6.1.2)", "subheading");
     if (i.condition.jointsFailed) text(`• Joints: ${i.condition.jointsNote.trim() || "failed"}. Each unit carries the wheels on it.`);
     for (const c of r.condition.units) {
       const what = [

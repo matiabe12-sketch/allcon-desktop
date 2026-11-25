@@ -57,7 +57,7 @@ these field by field):
   is solved), utilities (weight and the girder carrying each), diaphragms.
 - **Materials:** f′c, strand type, grade and area, by the BRM's table for the year built unless known.
 - **Prestress:** back-calculated (the strand centroid assumption, whole strands or not), or known.
-- **Condition** (MBE 6.1.4), rated on the section as inspected; the prestress is still
+- **Condition** (MBE 6.1.2), rated on the section as inspected; the prestress is still
   back-calculated on the intact bridge with the original distribution, so damage never adds strands.
   Per unit: broken or missing strands, exposed strands with a % area loss, concrete lost from the
   top, all over a zone (or the whole span), the strands a development length past each end of it

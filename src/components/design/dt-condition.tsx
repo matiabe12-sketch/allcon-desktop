@@ -8,7 +8,7 @@ import { conditionTags, type ConditionTag, type SiaConditionData } from "@/lib/d
 import { cn } from "@/lib/utils";
 import { Field, Toggle } from "./design-kit";
 
-// The inspection's findings (MBE 6.1.4): each damaged unit's strands, top and judgment factor, and the
+// The inspection's findings (MBE 6.1.2): each damaged unit's strands, top and judgment factor, and the
 // joints. The back-calculation stays on the intact bridge; only the rating sees these.
 
 const f3 = (v: number) => (Number.isFinite(v) ? v.toFixed(3) : "—");
@@ -127,7 +127,7 @@ export function ConditionInputs({
   return (
     <div className="space-y-2">
       <p className="text-[11px] text-muted-foreground">
-        Rated on the section as inspected (MBE 6.1.4). The strands are still back-calculated on the intact bridge, since the original design had no damage.
+        Rated on the section as inspected (MBE 6.1.2). The strands are still back-calculated on the intact bridge, since the original design had no damage.
       </p>
       {sia ? (
         <SiaPrompts data={sia} unitCount={unitCount} hasDeck={hasDeck} onClear={onClearSia} />
@@ -196,7 +196,7 @@ export function ConditionResults({ r }: { r: DtRating }) {
   return (
     <Card>
       <CardContent className="overflow-x-auto py-2 text-xs">
-        <p className="pb-1 font-semibold">Condition: as designed and as inspected (MBE 6.1.4)</p>
+        <p className="pb-1 font-semibold">Condition: as designed and as inspected (MBE 6.1.2)</p>
         {c.alone && <p className="pb-1 text-muted-foreground">Joints failed: each unit carries the wheels on it (a hinge at every joint), in place of the distribution of the original design.</p>}
         <table className="w-full">
           <thead>

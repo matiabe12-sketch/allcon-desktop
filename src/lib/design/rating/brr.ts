@@ -168,7 +168,13 @@ export function brrInputSheet(i: DtInputs, r: DtRating): BrrGroup[] {
       title: "8. Run and check",
       rows: [
         ["Vehicles", CDOT_VEHICLES.map((v) => v.name).join(", "), `Legal and permit: ${i.options.legalLldf}-lane DF`],
-        [`Expected HS-20 inventory RF (${hsGov.govInv.g})`, f(hsGov.govInv.inv.inv, 3), r.condition.active ? "As inspected; the intact bridge rates at least 1.00" : i.prestress.mode === "back-calculate" ? "Should be at least 1.00; if lower, add a strand and rerun" : ""],
+        [`Expected HS-20 inventory RF (${hsGov.govInv.g})`, f(hsGov.govInv.inv.inv, 3), r.condition.active
+          ? "As inspected; the intact bridge rates at least 1.00"
+          : i.prestress.mode === "back-calculate" && r.original.devCompare && r.original.devCompare.withOriginal - r.original.devCompare.rated > 5e-4
+            ? `Below the design's ${f(r.original.devCompare.withOriginal, 3)}: the 1.6 development multiplier (SSHB 9.28.1, 17th Edition errata) the design didn't have`
+            : i.prestress.mode === "back-calculate"
+              ? "Should be at least 1.00; if lower, add a strand and rerun"
+              : ""],
         ["Expected legal operating ratings", legal.map((x) => `${x.name} ${f(x.oprTons, 1)} T`).join(" / "), "BrR should agree within 5%"],
         ["Finally", "Compare the BrR ratings and distribution factors with these calculations", "They should agree within 5%"],
       ],

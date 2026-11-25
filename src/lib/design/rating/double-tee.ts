@@ -344,14 +344,21 @@ function buildGirders(i: DtInputs) {
     const WL = roadW / L;
     const C = WL < 1 ? K * WL : K;
     const D = 5.75 - 0.5 * nl + 0.7 * nl * (1 - 0.2 * C) ** 2; // 3.23.4.3
-    return { K, C, D, DF: S_ft / D };
+    return { K, C, D, DF: Math.min(1, S_ft / D) }; // the load fraction need not be greater than 1
+  };
+  // S/D's range (SSHB 3.23.4.3): √(I/J) up to 5.0 and skew up to 45°; outside it, a more precise method.
+  // (J is solved only when S/D is used.)
+  const sdRange = () => {
+    const rootIJ = Math.sqrt(secInt.I / secInt.J);
+    return { rootIJ, out: rootIJ > 5 ? `√(I/J) = ${rootIJ.toFixed(2)} exceeds 5.0` : i.skew > 45 ? `the skew, ${i.skew}°, exceeds 45°` : null };
   };
   /** Lever rule for an exterior girder: the wheel 2 ft from the rail or curb face, hinged at the next girder. */
   const lever = (multi: boolean, faceOffsetIn: number, k = 0) => {
     const g = geo[k];
     const S = spacingAt(k === 0 ? 0 : k - 1);
     const face = g.edge - faceOffsetIn;
-    const wheels = multi ? [24, 96, 144, 216] : [24, 96];
+    // Wheels 6 ft apart, the trucks 12 ft center to center (BRM 1.3(F)).
+    const wheels = multi ? [24, 96, 168, 240] : [24, 96];
     let R = 0;
     const used: number[] = [];
     for (const w of wheels) {
@@ -396,14 +403,46 @@ function buildGirders(i: DtInputs) {
     return best;
   };
   const sdIn = interiorMethod(i) === "sd";
+  const range = sdIn ? sdRange() : null;
   const dfInt = sdIn
-    ? { method: "sd" as const, multi: sOverD(NL, secInt), single: sOverD(1, secInt) }
-    : { method: "table" as const, multi: { D: 5.5, DF: S_ft / 5.5 }, single: { D: 7.0, DF: S_ft / 7.0 }, sd: { multi: sOverD(NL, secInt), single: sOverD(1, secInt) } };
-  // Each interior unit by its own spacing: S/D (one D for the bridge) or S/5.5 and S/7.0.
+    ? { method: "sd" as const, multi: sOverD(NL, secInt), single: sOverD(1, secInt), rootIJ: range!.rootIJ, outOfRange: range!.out }
+    : { method: "table" as const, multi: { D: 5.5, DF: S_ft / 5.5 }, single: { D: 7.0, DF: S_ft / 7.0 }, sd: { multi: sOverD(NL, secInt), single: sOverD(1, secInt) }, rootIJ: null, outOfRange: null };
+  /**
+   * Lever rule for interior unit k: the wheels' reactions at it, the deck hinged at the units on each
+   * side, the trucks placed for the most (wheels 6 ft apart, trucks 12 ft center to center, BRM
+   * 1.3(F); 2 ft or more from the curb or rail faces).
+   */
+  const leverInterior = (k: number, multi: boolean) => {
+    const xl = geo[k - 1].x, x0 = geo[k].x, xr = geo[k + 1].x;
+    const infl = (p: number) => (p <= xl || p >= xr ? 0 : p <= x0 ? (p - xl) / (x0 - xl) : (xr - p) / (xr - x0));
+    const face = sidewalks.length ? i.roadway.curbFaceOffset : i.roadway.railFaceOffset;
+    const lo = leftEdge + face + 24;
+    const hi = rightEdge - face - 24;
+    let best = 0;
+    for (let t = 1; t <= (multi ? NL : 1); t++) {
+      const offs: number[] = [];
+      for (let j = 0; j < t; j++) offs.push(j * 144, j * 144 + 72);
+      const w = offs[offs.length - 1];
+      if (w > hi - lo + 1e-9) break;
+      const cands = [lo, hi - w, ...offs.flatMap((o) => [xl, x0, xr].map((b) => b - o))].filter((p) => p >= lo - 1e-9 && p <= hi - w + 1e-9);
+      for (const p of cands) best = Math.max(best, offs.reduce((s, o) => s + infl(p + o), 0));
+    }
+    return best;
+  };
+  /**
+   * Each interior unit by its own spacing: S/D (one D for the bridge, the fraction at most 1) or S/5.5
+   * and S/7.0; the lever rule where the formulas don't apply (BRM 1.3(E)): S/D outside its range, or the
+   * table's spacing over 14 ft (two or more lanes) or 10 ft (one lane), its footnote f.
+   */
   const dfInterior = (k: number) => {
     const S = (spacingAt(k - 1) + spacingAt(k)) / 2 / 12;
-    if (sdIn) return { single: S / dfInt.single.D, multi: S / dfInt.multi.D, S };
-    return { single: S / 7.0, multi: S / 5.5, S };
+    if (sdIn) {
+      if (dfInt.outOfRange) return { single: leverInterior(k, false), multi: leverInterior(k, NL > 1), S, leverSingle: true, leverMulti: true };
+      return { single: Math.min(1, S / dfInt.single.D), multi: Math.min(1, S / dfInt.multi.D), S, leverSingle: false, leverMulti: false };
+    }
+    const leverMulti = S > 14;
+    const leverSingle = S > 10;
+    return { single: leverSingle ? leverInterior(k, false) : S / 7.0, multi: leverMulti ? leverInterior(k, NL > 1) : S / 5.5, S, leverSingle, leverMulti };
   };
 
   // Sidewalks: rated two ways, the worse governing: trucks curb to curb with pedestrians on the
@@ -413,7 +452,8 @@ function buildGirders(i: DtInputs) {
   // The walkways: the sidewalks that aren't curbs (pedestrians, and trucks when mountable).
   const walks = sidewalks.filter((s) => !s.curb);
   const pedWidth = ld.pedWidth > 0 ? ld.pedWidth : walks.reduce((a, s) => a + s.width, 0);
-  const pedPsf = L <= 25 ? 85 : L <= 100 ? 60 : Math.min(60, ((30 + 3000 / L) * (55 - 30)) / 50); // SSHB 3.14.1.1
+  // SSHB 3.14.1.1; over 100 ft, P = (30 + 3000/L)(55 − W)/50 with W the width of a sidewalk (ft), at most 60 psf.
+  const pedPsf = L <= 25 ? 85 : L <= 100 ? 60 : Math.min(60, ((30 + 3000 / L) * (55 - (walks.length ? Math.max(...walks.map((s) => s.width)) : pedWidth))) / 50);
   const mountable = walks.length > 0 && ld.sidewalkMountable;
   const pedKlf = walks.length && ld.pedestrians ? (pedPsf * pedWidth) / nU / 1000 : 0;
   const curbFace = sidewalks.length ? i.roadway.curbFaceOffset : i.roadway.railFaceOffset;
@@ -469,6 +509,8 @@ function buildGirders(i: DtInputs) {
     dfSingleDesign: number;
     pedKlf: number;
     caseName: string;
+    /** Interior: where the lever rule replaces the formula (BRM 1.3(E)). */
+    lever: { single: boolean; multi: boolean } | null;
   }[] = [];
   // Failed joints change the rating's distribution, not the design's; an override (the rater's own) holds for both.
   const alone = !!i.condition?.jointsFailed && !ov;
@@ -496,6 +538,7 @@ function buildGirders(i: DtInputs) {
       dfSingleDesign: singleD,
       pedKlf: sidewalks.length ? pedKlf : 0,
       caseName: sidewalks.length ? (pedKlf > 0 ? "curb to curb, with pedestrians" : "curb to curb") : "",
+      lever: dfI && !ov ? { single: dfI.leverSingle, multi: dfI.leverMulti } : null,
     });
   }
   if (mountable) {
@@ -557,6 +600,17 @@ export function rateDoubleTee(i: DtInputs) {
   void lane;
   const laneMid = laneAt(L, L / 2);
   const M_HS20 = Math.max(maxAt["HS-20"].M, laneMid.M); // the hand method's design moment (midspan lane)
+  // The original design (BRM 1.7.2(A)): its design vehicle, truck or lane, sets the prestress.
+  const orig = originalDesign(i.bridge.yearBuilt);
+  if (i.prestress.mode === "back-calculate" && orig.vehicle === "HL-93") throw new DesignError(`Built in ${i.bridge.yearBuilt}: bridges from 2002 on were designed by LRFD to HL-93 (BRM 1.7.2(A)), so this LFR back-calculation doesn't apply. Give the strands, or rate it by LRFR.`);
+  const dTruck = designTruck(orig.vehicle);
+  const M_design = Math.max(trainMax(dTruck, L).M, laneMid.M * orig.scale);
+  const llDesignCache = new Map<number, number>();
+  const llDesignAt = (x: number) => {
+    let M = llDesignCache.get(x);
+    if (M === undefined) llDesignCache.set(x, (M = Math.max(trainAt(dTruck, L, x).M, laneAt(L, x).M * orig.scale)));
+    return M;
+  };
   const pois = (() => {
     const xs = [...xsBase];
     if (i.options.poi === "tenth-and-max") for (const v of vehicles) xs.push(maxAt[v.name].at);
@@ -607,7 +661,8 @@ export function rateDoubleTee(i: DtInputs) {
     return { lostArea, topLoss: inZone ? c.topLoss : 0, factor: c.factor > 0 && c.factor < 1 ? c.factor : 1 };
   };
   /** Mn (and the section) at x for strands As; asInspected: with the unit's damage. */
-  const capacity = (g: Girder, As: number, x: number | null = null, asInspected = false) => {
+  /** devFactor: the development length multiplier, 1.6 in the rating (SSHB 9.28.1 with the 17th Edition errata), the original design's in the back-calculation. */
+  const capacity = (g: Girder, As: number, x: number | null = null, asInspected = false, devFactor = 1.6) => {
     const cg = cgAt(As, x);
     const dmg = asInspected ? damageAt(g.i, x) : { lostArea: 0, topLoss: 0, factor: 1 };
     const AsE = Math.max(0, As - dmg.lostArea);
@@ -620,7 +675,7 @@ export function rateDoubleTee(i: DtInputs) {
       // Development (SSHB 9.28): fse over the transfer length, rising to f*su over the development length.
       const xe = Math.min(x, L - x) + ext; // ft from the girder's end
       const full = flexure(AsE, g.sec, d, m, hf, fcF);
-      const ld = ((full.fsu - (2 / 3) * fse) * db) / 12; // ft
+      const ld = (devFactor * (full.fsu - (2 / 3) * fse) * db) / 12; // ft
       cap = xe <= lt ? (fse * xe) / lt : xe >= ld ? null : fse + ((xe - lt) / Math.max(1e-9, ld - lt)) * (full.fsu - fse);
     }
     const f = flexure(AsE, g.sec, d, m, hf, fcF, cap);
@@ -635,13 +690,13 @@ export function rateDoubleTee(i: DtInputs) {
 
   // --- back-calculation (BRM 1.7.2(A)): As so the lowest HS-20 inventory flexure RF over girders and points is 1.0 ---
   const rfFlexInv = (g: Girder, As: number, x: number, solve: boolean) => {
-    const C = capacity(g, As, x).Mn;
-    const LL = llAt(hs20, x).M * g.dfMultiDesign * (1 + I);
+    const C = capacity(g, As, x, false, orig.devFactor).Mn;
+    const LL = llDesignAt(x) * g.dfMultiDesign * (1 + I);
     if (LL <= 1e-9) return Infinity;
     return (C - 1.3 * D(g, solve, x).M - 2.17 * pedM(g, x)) / (2.17 * LL);
   };
   // The hand method: the largest HS-20 moment anywhere with the dead load at midspan.
-  const rfFlexInvMid = (g: Girder, As: number) => (capacity(g, As).Mn - 1.3 * D(g, true, L / 2).M - 2.17 * pedM(g, L / 2)) / (2.17 * M_HS20 * g.dfMultiDesign * (1 + I));
+  const rfFlexInvMid = (g: Girder, As: number) => (capacity(g, As).Mn - 1.3 * D(g, true, L / 2).M - 2.17 * pedM(g, L / 2)) / (2.17 * M_design * g.dfMultiDesign * (1 + I));
   const rfSolve = (g: Girder, As: number) => (i.options.solveAt === "midspan" ? rfFlexInvMid(g, As) : Math.min(...pois.filter((x) => x > 0 && x < L).map((x) => rfFlexInv(g, As, x, true))));
   // The prestress is solved from the cases the original design would have used (trucks between the
   // curbs); trucks on a mountable sidewalk are then rated with it, not solved for (BRM 1.7.2(A)).
@@ -651,7 +706,7 @@ export function rateDoubleTee(i: DtInputs) {
   let AsExact = 0;
   let crackGoverns = false;
   const fr = ruptureModulus(m.fc);
-  const crack = girders.map((g) => ({ g: g.name, Mcr: (fr * (g.csec ? g.csec.Sb : g.sec.Sb)) / 12, MuReq: 1.3 * D(g, true, L / 2).M + 2.17 * (M_HS20 * g.dfMultiDesign * (1 + I) + pedM(g, L / 2)) }));
+  const crack = girders.map((g) => ({ g: g.name, Mcr: (fr * (g.csec ? g.csec.Sb : g.sec.Sb)) / 12, MuReq: 1.3 * D(g, true, L / 2).M + 2.17 * (M_design * g.dfMultiDesign * (1 + I) + pedM(g, L / 2)) }));
   let solveNote = "";
   if (i.prestress.mode === "known") {
     if (!(i.prestress.strands > 0)) throw new DesignError("Give the number of strands, or back-calculate them.");
@@ -668,7 +723,7 @@ export function rateDoubleTee(i: DtInputs) {
       }
       lo = a;
     }
-    if (hi === null) throw new DesignError(`No prestress makes HS-20 rate 1.0 at inventory: with strands filling the stems up to a centroid of ${maxCG.toFixed(1)} in, the best rating factor is ${minRF(lo).toFixed(3)}. These units can't carry it over a ${+L.toFixed(2)} ft span: check their depth and widths, the span and the loads.`);
+    if (hi === null) throw new DesignError(`No prestress makes the ${orig.vehicle} design vehicle rate 1.0 at inventory: with strands filling the stems up to a centroid of ${maxCG.toFixed(1)} in, the best rating factor is ${minRF(lo).toFixed(3)}. These units can't carry it over a ${+L.toFixed(2)} ft span: check their depth and widths, the span and the loads.`);
     let top: number = hi;
     for (let k = 0; k < 60; k++) {
       const mid = (lo + top) / 2;
@@ -701,7 +756,7 @@ export function rateDoubleTee(i: DtInputs) {
   {
     const hD = u.depth + (deck ? deck.thk : 0);
     const full = flexure(As, b.secInt, hD - cg, m, u.flangeThk + (deck ? deck.thk : 0), deck ? deck.fc : m.fc);
-    ldDev = ((full.fsu - (2 / 3) * fse) * db) / 12;
+    ldDev = (1.6 * (full.fsu - (2 / 3) * fse) * db) / 12;
   }
   for (const c of cond.units) {
     if (!unitDamaged(c)) continue;
@@ -720,7 +775,7 @@ export function rateDoubleTee(i: DtInputs) {
   /** info: computed and reported, but not a rating (the final tension on a back-calculated prestress). */
   type PointResult = { x: number; check: RatingCheck; inv: number; opr: number | null; C: number; Dl: number; LL: number; info?: true };
   /** intact: as designed (the section and distribution before the inspection's findings), for the comparison. */
-  const rateGirder = (g: Girder, v: Vehicle, intact = false) => {
+  const rateGirder = (g: Girder, v: Vehicle, intact = false, devFactor = 1.6) => {
     const design = v.cls === "design";
     const [dfM, dfS] = intact ? [g.dfMultiDesign, g.dfSingleDesign] : [g.dfMulti, g.dfSingle];
     const df = design ? dfM : i.options.legalLldf === "single" ? dfS : dfM;
@@ -739,7 +794,7 @@ export function rateDoubleTee(i: DtInputs) {
       const Dm = M1 + M2;
       const Mp = pedM(g, x);
       // Flexure, strength.
-      const cap = capacity(g, As, x, !intact);
+      const cap = capacity(g, As, x, !intact, devFactor);
       out.push({ x, check: "flexure", inv: (cap.Mn - 1.3 * Dm - 2.17 * Mp) / (2.17 * LLm), opr: (cap.Mn - 1.3 * Dm - 1.3 * Mp) / (1.3 * LLm), C: cap.Mn, Dl: Dm, LL: LLm });
       // Service, prestressed concrete (MBE 6B.5.3.3); stresses ksi, tension + at the bottom, compression + at the top.
       const P = fse * cap.As * transfer(x); // the strands left
@@ -849,6 +904,15 @@ export function rateDoubleTee(i: DtInputs) {
     return dm && (dm.lostArea > 0 || dm.topLoss > 0 || dm.factor < 1) ? dm : null;
   };
 
+  /** HS-20 inventory in flexure with the development length of the original design, beside the rating's (1.6, the errata): what the current rule costs. */
+  const devCompare = () => {
+    if (orig.devFactor >= 1.6) return null;
+    const hsR = ratings.find((v) => v.cls === "design")!;
+    const rated = Math.min(...hsR.per.map((p) => p.flexInv.inv));
+    const withOriginal = Math.min(...girders.map((g) => rateGirder(g, hs20, false, orig.devFactor).flexInv.inv));
+    return { rated, withOriginal };
+  };
+
   // --- the hand method at midspan (absolute maximum live load moment with the midspan dead load), as a check ---
   const midspan = vehicles.map((v) => {
     const design = v.cls === "design";
@@ -889,11 +953,30 @@ export function rateDoubleTee(i: DtInputs) {
     midspan,
     condition: { active, ldDev, alone: b.df.alone, asDesigned, units: conditionUnits, damageOf },
     shearRequired: i.options.checkShear ? [] : shearRequired(i),
+    original: { ...orig, devCompare: devCompare() },
     restricted: postings.some((p) => p === RESTRICTED),
   };
 }
 
 export type DtRating = ReturnType<typeof rateDoubleTee>;
+
+/**
+ * The original design's rules by the year built, taken as the year it was designed: CDOT's design
+ * vehicles (BRM 1.7.2(A): H20 before 1944, HS20 to 1993, HS25 1994 to 2001, HL-93 from 2002), and the
+ * 1.6 multiplier on strand development length FHWA required from its memorandum of October 1988
+ * (later SSHB 9.28.1, 17th Edition errata).
+ */
+export function originalDesign(year: number) {
+  const vehicle = year < 1944 ? "H20" : year <= 1993 ? "HS20" : year <= 2001 ? "HS25" : "HL-93";
+  return { vehicle, scale: vehicle === "HS25" ? 1.25 : 1, devFactor: year >= 1989 ? 1.6 : 1 } as const;
+}
+/** The design truck, wheel-line loads (kip) and spacings (ft) (SSHB 3.7): H20, HS20 (the HS-20 of the vehicles), HS25 at 1.25 × HS20. */
+export function designTruck(v: ReturnType<typeof originalDesign>["vehicle"]): Pick<Vehicle, "P" | "S"> {
+  const hs = CDOT_VEHICLES.find((x) => x.cls === "design")!;
+  if (v === "H20") return { P: [4, 16], S: [14] };
+  if (v === "HS25") return { P: hs.P.map((p) => p * 1.25), S: hs.S };
+  return hs;
+}
 
 /** The roadway between the curbs (between the rail faces without curbs), ft: where the lanes go (SSHB 3.6.2). */
 export const roadwayWidth = (i: Pick<DtInputs, "roadway">) => i.roadway.curbToCurb || i.roadway.railToRail - (2 * i.roadway.railFaceOffset) / 12;

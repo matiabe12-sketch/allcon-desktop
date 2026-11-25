@@ -92,10 +92,10 @@ these field by field):
    - pedestrian load on sidewalks (SSHB 3.14), with CDOT's two models (trucks curb to curb with
      pedestrians; trucks on a mountable sidewalk without), the worse governing.
 5. **Distribution factors:** design lanes on the roadway between the curbs (SSHB 3.6.2, 3.6.3: 12 ft
-   lanes, two on a 20 to 24 ft roadway, as BrR counts them); interior by SSHB Table 3.23.1 or 3.23.4.3; exterior by the lever rule
-   (wheel 2 ft from the rail or curb face); or the rater's overrides.
+   lanes, two on a 20 to 24 ft roadway, as BrR counts them); interior by SSHB Table 3.23.1 or 3.23.4.3; S/D capped at 1.0; the lever rule (BRM 1.3(E)) for interior units outside the formulas' range (√(I/J) > 5 or skew > 45° for S/D, S over 14 or 10 ft for the table); exterior by the lever rule
+   (wheel 2 ft from the rail or curb face, trucks 12 ft center to center, BRM 1.3(F)); or the rater's overrides.
 6. **Prestress:** losses by SSHB 9.16.2 (lump sum, or itemized shrinkage, elastic shortening and
-   creep, as BrR's setting), transfer and development (SSHB 9.27–9.28).
+   creep, as BrR's setting), transfer and development (SSHB 9.27–9.28; development 1.6(f*su − ⅔fse)D, 17th Edition errata).
 7. **Capacity at every point:**
    - flexure, SSHB 9.17 (fps by Eq. 9-17; rectangular or flanged), φ = 1.0; maximum steel, 9.18.1;
    - shear, SSHB 9.20 (Vci, Vcw, Vs), unless waived (BRM 1.4(O)); the tool warns when the waiver
@@ -116,7 +116,7 @@ these field by field):
 
 ## 5. Back-calculating the prestress (no plans)
 
-- The force (at the assumed strand centroid) is solved so that the lowest HS-20 inventory rating
+- The force (at the assumed strand centroid) is solved so that the lowest design-vehicle inventory rating
   factor over all girders and points, in flexure, is exactly 1.0, by the same full analysis (not a
   midspan hand check), so ALLCON's force rates as BrR will rate it.
 - As it's modeled in BrR: the final tension limit raised (1 ksi) so strength governs; shear waived per
@@ -125,6 +125,18 @@ these field by field):
 - Options, as in yesterday's files: whole strands (the jacking force rounded down to the kip) or the
   exact force; the asphalt in place or removed while solving (removed by default since Nov 2026,
   below).
+- **The original design, by the rules of its time** (taken from the year built):
+  - the design vehicle by BRM 1.7.2(A): H20 before 1944, HS20 to 1993, HS25 from 1994 to 2001
+    (truck and lane at 1.25 × HS20); from 2002 the bridge is LRFD (HL-93) and isn't back-calculated;
+  - strand development without the 1.6 multiplier before 1989 (FHWA's memorandum of October 1988
+    required it; SSHB 9.28.1 carries it in the 17th Edition errata), with it from 1989;
+  - the live load distribution and the strand stress at ultimate of the current Specifications. The
+    1973 (11th) rules differ (multi-beam decks by the slab width E = 4 + 0.06S ≤ 7 ft; f*su with 0.5
+    for γ*/β1), but when the 12th to 16th Editions changed them isn't established, so they aren't
+    applied yet.
+- **The rating uses today's rules** (BRM 1.3): development with the 1.6 multiplier. A design made
+  without it can rate below 1.0 near the ends; the calc package and the editor show HS-20 with the
+  design's development length beside the rating.
 - Reported: the force and strand centroid to enter in BrR, the equivalent strands, and the resulting
   ratings with the current dead loads.
 

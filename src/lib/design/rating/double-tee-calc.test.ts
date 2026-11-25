@@ -49,6 +49,9 @@ const cases: [string, DtInputs][] = [
   ["the defaults, final tension ignored (BRM 1.7.2)", { ...DT_DEFAULTS, options: { ...DT_DEFAULTS.options, ignoreTension: true } }],
   ["the defaults", DT_DEFAULTS],
   ["the defaults, known strands, shear rated", { ...DT_DEFAULTS, prestress: { mode: "known", strands: 12 }, options: { ...DT_DEFAULTS.options, checkShear: true } }],
+  ["a skewed multi-beam deck, by the lever rule", { ...DT_DEFAULTS, skew: 50, deck: { ...DT_DEFAULTS.deck, present: false } }],
+  ["a bridge built in 1996, designed for HS25", { ...DT_DEFAULTS, span: 22, structureLength: 23, bridge: { ...DT_DEFAULTS.bridge, yearBuilt: 1996 } }],
+  ["a short span designed before the 1.6 development multiplier", { ...DT_DEFAULTS, span: 22, structureLength: 23 }],
   ...(fixtures as unknown as { name: string; bridge: Record<string, unknown> }[]).map((f): [string, DtInputs] => [f.name, dtInputsFromBridgeFile(f.bridge)]),
 ];
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { dtRatingInputs } from "../kinds";
 import fixtures from "./cdot-bridges.json";
-import { DT_DEFAULTS, NO_UNIT_CONDITION, RESTRICTED, codeTension, designLanes, postAll, shearRequired, dtInputsFromBridgeFile, interiorMethod, isSidewalkTruckCase, rateDoubleTee, type DtInputs, type DtRating, type DtUnitCondition } from "./double-tee";
+import { DT_DEFAULTS, NO_UNIT_CONDITION, RESTRICTED, codeTension, designLanes, designTruck, originalDesign, postAll, shearRequired, dtInputsFromBridgeFile, interiorMethod, isSidewalkTruckCase, rateDoubleTee, type DtInputs, type DtRating, type DtUnitCondition } from "./double-tee";
 import { dtRatingCalcLines } from "./double-tee-calc";
 import { CDOT_VEHICLES, laneAt, tons, trainAt, trainMax } from "./vehicles";
 
@@ -34,7 +34,8 @@ type Expected = {
   ratings: { name: string; Mw: number; gov: string; per: { g: string; inv: number; opr: number }[] }[];
 };
 it("sets the prestress with trucks between the curbs, then rates trucks on a mountable sidewalk with it", () => {
-  const i: DtInputs = { ...DT_DEFAULTS, span: 22, structureLength: 23, loads: { ...DT_DEFAULTS.loads, sidewalks: [{ width: 5, thk: 8 }], sidewalkMountable: true, pedestrians: true }, options: { ...DT_DEFAULTS.options, solveWithOverlay: true } };
+  // Built in 1990: designed with the 1.6 development multiplier, as it is rated, so the design rates 1.0.
+  const i: DtInputs = { ...DT_DEFAULTS, bridge: { ...DT_DEFAULTS.bridge, yearBuilt: 1990 }, span: 22, structureLength: 23, loads: { ...DT_DEFAULTS.loads, sidewalks: [{ width: 5, thk: 8 }], sidewalkMountable: true, pedestrians: true }, options: { ...DT_DEFAULTS.options, solveWithOverlay: true } };
   const r = rateDoubleTee(i);
   expect(isSidewalkTruckCase(r.solve.gov)).toBe(false);
   const hs = r.ratings[0];
@@ -348,5 +349,57 @@ describe("CDOT's rules around the rating", () => {
     r = postAll(list({ "CO Type 3-2": 0.25 }), false);
     expect(at(r, "CO Type 3")).toBe(RESTRICTED);
     expect(at(r, "HS-20")).toBe("—");
+  });
+});
+
+describe("the original design (BRM 1.7.2(A))", () => {
+  it("takes CDOT's design vehicle and FHWA's 1988 development rule by the year built", () => {
+    expect(originalDesign(1940).vehicle).toBe("H20");
+    expect(originalDesign(1970)).toMatchObject({ vehicle: "HS20", scale: 1, devFactor: 1 });
+    expect(originalDesign(1990)).toMatchObject({ vehicle: "HS20", devFactor: 1.6 });
+    expect(originalDesign(1995)).toMatchObject({ vehicle: "HS25", scale: 1.25, devFactor: 1.6 });
+    expect(originalDesign(2005).vehicle).toBe("HL-93");
+    expect(designTruck("HS25").P).toEqual([5, 20, 20]);
+    expect(designTruck("H20").P).toEqual([4, 16]);
+  });
+
+  it("solves for HS25 on a bridge built 1994 to 2001, so HS-20 rates 1.25 or more", () => {
+    const i: DtInputs = { ...DT_DEFAULTS, span: 22, structureLength: 23, bridge: { ...DT_DEFAULTS.bridge, yearBuilt: 1996 } };
+    const r = rateDoubleTee(i);
+    const hs = r.ratings[0];
+    expect(Math.min(...hs.per.map((p) => p.flexInv.inv))).toBeGreaterThan(1.2);
+    expect(rateDoubleTee({ ...i, bridge: { ...i.bridge, yearBuilt: 1990 } }).solve.As).toBeLessThan(r.solve.As);
+  });
+
+  it("doesn't back-calculate a bridge built from 2002 (LRFD, HL-93)", () => {
+    expect(() => rateDoubleTee({ ...DT_DEFAULTS, bridge: { ...DT_DEFAULTS.bridge, yearBuilt: 2003 } })).toThrow(/HL-93/);
+  });
+
+  it("rates with the 1.6 development multiplier a design made without it, and reports the difference", () => {
+    const i: DtInputs = { ...DT_DEFAULTS, span: 22, structureLength: 23 };
+    const r = rateDoubleTee(i);
+    expect(r.original.devFactor).toBe(1);
+    const d = r.original.devCompare!;
+    expect(d.withOriginal).toBeCloseTo(1, 2); // the design rates 1.0 with its own development rule
+    expect(d.rated).toBeLessThanOrEqual(d.withOriginal + 1e-9);
+    expect(rateDoubleTee({ ...i, bridge: { ...i.bridge, yearBuilt: 1990 } }).original.devCompare).toBeNull();
+  });
+});
+
+describe("distribution limits", () => {
+  it("caps the multi-beam load fraction at 1 (SSHB 3.23.4.3)", () => {
+    const i: DtInputs = { ...DT_DEFAULTS, span: 20, structureLength: 21, deck: { ...DT_DEFAULTS.deck, present: false }, units: { ...DT_DEFAULTS.units, spacing: 96, flangeWidth: 96, stemSpacing: 48 } };
+    const r = rateDoubleTee(i);
+    expect(r.df.int.method).toBe("sd");
+    for (const g of r.girders.filter((x) => !x.ext)) expect(g.dfMulti).toBeLessThanOrEqual(1);
+  });
+
+  it("uses the lever rule past 45° of skew (BRM 1.3(E))", () => {
+    const i: DtInputs = { ...DT_DEFAULTS, skew: 50, deck: { ...DT_DEFAULTS.deck, present: false } };
+    const r = rateDoubleTee(i);
+    expect(r.df.int.outOfRange).toMatch(/45/);
+    const g = r.girders.find((x) => !x.ext)!;
+    expect(g.lever).toEqual({ single: true, multi: true });
+    expect(g.dfSingle).toBeCloseTo(1, 6); // one wheel over the unit; the other, 6 ft away, past the next unit
   });
 });

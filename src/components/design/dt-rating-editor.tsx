@@ -178,7 +178,7 @@ export function DtRatingEditor({ design, projects }: { design: { id: string; nam
               <TextField label="Facility carried" value={i.bridge.facility} onChange={(v) => bridge({ facility: v })} />
               <TextField label="Feature intersected" value={i.bridge.feature} onChange={(v) => bridge({ feature: v })} />
               <TextField label="Owner" value={i.bridge.owner} onChange={(v) => bridge({ owner: v })} />
-              <SrcField i={i} path="bridge.yearBuilt" label="Year built" onSet={setP} onConfirm={confirmP} transform={Math.round} hint="Sets the materials of the era from the BRM's tables" />
+              <SrcField i={i} path="bridge.yearBuilt" label="Year built" onSet={setP} onConfirm={confirmP} transform={Math.round} hint="Sets the materials of the era (BRM Table 1-3) and the design vehicle the prestress is solved for (BRM 1.7.2(A))" />
               <TextField label="Inspection" value={i.bridge.inspection} onChange={(v) => bridge({ inspection: v })} placeholder="Report and date" />
               <TextField label="Rater" value={i.bridge.rater} onChange={(v) => bridge({ rater: v })} />
               <TextField label="Checker" value={i.bridge.checker} onChange={(v) => bridge({ checker: v })} />
@@ -583,6 +583,14 @@ function Results({ i, r, brr, setBrr, df, setDf }: { i: DtInputs; r: DtRating; b
           <span>Shear isn&apos;t rated, but BRM 1.4 requires it: {r.shearRequired.join("; ")}. Turn on “Rate shear” under Rating options.</span>
         </div>
       )}
+      {s.mode === "back-calculate" && r.original.devCompare && r.original.devCompare.withOriginal - r.original.devCompare.rated > 5e-4 && (
+        <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+          <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+          <span>
+            Built before 1989, so designed without the 1.6 multiplier on strand development length that the rating now applies (SSHB 9.28.1, 17th Edition errata). Near the ends that lowers HS-20 inventory in flexure from {f3(r.original.devCompare.withOriginal)} to {f3(r.original.devCompare.rated)}.
+          </span>
+        </div>
+      )}
       {s.mode === "back-calculate" && hsService && (
         <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
           <AlertTriangle className="mt-0.5 size-4 shrink-0" />
@@ -685,7 +693,7 @@ function Results({ i, r, brr, setBrr, df, setDf }: { i: DtInputs; r: DtRating; b
             ["Jacking force Pj, for BrR", `${s.Pj.toFixed(s.mode === "back-calculate" && i.options.roundStrands ? 0 : 1)} kip`],
             ["Effective force Pe", `${fmt(s.Pe, 1)} kip (fse ${fmt(s.fse, 1)} ksi)`],
             ["Strand centroid from the bottom", `${fmt(s.cg, 2)} in`],
-            ["Governing girder while solving", `${s.gov}, HS-20 inventory ${f3(s.govRF)}`],
+            ["Governing girder while solving", `${s.gov}, ${r.original.vehicle === "HS25" ? "HS25" : r.original.vehicle === "H20" ? "H20" : "HS-20"} inventory ${f3(s.govRF)}`],
             ["Cracking moment governs", s.crackGoverns ? "Yes (BRM 1.7.2)" : "No"],
             ["Flexure at midspan, governing girder", `Mn ${fmt(s.cap.Mn, 1)} kip·ft; fsu* ${fmt(s.cap.fsu, 1)} ksi; ${s.cap.type}`],
           ]}

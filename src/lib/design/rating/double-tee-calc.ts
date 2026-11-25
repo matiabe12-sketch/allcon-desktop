@@ -45,8 +45,32 @@ const andList =(xs: (string | false | 0)[]) => {
   return w.length > 1 ? `${w.slice(0, -1).join(", ")} and ${w[w.length - 1]}` : (w[0] ?? "");
 };
 
+/** The design vehicle as the calc names it. */
+function designVehicleName(v: string) {
+  return v === "HS25" ? "HS25 (1.25 × HS-20)" : v === "H20" ? "H20" : "HS-20";
+}
+
+/** What the back-calculation takes from the original design's time, and what the rating takes from today's rules. */
+function originalNote(i: DtInputs, r: ReturnType<typeof rateDoubleTee>) {
+  const o = r.original;
+  const y = i.bridge.yearBuilt;
+  const vehicle =
+    o.vehicle === "HS25" ? `HS25, CDOT's design vehicle for bridges built from 1994 to 2001` : o.vehicle === "H20" ? `H20, CDOT's design vehicle for bridges built before 1944` : `HS-20, CDOT's design vehicle for bridges built from 1944 to 1993`;
+  const dev =
+    o.devFactor < 1.6
+      ? `its strands are developed over (f*su − ⅔fse)D, without the 1.6 multiplier that FHWA required from October 1988 and that SSHB 9.28.1 now carries (17th Edition errata)`
+      : `its strands are developed over 1.6(f*su − ⅔fse)D, the multiplier FHWA required from October 1988 (SSHB 9.28.1, 17th Edition errata)`;
+  const d = o.devCompare;
+  const cost = !d
+    ? ""
+    : d.withOriginal - d.rated > 5e-4
+      ? ` The rating uses today's rule, with the 1.6 multiplier, so near the ends of the span the strands carry less stress than the design assumed: in flexure, HS-20 rates ${num(d.withOriginal, 3)} at inventory with the development length of the design, and ${num(d.rated, 3)} with today's.`
+      : ` The rating uses today's rule, with the 1.6 multiplier; HS-20 governs where the strands are fully developed either way, so it doesn't change the rating.`;
+  return `Original design:- The prestress is set by the rules of the bridge's time, taken from the year it was built (${y}). The design vehicle is ${vehicle} (BRM 1.7.2(A)), and ${dev}. The live load distribution and the strand stress at ultimate are those of the current Specifications. The ratings then follow the current Specifications, the MBE and the BRM (BRM 1.3).${cost}`;
+}
+
 /** Why the final tension is 1.0 ksi when the prestress is back-calculated. */
-const TENSION_NOTE = "Final tension: 1.0 ksi. The code limit, 6√f′c (SSHB 9.15.2.2), is set aside so that strength flexure controls the back-calculated prestress (BRM 1.7.2)";
+const TENSION_NOTE = "Final tension: 1.0 ksi, as entered. The code limit, 6√f′c (SSHB 9.15.2.2), is set aside so that strength flexure controls the prestress, which BRM 1.7.2 sets by strength";
 
 /** The package's opening note: the purpose, the method and how the inputs were found, for this bridge. */
 function methodNote(i: DtInputs, r: ReturnType<typeof rateDoubleTee>, text: (t: string, style?: "heading" | "subheading" | "note") => void) {
@@ -69,14 +93,15 @@ function methodNote(i: DtInputs, r: ReturnType<typeof rateDoubleTee>, text: (t: 
     `Method:- The bridge is rated by Load Factor Rating (LFR), following the AASHTO Standard Specifications for Highway Bridges, 17th Edition (SSHB); the AASHTO Manual for Bridge Evaluation (MBE), Section 6, Part B; and the CDOT Bridge Rating Manual (BRM). HS-20 is rated at the inventory and operating levels, and the Colorado legal and permit vehicles at the operating level.`,
   );
   text(
-    `The rating factor is RF = (C − A₁D) / (A₂L(1 + I)), where A₁ = 1.3, and A₂ = 2.17 at inventory or 1.3 at operating. The impact factor is I = 50/(L + 125) ≤ 0.30 (SSHB 3.8.2.1), which gives I = ${num(r.impact)} for this span. Each vehicle is moved across the span in both directions, and every girder is rated at each point of interest (MBE 6B.4.1).`,
+    `The rating factor is RF = (C − A₁D) / (A₂L(1 + I)), where A₁ = 1.3, and A₂ = 2.17 at inventory or 1.3 at operating (MBE 6B.4.3). The impact factor is I = 50/(L + 125) ≤ 0.30 (SSHB 3.8.2.1), which gives I = ${num(r.impact)} for this span. Each vehicle is moved across the span in both directions, and every girder is rated at each point of interest (MBE 6B.4.1).`,
   );
   if (back)
     text(
-      `No plans:- There are no design plans or shop drawings for this bridge. The geometry (${andList(["span", "number and spacing of units", "flange and stem dimensions", i.deck.present && "deck", "asphalt", curbs.length > 0 && "curbs", sw.length > 0 && "sidewalks", "railings", "diaphragms"])}) comes from ${records.length ? records.join(" and ") : "the field records"}. The material properties are those the BRM gives for a bridge built in ${i.bridge.yearBuilt}. Because the prestress is not known, it is back-calculated per BRM 1.7.2(A): it is set so that every girder's HS-20 inventory rating factor for strength flexure is at least 1.0${i.options.roundStrands ? ", then rounded up to whole strands" : ""}, ${i.options.solveWithOverlay ? "under the dead loads used in the rating, the asphalt included as original to the bridge" : "under the dead load of the original design, without the asphalt: an overlay added later is rated, not designed for, so it lowers the ratings"}. This assumes the girders were designed for HS-20.${
+      `No plans:- There are no design plans or shop drawings for this bridge. The geometry (${andList(["span", "number and spacing of units", "flange and stem dimensions", i.deck.present && "deck", "asphalt", curbs.length > 0 && "curbs", sw.length > 0 && "sidewalks", "railings", "diaphragms"])}) comes from ${records.length ? records.join(" and ") : "the field records"}. The material properties are those the BRM gives for a bridge built in ${i.bridge.yearBuilt}. Because the prestress is not known, it is back-calculated per BRM 1.7.2(A): it is set so that every girder's ${designVehicleName(r.original.vehicle)} inventory rating factor for strength flexure is at least 1.0${i.options.roundStrands ? ", then rounded up to whole strands" : ""}, ${i.options.solveWithOverlay ? "under the dead loads used in the rating, the asphalt included as original to the bridge" : "under the dead load of the original design, without the asphalt: an overlay added later is rated, not designed for, so it lowers the ratings"}. This assumes the girders were designed for HS-20.${
         sw.length && i.loads.sidewalkMountable ? " The prestress is set with trucks between the curbs, the cases the original design would have used; trucks on the mountable sidewalk are then rated with that prestress, not used to set it." : ""
       } The service checks then use this prestress. ${checkStandard(i).summary.replace(/ \(standard: /g, " (the standard's: ")}`,
     );
+  if (back) text(originalNote(i, r));
   const harp = i.prestress.mode === "known" ? i.prestress.harp : null;
   const std = harp ? checkStandard(i) : null;
   if (harp && std?.row) {
@@ -90,7 +115,7 @@ function methodNote(i: DtInputs, r: ReturnType<typeof rateDoubleTee>, text: (t: 
       tensionIgnored(i)
         ? "The final tension in the girder is not rated. The prestress is back-calculated for strength (BRM 1.7.2), so a tension check on it would only test the assumed prestress, not the bridge, and the strength back-calculation is a lower bound on the prestress of girders designed to service limits. The tension at the code limit, 6√f′c (SSHB 9.15.2.2), is reported for information; the bridge's service performance is shown by its inspection history (no flexural cracking or other load-induced distress, MBE 6.1.4)."
         : tension === 1 && back
-        ? "The final tension limit is 1.0 ksi. The code limit, 6√f′c (SSHB 9.15.2.2), is set aside so that strength flexure controls the back-calculated prestress (BRM 1.7.2)."
+        ? "The final tension limit is 1.0 ksi, as entered. The code limit, 6√f′c (SSHB 9.15.2.2), is set aside so that strength flexure controls the prestress, which BRM 1.7.2 sets by strength."
         : tension === null
           ? "The final tension limit is 6√f′c (SSHB 9.15.2.2)."
           : `The final tension limit is ${num(tension)} ksi.`
@@ -106,7 +131,7 @@ function methodNote(i: DtInputs, r: ReturnType<typeof rateDoubleTee>, text: (t: 
     `Loads:- The dead loads are ${andList(["the self-weight", i.deck.present && "the deck", "asphalt", curbs.length > 0 && "curbs", sw.length > 0 && "sidewalks", "railings", i.loads.diaphragmKip && "diaphragms"])}. The live load on each girder uses the distribution factors calculated in section 6 (SSHB 3.23). ${
       sw.length
         ? i.loads.sidewalkMountable
-          ? `Because the sidewalk is mountable, two cases are rated and the lower rating governs: trucks between the curbs${i.loads.pedestrians ? ", with pedestrian load on the sidewalk (SSHB 3.14.1.1)" : ""}; and trucks on the sidewalk, without pedestrians.`
+          ? `Because the sidewalk is mountable, two cases are rated and the lower rating governs (BRM 1.4(T)): trucks between the curbs${i.loads.pedestrians ? ", with pedestrian load on the sidewalk (SSHB 3.14.1.1)" : ""}; and trucks on the sidewalk, without pedestrians.`
           : `Trucks stay between the curbs${i.loads.pedestrians ? ", with pedestrian load on the sidewalk (SSHB 3.14.1.1)" : ""}.`
         : curbs.length
           ? "There is no sidewalk. The curbs carry no pedestrians and can't be mounted, so trucks stay between the curb faces."
@@ -246,7 +271,7 @@ export function dtRatingCalcLines(i: DtInputs, title: string, figures?: { sectio
       cu.factor < 1 && `a judgment factor of ${num(cu.factor)}`,
     ].filter(Boolean);
     given(`M_{nx}\\coloneq ${num(Mnx, 9)}${kft}`, `As inspected at x = ${num(x, 2)} ft (MBE 6.1.2): ${parts.join(", ")}${cu.zone ? `, from ${num(cu.zone.from, 2)} to ${num(cu.zone.to, 2)} ft` : ""}. The remaining section's strength, from the same equations`);
-  } else if (!developed) given(`M_{nx}\\coloneq ${num(Mnx, 9)}${kft}`, `The strands are not fully developed at x = ${num(x, 2)} ft, so f*su is reduced (SSHB 9.28)`);
+  } else if (!developed) given(`M_{nx}\\coloneq ${num(Mnx, 9)}${kft}`, `The strands are not fully developed at x = ${num(x, 2)} ft, so f*su is reduced (SSHB 9.28.1: development length 1.6(f*su − ⅔fse)D, 17th Edition errata)`);
   else m("M_{nx}\\coloneq M_n=", `The strands are fully developed at x = ${num(x, 2)} ft`, "kip*ft");
 
   // 4. Stress limits
@@ -295,7 +320,12 @@ export function dtRatingCalcLines(i: DtInputs, title: string, figures?: { sectio
     given(`DF_{m}\\coloneq ${num(g.dfMulti, 10)}`, `${g.name}, two or more lanes, as inspected`);
     given(`DF_{s}\\coloneq ${num(g.dfSingle, 10)}`, "One lane, as inspected");
   } else if (i.options.dfOverride) given(`DF_{m}\\coloneq ${num(g.dfMulti, 10)}`, "Two or more lanes, as entered");
-  else if (!g.ext && interiorMethod(i) === "table") {
+  else if (!g.ext && g.lever && (g.lever.multi || g.lever.single)) {
+    const why = r.df.int.outOfRange ? `S/D applies only up to √(I/J) = 5.0 and a skew of 45° (SSHB 3.23.4.3); here ${r.df.int.outOfRange}` : `Table 3.23.1 applies to prestressed girders up to S = 14 ft with two or more lanes and 10 ft with one (its footnote f); here S = ${num(g.S, 2)} ft`;
+    text(`${why}. Outside the formulas' range the lever rule is used (BRM 1.3(E)): the deck hinged at the units on each side, wheels 6 ft apart and trucks 12 ft center to center (BRM 1.3(F)), placed for the largest reaction.`, "note");
+    given(`DF_{m}\\coloneq ${num(g.dfMulti, 10)}`, g.lever.multi ? "Interior, two or more lanes, lever rule" : "Interior, two or more lanes, S/5.5 (SSHB Table 3.23.1)");
+    given(`DF_{s}\\coloneq ${num(g.dfSingle, 10)}`, g.lever.single ? "Interior, one lane, lever rule" : "Interior, one lane, S/7.0");
+  } else if (!g.ext && interiorMethod(i) === "table") {
     if (deck) text("Under the composite deck the units are prestressed girders carrying a slab, so the interior factors are those of SSHB Table 3.23.1.", "note");
     m(`S\\coloneq ${num(g.S, 10)}\\mathrm{ft}`, "Girder spacing");
     m("DF_{m}\\coloneq\\frac{S}{5.5\\mathrm{ft}}=", "Interior, two or more lanes (SSHB Table 3.23.1)");
@@ -310,12 +340,13 @@ export function dtRatingCalcLines(i: DtInputs, title: string, figures?: { sectio
     m("C\\coloneq K\\cdot\\min\\left(\\frac{W}{L},1\\right)=", "SSHB 3.23.4.3");
     m("D_m\\coloneq\\left(5.75-0.5\\cdot N_L+0.7\\cdot N_L\\cdot\\left(1-0.2\\cdot C\\right)^{2}\\right)\\cdot\\mathrm{ft}=", "With the bridge's design lanes", "ft");
     m("D_s\\coloneq\\left(5.75-0.5+0.7\\cdot\\left(1-0.2\\cdot C\\right)^{2}\\right)\\cdot\\mathrm{ft}=", "With one lane loaded, for the legal and permit vehicles", "ft");
-    m("DF_{m}\\coloneq\\frac{S}{D_m}=", "Interior, two or more lanes");
-    m("DF_{s}\\coloneq\\frac{S}{D_s}=", "Interior, one lane");
+    m("DF_{m}\\coloneq\\min\\left(\\frac{S}{D_m},1\\right)=", "Interior, two or more lanes; the load fraction need not be greater than 1 (SSHB 3.23.4.3)");
+    m("DF_{s}\\coloneq\\min\\left(\\frac{S}{D_s},1\\right)=", "Interior, one lane");
+    if (r.df.int.rootIJ !== null) text(`√(I/J) = ${num(r.df.int.rootIJ, 2)}, within S/D's limit of 5.0, and the skew, ${num(i.skew)}°, within 45° (SSHB 3.23.4.3).`, "note");
   } else {
     given(
       `DF_{m}\\coloneq ${num(g.dfMulti, 10)}`,
-      g.ext ? `Exterior, by the lever rule, with the wheel 2 ft from the ${g.caseName.startsWith("trucks on") ? "rail" : r.ped.sidewalks.length ? "curb" : "rail"} face` : "Interior, multi-beam S/D (SSHB 3.23.4.3)",
+      g.ext ? `Exterior, by the lever rule, with the wheel 2 ft from the ${g.caseName.startsWith("trucks on") ? "rail" : r.ped.sidewalks.length ? "curb" : "rail"} face and trucks 12 ft center to center (BRM 1.3(F))` : "Interior, multi-beam S/D (SSHB 3.23.4.3)",
     );
     given(`DF_{s}\\coloneq ${num(g.dfSingle, 10)}`, "One lane");
   }
@@ -341,14 +372,14 @@ export function dtRatingCalcLines(i: DtInputs, title: string, figures?: { sectio
   const llHS = hsFlex.flexInv.LL / (hsFlex.df * (1 + r.impact));
   given(`M_{w,HS}\\coloneq ${num(llHS, 9)}${kft}`, `HS-20 moment per wheel line at x, from the truck or the lane load, whichever is greater (SSHB 3.7)`);
   m("M_{L,HS}\\coloneq M_{w,HS}\\cdot DF_{m}\\cdot\\left(1+I_m\\right)=", undefined, "kip*ft");
-  m("RF_{inv,HS}\\coloneq\\frac{M_{nx}-1.3\\cdot M_D-2.17\\cdot M_{ped}}{2.17\\cdot M_{L,HS}}=", "Inventory: A1 = 1.3, A2 = 2.17 (MBE Eq. 6B.4.1-1)");
+  m("RF_{inv,HS}\\coloneq\\frac{M_{nx}-1.3\\cdot M_D-2.17\\cdot M_{ped}}{2.17\\cdot M_{L,HS}}=", "Inventory: A1 = 1.3, A2 = 2.17 (MBE Eq. 6B.4.1-1, 6B.4.3)");
   m("RF_{opr,HS}\\coloneq\\frac{M_{nx}-1.3\\cdot M_D-1.3\\cdot M_{ped}}{1.3\\cdot M_{L,HS}}=", "Operating: A2 = 1.3");
   if (back) {
     const sidewalkCase = isSidewalkTruckCase(g.name);
     const asInspected = damagedHere || r.condition.alone;
-    if (i.options.solveWithOverlay && !sidewalkCase && !asInspected) m(ok("1", "RF_{inv,HS}"), "HS-20 inventory rating of at least 1.0 with whole strands (BRM 1.7.2(A))");
+    if (i.options.solveWithOverlay && !sidewalkCase && !asInspected && (developed || !r.original.devCompare)) m(ok("1", "RF_{inv,HS}"), "HS-20 inventory rating of at least 1.0 with whole strands (BRM 1.7.2(A))");
     text(
-      `This is the fewest whole strands that gives every girder, with trucks between the curbs, an inventory rating of at least 1.0 in flexure at every point${asInspected ? " as designed (intact)" : ""}. With one strand fewer, ${s.gov} would rate below 1.0.${
+      `This is the fewest whole strands that gives every girder, with trucks between the curbs, an inventory rating of at least 1.0 for ${designVehicleName(r.original.vehicle)} in flexure at every point, with the development length of the original design${asInspected ? " as designed (intact)" : ""}. With one strand fewer, ${s.gov} would rate below 1.0.${
         sidewalkCase ? ` The case worked here, ${g.name}, is not used to set the prestress: it is rated with it, so its rating may fall below 1.0.` : ""
       }${asInspected ? ` The rating above is as inspected, so it may fall below 1.0.` : ""}`,
     );
@@ -356,7 +387,7 @@ export function dtRatingCalcLines(i: DtInputs, title: string, figures?: { sectio
     const cr = r.crack.find((c) => c.g === g.name)!;
     m("f_r\\coloneq0.24\\cdot\\sqrt{\\frac{f'_{c}}{\\mathrm{ksi}}}\\cdot\\mathrm{ksi}=", "Modulus of rupture, AASHTO LRFD 5.4.2.6 (SSHB 9.15.2.3: 7.5√f′c psi)", "ksi");
     m(`M_{cr}\\coloneq f_r\\cdot ${g.csec ? "S_{bc}" : "S_b"}=`, `Cracking moment of ${g.name}, ${g.csec ? "composite" : "precast"} section`, "kip*ft");
-    given(`M_u\\coloneq ${num(cr.MuReq, 6)}${kft}`, `Factored moment of ${g.name} at midspan, 1.3·MD + 2.17·(ML(1 + I) + Mped), using the largest HS-20 moment`);
+    given(`M_u\\coloneq ${num(cr.MuReq, 6)}${kft}`, `Factored moment of ${g.name} at midspan, 1.3·MD + 2.17·(ML(1 + I) + Mped), using the largest ${designVehicleName(r.original.vehicle)} moment`);
     m(
       ok("M_{cr}", "M_u"),
       s.crackGoverns ? "On at least one girder the cracking moment governs and sets the prestressing steel (BRM 1.7.2)" : "The factored moment exceeds the cracking moment on every girder, so it governs (BRM 1.7.2)",

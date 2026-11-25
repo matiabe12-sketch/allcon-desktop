@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { dtRatingInputs } from "../kinds";
 import fixtures from "./cdot-bridges.json";
-import { DT_DEFAULTS, NO_UNIT_CONDITION, RESTRICTED, codeTension, designLanes, designTruck, legalLanes, multiBeamEra, originalDesign, postAll, shearRequired, dtInputsFromBridgeFile, interiorMethod, isSidewalkTruckCase, rateDoubleTee, type DtInputs, type DtRating, type DtUnitCondition } from "./double-tee";
+import { DT_DEFAULTS, NO_UNIT_CONDITION, RESTRICTED, codeTension, designLanes, designTruck, itemizedLosses, legalLanes, multiBeamEra, originalDesign, postAll, shearRequired, dtInputsFromBridgeFile, interiorMethod, isSidewalkTruckCase, rateDoubleTee, type DtInputs, type DtRating, type DtUnitCondition } from "./double-tee";
 import { dtRatingCalcLines } from "./double-tee-calc";
 import { CDOT_VEHICLES, laneAt, tons, trainAt, trainMax } from "./vehicles";
 
@@ -452,5 +452,35 @@ describe("legal and permit vehicles' distribution (BRM 1.3(C), (D))", () => {
     expect(p.df).toBeCloseTo(r.girders.find((g) => g.name === "G3")!.dfMulti, 12);
     const old = rateDoubleTee(at(1985, "single")).ratings.find((v) => v.name === "CO Type 3")!.per.find((x) => x.g === "G3")!;
     expect(old.df).toBeCloseTo(rateDoubleTee(at(1985, "single")).girders.find((g) => g.name === "G3")!.dfSingle, 12);
+  });
+});
+
+describe("prestress losses (SSHB 9.16.2.1)", () => {
+  it("adds shrinkage, elastic shortening, creep and relaxation by the article's equations", () => {
+    const r = rateDoubleTee(DT_DEFAULTS);
+    const l = r.solve.losses!;
+    expect(l.SH).toBeCloseTo(17 - 0.15 * 55, 10);
+    expect(l.ES).toBeCloseTo((28000 / l.Eci) * l.fcir, 10);
+    expect(l.CRc).toBeCloseTo(12 * l.fcir - 7 * l.fcds, 10);
+    expect(l.CRs).toBeCloseTo(20 - 0.4 * l.ES - 0.2 * (l.SH + l.CRc), 10); // stress-relieved
+    expect(r.solve.fse).toBeCloseTo(r.solve.fpj - l.total, 10);
+    expect(r.solve.fsuValid).toBe(r.solve.fse >= 0.5 * DT_DEFAULTS.materials.fpu);
+  });
+  it("uses the low-relaxation relaxation equation for low-relaxation strand", () => {
+    const i: DtInputs = { ...DT_DEFAULTS, materials: { ...DT_DEFAULTS.materials, fpu: 270, lowRelaxation: true, jackingRatio: 0.75 } };
+    const l = rateDoubleTee(i).solve.losses!;
+    expect(l.CRs).toBeCloseTo(Math.max(0, 5 - 0.1 * l.ES - 0.05 * (l.SH + l.CRc)), 10);
+  });
+  it("keeps the lump sum for bridge files and when chosen", () => {
+    const b = (fixtures as unknown as { bridge: Record<string, unknown> }[])[0].bridge;
+    expect(dtInputsFromBridgeFile(b).options.losses).toBe("lump");
+    const r = rateDoubleTee({ ...DT_DEFAULTS, options: { ...DT_DEFAULTS.options, losses: "lump" } });
+    expect(r.solve.losses).toBeNull();
+    expect(r.solve.fse).toBeCloseTo(r.solve.fpj - 45, 10);
+    expect(typeof itemizedLosses).toBe("function");
+  });
+  it("a saved design from before keeps the lump sum", () => {
+    expect(dtRatingInputs({ options: { lldfInterior: "table" } }).options.losses).toBe("lump");
+    expect(dtRatingInputs({}).options.losses).toBe("itemized");
   });
 });

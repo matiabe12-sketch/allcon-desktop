@@ -87,7 +87,9 @@ export function brrInputSheet(i: DtInputs, r: DtRating): BrrGroup[] {
       rows: [
         ["Railing", `Custom rail, ${f(ld.railKlf, 4)} klf each side`, ""],
         ...ld.sidewalks.map((x, j): BrrRow => [`${x.curb ? "Curb" : "Sidewalk"} ${j + 1}`, `${ftin(x.width)} wide × ${f(x.thk)}" concrete`, x.curb ? "Typical section, DC2; no pedestrian load, not mountable" : "Typical section, DC2"]),
-        ["PS properties: loss method", `Lump sum, ${f(i.options.lossLumpSum)} ksi`, "SSHB 9.16.2.2"],
+        r.solve.losses
+          ? ["PS properties: loss method", `Lump sum, ${f(r.solve.losses.total)} ksi`, "The item-by-item total (SSHB 9.16.2.1), entered as a lump sum so BrR uses the same effective prestress"]
+          : ["PS properties: loss method", `Lump sum, ${f(i.options.lossLumpSum)} ksi`, "SSHB 9.16.2.2"],
         ["Jacking stress ratio", f(m.jackingRatio), ""],
         tensionIgnored(i)
           ? ["Final tension limit, girder (LFD)", "10 ksi", "Ignored, BRM 1.7.2: a value high enough that tension never governs, so strength flexure controls"]

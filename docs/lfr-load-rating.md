@@ -94,8 +94,13 @@ these field by field):
 5. **Distribution factors:** design lanes on the roadway between the curbs (SSHB 3.6.2, 3.6.3: 12 ft
    lanes, two on a 20 to 24 ft roadway, as BrR counts them); interior by SSHB Table 3.23.1 or 3.23.4.3; S/D capped at 1.0; the lever rule (BRM 1.3(E)) for interior units outside the formulas' range (√(I/J) > 5 or skew > 45° for S/D, S over 14 or 10 ft for the table); exterior by the lever rule
    (wheel 2 ft from the rail or curb face, trucks 12 ft center to center, BRM 1.3(F)); or the rater's overrides.
-6. **Prestress:** losses by SSHB 9.16.2 (lump sum, or itemized shrinkage, elastic shortening and
-   creep, as BrR's setting), transfer and development (SSHB 9.27–9.28; development 1.6(f*su − ⅔fse)D, 17th Edition errata).
+6. **Prestress:** losses item by item by default (SSHB 9.16.2.1: shrinkage 17 − 0.150RH ksi,
+   elastic shortening (Es/Eci)fcir, creep 12fcir − 7fcds, relaxation by strand type), on the typical
+   interior unit at midspan, with the mean annual humidity (55% by default); or the lump sum of
+   9.16.2.2, which bridge files and the 1982 standard keep. For bridges built by 1976 the calc package
+   shows the 1973 estimate (Art. 1.6.7(B)) beside it. The effective prestress is checked against
+   0.5 f′s, the limit for Eq. 9-17 (SSHB 9.17.4.1), and flagged when below. Transfer and development
+   (SSHB 9.27–9.28; development 1.6(f*su − ⅔fse)D, 17th Edition errata).
 7. **Capacity at every point:**
    - flexure, SSHB 9.17 (fps by Eq. 9-17; rectangular or flanged), φ = 1.0; maximum steel, 9.18.1;
    - shear, SSHB 9.20 (Vci, Vcw, Vs), unless waived (BRM 1.4(O)); the tool warns when the waiver

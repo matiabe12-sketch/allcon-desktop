@@ -382,7 +382,20 @@ export function DtRatingEditor({ design, projects }: { design: { id: string; nam
               <Field label="Strands per row per stem" value={i.materials.strandsPerRowPerStem} onChange={(v) => mat({ strandsPerRowPerStem: Math.max(1, Math.round(v)) })} />
               <Field label="First row from the bottom" unit="in" value={i.materials.firstRow} onChange={(v) => mat({ firstRow: v })} step={0.25} />
               <Field label="Row spacing" unit="in" value={i.materials.rowSpacing} onChange={(v) => mat({ rowSpacing: v })} step={0.25} />
-              <Field label="Losses, lump sum (SSHB 9.16.2.2)" unit="ksi" value={i.options.lossLumpSum} onChange={(v) => opt({ lossLumpSum: v })} />
+              <Choice
+                label="Prestress losses"
+                value={i.options.losses}
+                options={[
+                  { value: "itemized", label: "Item by item (SSHB 9.16.2.1)" },
+                  { value: "lump", label: "Lump sum (SSHB 9.16.2.2)" },
+                ]}
+                onChange={(v) => opt({ losses: v })}
+              />
+              {i.options.losses === "itemized" ? (
+                <Field label="Relative humidity, mean annual" unit="%" value={i.options.humidity} onChange={(v) => opt({ humidity: Math.min(100, Math.max(0, v)) })} />
+              ) : (
+                <Field label="Losses, lump sum (SSHB 9.16.2.2)" unit="ksi" value={i.options.lossLumpSum} onChange={(v) => opt({ lossLumpSum: v })} />
+              )}
             </Section>
             <Section title="Rating options">
               <Choice
@@ -584,6 +597,14 @@ function Results({ i, r, brr, setBrr, df, setDf }: { i: DtInputs; r: DtRating; b
           {exempt.length > 0 && ` Exempt by the 95% rule: ${exempt.map((x) => x.name).join(", ")}.`} HS-20 inventory {f3(hs.govInv.inv.inv)} ({hs.govInv.g}), operating {f3(hs.govOpr.opr.opr)}.
         </span>
       </div>
+      {!s.fsuValid && (
+        <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+          <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+          <span>
+            The effective prestress, {s.fse.toFixed(1)} ksi, is below 0.5 f′s ({(0.5 * i.materials.fpu).toFixed(1)} ksi), so SSHB Eq. 9-17 for the strand stress at ultimate doesn&apos;t strictly apply (SSHB 9.17.4.1). The ratings use it; a strain-compatibility analysis would confirm them.
+          </span>
+        </div>
+      )}
       {r.shearRequired.length > 0 && (
         <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
           <AlertTriangle className="mt-0.5 size-4 shrink-0" />

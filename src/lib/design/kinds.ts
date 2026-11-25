@@ -470,6 +470,9 @@ export function dtRatingInputs(saved: unknown): DtInputs {
       ignoreTension: typeof o.ignoreTension === "boolean" ? o.ignoreTension : legacy ? false : d.options.ignoreTension,
       // A design saved before the deck-based default keeps the method it chose (the table, then the default).
       lldfInterior: o.lldfInterior === "auto" || o.lldfInterior === "table" || o.lldfInterior === "sd" ? o.lldfInterior : legacy ? "table" : d.options.lldfInterior,
+      // A design saved before itemized losses keeps the lump sum it was rated with.
+      losses: o.losses === "itemized" || o.losses === "lump" ? o.losses : legacy ? "lump" : d.options.losses,
+      humidity: typeof o.humidity === "number" && o.humidity >= 0 && o.humidity <= 100 ? o.humidity : d.options.humidity,
     },
     brrDf: Object.fromEntries((["intSingle", "intMulti", "extSingle", "extMulti"] as const).map((k) => [k, typeof s.brrDf?.[k] === "number" && s.brrDf[k]! > 0 ? s.brrDf[k] : null])) as DtInputs["brrDf"],
     condition: (() => {

@@ -193,6 +193,7 @@ export function applyStandard(i: DtInputs, r: DtStandardRow): DtInputs {
   o = setPath(o, "materials.fc", p.fc, src("f′c 6,000 psi at 28 days"));
   o = setPath(o, "materials.fci", p.fci, src(`f′ci ${r.fci} psi`));
   o = setPath(o, "options.lossLumpSum", +p.lossLumpSum.toFixed(3), src(`losses (Fi − Ff) / A*s, Ff ${r.Ff} kip`));
+  o = { ...o, options: { ...o.options, losses: "lump" } }; // the standard's own losses
   // With the prestress known, the code's final tension limit applies (the 1 ksi is for back-calculating).
   o = { ...o, options: { ...o.options, tensionLimit: null, ignoreTension: false } };
   const sketched = (k: string) => i.sources[k]?.kind === "sketch";

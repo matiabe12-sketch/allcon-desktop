@@ -83,7 +83,10 @@ export type DtInputs = {
      * computed at the code limit, 6√f′c, and reported for information. The default.
      */
     ignoreTension: boolean;
+    /** Prestress losses: item by item (SSHB 9.16.2.1), or the lump sum of 9.16.2.2 (as a file or a standard gives). */
+    losses: "itemized" | "lump";
     lossLumpSum: number; // ksi, SSHB 9.16.2.2
+    humidity: number; // %, mean annual (SSHB Figure 9.16.2.1.1), for shrinkage
     poi: "tenth" | "tenth-and-max"; // tenth points (BrR's default), or also each vehicle's maximum moment
     solveAt: "points" | "midspan"; // back-calculate over the points of interest (as BrR rates), or at midspan by the hand method
     checkShear: boolean; // SSHB 9.20; waived by default per BRM 1.4(O)
@@ -157,7 +160,9 @@ export const DT_DEFAULTS: DtInputs = {
     legalLldf: "single",
     tensionLimit: null,
     ignoreTension: true,
+    losses: "itemized",
     lossLumpSum: 45,
+    humidity: 55,
     poi: "tenth",
     solveAt: "points",
     checkShear: false,
@@ -660,7 +665,16 @@ export function rateDoubleTee(i: DtInputs) {
 
   // Prestress and capacity for a strand area.
   const fpj = m.jackingRatio * m.fpu;
-  const fse = fpj - i.options.lossLumpSum;
+  // Losses: SSHB 9.16.2.1, item by item, on the typical interior girder at midspan (the section of
+  // maximum moment), or the lump sum of 9.16.2.2. Itemized, they depend on the strands, so the
+  // back-calculation works them out for each strand area it tries.
+  const lossCache = new Map<number, ReturnType<typeof itemizedLosses>>();
+  const lossesOf = (As: number) => {
+    let l = lossCache.get(As);
+    if (!l) lossCache.set(As, (l = itemizedLosses(i, girders.find((g) => !g.ext) ?? girders[0], As, cgAt(As, null), fpj, L, deck)));
+    return l;
+  };
+  const fseOf = (As: number) => fpj - (i.options.losses === "itemized" ? lossesOf(As).total : i.options.lossLumpSum);
   const db = m.strand.includes("0.6") || m.strand.includes("6/10") ? 0.6 : m.strand.includes("7/16") ? 0.4375 : m.strand.includes("3/8") ? 0.375 : 0.5;
   const lt = (50 * db) / 12; // ft, transfer, SSHB 9.20.2.4
   // The strands' centroid above the bottom at x: straight, or harped (known strands from a standard).
@@ -701,8 +715,9 @@ export function rateDoubleTee(i: DtInputs) {
       // Development (SSHB 9.28): fse over the transfer length, rising to f*su over the development length.
       const xe = Math.min(x, L - x) + ext; // ft from the girder's end
       const full = flexure(AsE, g.sec, d, m, hf, fcF);
-      const ld = (devFactor * (full.fsu - (2 / 3) * fse) * db) / 12; // ft
-      cap = xe <= lt ? (fse * xe) / lt : xe >= ld ? null : fse + ((xe - lt) / Math.max(1e-9, ld - lt)) * (full.fsu - fse);
+      const fsx = fseOf(As);
+      const ld = (devFactor * (full.fsu - (2 / 3) * fsx) * db) / 12; // ft
+      cap = xe <= lt ? (fsx * xe) / lt : xe >= ld ? null : fsx + ((xe - lt) / Math.max(1e-9, ld - lt)) * (full.fsu - fsx);
     }
     const f = flexure(AsE, g.sec, d, m, hf, fcF, cap);
     return { ...f, Mn: f.Mn * dmg.factor, MnSection: f.Mn, factor: dmg.factor, As: AsE, lostArea: As - AsE, cg, d, h, hf, fcFlange: fcF };
@@ -778,7 +793,9 @@ export function rateDoubleTee(i: DtInputs) {
   const nStrands = As / m.aps;
   const Pj = i.prestress.mode === "back-calculate" && i.options.roundStrands ? Math.floor(fpj * As + 1e-9) : fpj * As; // 1e-9: 15 × 0.144 × 175 is 378, not 377.99…
   const cg = cgAt(As, null);
+  const fse = fseOf(As);
   const Pe = fse * As;
+  const losses = i.options.losses === "itemized" ? lossesOf(As) : null;
   {
     const hD = u.depth + (deck ? deck.thk : 0);
     const full = flexure(As, b.secInt, hD - cg, m, u.flangeThk + (deck ? deck.thk : 0), deck ? deck.fc : m.fc);
@@ -972,7 +989,7 @@ export function rateDoubleTee(i: DtInputs) {
     maxAt,
     fr,
     crack,
-    solve: { mode: i.prestress.mode, As, AsExact, nStrands, nExact: AsExact / m.aps, Pj, Pe, fpj, fse, cg, d: capMid.d, gov: govSolve.g.name, govRF: govSolve.rf, crackGoverns, note: solveNote, cap: capMid },
+    solve: { mode: i.prestress.mode, As, AsExact, nStrands, nExact: AsExact / m.aps, Pj, Pe, fpj, fse, losses, fsuValid: fse >= 0.5 * m.fpu - 1e-9, cg, d: capMid.d, gov: govSolve.g.name, govRF: govSolve.rf, crackGoverns, note: solveNote, cap: capMid },
     fy,
     np,
     ratings,
@@ -1024,6 +1041,56 @@ export function designTruck(v: ReturnType<typeof originalDesign>["vehicle"]): Pi
  */
 export function multiBeamEra(year: number): "slab" | "1977" | "current" {
   return year <= 1977 ? "slab" : year <= 1986 ? "1977" : "current";
+}
+
+/**
+ * Prestress losses item by item (SSHB 9.16.2.1, pretensioned, ksi), on girder g at midspan, the
+ * section of maximum moment, with strands As at centroid cg (in above the bottom):
+ * - shrinkage SH = 17 − 0.150 RH (Eq. 9-4);
+ * - elastic shortening ES = (Es/Eci) fcir (Eq. 9-6), Es = 28,000 ksi, Eci = 33 w^1.5 √f′ci; fcir
+ *   from the prestress just after transfer, taken as 0.63 f′s (stress-relieved) or 0.69 f′s
+ *   (low-relaxation) as the article allows, in proportion to the jacking stress, with the girder's
+ *   own weight;
+ * - creep CRc = 12 fcir − 7 fcds (Eq. 9-9), fcds from the dead loads added after transfer;
+ * - relaxation CRs = 20 − 0.4 ES − 0.2 (SH + CRc) for stress-relieved strand (Eq. 9-10), or
+ *   5 − 0.10 ES − 0.05 (SH + CRc) for low-relaxation (Eq. 9-10A).
+ * Also the 1973 estimate (Art. 1.6.7(B)) for comparison: SH by humidity band, ES = 7 fcr, CRc =
+ * 16 fcd (fcd with the prestress after losses and all dead load), CRs = 20 − 0.125 (SH + ES + CRc).
+ */
+export function itemizedLosses(i: DtInputs, g: Pick<Girder, "sec" | "csec" | "dlNow">, As: number, cg: number, fpj: number, L: number, deck: DtInputs["deck"] | null) {
+  const m = i.materials;
+  const s = g.sec;
+  const e = s.yb - cg;
+  const dl = g.dlNow;
+  const RH = i.options.humidity;
+  const fi = fpj * (m.lowRelaxation ? 0.69 / 0.75 : 0.63 / 0.7);
+  const Pi = fi * As;
+  const Mg = (dl.self * L * L) / 8; // kip·ft
+  const fcir = Pi / s.A + (Pi * e * e) / s.I - (Mg * 12 * e) / s.I;
+  // Dead load added after transfer: on the precast section (the deck, diaphragms, and without a deck
+  // everything else) and, with a composite deck, the rest on the composite section.
+  const Mpre = ((deck ? dl.deck : dl.dc2) * L * L) / 8 + (dl.diaph * L) / 4;
+  const Mcomp = deck ? (dl.dc2 * L * L) / 8 : 0;
+  const cs = g.csec;
+  const fcds = (Mpre * 12 * e) / s.I + (cs ? (Mcomp * 12 * (cs.yb - cg)) / cs.I : 0);
+  const Eci = (33 * i.loads.concPcf ** 1.5 * Math.sqrt(m.fci * 1000)) / 1000; // ksi
+  const SH = 17 - 0.15 * RH;
+  const ES = (28000 / Eci) * fcir;
+  const CRc = Math.max(0, 12 * fcir - 7 * fcds);
+  const CRs = Math.max(0, m.lowRelaxation ? 5 - 0.1 * ES - 0.05 * (SH + CRc) : 20 - 0.4 * ES - 0.2 * (SH + CRc));
+  const total = SH + ES + CRc + CRs;
+  // 1973 (Art. 1.6.7(B)).
+  const Pe = (fpj - total) * As;
+  const Mall = ((dl.dc1 + (deck ? 0 : dl.dc2)) * L * L) / 8 + (dl.diaph * L) / 4;
+  const fcd = Pe / s.A + (Pe * e * e) / s.I - (Mall * 12 * e) / s.I - (cs ? (Mcomp * 12 * (cs.yb - cg)) / cs.I : 0);
+  const SH73 = RH >= 75 ? 5 : RH >= 25 ? 10 : 15;
+  const ES73 = 7 * fcir;
+  const CRc73 = 16 * Math.max(0, fcd);
+  const CRs73 = 20 - 0.125 * (SH73 + ES73 + CRc73);
+  return {
+    RH, fi, Pi, Mg, fcir, Mpre, Mcomp, fcds, Eci, SH, ES, CRc, CRs, total,
+    y1973: { SH: SH73, ES: ES73, CRc: CRc73, CRs: CRs73, fcd, total: SH73 + ES73 + CRc73 + CRs73 },
+  };
 }
 
 /** The roadway between the curbs (between the rail faces without curbs), ft: where the lanes go (SSHB 3.6.2). */
@@ -1162,6 +1229,7 @@ export function dtInputsFromBridgeFile(b: Record<string, any>): DtInputs {
       lldfInterior: o.lldf_interior === "multibeam_S_over_D" ? "sd" : o.lldf_interior === "table_3.23.1" ? "table" : "auto",
       roundStrands: o.round_strands !== false,
       legalLldf: o.legal_lldf === "multi" ? "multi" : "single",
+      losses: "lump", // the scripts' files take the lump sum
     },
     condition: conditionFromFile(b.condition),
     siaCondition: null,

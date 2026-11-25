@@ -230,8 +230,27 @@ export function dtRatingCalcLines(i: DtInputs, title: string, figures?: { sectio
   m(`a_{ps}\\coloneq ${num(mt.aps)}\\mathrm{in}^{2}`, "Area of one strand");
   m(`R_j\\coloneq ${num(mt.jackingRatio)}`, "Jacking stress ratio");
   m("f_{pj}\\coloneq R_j\\cdot f'_{s}=", "Jacking stress", "ksi");
-  m(`\\Delta_{fs}\\coloneq ${num(i.options.lossLumpSum)}\\mathrm{ksi}`, "Losses, lump sum (SSHB 9.16.2.2)");
+  const ls = s.losses;
+  if (ls) {
+    text(`Losses:- Item by item (SSHB 9.16.2.1), on the typical interior unit at midspan, the section of maximum moment, with the strands found below.`, "note");
+    m(`RH\\coloneq ${num(ls.RH)}`, "Mean annual relative humidity, % (SSHB Figure 9.16.2.1.1)");
+    m("\\Delta_{SH}\\coloneq\\left(17-0.150\\cdot RH\\right)\\cdot\\mathrm{ksi}=", "Shrinkage (Eq. 9-4)", "ksi");
+    given(`E_{ci}\\coloneq ${num(ls.Eci, 8)}\\mathrm{ksi}`, `Concrete modulus at transfer, 33w^1.5√f′ci with ${num(i.loads.concPcf)} pcf and f′ci = ${num(mt.fci)} ksi`);
+    given(`f_{cir}\\coloneq ${num(ls.fcir, 8)}\\mathrm{ksi}`, `At the strands just after transfer: ${num(ls.Pi, 4)} kip (${mt.lowRelaxation ? "0.69" : "0.63"} f′s in proportion to the jacking stress, as the article allows) and the unit's weight, ${num(ls.Mg, 4)} kip·ft`);
+    m("\\Delta_{ES}\\coloneq\\frac{28000\\mathrm{ksi}}{E_{ci}}\\cdot f_{cir}=", "Elastic shortening (Eq. 9-6), Es = 28,000 ksi", "ksi");
+    given(`f_{cds}\\coloneq ${num(ls.fcds, 8)}\\mathrm{ksi}`, "At the strands, from the dead loads added after transfer");
+    m("\\Delta_{CR}\\coloneq\\max\\left(12\\cdot f_{cir}-7\\cdot f_{cds},0\\mathrm{ksi}\\right)=", "Creep (Eq. 9-9)", "ksi");
+    if (mt.lowRelaxation) m("\\Delta_{R}\\coloneq\\max\\left(5\\mathrm{ksi}-0.10\\cdot\\Delta_{ES}-0.05\\cdot\\left(\\Delta_{SH}+\\Delta_{CR}\\right),0\\mathrm{ksi}\\right)=", "Relaxation, low-relaxation strand (Eq. 9-10A)", "ksi");
+    else m("\\Delta_{R}\\coloneq\\max\\left(20\\mathrm{ksi}-0.4\\cdot\\Delta_{ES}-0.2\\cdot\\left(\\Delta_{SH}+\\Delta_{CR}\\right),0\\mathrm{ksi}\\right)=", "Relaxation, stress-relieved strand (Eq. 9-10)", "ksi");
+    m("\\Delta_{fs}\\coloneq\\Delta_{SH}+\\Delta_{ES}+\\Delta_{CR}+\\Delta_{R}=", "Total losses (Eq. 9-3)", "ksi");
+  } else m(`\\Delta_{fs}\\coloneq ${num(i.options.lossLumpSum)}\\mathrm{ksi}`, "Losses, lump sum (SSHB 9.16.2.2)");
   m("f_{se}\\coloneq f_{pj}-\\Delta_{fs}=", "Effective prestress", "ksi");
+  m(ok("0.5\\cdot f'_{s}", "f_{se}"), s.fsuValid ? "The effective prestress is at least 0.5 f′s, so Eq. 9-17 for f*su applies (SSHB 9.17.4.1)" : "The effective prestress is below 0.5 f′s, so Eq. 9-17 doesn't apply (SSHB 9.17.4.1): f*su needs a strain-compatibility analysis");
+  if (ls && i.bridge.yearBuilt <= 1976)
+    text(
+      `For comparison, the 1973 Specifications' estimate (Art. 1.6.7(B)), when this bridge was designed: shrinkage ${num(ls.y1973.SH, 1)} ksi, elastic shortening 7·fcir = ${num(ls.y1973.ES, 1)} ksi, creep 16·fcd = ${num(ls.y1973.CRc, 1)} ksi (fcd = ${num(ls.y1973.fcd, 3)} ksi with the prestress after losses and all dead load), relaxation ${num(ls.y1973.CRs, 1)} ksi: ${num(ls.y1973.total, 1)} ksi in all, against ${num(ls.total, 1)} ksi by today's method. The rating uses today's.`,
+      "note",
+    );
   m(`f_{ys}\\coloneq${mt.lowRelaxation ? "0.90" : "0.85"}\\cdot f'_{s}=`, mt.lowRelaxation ? "Strand yield stress, low relaxation" : "Strand yield stress, stress-relieved", "ksi");
   m("E_p\\coloneq28500\\mathrm{ksi}", "Strand modulus, AASHTO LRFD 5.4.4.2 (SSHB 9.16.2.1.2: 28,000 ksi)");
 

@@ -42,7 +42,7 @@ export type DtInputs = {
   loads: {
     asphalt: number; // in
     asphaltPcf: number;
-    concPcf: number; // girder concrete for dead load
+    concPcf: number; // girder concrete for dead load, pcf: 163 for reinforced precast concrete (BRM Table 1-1)
     // ft, in; side 1 on the first unit, side 2 on the last. A curb carries no pedestrians and isn't mountable.
     sidewalks: { width: number; thk: number; curb?: boolean }[];
     pedWidth: number; // ft carrying pedestrian load (0: the sidewalks' width)
@@ -150,7 +150,7 @@ export const DT_DEFAULTS: DtInputs = {
   units: { count: 6, spacing: 62, flangeWidth: 60, depth: 17, flangeThk: 5, stemSpacing: 36, stemTop: 8, stemBot: 6, exteriorTrimmed: false, layout: null, jointGap: 0 },
   deck: { present: false, thk: 6, fc: 4.5, pcf: 150 },
   roadway: { railToRail: 30, railFaceOffset: 3, curbToCurb: 0, curbFaceOffset: 0 },
-  loads: { asphalt: 3, asphaltPcf: 146.667, concPcf: 155, sidewalks: [], pedWidth: 0, sidewalkMountable: true, pedestrians: true, railKlf: 0.02, railComponents: [], utilities: [], diaphragmKip: 0 },
+  loads: { asphalt: 3, asphaltPcf: 146.667, concPcf: 163, sidewalks: [], pedWidth: 0, sidewalkMountable: true, pedestrians: true, railKlf: 0.02, railComponents: [], utilities: [], diaphragmKip: 0 },
   materials: { fc: 6, fci: 4, strand: '1/2" 250 ksi stress-relieved', fpu: 250, aps: 0.144, gammaStar: 0.4, jackingRatio: 0.7, lowRelaxation: false, strandsPerRowPerStem: 2, firstRow: 2, rowSpacing: 2 },
   prestress: { mode: "back-calculate", strands: 0 },
   options: {
@@ -1119,7 +1119,7 @@ export function itemizedLosses(i: DtInputs, g: Pick<Girder, "sec" | "csec" | "dl
   const Mcomp = deck ? (dl.dc2 * L * L) / 8 : 0;
   const cs = g.csec;
   const fcds = (Mpre * 12 * e) / s.I + (cs ? (Mcomp * 12 * (cs.yb - cg)) / cs.I : 0);
-  const Eci = (33 * i.loads.concPcf ** 1.5 * Math.sqrt(m.fci * 1000)) / 1000; // ksi
+  const Eci = (33 * 145 ** 1.5 * Math.sqrt(m.fci * 1000)) / 1000; // ksi, normal-weight concrete (145 pcf), as for Ec
   const SH = 17 - 0.15 * RH;
   const ES = (28000 / Eci) * fcir;
   const CRc = Math.max(0, 12 * fcir - 7 * fcds);
@@ -1257,7 +1257,7 @@ export function dtInputsFromBridgeFile(b: Record<string, any>): DtInputs {
     loads: {
       asphalt: ld.asphalt_in ?? 0,
       asphaltPcf: ld.asphalt_pcf ?? 146.667,
-      concPcf: ld.conc_pcf_dl ?? 155,
+      concPcf: ld.conc_pcf_dl ?? 163, // BRM Table 1-1, reinforced precast concrete, unless the file gives its own
       sidewalks: (ld.sidewalks ?? []).map((s: Record<string, number>) => ({ width: s.width_ft, thk: s.thk_in })),
       pedWidth: ld.ped_width_ft ?? 0,
       sidewalkMountable: o.sidewalk_mountable !== false,

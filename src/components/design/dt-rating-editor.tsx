@@ -265,7 +265,7 @@ export function DtRatingEditor({ design, projects }: { design: { id: string; nam
               <SrcField i={i} path="loads.railKlf" label="Rail, each side" unit="klf" step={0.005} onSet={setP} onConfirm={confirmP} />
               <SrcField i={i} path="loads.diaphragmKip" label="Diaphragms, per girder at midspan (0: none)" unit="kip" step={0.1} onSet={setP} onConfirm={confirmP} />
               <Field label="Asphalt unit weight (CDOT method)" unit="pcf" value={i.loads.asphaltPcf} onChange={(v) => loads({ asphaltPcf: v })} />
-              <Field label="Girder concrete for dead load (CDOT method)" unit="pcf" value={i.loads.concPcf} onChange={(v) => loads({ concPcf: v })} />
+              <Field label="Girder concrete for dead load (BRM Table 1-1: 163 precast)" unit="pcf" value={i.loads.concPcf} onChange={(v) => loads({ concPcf: v })} />
               <div className="flex items-center justify-between pt-2 text-xs">
                 <span className="font-medium">Sidewalks and curbs</span>
                 <span className="flex gap-1">

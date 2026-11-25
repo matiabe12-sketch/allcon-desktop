@@ -81,7 +81,9 @@ these field by field):
 1. **Sections** per unit, interior and exterior: non-composite, and composite with the deck
    transformed.
 2. **Dead loads by stage:** the girder, deck and diaphragms on the girder (DC1); rails, sidewalks,
-   asphalt and utilities on the composite section, shared by all girders or assigned to one.
+   asphalt and utilities on the composite section, shared by all girders or assigned to one. Unit
+   weights per BRM Table 1-1: reinforced precast concrete 163 pcf (the default; a bridge file or plans
+   may give their own), cast-in-place 150 pcf, asphalt 146.67 pcf. The moduli use 145 pcf.
 3. **Points of interest:** the bearings, tenth points, transfer length and debond ends, the critical
    section for shear (when shear is checked).
 4. **Live load:** each vehicle moved along the span in both directions in small steps, by influence

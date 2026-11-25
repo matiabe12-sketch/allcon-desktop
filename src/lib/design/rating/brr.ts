@@ -58,7 +58,7 @@ export function brrInputSheet(i: DtInputs, r: DtRating): BrrGroup[] {
       title: "2. Components › Materials",
       rows: [
         ["Girder concrete: f′c / f′ci", `${f(m.fc)} / ${f(m.fci)} ksi`, `Ec ≈ ${f(Ec(m.fc), 0)} ksi`],
-        ["Girder concrete: density for dead load / for E", `${f(ld.concPcf / 1000, 3)} / 0.145 kcf`, ""],
+        ["Girder concrete: density for dead load / for E", `${f(ld.concPcf / 1000, 3)} / 0.145 kcf`, ld.concPcf === 163 ? "Dead load: reinforced precast concrete, BRM Table 1-1" : "Dead load as entered (BRM Table 1-1 gives 163 pcf for precast)"],
         ...(deck ? [["Deck concrete: f′c / density", `${f(deck.fc)} ksi / ${f(deck.pcf / 1000, 3)} kcf`, `Ec ≈ ${f(Ec(deck.fc), 0)} ksi; n ≈ ${f(r.nDeck, 3)}`] as BrrRow] : []),
         ["Prestressing strand", m.strand, `f′s = ${f(m.fpu)} ksi, A = ${f(m.aps, 4)} in², ${m.lowRelaxation ? "low relaxation" : "stress-relieved"}`],
         ["Reinforcing steel", "Grade 60", "No mild steel modeled in the girder"],

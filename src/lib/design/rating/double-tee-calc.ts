@@ -235,7 +235,7 @@ export function dtRatingCalcLines(i: DtInputs, title: string, figures?: { sectio
     text(`Losses:- Item by item (SSHB 9.16.2.1), on the typical interior unit at midspan, the section of maximum moment, with the strands found below.`, "note");
     m(`RH\\coloneq ${num(ls.RH)}`, "Mean annual relative humidity, % (SSHB Figure 9.16.2.1.1)");
     m("\\Delta_{SH}\\coloneq\\left(17-0.150\\cdot RH\\right)\\cdot\\mathrm{ksi}=", "Shrinkage (Eq. 9-4)", "ksi");
-    given(`E_{ci}\\coloneq ${num(ls.Eci, 8)}\\mathrm{ksi}`, `Concrete modulus at transfer, 33w^1.5√f′ci with ${num(i.loads.concPcf)} pcf and f′ci = ${num(mt.fci)} ksi`);
+    given(`E_{ci}\\coloneq ${num(ls.Eci, 8)}\\mathrm{ksi}`, `Concrete modulus at transfer, 33w^1.5√f′ci with w = 145 pcf (normal-weight concrete, as for Ec) and f′ci = ${num(mt.fci)} ksi`);
     given(`f_{cir}\\coloneq ${num(ls.fcir, 8)}\\mathrm{ksi}`, `At the strands just after transfer: ${num(ls.Pi, 4)} kip (${mt.lowRelaxation ? "0.69" : "0.63"} f′s in proportion to the jacking stress, as the article allows) and the unit's weight, ${num(ls.Mg, 4)} kip·ft`);
     m("\\Delta_{ES}\\coloneq\\frac{28000\\mathrm{ksi}}{E_{ci}}\\cdot f_{cir}=", "Elastic shortening (Eq. 9-6), Es = 28,000 ksi", "ksi");
     given(`f_{cds}\\coloneq ${num(ls.fcds, 8)}\\mathrm{ksi}`, "At the strands, from the dead loads added after transfer");
@@ -359,8 +359,8 @@ export function dtRatingCalcLines(i: DtInputs, title: string, figures?: { sectio
   given(
     `w_{DC1}\\coloneq ${num(dl.dc1, 10)}\\frac{\\mathrm{kip}}{\\mathrm{ft}}`,
     deck
-      ? `Self-weight of the unit (${num(dl.self)} klf at ${num(i.loads.concPcf)} pcf) plus the deck it carries (${num(dl.deck)} klf), carried by the precast section`
-      : `Self-weight of the unit, at ${num(i.loads.concPcf)} pcf`,
+      ? `Self-weight of the unit (${num(dl.self)} klf at ${num(i.loads.concPcf)} pcf${i.loads.concPcf === 163 ? ", reinforced precast concrete, BRM Table 1-1" : ""}) plus the deck it carries (${num(dl.deck)} klf), carried by the precast section`
+      : `Self-weight of the unit, at ${num(i.loads.concPcf)} pcf${i.loads.concPcf === 163 ? " (reinforced precast concrete, BRM Table 1-1)" : ""}`,
   );
   given(
     `w_{DC2}\\coloneq ${num(dl.dc2, 10)}\\frac{\\mathrm{kip}}{\\mathrm{ft}}`,

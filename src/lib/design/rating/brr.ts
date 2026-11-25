@@ -144,7 +144,7 @@ export function brrInputSheet(i: DtInputs, r: DtRating): BrrGroup[] {
         ["Strand CG at midspan / left / right", harp ? `${f(harp.mid, 2)} / ${f(harp.end, 2)} / ${f(harp.end, 2)} in` : `${f(s.cg, 2)} / ${f(s.cg, 2)} / ${f(s.cg, 2)} in`, "From the bottom"],
         ["Overhang left / right", `${f(ovh, 1)} / ${f(ovh, 1)} in`, `Structure length ${ftin(i.structureLength)}`],
         ["LFD shear computation", i.options.checkShear ? "Compute (SSHB 9.20)" : "Ignore", i.options.checkShear ? "" : "BRM 1.4(O)"],
-        ...(dfInt ? ([[`LFD DF, interior`, `Single ${f(dfInt.dfSingle, 3)}; multi ${f(dfInt.dfMulti, 3)}`, r.condition.alone ? "As inspected, joints failed: enter as an override" : i.options.lldfInterior === "sd" ? "SSHB 3.23.4.3, S/D" : "SSHB Table 3.23.1"]] as BrrRow[]) : []),
+        ...(dfInt ? ([[`LFD DF, interior`, `Single ${f(dfInt.dfSingle, 3)}; multi ${f(dfInt.dfMulti, 3)}`, r.condition.alone ? "As inspected, joints failed: enter as an override" : r.df.int.method === "sd" ? "SSHB 3.23.4.3, multi-beam S/D" : "SSHB Table 3.23.1"]] as BrrRow[]) : []),
         [`LFD DF, exterior (G1, G${u.count})${mountable ? ", model 1" : ""}`, `Single ${f(dfExt.dfSingle, 3)}; multi ${f(dfExt.dfMulti, 3)}`, r.condition.alone ? "As inspected, joints failed: enter as an override" : "Lever rule"],
         ...(dfMnt ? ([[`LFD DF, exterior, model 2`, `Single ${f(dfMnt.dfSingle, 3)}; multi ${f(dfMnt.dfMulti, 3)}`, r.condition.alone ? "As inspected, joints failed: enter as an override" : "Lever rule, wheel 2 ft from the rail"]] as BrrRow[]) : []),
         ...(r.condition.alone

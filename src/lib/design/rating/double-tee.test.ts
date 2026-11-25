@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { dtRatingInputs } from "../kinds";
 import fixtures from "./cdot-bridges.json";
-import { DT_DEFAULTS, NO_UNIT_CONDITION, codeTension, dtInputsFromBridgeFile, isSidewalkTruckCase, rateDoubleTee, type DtInputs, type DtRating, type DtUnitCondition } from "./double-tee";
+import { DT_DEFAULTS, NO_UNIT_CONDITION, codeTension, dtInputsFromBridgeFile, interiorMethod, isSidewalkTruckCase, rateDoubleTee, type DtInputs, type DtRating, type DtUnitCondition } from "./double-tee";
 import { dtRatingCalcLines } from "./double-tee-calc";
 import { CDOT_VEHICLES, laneAt, tons, trainAt, trainMax } from "./vehicles";
 
@@ -261,5 +261,47 @@ describe("condition from the inspection (MBE 6.1.4)", () => {
     expect(t).toMatch(/Condition:- The bridge is rated in its condition at the latest inspection \(MBE 6\.1\.4\)/);
     expect(t).toMatch(/as designed and as inspected/);
     expect(t).toMatch(/G3: 2 strands broken at an impact\. Rated with 2 strands broken or missing over the whole span/);
+  });
+});
+
+describe("interior distribution by the deck (the default)", () => {
+  const noDeck: DtInputs = { ...DT_DEFAULTS, deck: { ...DT_DEFAULTS.deck, present: false } };
+  const withDeck: DtInputs = { ...DT_DEFAULTS, deck: { ...DT_DEFAULTS.deck, present: true } };
+  const opts = (i: DtInputs, m: DtInputs["options"]["lldfInterior"]): DtInputs => ({ ...i, options: { ...i.options, lldfInterior: m } });
+  const interior = (r: DtRating) => r.girders.filter((g) => !g.ext && !isSidewalkTruckCase(g.name));
+
+  it("is S/D without a deck (a multi-beam deck, SSHB 3.23.4) and Table 3.23.1 under a composite deck", () => {
+    expect(DT_DEFAULTS.options.lldfInterior).toBe("auto");
+    expect(interiorMethod(noDeck)).toBe("sd");
+    expect(interiorMethod(withDeck)).toBe("table");
+    const a = rateDoubleTee(noDeck);
+    const s = rateDoubleTee(opts(noDeck, "sd"));
+    interior(a).forEach((g, k) => near(g.dfMulti, interior(s)[k].dfMulti, 1e-12));
+    const t = rateDoubleTee(withDeck);
+    for (const g of interior(t)) {
+      near(g.dfMulti, g.S / 5.5, 1e-12);
+      near(g.dfSingle, g.S / 7.0, 1e-12);
+    }
+  });
+
+  it("S/D: D = 5.75 − 0.5 NL + 0.7 NL (1 − 0.2 C)², C = K·min(W/L, 1), K = √(1.2 I/J); one lane with NL = 1", () => {
+    const r = rateDoubleTee(noDeck);
+    const { I, J } = r.secInt;
+    const K = Math.sqrt((1.2 * I) / J);
+    const C = K * Math.min(r.geo.roadW / noDeck.span, 1);
+    const D = (nl: number) => 5.75 - 0.5 * nl + 0.7 * nl * (1 - 0.2 * C) ** 2;
+    for (const g of interior(r)) {
+      near(g.dfMulti, g.S / D(r.geo.NL), 1e-12);
+      near(g.dfSingle, g.S / D(1), 1e-12);
+    }
+  });
+
+  it("a saved design keeps the method it was rated with; the scripts' bridge files keep theirs", () => {
+    expect(dtRatingInputs({ options: { lldfInterior: "table" } }).options.lldfInterior).toBe("table");
+    expect(dtRatingInputs({ options: {} }).options.lldfInterior).toBe("table");
+    expect(dtRatingInputs({}).options.lldfInterior).toBe("auto");
+    const b = (fixtures as unknown as { bridge: Record<string, unknown> }[])[0].bridge;
+    expect(dtInputsFromBridgeFile(b).options.lldfInterior).toBe("table");
+    expect(dtInputsFromBridgeFile({ ...b, options: {} }).options.lldfInterior).toBe("auto");
   });
 });

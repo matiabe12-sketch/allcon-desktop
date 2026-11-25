@@ -71,7 +71,9 @@ these field by field):
   maintenance items beside these inputs, the inspector's words with tags pointing at strands, joints
   and impact. None of it sets an input: quantities don't say which strands, and a seam over a joint
   doesn't show a failed joint.
-- **Options:** the interior distribution method (SSHB Table 3.23.1 or the multi-beam S/D of 3.23.4.3),
+- **Options:** the interior distribution method (by the deck, the default: SSHB Table 3.23.1 under a
+  composite deck, the multi-beam S/D of 3.23.4.3 without one, its J solved on the unit's shape by
+  finite elements in `torsion.ts`; or either one chosen),
   distribution factor overrides (as BrR allows), the tension limit, whether shear is checked.
 
 ## 4. The analysis (as BrR does it)

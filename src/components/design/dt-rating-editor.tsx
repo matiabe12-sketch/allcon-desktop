@@ -387,6 +387,7 @@ export function DtRatingEditor({ design, projects }: { design: { id: string; nam
                 label="Interior distribution"
                 value={i.options.lldfInterior}
                 options={[
+                  { value: "auto", label: `By the deck: ${i.deck.present ? "Table 3.23.1 (composite deck)" : "multi-beam S/D (no deck)"}` },
                   { value: "table", label: "Table 3.23.1 (S/7.0, S/5.5)" },
                   { value: "sd", label: "Multi-beam S/D (3.23.4.3)" },
                 ]}

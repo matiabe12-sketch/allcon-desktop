@@ -1,5 +1,6 @@
 import { DesignError } from "../walls/cip";
 import type { SiaConditionData } from "./sia";
+import { unitJ } from "./torsion";
 import { CDOT_VEHICLES, laneAt, tons, trainAt, trainMax, type Vehicle, type VehicleClass } from "./vehicles";
 
 // Load Factor Rating of a simple-span bridge of adjacent precast, prestressed double-tee units, as
@@ -61,7 +62,12 @@ export type DtInputs = {
      * designed for. On only where the overlay is known to be original.
      */
     solveWithOverlay: boolean;
-    lldfInterior: "table" | "sd"; // SSHB Table 3.23.1 (S/7.0, S/5.5) or the multi-beam S/D of 3.23.4.3
+    /**
+     * Interior units: SSHB Table 3.23.1 for prestressed girders (S/7.0, S/5.5), the multi-beam S/D of
+     * 3.23.4.3, or by the deck (the default): the table under a composite deck, S/D for units side by
+     * side whose flanges are the deck (3.23.4).
+     */
+    lldfInterior: "auto" | "table" | "sd";
     roundStrands: boolean; // whole strands, the jacking force rounded down to the kip
     legalLldf: "single" | "multi";
     /**
@@ -145,7 +151,7 @@ export const DT_DEFAULTS: DtInputs = {
   prestress: { mode: "back-calculate", strands: 0 },
   options: {
     solveWithOverlay: false,
-    lldfInterior: "table",
+    lldfInterior: "auto",
     roundStrands: true,
     legalLldf: "single",
     tensionLimit: null,
@@ -179,6 +185,12 @@ export const finalTension = (i: Pick<DtInputs, "options" | "materials">) => i.op
 export const codeTension = (fc: number) => (6 * Math.sqrt(fc * 1000)) / 1000;
 /** Whether the final tension is left out of the rating: asked for, with a back-calculated prestress (BRM 1.7.2). */
 export const tensionIgnored = (i: Pick<DtInputs, "options" | "prestress">) => !!i.options.ignoreTension && i.prestress.mode === "back-calculate";
+/**
+ * The interior distribution used: as chosen, or by the deck. Under a composite deck the units are
+ * girders carrying a slab (SSHB Table 3.23.1); without one, units side by side with the flanges as
+ * the deck are a multi-beam deck (SSHB 3.23.4).
+ */
+export const interiorMethod = (i: Pick<DtInputs, "options" | "deck">): "table" | "sd" => (i.options.lldfInterior === "auto" ? (i.deck.present ? "table" : "sd") : i.options.lldfInterior);
 
 // --- sections ----------------------------------------------------------------------------------------
 
@@ -187,10 +199,6 @@ function trap(h: number, b1: number, b2: number, y0: number) {
   const yc = y0 + (h * (b1 + 2 * b2)) / (3 * (b1 + b2));
   const Io = (h ** 3 * (b1 * b1 + 4 * b1 * b2 + b2 * b2)) / (36 * (b1 + b2));
   return { A, yc, Io };
-}
-function torsionRect(b: number, t: number) {
-  if (t > b) [b, t] = [t, b];
-  return b * t ** 3 * (1 / 3 - 0.21 * (t / b) * (1 - t ** 4 / (12 * b ** 4)));
 }
 export type DtSection = ReturnType<typeof section>;
 /** A double-tee unit: its flange (width bf) and two tapered stems. */
@@ -201,8 +209,20 @@ function section(u: DtInputs["units"], bf: number) {
   const yb = parts.reduce((s, p) => s + p.A * p.yc, 0) / A;
   const I = parts.reduce((s, p) => s + p.Io + p.A * (p.yc - yb) ** 2, 0);
   const tAvg = (u.stemTop + u.stemBot) / 2;
-  const J = torsionRect(bf, u.flangeThk) + 2 * torsionRect(hs, tAvg);
-  return { bf, A, yb, yt: u.depth - yb, I, Sb: I / yb, St: I / (u.depth - yb), J, bw: 2 * tAvg };
+  return {
+    bf,
+    A,
+    yb,
+    yt: u.depth - yb,
+    I,
+    Sb: I / yb,
+    St: I / (u.depth - yb),
+    /** St. Venant torsion constant, solved on the unit's shape (torsion.ts); worked out when first asked for. */
+    get J() {
+      return unitJ({ bf, depth: u.depth, flangeThk: u.flangeThk, stemSpacing: u.stemSpacing, stemTop: u.stemTop, stemBot: u.stemBot });
+    },
+    bw: 2 * tAvg,
+  };
 }
 /** Ec, SSHB 8.7.1, 145 pcf. */
 export const Ec = (fc: number) => 33000 * 0.145 ** 1.5 * Math.sqrt(fc);
@@ -374,13 +394,14 @@ function buildGirders(i: DtInputs) {
     }
     return best;
   };
-  const dfInt =
-    i.options.lldfInterior === "sd"
-      ? { method: "sd" as const, multi: sOverD(NL, secInt), single: sOverD(1, secInt) }
-      : { method: "table" as const, multi: { D: 5.5, DF: S_ft / 5.5 }, single: { D: 7.0, DF: S_ft / 7.0 }, sd: { multi: sOverD(NL, secInt), single: sOverD(1, secInt) } };
+  const sdIn = interiorMethod(i) === "sd";
+  const dfInt = sdIn
+    ? { method: "sd" as const, multi: sOverD(NL, secInt), single: sOverD(1, secInt) }
+    : { method: "table" as const, multi: { D: 5.5, DF: S_ft / 5.5 }, single: { D: 7.0, DF: S_ft / 7.0 }, sd: { multi: sOverD(NL, secInt), single: sOverD(1, secInt) } };
+  // Each interior unit by its own spacing: S/D (one D for the bridge) or S/5.5 and S/7.0.
   const dfInterior = (k: number) => {
     const S = (spacingAt(k - 1) + spacingAt(k)) / 2 / 12;
-    if (i.options.lldfInterior === "sd") return { single: dfInt.single.DF, multi: dfInt.multi.DF, S };
+    if (sdIn) return { single: S / dfInt.single.D, multi: S / dfInt.multi.D, S };
     return { single: S / 7.0, multi: S / 5.5, S };
   };
 
@@ -956,7 +977,7 @@ export function dtInputsFromBridgeFile(b: Record<string, any>): DtInputs {
     options: {
       ...d.options,
       solveWithOverlay: typeof o.solve_with_overlay === "boolean" ? o.solve_with_overlay : d.options.solveWithOverlay,
-      lldfInterior: o.lldf_interior === "multibeam_S_over_D" ? "sd" : "table",
+      lldfInterior: o.lldf_interior === "multibeam_S_over_D" ? "sd" : o.lldf_interior === "table_3.23.1" ? "table" : "auto",
       roundStrands: o.round_strands !== false,
       legalLldf: o.legal_lldf === "multi" ? "multi" : "single",
     },

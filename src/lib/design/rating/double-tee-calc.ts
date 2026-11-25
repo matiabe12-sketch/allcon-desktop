@@ -2,7 +2,7 @@ import type { Line } from "@/lib/calcs/library/templates";
 import { cell, COLOR_NOTE, INPUT_COLOR, isInput, num } from "../calc-style";
 import type { Figure } from "../figures";
 import { brrInputSheet, compareBrrDf } from "./brr";
-import { CHECK_LABEL, isSidewalkTruckCase, rateDoubleTee, tensionIgnored, unitDamaged, type DtInputs } from "./double-tee";
+import { CHECK_LABEL, interiorMethod, isSidewalkTruckCase, rateDoubleTee, tensionIgnored, unitDamaged, type DtInputs } from "./double-tee";
 import { checkStandard, DT_STANDARD_FC, DT_STANDARD_NAME, DT_STANDARD_SLAB } from "./dt-standard";
 
 const ftInText = (inches: number) => {
@@ -289,10 +289,23 @@ export function dtRatingCalcLines(i: DtInputs, title: string, figures?: { sectio
     given(`DF_{m}\\coloneq ${num(g.dfMulti, 10)}`, `${g.name}, two or more lanes, as inspected`);
     given(`DF_{s}\\coloneq ${num(g.dfSingle, 10)}`, "One lane, as inspected");
   } else if (i.options.dfOverride) given(`DF_{m}\\coloneq ${num(g.dfMulti, 10)}`, "Two or more lanes, as entered");
-  else if (!g.ext && i.options.lldfInterior === "table") {
+  else if (!g.ext && interiorMethod(i) === "table") {
+    if (deck) text("Under the composite deck the units are prestressed girders carrying a slab, so the interior factors are those of SSHB Table 3.23.1.", "note");
     m(`S\\coloneq ${num(g.S, 10)}\\mathrm{ft}`, "Girder spacing");
     m("DF_{m}\\coloneq\\frac{S}{5.5\\mathrm{ft}}=", "Interior, two or more lanes (SSHB Table 3.23.1)");
     m("DF_{s}\\coloneq\\frac{S}{7.0\\mathrm{ft}}=", "Interior, one lane");
+  } else if (!g.ext && r.df.int.method === "sd") {
+    if (!deck) text("Without a composite deck the units sit side by side with their flanges as the deck, joined at the shear keys: a multi-beam deck, distributed by S/D (SSHB 3.23.4.3). K measures the units' stiffness in bending against twisting.", "note");
+    const sec = r.secInt;
+    m(`S\\coloneq ${num(g.S, 10)}\\mathrm{ft}`, "Width of the unit (center to center)");
+    m(`N_L\\coloneq ${r.geo.NL}`, "Design lanes (SSHB 3.6)");
+    m(`W\\coloneq ${num(r.geo.roadW, 10)}\\mathrm{ft}`, "Overall width of the bridge");
+    m(`K\\coloneq\\sqrt{\\frac{1.2\\cdot ${num(sec.I, 8)}\\mathrm{in}^{4}}{${num(sec.J, 8)}\\mathrm{in}^{4}}}=`, "K = √((1 + μ) I/J), μ = 0.2. J, the St. Venant torsion constant, is solved on the unit's shape (flange, tapered stems and their junctions) by finite elements, since it has no exact formula for a double tee");
+    m("C\\coloneq K\\cdot\\min\\left(\\frac{W}{L},1\\right)=", "SSHB 3.23.4.3");
+    m("D_m\\coloneq\\left(5.75-0.5\\cdot N_L+0.7\\cdot N_L\\cdot\\left(1-0.2\\cdot C\\right)^{2}\\right)\\cdot\\mathrm{ft}=", "With the bridge's design lanes", "ft");
+    m("D_s\\coloneq\\left(5.75-0.5+0.7\\cdot\\left(1-0.2\\cdot C\\right)^{2}\\right)\\cdot\\mathrm{ft}=", "With one lane loaded, for the legal and permit vehicles", "ft");
+    m("DF_{m}\\coloneq\\frac{S}{D_m}=", "Interior, two or more lanes");
+    m("DF_{s}\\coloneq\\frac{S}{D_s}=", "Interior, one lane");
   } else {
     given(
       `DF_{m}\\coloneq ${num(g.dfMulti, 10)}`,

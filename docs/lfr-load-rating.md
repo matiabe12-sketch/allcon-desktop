@@ -128,8 +128,9 @@ these field by field):
 - **The original design, by the rules of its time** (taken from the year built):
   - the design vehicle by BRM 1.7.2(A): H20 before 1944, HS20 to 1993, HS25 from 1994 to 2001
     (truck and lane at 1.25 × HS20); from 2002 the bridge is LRFD (HL-93) and isn't back-calculated;
-  - strand development without the 1.6 multiplier before 1989 (FHWA's memorandum of October 1988
-    required it; SSHB 9.28.1 carries it in the 17th Edition errata), with it from 1989;
+  - strand development without the 1.6 multiplier in every era. FHWA required it from October 1988
+    (SSHB 9.28.1 carries it in the 17th Edition errata), but a bridge designed without it has fewer
+    strands than a back-calculation with it gives, so it is left out, on the safe side;
   - interior units of a multi-beam deck (no composite deck) by the rule of the era (dates from the
     Alaska DOT report FHWA-AK-RD-04-03, Section 1.1): built to 1977, the slab rule of the 9th to 11th
     Editions, each wheel over E = 4 + 0.06L ≤ 7 ft; 1978 to 1986, the 12th Edition's formula (NCHRP

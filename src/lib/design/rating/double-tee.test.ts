@@ -34,12 +34,12 @@ type Expected = {
   ratings: { name: string; Mw: number; gov: string; per: { g: string; inv: number; opr: number }[] }[];
 };
 it("sets the prestress with trucks between the curbs, then rates trucks on a mountable sidewalk with it", () => {
-  // Built in 1990: designed with the 1.6 development multiplier, as it is rated, so the design rates 1.0.
-  const i: DtInputs = { ...DT_DEFAULTS, bridge: { ...DT_DEFAULTS.bridge, yearBuilt: 1990 }, span: 22, structureLength: 23, loads: { ...DT_DEFAULTS.loads, sidewalks: [{ width: 5, thk: 8 }], sidewalkMountable: true, pedestrians: true }, options: { ...DT_DEFAULTS.options, solveWithOverlay: true } };
+  // The prestress makes the design rate 1.0 by its own rules (no 1.6 on development); the rating, with the 1.6, may be lower near the ends.
+  const i: DtInputs = { ...DT_DEFAULTS, span: 22, structureLength: 23, loads: { ...DT_DEFAULTS.loads, sidewalks: [{ width: 5, thk: 8 }], sidewalkMountable: true, pedestrians: true }, options: { ...DT_DEFAULTS.options, solveWithOverlay: true } };
   const r = rateDoubleTee(i);
   expect(isSidewalkTruckCase(r.solve.gov)).toBe(false);
   const hs = r.ratings[0];
-  for (const p of hs.per.filter((x) => !isSidewalkTruckCase(x.g))) expect(p.flexInv.inv).toBeGreaterThanOrEqual(1 - 1e-9);
+  expect(r.solve.govRF).toBeGreaterThanOrEqual(1 - 1e-9);
   expect(hs.per.some((x) => isSidewalkTruckCase(x.g))).toBe(true);
 });
 
@@ -353,21 +353,23 @@ describe("CDOT's rules around the rating", () => {
 });
 
 describe("the original design (BRM 1.7.2(A))", () => {
-  it("takes CDOT's design vehicle and FHWA's 1988 development rule by the year built", () => {
+  it("takes CDOT's design vehicle by the year built, and develops the strands without the 1.6 in every era", () => {
     expect(originalDesign(1940).vehicle).toBe("H20");
     expect(originalDesign(1970)).toMatchObject({ vehicle: "HS20", scale: 1, devFactor: 1 });
-    expect(originalDesign(1990)).toMatchObject({ vehicle: "HS20", devFactor: 1.6 });
-    expect(originalDesign(1995)).toMatchObject({ vehicle: "HS25", scale: 1.25, devFactor: 1.6 });
+    expect(originalDesign(1990)).toMatchObject({ vehicle: "HS20", devFactor: 1 }); // without the 1.6 in every era, on the safe side
+    expect(originalDesign(1995)).toMatchObject({ vehicle: "HS25", scale: 1.25, devFactor: 1 });
     expect(originalDesign(2005).vehicle).toBe("HL-93");
     expect(designTruck("HS25").P).toEqual([5, 20, 20]);
     expect(designTruck("H20").P).toEqual([4, 16]);
   });
 
-  it("solves for HS25 on a bridge built 1994 to 2001, so HS-20 rates 1.25 or more", () => {
+  it("solves for HS25 on a bridge built 1994 to 2001, with more strands than HS20 needs", () => {
     const i: DtInputs = { ...DT_DEFAULTS, span: 22, structureLength: 23, bridge: { ...DT_DEFAULTS.bridge, yearBuilt: 1996 } };
     const r = rateDoubleTee(i);
     const hs = r.ratings[0];
-    expect(Math.min(...hs.per.map((p) => p.flexInv.inv))).toBeGreaterThan(1.2);
+    expect(r.original.vehicle).toBe("HS25");
+    expect(r.solve.govRF).toBeGreaterThanOrEqual(1 - 1e-9);
+    void hs;
     expect(rateDoubleTee({ ...i, bridge: { ...i.bridge, yearBuilt: 1990 } }).solve.As).toBeLessThan(r.solve.As);
   });
 
@@ -382,7 +384,7 @@ describe("the original design (BRM 1.7.2(A))", () => {
     const d = r.original.devCompare!;
     expect(d.withOriginal).toBeCloseTo(1, 2); // the design rates 1.0 with its own development rule
     expect(d.rated).toBeLessThanOrEqual(d.withOriginal + 1e-9);
-    expect(rateDoubleTee({ ...i, bridge: { ...i.bridge, yearBuilt: 1990 } }).original.devCompare).toBeNull();
+    expect(rateDoubleTee({ ...i, bridge: { ...i.bridge, yearBuilt: 1990 } }).original.devCompare).not.toBeNull(); // no 1.6 in the design in any era
   });
 });
 

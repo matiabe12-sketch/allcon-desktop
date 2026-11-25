@@ -56,17 +56,15 @@ function originalNote(i: DtInputs, r: ReturnType<typeof rateDoubleTee>) {
   const y = i.bridge.yearBuilt;
   const vehicle =
     o.vehicle === "HS25" ? `HS25, CDOT's design vehicle for bridges built from 1994 to 2001` : o.vehicle === "H20" ? `H20, CDOT's design vehicle for bridges built before 1944` : `HS-20, CDOT's design vehicle for bridges built from 1944 to 1993`;
-  const dev =
-    o.devFactor < 1.6
-      ? `its strands are developed over (f*su − ⅔fse)D, without the 1.6 multiplier that FHWA required from October 1988 and that SSHB 9.28.1 now carries (17th Edition errata)`
-      : `its strands are developed over 1.6(f*su − ⅔fse)D, the multiplier FHWA required from October 1988 (SSHB 9.28.1, 17th Edition errata)`;
+  const dev = `its strands are developed over (f*su − ⅔fse)D, without the 1.6 multiplier that SSHB 9.28.1 now carries (17th Edition errata). FHWA required the multiplier from October 1988, but a bridge designed without it has fewer strands than a back-calculation with it would give, so it is left out of the back-calculation in every era, on the safe side`;
+  const dist = r.era && r.era.rule !== "current" ? "The live load distribution of the multi-beam deck is that of its era (section 6); the strand stress at ultimate is that of the current Specifications." : "The live load distribution and the strand stress at ultimate are those of the current Specifications.";
   const d = o.devCompare;
   const cost = !d
     ? ""
     : d.withOriginal - d.rated > 5e-4
       ? ` The rating uses today's rule, with the 1.6 multiplier, so near the ends of the span the strands carry less stress than the design assumed: in flexure, HS-20 rates ${num(d.withOriginal, 3)} at inventory with the development length of the design, and ${num(d.rated, 3)} with today's.`
       : ` The rating uses today's rule, with the 1.6 multiplier; HS-20 governs where the strands are fully developed either way, so it doesn't change the rating.`;
-  return `Original design:- The prestress is set by the rules of the bridge's time, taken from the year it was built (${y}). The design vehicle is ${vehicle} (BRM 1.7.2(A)), and ${dev}. The live load distribution and the strand stress at ultimate are those of the current Specifications. The ratings then follow the current Specifications, the MBE and the BRM (BRM 1.3).${cost}`;
+  return `Original design:- The prestress is set by the rules of the bridge's time, taken from the year it was built (${y}). The design vehicle is ${vehicle} (BRM 1.7.2(A)), and ${dev}. ${dist} The ratings then follow the current Specifications, the MBE and the BRM (BRM 1.3).${cost}`;
 }
 
 /** The original design's distribution for an interior unit of a multi-beam deck, where its era's rule differs from today's. */

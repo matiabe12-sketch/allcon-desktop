@@ -594,7 +594,7 @@ function Results({ i, r, brr, setBrr, df, setDf }: { i: DtInputs; r: DtRating; b
         <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
           <AlertTriangle className="mt-0.5 size-4 shrink-0" />
           <span>
-            Built before 1989, so designed without the 1.6 multiplier on strand development length that the rating now applies (SSHB 9.28.1, 17th Edition errata). Near the ends that lowers HS-20 inventory in flexure from {f3(r.original.devCompare.withOriginal)} to {f3(r.original.devCompare.rated)}.
+            The prestress is back-calculated without the 1.6 multiplier on strand development length, on the safe side; the rating applies it (SSHB 9.28.1, 17th Edition errata). Near the ends that lowers HS-20 inventory in flexure from {f3(r.original.devCompare.withOriginal)} to {f3(r.original.devCompare.rated)}.
           </span>
         </div>
       )}

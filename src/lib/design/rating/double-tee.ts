@@ -995,13 +995,14 @@ export const legalLanes = (i: Pick<DtInputs, "bridge" | "options">): "single" | 
 
 /**
  * The original design's rules by the year built, taken as the year it was designed: CDOT's design
- * vehicles (BRM 1.7.2(A): H20 before 1944, HS20 to 1993, HS25 1994 to 2001, HL-93 from 2002), and the
- * 1.6 multiplier on strand development length FHWA required from its memorandum of October 1988
- * (later SSHB 9.28.1, 17th Edition errata).
+ * vehicles (BRM 1.7.2(A): H20 before 1944, HS20 to 1993, HS25 1994 to 2001, HL-93 from 2002). The
+ * strands are developed over (f*su − ⅔fse)D in every era, without the 1.6 multiplier: FHWA required it
+ * from October 1988, but a bridge designed after that without it would have fewer strands than a
+ * back-calculation with it gives, so leaving it out keeps the back-calculation on the safe side.
  */
 export function originalDesign(year: number) {
   const vehicle = year < 1944 ? "H20" : year <= 1993 ? "HS20" : year <= 2001 ? "HS25" : "HL-93";
-  return { vehicle, scale: vehicle === "HS25" ? 1.25 : 1, devFactor: year >= 1989 ? 1.6 : 1 } as const;
+  return { vehicle, scale: vehicle === "HS25" ? 1.25 : 1, devFactor: 1 } as const;
 }
 /** The design truck, wheel-line loads (kip) and spacings (ft) (SSHB 3.7): H20, HS20 (the HS-20 of the vehicles), HS25 at 1.25 × HS20. */
 export function designTruck(v: ReturnType<typeof originalDesign>["vehicle"]): Pick<Vehicle, "P" | "S"> {

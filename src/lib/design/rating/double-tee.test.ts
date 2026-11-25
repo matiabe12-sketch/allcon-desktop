@@ -62,23 +62,29 @@ describe("curbs", () => {
   });
 });
 
-it("by default doesn't rate the final tension on a back-calculated prestress, but reports it at 6√f′c (BRM 1.7.2)", () => {
-  const i: DtInputs = { ...DT_DEFAULTS, loads: { ...DT_DEFAULTS.loads, asphalt: 0 } };
-  expect(i.options.ignoreTension).toBe(true);
+it("by default rates the final tension at 6√f′c (MBE 6B.5.3.3), the prestress meeting the design's service tension", () => {
+  // No asphalt, so the rating carries the dead load the prestress was solved for.
+  const i: DtInputs = { ...DT_DEFAULTS, span: 24, structureLength: 25, loads: { ...DT_DEFAULTS.loads, asphalt: 0 } };
+  expect([i.options.ignoreTension, i.options.solveForService, i.options.minSteel12]).toEqual([false, true, true]);
   const r = rateDoubleTee(i);
   const hs = r.ratings[0];
   const t = hs.per.flatMap((p) => p.points).filter((q) => q.check === "tension");
   expect(t.length).toBeGreaterThan(0);
-  expect(t.every((q) => q.info && Math.abs(q.C - codeTension(i.materials.fc)) < 1e-12)).toBe(true);
-  expect(hs.tInfo!.pt.inv).toBeCloseTo(Math.min(...t.map((q) => q.inv)), 12);
-  expect(hs.govInv.inv.inv).toBeGreaterThanOrEqual(1 - 1e-9);
-  expect(hs.govInv.inv.check).toBe("flexure");
-  // Known strands: the tension is rated.
-  const known = rateDoubleTee({ ...i, prestress: { mode: "known", strands: r.solve.nStrands } });
-  const kt = known.ratings[0].per.flatMap((p) => p.points).filter((q) => q.check === "tension");
-  expect(kt.length).toBeGreaterThan(0);
-  expect(kt.some((q) => q.info)).toBe(false);
-  expect(known.ratings[0].tInfo).toBeNull();
+  expect(t.some((q) => q.info)).toBe(false);
+  expect(t.every((q) => Math.abs(q.C - codeTension(i.materials.fc)) < 1e-12)).toBe(true);
+  expect(r.solve.serviceMet).toBe(true);
+  // Flexure with the design's own development length (the rating adds the 1.6 multiplier near the ends).
+  expect(r.original.devCompare!.withOriginal).toBeGreaterThanOrEqual(1 - 1e-6);
+  // The design rates at least 1.0 in tension and flexure (it was solved for both).
+  for (const p of hs.per.filter((x) => !isSidewalkTruckCase(x.g))) {
+    expect(Math.min(...p.points.filter((q) => q.check === "tension").map((q) => q.inv))).toBeGreaterThanOrEqual(1 - 1e-6);
+  }
+  // Solving for strength alone gives fewer strands, and the tension then falls short.
+  const strengthOnly = rateDoubleTee({ ...i, options: { ...i.options, solveForService: false, minSteel12: false } });
+  expect(strengthOnly.solve.As).toBeLessThanOrEqual(r.solve.As + 1e-12);
+  // Tension can still be set aside (for information) where asked.
+  const ignored = rateDoubleTee({ ...i, options: { ...i.options, ignoreTension: true } });
+  expect(ignored.ratings[0].per.flatMap((p) => p.points).filter((q) => q.check === "tension").every((q) => q.info)).toBe(true);
 });
 
 it("by default solves without the asphalt (the original design) and rates with it (BRM 1.7.2(A))", () => {
@@ -169,13 +175,13 @@ describe("the back-calculation over the points of interest (as BrR rates)", () =
 });
 
 describe("saved ratings", () => {
-  it("a new one takes the defaults: solved without the asphalt, final tension for information", () => {
+  it("a new one takes the defaults: solved without the asphalt, for service tension and minimum steel; tension rated", () => {
     const o = dtRatingInputs({}).options;
-    expect([o.solveWithOverlay, o.ignoreTension, o.tensionLimit]).toEqual([false, true, null]);
+    expect([o.solveWithOverlay, o.ignoreTension, o.tensionLimit, o.solveForService, o.minSteel12]).toEqual([false, false, null, true, true]);
   });
   it("one saved before the defaults changed keeps what it was rated with", () => {
     const o = dtRatingInputs({ options: { roundStrands: true } }).options;
-    expect([o.solveWithOverlay, o.ignoreTension, o.tensionLimit]).toEqual([true, false, 1]);
+    expect([o.solveWithOverlay, o.ignoreTension, o.tensionLimit, o.solveForService, o.minSteel12]).toEqual([true, false, 1, false, false]);
   });
   it("one saved with the settings keeps them", () => {
     const o = dtRatingInputs({ options: { solveWithOverlay: false, ignoreTension: true, tensionLimit: null } }).options;
@@ -512,4 +518,11 @@ describe("strand stress by strain compatibility, where fse < 0.5 f′s (SSHB 9.1
     const dsc = strainCompat(10, { bf: 60, bw: 10, A: 500, I: 10000, yb: 12 }, 15, DT_DEFAULTS.materials, 3, 5, 100, 4000, 3);
     expect(dsc.fps).toBeLessThan(250); // a heavily reinforced section: the strands stay well below f′s
   });
+});
+
+it("flags a design tension the stems can't meet, keeping the strands strength and minimum steel need", () => {
+  // The 17 in default units over 30 ft: the exterior girders reach about 0.97 in tension before the
+  // strands fill the stems' lower half.
+  const r = rateDoubleTee({ ...DT_DEFAULTS, loads: { ...DT_DEFAULTS.loads, asphalt: 0 } });
+  expect(r.solve.serviceMet).toBe(false);
 });

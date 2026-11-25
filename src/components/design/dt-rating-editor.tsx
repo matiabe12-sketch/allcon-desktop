@@ -351,7 +351,7 @@ export function DtRatingEditor({ design, projects }: { design: { id: string; nam
               <DtStandardPanel
                 i={i}
                 onApply={(r) => setInputs((s) => applyStandard(s, r))}
-                onBackCalculate={() => setInputs((s) => ({ ...s, prestress: { ...s.prestress, mode: "back-calculate", harp: null }, options: { ...s.options, ignoreTension: true, tensionLimit: null } }))}
+                onBackCalculate={() => setInputs((s) => ({ ...s, prestress: { ...s.prestress, mode: "back-calculate", harp: null }, options: { ...s.options, ignoreTension: false, tensionLimit: null } }))}
               />
               <Choice
                 label="Prestress"
@@ -428,9 +428,9 @@ export function DtRatingEditor({ design, projects }: { design: { id: string; nam
                 label="Final tension limit, girder"
                 value={i.options.ignoreTension && i.prestress.mode === "back-calculate" ? "ignored" : i.options.tensionLimit === null ? "code" : i.options.tensionLimit === 1 ? "brm" : "entered"}
                 options={[
-                  ...(i.prestress.mode === "back-calculate" ? [{ value: "ignored", label: "Not rated; 6√f′c shown for information (BRM 1.7.2)" }] : []),
-                  { value: "brm", label: "1 ksi (strength governs, BRM 1.7.2)" },
-                  { value: "code", label: `6√f′c (${finalTension({ ...i, options: { ...i.options, tensionLimit: null } }).toFixed(3)} ksi)` },
+                  { value: "code", label: `6√f′c (${finalTension({ ...i, options: { ...i.options, tensionLimit: null } }).toFixed(3)} ksi), SSHB 9.15.2.2, MBE 6B.5.3.3` },
+                  ...(i.prestress.mode === "back-calculate" ? [{ value: "ignored", label: "Not rated, 6√f′c for information (not a code provision)" }] : []),
+                  { value: "brm", label: "1 ksi (not a code limit)" },
                   { value: "entered", label: "Entered" },
                 ]}
                 onChange={(v) =>
@@ -444,6 +444,10 @@ export function DtRatingEditor({ design, projects }: { design: { id: string; nam
               {!(i.options.ignoreTension && i.prestress.mode === "back-calculate") && i.options.tensionLimit !== null && i.options.tensionLimit !== 1 && (
                 <Field label="Final tension, entered" unit="ksi" value={i.options.tensionLimit} onChange={(v) => opt({ tensionLimit: v })} step={0.05} />
               )}
+              {i.prestress.mode === "back-calculate" && (
+                <Toggle label="Solve for the design's service tension (6√f′c, SSHB 9.15.2.2)" value={i.options.solveForService} onChange={(v) => opt({ solveForService: v })} />
+              )}
+              <Toggle label="Minimum steel, 1.2 M*cr (SSHB 9.18.2.1; MBE 6B.5.3.3 k factor)" value={i.options.minSteel12} onChange={(v) => opt({ minSteel12: v })} />
               <Choice
                 label="Points of interest"
                 value={i.options.poi}
@@ -597,6 +601,17 @@ function Results({ i, r, brr, setBrr, df, setDf }: { i: DtInputs; r: DtRating; b
           {exempt.length > 0 && ` Exempt by the 95% rule: ${exempt.map((x) => x.name).join(", ")}.`} HS-20 inventory {f3(hs.govInv.inv.inv)} ({hs.govInv.g}), operating {f3(hs.govOpr.opr.opr)}.
         </span>
       </div>
+      {s.mode === "back-calculate" && ((i.options.solveForService && !s.serviceMet) || (i.options.minSteel12 && !s.minSteelMet) || !s.release.ok) && (
+        <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+          <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+          <span>
+            {i.options.solveForService && !s.serviceMet && "The design's service tension (6√f′c, SSHB 9.15.2.2) can't be met before the strands fill the lower half of the stems; the tension rating shows the shortfall. "}
+            {i.options.minSteel12 && !s.minSteelMet && "Minimum steel (1.2 M*cr, SSHB 9.18.2.1) can't be met before the stems fill. "}
+            {!s.release.ok &&
+              `At release the ${s.release.top.top > s.release.topLim ? `top tension (${(s.release.top.top * 1000).toFixed(0)} psi > ${(s.release.topLim * 1000).toFixed(0)} psi)` : ""}${s.release.top.top > s.release.topLim && s.release.bottom.bottom > s.release.botLim ? " and " : ""}${s.release.bottom.bottom > s.release.botLim ? `bottom compression (${s.release.bottom.bottom.toFixed(2)} ksi > ${s.release.botLim.toFixed(2)} ksi)` : ""} exceed SSHB 9.15.2.1, so the original likely had harped or debonded strands or another layout: review the assumed strands.`}
+          </span>
+        </div>
+      )}
       {!s.fsuValid && s.sc && (
         <div className={cn("flex items-start gap-2 rounded-lg border px-4 py-3 text-sm", s.sc.fps >= s.cap.fsuEq - 1e-6 ? "border-sky-300 bg-sky-50 text-sky-900 dark:bg-sky-950/40 dark:text-sky-200" : "border-amber-300 bg-amber-50 text-amber-900 dark:bg-amber-950/40 dark:text-amber-200")}>
           <AlertTriangle className="mt-0.5 size-4 shrink-0" />

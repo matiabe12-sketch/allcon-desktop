@@ -99,7 +99,7 @@ function eraDistribution(
 }
 
 /** Why the final tension is 1.0 ksi when the prestress is back-calculated. */
-const TENSION_NOTE = "Final tension: 1.0 ksi, as entered. The code limit, 6√f′c (SSHB 9.15.2.2), is set aside so that strength flexure controls the prestress, which BRM 1.7.2 sets by strength";
+const TENSION_NOTE = "Final tension: 1.0 ksi, as entered. Not a code limit: SSHB 9.15.2.2 gives 6√f′c, which MBE 6B.5.3.3 requires at the inventory level";
 
 /** The package's opening note: the purpose, the method and how the inputs were found, for this bridge. */
 function methodNote(i: DtInputs, r: ReturnType<typeof rateDoubleTee>, text: (t: string, style?: "heading" | "subheading" | "note") => void) {
@@ -142,11 +142,11 @@ function methodNote(i: DtInputs, r: ReturnType<typeof rateDoubleTee>, text: (t: 
   text(
     `Checks:- The girders are rated for flexural strength (SSHB 9.17) and for concrete stresses at service (SSHB 9.15.2.2, MBE 6B.5.3.3): ${tensionIgnored(i) ? "" : "tension at the bottom of the girder, and "}compression in the girder${i.deck.present ? " and the deck" : ""}. ${
       tensionIgnored(i)
-        ? "The final tension in the girder is not rated. The prestress is back-calculated for strength (BRM 1.7.2), so a tension check on it would only test the assumed prestress, not the bridge, and the strength back-calculation is a lower bound on the prestress of girders designed to service limits. The tension at the code limit, 6√f′c (SSHB 9.15.2.2), is reported for information; the bridge's service performance is shown by its inspection history (no flexural cracking or other load-induced distress, MBE 6.1.4)."
+        ? "The final tension in the girder is not rated. The prestress is back-calculated for strength (BRM 1.7.2), so a tension check on it would only test the assumed prestress, not the bridge, and the strength back-calculation is a lower bound on the prestress of girders designed to service limits. The tension at the code limit, 6√f′c (SSHB 9.15.2.2), is reported for information; the bridge's service performance is shown by its inspection history (no flexural cracking or other load-induced distress, MBE 6.1.4). This departs from MBE 6B.5.3.3, which requires the service stresses at the inventory level; it is kept because this rating was made that way."
         : tension === 1 && back
-        ? "The final tension limit is 1.0 ksi, as entered. The code limit, 6√f′c (SSHB 9.15.2.2), is set aside so that strength flexure controls the prestress, which BRM 1.7.2 sets by strength."
+        ? "The final tension limit is 1.0 ksi, as entered. That isn't a code limit: SSHB 9.15.2.2 gives 6√f′c, and MBE 6B.5.3.3 requires it at the inventory level."
         : tension === null
-          ? "The final tension limit is 6√f′c (SSHB 9.15.2.2)."
+          ? "The final tension limit is 6√f′c (SSHB 9.15.2.2), rated at the inventory level as MBE 6B.5.3.3 requires."
           : `The final tension limit is ${num(tension)} ksi.`
     } ${
       i.options.checkShear
@@ -319,7 +319,9 @@ export function dtRatingCalcLines(i: DtInputs, title: string, figures?: { sectio
   m("a_{c}\\coloneq\\frac{1.4\\cdot d\\cdot\\rho_{p}\\cdot f_{su}}{f'_{cf}}=", "Depth of the stress block", "in");
   m(ok("a_{c}", "h_f"), "Rectangular section behavior (SSHB 9.17.2)");
   const flexMid = r.midspan[0].per.find((p) => p.g === g.name)!;
-  const Mnx = hsFlex.flexInv.C;
+  // The section's Mn at x; minimum steel (MBE 6B.5.3.3) scales it by k in the rating factors below.
+  const kpt = hsFlex.flexInv.k;
+  const Mnx = kpt ? hsFlex.flexInv.C / kpt.inv : hsFlex.flexInv.C;
   const damage = r.condition.damageOf(g.name, x);
   const damagedHere = !!damage;
   const developed = Math.abs(Mnx - flexMid.C0) < 1e-6 * Math.max(1, flexMid.C0);
@@ -437,8 +439,16 @@ export function dtRatingCalcLines(i: DtInputs, title: string, figures?: { sectio
   const llHS = hsFlex.flexInv.LL / (hsFlex.df * (1 + r.impact));
   given(`M_{w,HS}\\coloneq ${num(llHS, 9)}${kft}`, `HS-20 moment per wheel line at x, from the truck or the lane load, whichever is greater (SSHB 3.7)`);
   m("M_{L,HS}\\coloneq M_{w,HS}\\cdot DF_{m}\\cdot\\left(1+I_m\\right)=", undefined, "kip*ft");
-  m("RF_{inv,HS}\\coloneq\\frac{M_{nx}-1.3\\cdot M_D-2.17\\cdot M_{ped}}{2.17\\cdot M_{L,HS}}=", "Inventory: A1 = 1.3, A2 = 2.17 (MBE Eq. 6B.4.1-1, 6B.4.3)");
-  m("RF_{opr,HS}\\coloneq\\frac{M_{nx}-1.3\\cdot M_D-1.3\\cdot M_{ped}}{1.3\\cdot M_{L,HS}}=", "Operating: A2 = 1.3");
+  if (kpt) {
+    given(`M_{crs}\\coloneq ${num(kpt.Mcr, 9)}${kft}`, "Cracking moment at x, (fr + fpe)Sc − Mdnc(Sc/Sb − 1), fr = 7.5√f′c (SSHB 9.18.2.1, 9.15.2.3)");
+    given(`k_{inv}\\coloneq ${num(kpt.inv, 10)}`, "Mn < 1.2 M*cr: k, the larger of Mn/(1.2 M*cr) and Mn/(1.33 Mu), Mu = 1.3MD + 2.17(ML(1 + I) + Mped) (MBE 6B.5.3.3, the owner's option)");
+    given(`k_{opr}\\coloneq ${num(kpt.opr, 10)}`, "The same with Mu at the operating level");
+    m("RF_{inv,HS}\\coloneq\\frac{k_{inv}\\cdot M_{nx}-1.3\\cdot M_D-2.17\\cdot M_{ped}}{2.17\\cdot M_{L,HS}}=", "Inventory: A1 = 1.3, A2 = 2.17 (MBE Eq. 6B.4.1-1, 6B.4.3)");
+    m("RF_{opr,HS}\\coloneq\\frac{k_{opr}\\cdot M_{nx}-1.3\\cdot M_D-1.3\\cdot M_{ped}}{1.3\\cdot M_{L,HS}}=", "Operating: A2 = 1.3");
+  } else {
+    m("RF_{inv,HS}\\coloneq\\frac{M_{nx}-1.3\\cdot M_D-2.17\\cdot M_{ped}}{2.17\\cdot M_{L,HS}}=", "Inventory: A1 = 1.3, A2 = 2.17 (MBE Eq. 6B.4.1-1, 6B.4.3)");
+    m("RF_{opr,HS}\\coloneq\\frac{M_{nx}-1.3\\cdot M_D-1.3\\cdot M_{ped}}{1.3\\cdot M_{L,HS}}=", "Operating: A2 = 1.3");
+  }
   if (back) {
     const sidewalkCase = isSidewalkTruckCase(g.name);
     const asInspected = damagedHere || r.condition.alone;
@@ -456,6 +466,25 @@ export function dtRatingCalcLines(i: DtInputs, title: string, figures?: { sectio
     m(
       ok("M_{cr}", "M_u"),
       s.crackGoverns ? "On at least one girder the cracking moment governs and sets the prestressing steel (BRM 1.7.2)" : "The factored moment exceeds the cracking moment on every girder, so it governs (BRM 1.7.2)",
+    );
+    const what = { strength: "strength flexure", cracking: "the cracking moment (BRM 1.7.2)", tension: "the design's service tension", "min-steel": "minimum steel" }[s.governs];
+    const parts = [
+      i.options.solveForService &&
+        (s.serviceMet
+          ? `the bottom tension under the design vehicle stays within 6√f′c = ${num(1000 * (0.006 * Math.sqrt(mt.fc * 1000)), 0)} psi at every point (SSHB 9.15.2.2; the 1973 Specifications' Art. 1.6.6(B)(2) has the same limit), with the losses above`
+          : `the design's service tension, 6√f′c at the bottom (SSHB 9.15.2.2), can't be met before the strands fill the lower half of the stems; the strands are those the other conditions need, and the tension rating below shows the shortfall`),
+      i.options.minSteel12 && (s.minSteelMet ? "φMn reaches 1.2 M*cr, or 1.33 times the factored moment (SSHB 9.18.2.1, 9.18.2.2; 1973 Art. 1.6.10(B))" : "minimum steel (1.2 M*cr, SSHB 9.18.2.1) can't be met before the stems fill"),
+    ].filter(Boolean);
+    text(
+      `Design conditions:- The strands are the fewest that meet every condition of the original design: strength, the cracking moment${parts.length ? `, and ${parts.join("; and ")}` : ""}. Here ${what} sets them.`,
+      "note",
+    );
+    const rl = s.release;
+    text(
+      rl.ok
+        ? `Release (a check, not a rating):- Just after transfer, with the prestress at ${num(rl.fi, 1)} ksi, the top tension is ${num(rl.top.top * 1000, 0)} psi (limit 7.5√f′ci = ${num(rl.topLim * 1000, 0)} psi) and the bottom compression ${num(rl.bottom.bottom, 3)} ksi (limit 0.60 f′ci = ${num(rl.botLim, 3)} ksi) (SSHB 9.15.2.1): a design with these strands was buildable.`
+        : `Release (a check, not a rating):- Just after transfer, with the prestress at ${num(rl.fi, 1)} ksi, ${rl.top.top > rl.topLim ? `the top tension, ${num(rl.top.top * 1000, 0)} psi at ${num(rl.top.x, 2)} ft, exceeds 7.5√f′ci = ${num(rl.topLim * 1000, 0)} psi` : ""}${rl.top.top > rl.topLim && rl.bottom.bottom > rl.botLim ? " and " : ""}${rl.bottom.bottom > rl.botLim ? `the bottom compression, ${num(rl.bottom.bottom, 3)} ksi at ${num(rl.bottom.x, 2)} ft, exceeds 0.60 f′ci = ${num(rl.botLim, 3)} ksi` : ""} (SSHB 9.15.2.1). A design with straight strands like these couldn't have been built, so the original likely had harped or debonded strands, a higher release strength, or a different layout: the assumed strand arrangement should be reviewed.`,
+      "note",
     );
   }
 
@@ -493,12 +522,14 @@ export function dtRatingCalcLines(i: DtInputs, title: string, figures?: { sectio
       const gg = r.girders.find((q) => q.name === p.g)!;
       const Mw = fp.LL / (p.df * (1 + r.impact));
       const Mped = (gg.pedKlf * fp.x * (L - fp.x)) / 2;
+      // The operating capacity: with minimum steel, φMn scaled by the operating level's k (MBE 6B.5.3.3).
+      const Copr = fp.k ? (fp.C / fp.k.inv) * fp.k.opr : fp.C;
       given(
         `M_{w,${c}}\\coloneq ${num(Mw, 9)}${kft}`,
-        `${v.name} (${num(v.tons, 2)} T): moment per wheel line on ${p.g} at x = ${num(fp.x, 2)} ft. DF = ${num(p.df)}, MD = ${num(fp.Dl, 2)} kip·ft, Mn = ${num(fp.C, 2)} kip·ft${Mped ? `, Mped = ${num(Mped, 2)} kip·ft` : ""}`,
+        `${v.name} (${num(v.tons, 2)} T): moment per wheel line on ${p.g} at x = ${num(fp.x, 2)} ft. DF = ${num(p.df)}, MD = ${num(fp.Dl, 2)} kip·ft, ${fp.k ? `k·Mn = ${num(fp.k.opr, 3)} × ${num(fp.C / fp.k.inv, 2)} = ${num(Copr, 2)} kip·ft (minimum steel, MBE 6B.5.3.3)` : `Mn = ${num(fp.C, 2)} kip·ft`}${Mped ? `, Mped = ${num(Mped, 2)} kip·ft` : ""}`,
       );
       m(
-        `RF_{opr,${c}}\\coloneq\\frac{${num(fp.C, 9)}${kft}-1.3\\cdot ${num(fp.Dl, 9)}${kft}-1.3\\cdot ${num(Mped, 9)}${kft}}{1.3\\cdot M_{w,${c}}\\cdot ${num(p.df, 10)}\\cdot\\left(1+I_m\\right)}=`,
+        `RF_{opr,${c}}\\coloneq\\frac{${num(Copr, 9)}${kft}-1.3\\cdot ${num(fp.Dl, 9)}${kft}-1.3\\cdot ${num(Mped, 9)}${kft}}{1.3\\cdot M_{w,${c}}\\cdot ${num(p.df, 10)}\\cdot\\left(1+I_m\\right)}=`,
         "Operating rating factor, flexure",
       );
       m(`W_{${c}}\\coloneq RF_{opr,${c}}\\cdot ${num(v.tons, 4)}=`, "Operating rating, tons");

@@ -92,8 +92,8 @@ export function brrInputSheet(i: DtInputs, r: DtRating): BrrGroup[] {
           : ["PS properties: loss method", `Lump sum, ${f(i.options.lossLumpSum)} ksi`, "SSHB 9.16.2.2"],
         ["Jacking stress ratio", f(m.jackingRatio), ""],
         tensionIgnored(i)
-          ? ["Final tension limit, girder (LFD)", "10 ksi", "Ignored, BRM 1.7.2: a value high enough that tension never governs, so strength flexure controls"]
-          : ["Final tension limit, girder (LFD)", `${f(finalTension(i), 3)} ksi`, i.options.tensionLimit === null ? "6√f′c, SSHB 9.15.2.2" : i.options.tensionLimit === 1 ? "Set so strength flexure controls the prestress, BRM 1.7.2" : "As entered"],
+          ? ["Final tension limit, girder (LFD)", "10 ksi", "Not rated, as this design was: a value high enough that tension never governs. Not a code provision; MBE 6B.5.3.3 requires the service stresses at inventory"]
+          : ["Final tension limit, girder (LFD)", `${f(finalTension(i), 3)} ksi`, i.options.tensionLimit === null ? "6√f′c, SSHB 9.15.2.2 (MBE 6B.5.3.3)" : i.options.tensionLimit === 1 ? "1 ksi, as entered (not a code limit)" : "As entered"],
         ["Other LFD stress limits", `Final compression 0.6f′c = ${f(0.6 * m.fc, 2)} ksi; DL compression 0.4f′c = ${f(0.4 * m.fc, 2)} ksi${deck ? `; deck 0.4f′c = ${f(0.4 * deck.fc, 2)} ksi` : ""}`, "SSHB 9.15.2.2"],
         ["Concrete: modulus of rupture / strand modulus", `${f(ruptureModulus(m.fc), 3)} ksi / ${f(EP, 0)} ksi`, "AASHTO LRFD 5.4.2.6, 5.4.4.2"],
       ],

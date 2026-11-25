@@ -37,7 +37,8 @@ export const TELLRD: DtInputs = {
   },
   materials: { ...DT_DEFAULTS.materials, fc: 6, fci: 6, strand: '1/2" 270 ksi LR', fpu: 270, aps: 0.153, jackingRatio: 0.75, lowRelaxation: true, strandsPerRowPerStem: 7, firstRow: 7.5, rowSpacing: 2 },
   prestress: { mode: "known", strands: 404 / (0.75 * 270) / 0.153 },
-  options: { ...DT_DEFAULTS.options, tensionLimit: 1, legalLldf: "single" },
+  // As CDOT's sample model: the prestress by strength alone, tension at 1 ksi for information.
+  options: { ...DT_DEFAULTS.options, tensionLimit: 1, legalLldf: "single", ignoreTension: true, solveForService: false, minSteel12: false },
   brrDf: { intSingle: 0.86, intMulti: 1.095, extSingle: 0.958, extMulti: 0.958 },
 };
 

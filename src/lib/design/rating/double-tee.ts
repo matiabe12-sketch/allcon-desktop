@@ -78,11 +78,23 @@ export type DtInputs = {
      */
     tensionLimit: number | null;
     /**
-     * With a back-calculated prestress: the final tension doesn't govern the rating. BRM 1.7.2 sets the
-     * prestress by strength, so service tension on an assumed prestress isn't a rating; it is still
-     * computed at the code limit, 6√f′c, and reported for information. The default.
+     * With a back-calculated prestress: the final tension isn't rated, only reported at the code limit.
+     * Off by default: MBE 6B.5.3.3 says the inventory rating must consider the service stresses of the
+     * Standard Specifications, and the back-calculation now meets the design's service tension. Kept
+     * for designs that were rated that way.
      */
     ignoreTension: boolean;
+    /**
+     * Back-calculate the prestress to meet the original design's service tension as well, 6√f′c at the
+     * bottom under the design vehicle (SSHB 9.15.2.2; 1973 Art. 1.6.6(B)(2)), with the losses chosen.
+     */
+    solveForService: boolean;
+    /**
+     * Minimum steel: the back-calculation gives φMn ≥ 1.2 M*cr (SSHB 9.18.2.1; 1973 Art. 1.6.10(B)), or
+     * 1.33 times the factored moment (9.18.2.2); the rating scales φMn by k where it falls short
+     * (MBE 6B.5.3.3, the owner's option).
+     */
+    minSteel12: boolean;
     /** Prestress losses: item by item (SSHB 9.16.2.1), or the lump sum of 9.16.2.2 (as a file or a standard gives). */
     losses: "itemized" | "lump";
     lossLumpSum: number; // ksi, SSHB 9.16.2.2
@@ -159,7 +171,9 @@ export const DT_DEFAULTS: DtInputs = {
     roundStrands: true,
     legalLldf: "single",
     tensionLimit: null,
-    ignoreTension: true,
+    ignoreTension: false,
+    solveForService: true,
+    minSteel12: true,
     losses: "itemized",
     lossLumpSum: 45,
     humidity: 55,
@@ -792,7 +806,37 @@ export function rateDoubleTee(i: DtInputs) {
   let As: number;
   let AsExact = 0;
   let crackGoverns = false;
+  let governs: "strength" | "cracking" | "tension" | "min-steel" = "strength";
+  let serviceMet = true;
+  let minSteelMet = true;
   const fr = ruptureModulus(m.fc);
+  const transferAt = (x: number) => Math.min(1, (Math.min(x, L - x) + ext) / lt);
+  /** Bottom stress (tension +, ksi) of girder g at x under the design vehicle and the design's dead load, strands As. */
+  const designTension = (g: Girder, a: number, x: number) => {
+    const sec = g.sec;
+    const Sb2 = g.csec ? g.csec.Sb : sec.Sb;
+    const P = fseOf(a) * a * transferAt(x);
+    const e = sec.yb - cgAt(a, x);
+    const dl = g.dlSolve;
+    const M1 = dlAt(dl.dc1, dl.diaph, L, x).M;
+    const M2 = dlAt(dl.dc2, 0, L, x).M;
+    const LLm = llDesignAt(x) * g.dfSolve * (1 + I);
+    return -P / sec.A - (P * e) / sec.Sb + (M1 * 12) / sec.Sb + ((M2 + pedM(g, x) + LLm) * 12) / Sb2;
+  };
+  /**
+   * M*cr of SSHB 9.18.2.1 at x (kip·ft; midspan by default): (fr + fpe)Sc − Mdnc(Sc/Sb − 1),
+   * fr = 7.5√f′c (9.15.2.3), fpe the effective prestress at the bottom at x, Mdnc the dead load on the
+   * precast section alone at x.
+   */
+  const crackStar = (g: Girder, a: number, dl: Girder["dlNow"], P = fseOf(a) * a, x = L / 2) => {
+    const sec = g.sec;
+    const Sc = g.csec ? g.csec.Sb : sec.Sb;
+    const e = sec.yb - cgAt(a, x);
+    const fpe = P / sec.A + (P * e) / sec.Sb;
+    const frS = (7.5 * Math.sqrt(m.fc * 1000)) / 1000;
+    const Mdnc = dlAt(g.csec ? dl.dc1 : 0, g.csec ? dl.diaph : 0, L, x).M;
+    return ((frS + fpe) * Sc - Mdnc * 12 * (Sc / sec.Sb - 1)) / 12;
+  };
   const crack = girders.map((g) => ({ g: g.name, Mcr: (fr * (g.csec ? g.csec.Sb : g.sec.Sb)) / 12, MuReq: 1.3 * D(g, true, L / 2).M + 2.17 * (M_design * g.dfSolve * (1 + I) + pedM(g, L / 2)) }));
   let solveNote = "";
   if (i.prestress.mode === "known") {
@@ -832,6 +876,41 @@ export function rateDoubleTee(i: DtInputs) {
       }
       As = hi2;
     }
+    if (crackGoverns) governs = "cracking";
+    // Raise the strands to the fewest for which ok holds; unmet if the stems fill first. A step-by-step
+    // scan (a quarter strand at a time): more strands also raise their centroid, so a check such as the
+    // service tension can improve and then get worse again.
+    const raise = (ok: (a: number) => boolean) => {
+      if (ok(As)) return true;
+      let lo3 = As;
+      let hi3 = As;
+      for (;;) {
+        hi3 += m.aps / 4;
+        if (strandCG(hi3, m) > maxCG) return false;
+        if (ok(hi3)) break;
+        lo3 = hi3;
+      }
+      for (let k = 0; k < 60; k++) {
+        const mid = (lo3 + hi3) / 2;
+        if (ok(mid)) hi3 = mid;
+        else lo3 = mid;
+      }
+      As = hi3;
+      return true;
+    };
+    // The original design's service tension: 6√f′c at the bottom under the design vehicle, at every
+    // point, with the design's dead load and distribution (SSHB 9.15.2.2; 1973 Art. 1.6.6(B)(2)).
+    if (i.options.solveForService) {
+      const before = As;
+      serviceMet = raise((a) => solveGirders.every((g) => pois.filter((x) => x > 0 && x < L).every((x) => designTension(g, a, x) <= codeTension(m.fc) + 1e-9)));
+      if (As > before + 1e-12) governs = "tension";
+    }
+    // Minimum steel: φMn ≥ 1.2 M*cr, or 1.33 times the factored moment (SSHB 9.18.2.1, 9.18.2.2; 1973 Art. 1.6.10(B)).
+    if (i.options.minSteel12) {
+      const before = As;
+      minSteelMet = raise((a) => solveGirders.every((g) => capacity(g, a).Mn >= Math.min(1.2 * crackStar(g, a, g.dlSolve), 1.33 * crack.find((c) => c.g === g.name)!.MuReq) - 1e-9));
+      if (As > before + 1e-12) governs = "min-steel";
+    }
     AsExact = As;
     if (i.options.roundStrands) As = Math.ceil(AsExact / m.aps - 1e-9) * m.aps;
     solveNote = i.options.roundStrands ? "whole strands; the jacking force rounded down to the kip" : "the exact force";
@@ -842,6 +921,33 @@ export function rateDoubleTee(i: DtInputs) {
   const fse = fseOf(As);
   const Pe = fse * As;
   const losses = i.options.losses === "itemized" ? lossesOf(As) : null;
+  /**
+   * Release (SSHB 9.15.2.1), a flag only: just after transfer, on the casting bed over the girder's own
+   * length, the top tension (≤ 7.5√f′ci with bonded reinforcement) and the bottom compression
+   * (≤ 0.60 f′ci), at the end of the transfer length and at midspan, on the typical interior unit. The
+   * prestress just after transfer is taken as 0.63 f′s (stress-relieved) or 0.69 f′s (low-relaxation),
+   * in proportion to the jacking stress (9.16.2.1.2).
+   */
+  const release = (() => {
+    const g0 = girders.find((g) => !g.ext) ?? girders[0];
+    const sec = g0.sec;
+    const Lm = i.structureLength;
+    const fi = fpj * (m.lowRelaxation ? 0.69 / 0.75 : 0.63 / 0.7);
+    const w = g0.dlNow.self;
+    const at = (xm: number) => {
+      const xb = Math.max(0, Math.min(L, xm - ext)); // from the bearing, for the strand centroid
+      const P = fi * As * Math.min(1, Math.min(xm, Lm - xm) / lt);
+      const e = sec.yb - cgAt(As, xb);
+      const Mg = (w * xm * (Lm - xm)) / 2;
+      return { x: xm, top: -P / sec.A + (P * e) / sec.St - (Mg * 12) / sec.St, bottom: P / sec.A + (P * e) / sec.Sb - (Mg * 12) / sec.Sb };
+    };
+    const pts = [at(Math.min(lt, Lm / 2)), at(Lm / 2)];
+    const topLim = (7.5 * Math.sqrt(m.fci * 1000)) / 1000;
+    const botLim = 0.6 * m.fci;
+    const top = pts.reduce((a, c) => (c.top > a.top ? c : a));
+    const bottom = pts.reduce((a, c) => (c.bottom > a.bottom ? c : a));
+    return { fi, top, bottom, topLim, botLim, ok: top.top <= topLim + 1e-9 && bottom.bottom <= botLim + 1e-9 };
+  })();
   {
     const hD = u.depth + (deck ? deck.thk : 0);
     const full = flexure(As, b.secInt, hD - cg, m, u.flangeThk + (deck ? deck.thk : 0), deck ? deck.fc : m.fc);
@@ -862,7 +968,7 @@ export function rateDoubleTee(i: DtInputs) {
   const transfer = (x: number) => Math.min(1, (Math.min(x, L - x) + ext) / lt);
   const ignoreT = tensionIgnored(i);
   /** info: computed and reported, but not a rating (the final tension on a back-calculated prestress). */
-  type PointResult = { x: number; check: RatingCheck; inv: number; opr: number | null; C: number; Dl: number; LL: number; info?: true };
+  type PointResult = { x: number; check: RatingCheck; inv: number; opr: number | null; C: number; Dl: number; LL: number; info?: true; k?: { inv: number; opr: number; Mcr: number } };
   /** intact: as designed (the section and distribution before the inspection's findings), for the comparison. */
   const rateGirder = (g: Girder, v: Vehicle, intact = false, devFactor = 1.6) => {
     const design = v.cls === "design";
@@ -884,7 +990,13 @@ export function rateDoubleTee(i: DtInputs) {
       const Mp = pedM(g, x);
       // Flexure, strength.
       const cap = capacity(g, As, x, !intact, devFactor);
-      out.push({ x, check: "flexure", inv: (cap.Mn - 1.3 * Dm - 2.17 * Mp) / (2.17 * LLm), opr: (cap.Mn - 1.3 * Dm - 1.3 * Mp) / (1.3 * LLm), C: cap.Mn, Dl: Dm, LL: LLm });
+      // Minimum steel in the rating (MBE 6B.5.3.3, the owner's option): where φMn < 1.2 M*cr, φMn is
+      // scaled by k, the larger of φMn/(1.2 M*cr) and φMn/(1.33 Mu), Mu the factored moment of the level.
+      const mcr = i.options.minSteel12 ? crackStar(g, As, dl, fse * cap.As * transfer(x), x) : Infinity;
+      const kAt = (Mu: number) => (!i.options.minSteel12 || cap.Mn >= 1.2 * mcr ? 1 : Math.min(1, Math.max(cap.Mn / (1.2 * mcr), cap.Mn / (1.33 * Mu))));
+      const kInv = kAt(1.3 * Dm + 2.17 * (LLm + Mp));
+      const kOpr = kAt(1.3 * Dm + 1.3 * (LLm + Mp));
+      out.push({ x, check: "flexure", inv: (kInv * cap.Mn - 1.3 * Dm - 2.17 * Mp) / (2.17 * LLm), opr: (kOpr * cap.Mn - 1.3 * Dm - 1.3 * Mp) / (1.3 * LLm), C: kInv * cap.Mn, Dl: Dm, LL: LLm, ...(kInv < 1 || kOpr < 1 ? { k: { inv: kInv, opr: kOpr, Mcr: mcr } } : {}) });
       // Service, prestressed concrete (MBE 6B.5.3.3); stresses ksi, tension + at the bottom, compression + at the top.
       const P = fse * cap.As * transfer(x); // the strands left
       const Sb2 = cs ? cs.Sb : sec.Sb;
@@ -1035,7 +1147,7 @@ export function rateDoubleTee(i: DtInputs) {
     maxAt,
     fr,
     crack,
-    solve: { mode: i.prestress.mode, As, AsExact, nStrands, nExact: AsExact / m.aps, Pj, Pe, fpj, fse, losses, fsuValid: fse >= 0.5 * m.fpu - 1e-9, sc: capMid.sc, cg, d: capMid.d, gov: govSolve.g.name, govRF: govSolve.rf, crackGoverns, note: solveNote, cap: capMid },
+    solve: { mode: i.prestress.mode, As, AsExact, nStrands, nExact: AsExact / m.aps, Pj, Pe, fpj, fse, losses, fsuValid: fse >= 0.5 * m.fpu - 1e-9, sc: capMid.sc, governs, serviceMet, minSteelMet, release, cg, d: capMid.d, gov: govSolve.g.name, govRF: govSolve.rf, crackGoverns, note: solveNote, cap: capMid },
     fy,
     np,
     ratings,
@@ -1276,6 +1388,10 @@ export function dtInputsFromBridgeFile(b: Record<string, any>): DtInputs {
       roundStrands: o.round_strands !== false,
       legalLldf: o.legal_lldf === "multi" ? "multi" : "single",
       losses: "lump", // the scripts' files take the lump sum
+      // As the scripts rated them: tension for information only, the prestress by strength.
+      ignoreTension: o.ignore_tension !== false,
+      solveForService: false,
+      minSteel12: false,
     },
     condition: conditionFromFile(b.condition),
     siaCondition: null,

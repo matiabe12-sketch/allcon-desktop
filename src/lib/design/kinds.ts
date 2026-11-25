@@ -472,6 +472,9 @@ export function dtRatingInputs(saved: unknown): DtInputs {
       lldfInterior: o.lldfInterior === "auto" || o.lldfInterior === "table" || o.lldfInterior === "sd" ? o.lldfInterior : legacy ? "table" : d.options.lldfInterior,
       // A design saved before itemized losses keeps the lump sum it was rated with.
       losses: o.losses === "itemized" || o.losses === "lump" ? o.losses : legacy ? "lump" : d.options.losses,
+      // A design saved before keeps the method it was rated with: the prestress by strength alone.
+      solveForService: typeof o.solveForService === "boolean" ? o.solveForService : legacy ? false : d.options.solveForService,
+      minSteel12: typeof o.minSteel12 === "boolean" ? o.minSteel12 : legacy ? false : d.options.minSteel12,
       humidity: typeof o.humidity === "number" && o.humidity >= 0 && o.humidity <= 100 ? o.humidity : d.options.humidity,
     },
     brrDf: Object.fromEntries((["intSingle", "intMulti", "extSingle", "extMulti"] as const).map((k) => [k, typeof s.brrDf?.[k] === "number" && s.brrDf[k]! > 0 ? s.brrDf[k] : null])) as DtInputs["brrDf"],

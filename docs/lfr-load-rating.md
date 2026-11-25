@@ -125,12 +125,25 @@ these field by field):
 
 ## 5. Back-calculating the prestress (no plans)
 
-- The force (at the assumed strand centroid) is solved so that the lowest design-vehicle inventory rating
-  factor over all girders and points, in flexure, is exactly 1.0, by the same full analysis (not a
-  midspan hand check), so ALLCON's force rates as BrR will rate it.
-- As it's modeled in BrR: the final tension limit raised (1 ksi) so strength governs; shear waived per
-  BRM 1.4(O); the force the greater of what the factored moment and the cracking moment need
-  (BRM 1.7.2).
+- The strands (at the assumed centroid) are the fewest that meet every condition of the original
+  design, by the same full analysis over the points of interest (not a midspan hand check):
+  - strength flexure: the design vehicle rates at least 1.0 at inventory;
+  - the cracking moment (BRM 1.7.2);
+  - the design's service tension: 6√f′c at the bottom under the design vehicle (SSHB 9.15.2.2; the
+    1973 Specifications' Art. 1.6.6(B)(2) is the same), with the losses chosen (today's method);
+  - minimum steel: φMn ≥ 1.2 M*cr, or 1.33 times the factored moment (SSHB 9.18.2.1, 9.18.2.2; 1973
+    Art. 1.6.10(B)).
+  Strands are added a quarter at a time, since more strands also raise their centroid and a condition
+  such as tension can improve and then worsen; one the stems can't meet is flagged. The calc package
+  states which condition set the strands.
+- Release (SSHB 9.15.2.1) is checked as a flag, not a constraint: top tension ≤ 7.5√f′ci and bottom
+  compression ≤ 0.60 f′ci just after transfer. Exceeding them means the original likely had harped or
+  debonded strands or another layout.
+- The rating: tension at 6√f′c at inventory (MBE 6B.5.3.3 requires the service stresses); minimum
+  steel by MBE 6B.5.3.3's k factor (the owner's option, applied), φMn scaled by the larger of
+  φMn/(1.2 M*cr) and φMn/(1.33 Mu) where φMn < 1.2 M*cr; shear waived per BRM 1.4(O) where allowed.
+  Not rating tension (or a 1 ksi limit) remains an option for designs rated that way, stated as not
+  a code provision.
 - Options, as in yesterday's files: whole strands (the jacking force rounded down to the kip) or the
   exact force; the asphalt in place or removed while solving (removed by default since Nov 2026,
   below).

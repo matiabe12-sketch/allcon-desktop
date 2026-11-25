@@ -67,7 +67,8 @@ describe("double-tee rating calc package", () => {
       const hs = r.ratings[0];
       const hsFlex = hs.per.reduce((a, p) => (p.flexInv.inv < a.flexInv.inv ? p : a));
       close(c.value("RF_{inv,HS}\\coloneq"), hsFlex.flexInv.inv);
-      close(c.value("RF_{opr,HS}\\coloneq"), hsFlex.flexOpr.opr!);
+      // Operating at the same point (with minimum steel, k depends on the level, so the operating minimum may be elsewhere).
+      close(c.value("RF_{opr,HS}\\coloneq"), hsFlex.points.find((p) => p.check === "flexure" && Math.abs(p.x - hsFlex.flexInv.x) < 1e-9)!.opr!);
       close(c.value("P_j\\coloneq", "kip"), r.solve.Pj);
       close(c.value("I_m\\coloneq"), r.impact);
       // Service at the same point and girder.

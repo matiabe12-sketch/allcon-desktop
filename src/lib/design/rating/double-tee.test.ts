@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { dtRatingInputs } from "../kinds";
 import fixtures from "./cdot-bridges.json";
-import { DT_DEFAULTS, NO_UNIT_CONDITION, RESTRICTED, codeTension, designLanes, designTruck, itemizedLosses, legalLanes, multiBeamEra, originalDesign, postAll, shearRequired, dtInputsFromBridgeFile, interiorMethod, isSidewalkTruckCase, rateDoubleTee, type DtInputs, type DtRating, type DtUnitCondition } from "./double-tee";
+import { DT_DEFAULTS, NO_UNIT_CONDITION, RESTRICTED, codeTension, designLanes, designTruck, strainCompat, strandStress, itemizedLosses, legalLanes, multiBeamEra, originalDesign, postAll, shearRequired, dtInputsFromBridgeFile, interiorMethod, isSidewalkTruckCase, rateDoubleTee, type DtInputs, type DtRating, type DtUnitCondition } from "./double-tee";
 import { dtRatingCalcLines } from "./double-tee-calc";
 import { CDOT_VEHICLES, laneAt, tons, trainAt, trainMax } from "./vehicles";
 
@@ -482,5 +482,33 @@ describe("prestress losses (SSHB 9.16.2.1)", () => {
   it("a saved design from before keeps the lump sum", () => {
     expect(dtRatingInputs({ options: { lldfInterior: "table" } }).options.losses).toBe("lump");
     expect(dtRatingInputs({}).options.losses).toBe("itemized");
+  });
+});
+
+describe("strand stress by strain compatibility, where fse < 0.5 f′s (SSHB 9.17.4.1)", () => {
+  it("follows the strand curves, continuous at the elastic limit", () => {
+    expect(strandStress(0.0076, 250)).toBeCloseTo(28500 * 0.0076, 6);
+    expect(strandStress(0.0076 + 1e-9, 250)).toBeCloseTo(250 - 0.04 / 0.0012, 3);
+    expect(strandStress(0.0086, 270)).toBeCloseTo(245.1, 6);
+    expect(strandStress(0.05, 270)).toBeLessThan(270);
+  });
+  it("balances the stress block against the strands", () => {
+    const r = rateDoubleTee(DT_DEFAULTS);
+    const sc = r.solve.sc!;
+    expect(r.solve.fsuValid).toBe(false);
+    const g = r.girders.find((x) => !x.ext)!;
+    const b1 = 0.85 - 0.05 * (DT_DEFAULTS.materials.fc - 4);
+    const a = b1 * sc.c;
+    const C = a <= DT_DEFAULTS.units.flangeThk ? 0.85 * DT_DEFAULTS.materials.fc * g.sec.bf * a : 0.85 * DT_DEFAULTS.materials.fc * ((g.sec.bf - g.sec.bw) * DT_DEFAULTS.units.flangeThk + g.sec.bw * a);
+    expect(C).toBeCloseTo(r.solve.As * sc.fps, 3);
+  });
+  it("uses the lower of Eq. 9-17 and the strain-compatibility stress", () => {
+    for (const i of [DT_DEFAULTS, { ...DT_DEFAULTS, prestress: { mode: "known" as const, strands: 40 }, materials: { ...DT_DEFAULTS.materials, jackingRatio: 0.5 } }]) {
+      const s = rateDoubleTee(i).solve;
+      if (!s.sc) continue;
+      expect(s.cap.fsu).toBeCloseTo(Math.min(s.cap.fsuEq, s.sc.fps), 6);
+    }
+    const dsc = strainCompat(10, { bf: 60, bw: 10, A: 500, I: 10000, yb: 12 }, 15, DT_DEFAULTS.materials, 3, 5, 100, 4000, 3);
+    expect(dsc.fps).toBeLessThan(250); // a heavily reinforced section: the strands stay well below f′s
   });
 });

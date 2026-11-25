@@ -82,8 +82,7 @@ describe("double-tee rating calc package", () => {
         const code = { "CO Type 3": "T3", "CO Type 3S2": "T3S2", "CO Type 3-2": "T32", "CO SU6": "SU6", "CO SU7": "SU7", "CO Permit": "PMT", "CO Mod Tandem": "MT" }[v.name] ?? v.name;
         close(c.value(`RF_{opr,${code}}\\coloneq`), p.flexOpr.opr!);
       }
-      // The only check that may fail is a real one: the effective prestress under 0.5 f′s (SSHB 9.17.4.1).
-      expect(c.checks.filter((x) => x.includes("NG")).length).toBe(r.solve.fsuValid ? 0 : 1);
+      expect(c.checks.filter((x) => x.includes("NG"))).toEqual([]);
       // No one is credited by name.
       expect(c.text).not.toMatch(/\b[A-Z][a-z]+'s (rule|sheet|era table|approach|model|setup|checklist)/);
       // References are design codes (AASHTO, MBE, CDOT BRM/BDM), never the software or background files.

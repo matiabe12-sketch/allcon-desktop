@@ -2,7 +2,7 @@ import type { Line } from "@/lib/calcs/library/templates";
 import { cell, COLOR_NOTE, INPUT_COLOR, isInput, num } from "../calc-style";
 import type { Figure } from "../figures";
 import { brrInputSheet, compareBrrDf } from "./brr";
-import { CHECK_LABEL, interiorMethod, isSidewalkTruckCase, legalLanes, needsPosting, postTons, rateDoubleTee, roadwayWidth, tensionIgnored, unitDamaged, type DtInputs } from "./double-tee";
+import { CHECK_LABEL, Ec, interiorMethod, isSidewalkTruckCase, legalLanes, needsPosting, postTons, rateDoubleTee, roadwayWidth, strainCompat, tensionIgnored, unitDamaged, type DtInputs } from "./double-tee";
 import { checkStandard, DT_STANDARD_FC, DT_STANDARD_NAME, DT_STANDARD_SLAB } from "./dt-standard";
 
 const ftInText = (inches: number) => {
@@ -245,7 +245,8 @@ export function dtRatingCalcLines(i: DtInputs, title: string, figures?: { sectio
     m("\\Delta_{fs}\\coloneq\\Delta_{SH}+\\Delta_{ES}+\\Delta_{CR}+\\Delta_{R}=", "Total losses (Eq. 9-3)", "ksi");
   } else m(`\\Delta_{fs}\\coloneq ${num(i.options.lossLumpSum)}\\mathrm{ksi}`, "Losses, lump sum (SSHB 9.16.2.2)");
   m("f_{se}\\coloneq f_{pj}-\\Delta_{fs}=", "Effective prestress", "ksi");
-  m(ok("0.5\\cdot f'_{s}", "f_{se}"), s.fsuValid ? "The effective prestress is at least 0.5 f′s, so Eq. 9-17 for f*su applies (SSHB 9.17.4.1)" : "The effective prestress is below 0.5 f′s, so Eq. 9-17 doesn't apply (SSHB 9.17.4.1): f*su needs a strain-compatibility analysis");
+  if (s.fsuValid) m(ok("0.5\\cdot f'_{s}", "f_{se}"), "The effective prestress is at least 0.5 f′s, so Eq. 9-17 for f*su applies (SSHB 9.17.4.1)");
+  else text(`The effective prestress, ${num(s.fse, 1)} ksi, is below 0.5 f′s = ${num(0.5 * mt.fpu, 1)} ksi, so Eq. 9-17 alone doesn't give f*su (SSHB 9.17.4.1): it is checked by strain compatibility in section 3.`, "note");
   if (ls && i.bridge.yearBuilt <= 1976)
     text(
       `For comparison, the 1973 Specifications' estimate (Art. 1.6.7(B)), when this bridge was designed: shrinkage ${num(ls.y1973.SH, 1)} ksi, elastic shortening 7·fcir = ${num(ls.y1973.ES, 1)} ksi, creep 16·fcd = ${num(ls.y1973.CRc, 1)} ksi (fcd = ${num(ls.y1973.fcd, 3)} ksi with the prestress after losses and all dead load), relaxation ${num(ls.y1973.CRs, 1)} ksi: ${num(ls.y1973.total, 1)} ksi in all, against ${num(ls.total, 1)} ksi by today's method. The rating uses today's.`,
@@ -299,7 +300,22 @@ export function dtRatingCalcLines(i: DtInputs, title: string, figures?: { sectio
   m("\\beta_1\\coloneq\\max\\left(0.65,\\min\\left(0.85,0.85-0.05\\cdot\\left(\\frac{f'_{cf}}{\\mathrm{ksi}}-4\\right)\\right)\\right)=", "SSHB 8.16.2.7");
   m(`\\gamma_{p}\\coloneq ${num(mt.gammaStar)}`, "SSHB 9.17.4");
   m("\\rho_{p}\\coloneq\\frac{A_{ps}}{b\\cdot d}=");
-  m("f_{su}\\coloneq f'_{s}\\cdot\\left(1-\\frac{\\gamma_{p}}{\\beta_1}\\cdot\\frac{\\rho_{p}\\cdot f'_{s}}{f'_{cf}}\\right)=", "SSHB Eq. 9-17", "ksi");
+  if (s.fsuValid) m("f_{su}\\coloneq f'_{s}\\cdot\\left(1-\\frac{\\gamma_{p}}{\\beta_1}\\cdot\\frac{\\rho_{p}\\cdot f'_{s}}{f'_{cf}}\\right)=", "SSHB Eq. 9-17", "ksi");
+  else {
+    const fcF = deck ? deck.fc : mt.fc;
+    const sc = strainCompat(s.As, g.sec, i.units.depth + (deck ? deck.thk : 0) - s.cg, mt, hf, fcF, s.fse, Ec(mt.fc), s.cg);
+    text("Strain compatibility:- At ultimate the strands carry the strain of the effective prestress, plus the concrete's decompression at the strands, plus the flexural strain from the concrete crushing at 0.003; the neutral axis is where the stress block balances the strands at the stress their stress-strain curve gives for that strain.", "note");
+    m("\\varepsilon_1\\coloneq\\frac{f_{se}}{28500\\mathrm{ksi}}=", "Strain of the effective prestress");
+    given(`\\varepsilon_2\\coloneq ${num(sc.e2, 8)}`, "Decompression of the concrete at the strands, (Pe/(A·Ec))(1 + e²/r²)");
+    given(`c_{sc}\\coloneq ${num(sc.c, 8)}\\mathrm{in}`, "Neutral axis, where the stress block (0.85f′c, a = β1c) balances the strands (solved)");
+    m("\\varepsilon_3\\coloneq\\frac{0.003\\cdot\\left(d-c_{sc}\\right)}{c_{sc}}=", "Flexural strain at the strands");
+    m("\\varepsilon_{ps}\\coloneq\\varepsilon_1+\\varepsilon_2+\\varepsilon_3=", "Strand strain at ultimate");
+    given(
+      `f_{ps}\\coloneq ${num(sc.fps, 8)}\\mathrm{ksi}`,
+      mt.fpu >= 260 ? "From the strand's stress-strain curve, 270 − 0.04/(ε − 0.007) ksi above ε = 0.0086 (PCI Design Handbook, ASTM A416 strand)" : `From the strand's stress-strain curve, ${mt.fpu === 250 ? "" : `${num(mt.fpu / 250, 3)} × `}(250 − 0.04/(ε − 0.0064)) ksi above ε = 0.0076 (PCI Design Handbook, ASTM A416 strand)`,
+    );
+    m("f_{su}\\coloneq\\min\\left(f'_{s}\\cdot\\left(1-\\frac{\\gamma_{p}}{\\beta_1}\\cdot\\frac{\\rho_{p}\\cdot f'_{s}}{f'_{cf}}\\right),f_{ps}\\right)=", sc.fps >= s.cap.fsuEq - 1e-6 ? "Eq. 9-17, which strain compatibility confirms: the strands reach more than it gives" : "Limited to the strain-compatibility stress, below Eq. 9-17's", "ksi");
+  }
   m("a_{c}\\coloneq\\frac{1.4\\cdot d\\cdot\\rho_{p}\\cdot f_{su}}{f'_{cf}}=", "Depth of the stress block", "in");
   m(ok("a_{c}", "h_f"), "Rectangular section behavior (SSHB 9.17.2)");
   const flexMid = r.midspan[0].per.find((p) => p.g === g.name)!;

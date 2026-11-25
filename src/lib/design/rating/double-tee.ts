@@ -269,6 +269,46 @@ function flexure(As: number, sec: { bf: number; bw: number }, d: number, m: DtIn
   return { Mn: Mn / 12, fsu, rho, beta1: b1, a, type, index, limit, overReinforced };
 }
 
+/**
+ * Stress in seven-wire strand (ASTM A416) at a strain, ksi, by the PCI Design Handbook's curves:
+ * 270 ksi, 28,500ε up to 0.0086, then 270 − 0.04/(ε − 0.007); 250 ksi, 28,500ε up to 0.0076, then
+ * 250 − 0.04/(ε − 0.0064) (other strengths on the 250 ksi curve, scaled).
+ */
+export function strandStress(eps: number, fpu: number) {
+  if (fpu >= 260) return eps <= 0.0086 ? 28500 * eps : 270 - 0.04 / (eps - 0.007);
+  const k = fpu / 250;
+  return k * (eps <= 0.0076 ? 28500 * eps : 250 - 0.04 / (eps - 0.0064));
+}
+
+/**
+ * f*su by strain compatibility, for when Eq. 9-17 doesn't apply (fse < 0.5 f′s, SSHB 9.17.4.1): the
+ * strand strain at ultimate is that of the effective prestress (fse/Es), plus the decompression of the
+ * concrete at the strands (Pe/(A·Ec))(1 + e²/r²), plus the flexural strain 0.003(d − c)/c, with the
+ * neutral axis c where the stress block (0.85f′c, a = β1·c, the flange then the stems) balances the
+ * strands at the stress the curve gives for that strain.
+ */
+export function strainCompat(As: number, sec: { bf: number; bw: number; A: number; I: number; yb: number }, d: number, m: DtInputs["materials"], hf: number, fc: number, fse: number, EcGirder: number, cg: number) {
+  const b1 = Math.max(0.65, Math.min(0.85, 0.85 - 0.05 * (fc - 4)));
+  const e = sec.yb - cg;
+  const e1 = fse / 28500;
+  const e2 = ((fse * As) / (sec.A * EcGirder)) * (1 + (e * e * sec.A) / sec.I);
+  const C = (c: number) => {
+    const a = b1 * c;
+    return a <= hf ? 0.85 * fc * sec.bf * a : 0.85 * fc * ((sec.bf - sec.bw) * hf + sec.bw * a);
+  };
+  const eps = (c: number) => e1 + e2 + (0.003 * (d - c)) / c;
+  const T = (c: number) => As * strandStress(eps(c), m.fpu);
+  let lo = 1e-4;
+  let hi = d;
+  for (let k = 0; k < 100; k++) {
+    const c = (lo + hi) / 2;
+    if (C(c) > T(c)) hi = c;
+    else lo = c;
+  }
+  const c = (lo + hi) / 2;
+  return { c, a: b1 * c, e1, e2, e3: (0.003 * (d - c)) / c, eps: eps(c), fps: strandStress(eps(c), m.fpu) };
+}
+
 /** The strand centroid above the bottom for an area As, rows filled from the bottom (the assumption for a girder without plans). */
 export function strandCG(As: number, m: DtInputs["materials"]) {
   const n = As / m.aps;
@@ -710,17 +750,23 @@ export function rateDoubleTee(i: DtInputs) {
     const d = h - cg;
     const hf = u.flangeThk + (deck ? deck.thk : 0) - dmg.topLoss;
     const fcF = deck ? deck.fc : m.fc;
-    let cap: number | null = null;
+    const fsx = fseOf(As);
+    // Eq. 9-17 holds only with fse ≥ 0.5 f′s (SSHB 9.17.4.1); below it, f*su by strain compatibility
+    // where that is lower.
+    const sc = fsx < 0.5 * m.fpu - 1e-9 && AsE > 0 ? strainCompat(AsE, g.sec, d, m, hf, fcF, fsx, Ec(m.fc), cg) : null;
+    const eq = flexure(AsE, g.sec, d, m, hf, fcF);
+    const scCap = sc && sc.fps < eq.fsu ? sc.fps : null;
+    let cap: number | null = scCap;
     if (x !== null) {
       // Development (SSHB 9.28): fse over the transfer length, rising to f*su over the development length.
       const xe = Math.min(x, L - x) + ext; // ft from the girder's end
-      const full = flexure(AsE, g.sec, d, m, hf, fcF);
-      const fsx = fseOf(As);
-      const ld = (devFactor * (full.fsu - (2 / 3) * fsx) * db) / 12; // ft
-      cap = xe <= lt ? (fsx * xe) / lt : xe >= ld ? null : fsx + ((xe - lt) / Math.max(1e-9, ld - lt)) * (full.fsu - fsx);
+      const fsuFull = scCap ?? eq.fsu;
+      const ld = (devFactor * (fsuFull - (2 / 3) * fsx) * db) / 12; // ft
+      const dev = xe <= lt ? (fsx * xe) / lt : xe >= ld ? null : fsx + ((xe - lt) / Math.max(1e-9, ld - lt)) * (fsuFull - fsx);
+      if (dev !== null) cap = cap === null ? dev : Math.min(cap, dev);
     }
     const f = flexure(AsE, g.sec, d, m, hf, fcF, cap);
-    return { ...f, Mn: f.Mn * dmg.factor, MnSection: f.Mn, factor: dmg.factor, As: AsE, lostArea: As - AsE, cg, d, h, hf, fcFlange: fcF };
+    return { ...f, Mn: f.Mn * dmg.factor, MnSection: f.Mn, factor: dmg.factor, As: AsE, lostArea: As - AsE, cg, d, h, hf, fcFlange: fcF, sc, fsuEq: eq.fsu };
   };
   const D = (g: Girder, solve: boolean, x: number) => {
     const dl = solve ? g.dlSolve : g.dlNow;
@@ -989,7 +1035,7 @@ export function rateDoubleTee(i: DtInputs) {
     maxAt,
     fr,
     crack,
-    solve: { mode: i.prestress.mode, As, AsExact, nStrands, nExact: AsExact / m.aps, Pj, Pe, fpj, fse, losses, fsuValid: fse >= 0.5 * m.fpu - 1e-9, cg, d: capMid.d, gov: govSolve.g.name, govRF: govSolve.rf, crackGoverns, note: solveNote, cap: capMid },
+    solve: { mode: i.prestress.mode, As, AsExact, nStrands, nExact: AsExact / m.aps, Pj, Pe, fpj, fse, losses, fsuValid: fse >= 0.5 * m.fpu - 1e-9, sc: capMid.sc, cg, d: capMid.d, gov: govSolve.g.name, govRF: govSolve.rf, crackGoverns, note: solveNote, cap: capMid },
     fy,
     np,
     ratings,

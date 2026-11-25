@@ -99,7 +99,9 @@ these field by field):
    interior unit at midspan, with the mean annual humidity (55% by default); or the lump sum of
    9.16.2.2, which bridge files and the 1982 standard keep. For bridges built by 1976 the calc package
    shows the 1973 estimate (Art. 1.6.7(B)) beside it. The effective prestress is checked against
-   0.5 f′s, the limit for Eq. 9-17 (SSHB 9.17.4.1), and flagged when below. Transfer and development
+   0.5 f′s, the limit for Eq. 9-17 (SSHB 9.17.4.1); below it, f*su is found by strain compatibility
+   (fse/Es + the concrete's decompression + 0.003(d − c)/c, on the PCI Design Handbook's curves for
+   250 and 270 ksi strand) and the lower of the two is used, at every point. Transfer and development
    (SSHB 9.27–9.28; development 1.6(f*su − ⅔fse)D, 17th Edition errata).
 7. **Capacity at every point:**
    - flexure, SSHB 9.17 (fps by Eq. 9-17; rectangular or flanged), φ = 1.0; maximum steel, 9.18.1;

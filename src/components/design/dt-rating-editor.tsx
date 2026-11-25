@@ -597,11 +597,12 @@ function Results({ i, r, brr, setBrr, df, setDf }: { i: DtInputs; r: DtRating; b
           {exempt.length > 0 && ` Exempt by the 95% rule: ${exempt.map((x) => x.name).join(", ")}.`} HS-20 inventory {f3(hs.govInv.inv.inv)} ({hs.govInv.g}), operating {f3(hs.govOpr.opr.opr)}.
         </span>
       </div>
-      {!s.fsuValid && (
-        <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+      {!s.fsuValid && s.sc && (
+        <div className={cn("flex items-start gap-2 rounded-lg border px-4 py-3 text-sm", s.sc.fps >= s.cap.fsuEq - 1e-6 ? "border-sky-300 bg-sky-50 text-sky-900 dark:bg-sky-950/40 dark:text-sky-200" : "border-amber-300 bg-amber-50 text-amber-900 dark:bg-amber-950/40 dark:text-amber-200")}>
           <AlertTriangle className="mt-0.5 size-4 shrink-0" />
           <span>
-            The effective prestress, {s.fse.toFixed(1)} ksi, is below 0.5 f′s ({(0.5 * i.materials.fpu).toFixed(1)} ksi), so SSHB Eq. 9-17 for the strand stress at ultimate doesn&apos;t strictly apply (SSHB 9.17.4.1). The ratings use it; a strain-compatibility analysis would confirm them.
+            The effective prestress, {s.fse.toFixed(1)} ksi, is below 0.5 f′s ({(0.5 * i.materials.fpu).toFixed(1)} ksi), so SSHB Eq. 9-17 alone doesn&apos;t give the strand stress at ultimate (SSHB 9.17.4.1). By strain compatibility the strands reach {s.sc.fps.toFixed(1)} ksi (strain {s.sc.eps.toFixed(4)}) against Eq. 9-17&apos;s {s.cap.fsuEq.toFixed(1)} ksi,{" "}
+            {s.sc.fps >= s.cap.fsuEq - 1e-6 ? "so Eq. 9-17 holds and is used." : "so the ratings use the lower, strain-compatibility stress."}
           </span>
         </div>
       )}

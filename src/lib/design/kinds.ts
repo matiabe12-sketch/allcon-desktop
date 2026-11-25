@@ -406,6 +406,30 @@ export function girderInputs(saved: unknown): GirderInputs {
 }
 
 /** A double-tee rating's inputs as saved, filled in from the defaults. */
+/** A saved SIA condition reading, checked and bounded (it's the SIA's text, kept with the design). */
+function siaConditionOf(v: unknown): DtInputs["siaCondition"] {
+  if (!v || typeof v !== "object") return null;
+  const c = v as Record<string, unknown>;
+  const str = (x: unknown, max = 600) => (typeof x === "string" ? x.slice(0, max) : "");
+  const n = (x: unknown) => (typeof x === "number" && Number.isFinite(x) ? x : 0);
+  const row = (r: Record<string, unknown>) => ({
+    code: n(r.code),
+    name: str(r.name, 80),
+    unit: str(r.unit, 20),
+    total: n(r.total),
+    cs: (Array.isArray(r.cs) && r.cs.length === 4 ? r.cs.map(n) : [0, 0, 0, 0]) as [number, number, number, number],
+  });
+  const arr = (x: unknown, max: number) => (Array.isArray(x) ? x.filter((y) => y && typeof y === "object").slice(0, max) : []) as Record<string, unknown>[];
+  const strs = (x: unknown, max: number) => (Array.isArray(x) ? x.filter((y): y is string => typeof y === "string").slice(0, max).map((y) => y.slice(0, 600)) : []);
+  return {
+    source: str(c.source, 40),
+    date: str(c.date, 20),
+    elements: arr(c.elements, 20).map((e) => ({ ...row(e), defects: arr(e.defects, 20).map(row), notes: strs(e.notes, 60) })),
+    notes: arr(c.notes, 10).map((x) => ({ label: str(x.label, 60), text: str(x.text, 1200) })),
+    work: strs(c.work, 30),
+  };
+}
+
 export function dtRatingInputs(saved: unknown): DtInputs {
   const s = (saved && typeof saved === "object" ? saved : {}) as Partial<DtInputs>;
   const d = DT_DEFAULTS;
@@ -446,6 +470,28 @@ export function dtRatingInputs(saved: unknown): DtInputs {
       ignoreTension: typeof o.ignoreTension === "boolean" ? o.ignoreTension : legacy ? false : d.options.ignoreTension,
     },
     brrDf: Object.fromEntries((["intSingle", "intMulti", "extSingle", "extMulti"] as const).map((k) => [k, typeof s.brrDf?.[k] === "number" && s.brrDf[k]! > 0 ? s.brrDf[k] : null])) as DtInputs["brrDf"],
+    condition: (() => {
+      const c = (s.condition && typeof s.condition === "object" ? s.condition : {}) as Partial<DtInputs["condition"]>;
+      const num = (v: unknown, dflt: number) => (typeof v === "number" && Number.isFinite(v) ? v : dflt);
+      return {
+        jointsFailed: c.jointsFailed === true,
+        jointsNote: typeof c.jointsNote === "string" ? c.jointsNote : "",
+        units: (Array.isArray(c.units) ? c.units : [])
+          .filter((x) => x && typeof x === "object")
+          .slice(0, 60)
+          .map((x) => ({
+            unit: num(x.unit, 1),
+            lostStrands: Math.max(0, num(x.lostStrands, 0)),
+            corrodedStrands: Math.max(0, num(x.corrodedStrands, 0)),
+            areaLoss: Math.min(100, Math.max(0, num(x.areaLoss, 0))),
+            zone: x.zone && typeof x.zone === "object" && Number.isFinite(x.zone.from) && Number.isFinite(x.zone.to) ? { from: x.zone.from, to: x.zone.to } : null,
+            topLoss: Math.max(0, num(x.topLoss, 0)),
+            factor: Math.min(1, Math.max(0, num(x.factor, 1))),
+            note: typeof x.note === "string" ? x.note : "",
+          })),
+      };
+    })(),
+    siaCondition: siaConditionOf(s.siaCondition),
     review: { ...d.review, ...(s.review ?? {}), items: Array.isArray(s.review?.items) ? s.review.items : [] },
     notes: s.notes && typeof s.notes === "object" ? s.notes : {},
     brrResults: typeof s.brrResults === "string" ? s.brrResults : "",

@@ -144,16 +144,31 @@ export function brrInputSheet(i: DtInputs, r: DtRating): BrrGroup[] {
         ["Strand CG at midspan / left / right", harp ? `${f(harp.mid, 2)} / ${f(harp.end, 2)} / ${f(harp.end, 2)} in` : `${f(s.cg, 2)} / ${f(s.cg, 2)} / ${f(s.cg, 2)} in`, "From the bottom"],
         ["Overhang left / right", `${f(ovh, 1)} / ${f(ovh, 1)} in`, `Structure length ${ftin(i.structureLength)}`],
         ["LFD shear computation", i.options.checkShear ? "Compute (SSHB 9.20)" : "Ignore", i.options.checkShear ? "" : "BRM 1.4(O)"],
-        ...(dfInt ? ([[`LFD DF, interior`, `Single ${f(dfInt.dfSingle, 3)}; multi ${f(dfInt.dfMulti, 3)}`, i.options.lldfInterior === "sd" ? "SSHB 3.23.4.3, S/D" : "SSHB Table 3.23.1"]] as BrrRow[]) : []),
-        [`LFD DF, exterior (G1, G${u.count})${mountable ? ", model 1" : ""}`, `Single ${f(dfExt.dfSingle, 3)}; multi ${f(dfExt.dfMulti, 3)}`, "Lever rule"],
-        ...(dfMnt ? ([[`LFD DF, exterior, model 2`, `Single ${f(dfMnt.dfSingle, 3)}; multi ${f(dfMnt.dfMulti, 3)}`, "Lever rule, wheel 2 ft from the rail"]] as BrrRow[]) : []),
+        ...(dfInt ? ([[`LFD DF, interior`, `Single ${f(dfInt.dfSingle, 3)}; multi ${f(dfInt.dfMulti, 3)}`, r.condition.alone ? "As inspected, joints failed: enter as an override" : i.options.lldfInterior === "sd" ? "SSHB 3.23.4.3, S/D" : "SSHB Table 3.23.1"]] as BrrRow[]) : []),
+        [`LFD DF, exterior (G1, G${u.count})${mountable ? ", model 1" : ""}`, `Single ${f(dfExt.dfSingle, 3)}; multi ${f(dfExt.dfMulti, 3)}`, r.condition.alone ? "As inspected, joints failed: enter as an override" : "Lever rule"],
+        ...(dfMnt ? ([[`LFD DF, exterior, model 2`, `Single ${f(dfMnt.dfSingle, 3)}; multi ${f(dfMnt.dfMulti, 3)}`, r.condition.alone ? "As inspected, joints failed: enter as an override" : "Lever rule, wheel 2 ft from the rail"]] as BrrRow[]) : []),
+        ...(r.condition.alone
+          ? ([["LFD DF by girder, as inspected", r.girders.filter((g) => !g.name.includes("(")).map((g) => `${g.name} ${f(g.dfSingle, 2)}/${f(g.dfMulti, 2)}`).join("; "), "Single/multi; each unit carries the wheels on it"]] as BrrRow[])
+          : []),
       ],
     },
+    ...(r.condition.units.length
+      ? [
+          {
+            title: "7a. Condition, as inspected (MBE 6.1.4)",
+            rows: r.condition.units.map((c): BrrRow => [
+              `${c.g}`,
+              `Mn ${f(c.intact.Mn, 1)} → ${f(c.inspected.Mn, 1)} kip·ft at ${f(c.at, 2)} ft; A*s ${f(c.intact.As, 3)} → ${f(c.inspected.As, 3)} in²`,
+              `${c.inspected.As < c.intact.As ? `Force ${f((s.Pj * c.inspected.As) / c.intact.As, 1)} kip on this girder${c.zone ? ` from ${f(Math.max(0, c.zone.from - r.condition.ldDev), 2)} to ${f(Math.min(i.span, c.zone.to + r.condition.ldDev), 2)} ft` : ""}` : "Force unchanged"}${c.topLoss > 0 ? `; flange ${f(c.topLoss, 2)} in thinner` : ""}${c.factor < 1 ? `; judgment factor ${f(c.factor, 2)}: BrR's LFR has none, so match this Mn by hand` : ""}`,
+            ]),
+          },
+        ]
+      : []),
     {
       title: "8. Run and check",
       rows: [
         ["Vehicles", CDOT_VEHICLES.map((v) => v.name).join(", "), `Legal and permit: ${i.options.legalLldf}-lane DF`],
-        [`Expected HS-20 inventory RF (${hsGov.govInv.g})`, f(hsGov.govInv.inv.inv, 3), i.prestress.mode === "back-calculate" ? "Should be at least 1.00; if lower, add a strand and rerun" : ""],
+        [`Expected HS-20 inventory RF (${hsGov.govInv.g})`, f(hsGov.govInv.inv.inv, 3), r.condition.active ? "As inspected; the intact bridge rates at least 1.00" : i.prestress.mode === "back-calculate" ? "Should be at least 1.00; if lower, add a strand and rerun" : ""],
         ["Expected legal operating ratings", legal.map((x) => `${x.name} ${f(x.oprTons, 1)} T`).join(" / "), "BrR should agree within 5%"],
         ["Finally", "Compare the BrR ratings and distribution factors with these calculations", "They should agree within 5%"],
       ],

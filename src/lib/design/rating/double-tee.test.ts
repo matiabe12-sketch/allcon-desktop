@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { dtRatingInputs } from "../kinds";
 import fixtures from "./cdot-bridges.json";
-import { DT_DEFAULTS, codeTension, dtInputsFromBridgeFile, isSidewalkTruckCase, rateDoubleTee, type DtInputs } from "./double-tee";
+import { DT_DEFAULTS, NO_UNIT_CONDITION, codeTension, dtInputsFromBridgeFile, isSidewalkTruckCase, rateDoubleTee, type DtInputs, type DtRating, type DtUnitCondition } from "./double-tee";
+import { dtRatingCalcLines } from "./double-tee-calc";
 import { CDOT_VEHICLES, laneAt, tons, trainAt, trainMax } from "./vehicles";
 
 // The double-tee LFR rating, against the rating scripts' results for five CDOT bridges without plans
@@ -178,5 +179,87 @@ describe("saved ratings", () => {
   it("one saved with the settings keeps them", () => {
     const o = dtRatingInputs({ options: { solveWithOverlay: false, ignoreTension: true, tensionLimit: null } }).options;
     expect([o.solveWithOverlay, o.ignoreTension, o.tensionLimit]).toEqual([false, true, null]);
+  });
+});
+
+describe("condition from the inspection (MBE 6.1.4)", () => {
+  const base: DtInputs = { ...DT_DEFAULTS, span: 30, structureLength: 30.5 };
+  const unit = (u: Partial<DtUnitCondition> & { unit: number }): DtUnitCondition => ({ ...NO_UNIT_CONDITION, ...u });
+  const withCond = (c: Partial<DtInputs["condition"]>): DtInputs => ({ ...base, condition: { ...DT_DEFAULTS.condition, ...c } });
+  const intact = rateDoubleTee(base);
+  const flexAt = (r: DtRating, g: string, x: number) => r.ratings[0].per.find((p) => p.g === g)!.points.find((p) => p.check === "flexure" && Math.abs(p.x - x) < 1e-9)!;
+
+  it("never changes the back-calculated strands, and the as-designed ratings are the intact bridge's", () => {
+    for (const c of [{ units: [unit({ unit: 3, lostStrands: 2 })] }, { jointsFailed: true }, { units: [unit({ unit: 2, topLoss: 1, factor: 0.9, note: "spalls" })] }]) {
+      const r = rateDoubleTee(withCond(c));
+      expect(r.solve.As).toBe(intact.solve.As);
+      expect(r.solve.Pj).toBe(intact.solve.Pj);
+      r.condition.asDesigned!.forEach((d, k) => {
+        near(d.inv, intact.ratings[k].govInv.inv.inv, 1e-12);
+        near(d.opr, intact.ratings[k].govOpr.opr.opr, 1e-12);
+      });
+    }
+    expect(intact.condition.active).toBe(false);
+    expect(intact.condition.asDesigned).toBeNull();
+  });
+
+  it("removes lost strands from that unit's Mn only", () => {
+    const r = rateDoubleTee(withCond({ units: [unit({ unit: 3, lostStrands: 2 })] }));
+    const x = base.span / 2;
+    expect(flexAt(r, "G3", x).C).toBeLessThan(flexAt(intact, "G3", x).C);
+    near(flexAt(r, "G2", x).C, flexAt(intact, "G2", x).C, 1e-12);
+    const cu = r.condition.units[0];
+    near(cu.intact.As - cu.inspected.As, 2 * base.materials.aps, 1e-12);
+    expect(r.ratings[0].govInv.inv.inv).toBeLessThan(intact.ratings[0].govInv.inv.inv);
+  });
+
+  it("counts a corroded strand by its lost area, and a damaged zone a development length past each end", () => {
+    const r = rateDoubleTee(withCond({ units: [unit({ unit: 3, corrodedStrands: 2, areaLoss: 50, zone: { from: 14, to: 16 } })] }));
+    const cu = r.condition.units[0];
+    near(cu.intact.As - cu.inspected.As, base.materials.aps, 1e-12);
+    const ld = r.condition.ldDev;
+    expect(ld).toBeGreaterThan(3);
+    // Within the zone and ld of it: reduced; beyond: intact.
+    expect(flexAt(r, "G3", 15).C).toBeLessThan(flexAt(intact, "G3", 15).C);
+    const far = r.pois.find((x) => x > 0 && x < 14 - ld - 1e-6)!;
+    near(flexAt(r, "G3", far).C, flexAt(intact, "G3", far).C, 1e-12);
+  });
+
+  it("a judgment factor scales the capacity and needs its reason", () => {
+    const r = rateDoubleTee(withCond({ units: [unit({ unit: 3, factor: 0.9, note: "honeycombing, extent unknown" })] }));
+    near(flexAt(r, "G3", 15).C, 0.9 * flexAt(intact, "G3", 15).C, 1e-12);
+    expect(() => rateDoubleTee(withCond({ units: [unit({ unit: 3, factor: 0.9 })] }))).toThrow(/reason/);
+    expect(() => rateDoubleTee(withCond({ units: [unit({ unit: 3, lostStrands: 99 })] }))).toThrow(/damaged strands/);
+  });
+
+  it("failed joints: each unit carries the wheels on it, the design's factors set the prestress", () => {
+    const r = rateDoubleTee(withCond({ jointsFailed: true }));
+    expect(r.condition.alone).toBe(true);
+    const g = Object.fromEntries(r.girders.map((x) => [x.name, x]));
+    // 5 ft units, 2 in joints: two trucks' wheels 4 ft apart fit on an interior unit; one truck's single wheel line.
+    expect(g.G3.dfMulti).toBe(2);
+    expect(g.G3.dfSingle).toBe(1);
+    // Symmetric across the bridge.
+    expect(g.G1.dfMulti).toBe(g.G6.dfMulti);
+    expect(g.G2.dfMulti).toBe(g.G5.dfMulti);
+    for (const x of r.girders) {
+      const y = intact.girders.find((q) => q.name === x.name)!;
+      expect(x.dfMultiDesign).toBe(y.dfMulti);
+    }
+    expect(r.ratings[0].govInv.inv.inv).toBeLessThan(intact.ratings[0].govInv.inv.inv);
+  });
+
+  it("is kept when saved, and an old design has none", () => {
+    expect(dtRatingInputs({ options: {} }).condition).toEqual(DT_DEFAULTS.condition);
+    const c = { jointsFailed: true, jointsNote: "cracks", units: [unit({ unit: 2, lostStrands: 1, zone: { from: 3, to: 5 }, note: "impact" })] };
+    expect(dtRatingInputs({ condition: c }).condition).toEqual(c);
+  });
+
+  it("the calc package states the condition and compares as designed with as inspected", () => {
+    const lines = dtRatingCalcLines(withCond({ units: [unit({ unit: 3, lostStrands: 2, note: "2 strands broken at an impact" })] }), "Test");
+    const t = lines.map((l) => ("text" in l ? l.text : "") + ("ref" in l && l.ref ? l.ref : "")).join("\n");
+    expect(t).toMatch(/Condition:- The bridge is rated in its condition at the latest inspection \(MBE 6\.1\.4\)/);
+    expect(t).toMatch(/as designed and as inspected/);
+    expect(t).toMatch(/G3: 2 strands broken at an impact\. Rated with 2 strands broken or missing over the whole span/);
   });
 });

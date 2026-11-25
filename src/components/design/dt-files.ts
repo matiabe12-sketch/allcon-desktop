@@ -8,7 +8,7 @@ import { readSia, textLines } from "@/lib/design/rating/sia";
 // The rating's files, handled in the browser: an SIA is read here and never uploaded; a sketch's
 // pages are drawn as pictures here and stored under the design.
 
-const SIA_PAGES = 12; // the inventory items are on the first few pages
+const SIA_PAGES = 40; // the inventory items are on the first few pages; the elements, notes and maintenance items follow
 
 /** A PDF's pages as text lines (its first maxPages). */
 async function pdfPages(file: File, maxPages: number) {

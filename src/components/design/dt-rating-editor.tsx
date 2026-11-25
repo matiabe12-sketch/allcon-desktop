@@ -14,6 +14,7 @@ import { applyBrm, GEOMETRY_KEYS, INPUT_LABEL, missingInputs, setPath, withFileS
 import { applyStandard } from "@/lib/design/rating/dt-standard";
 import { SourceLine, SrcField, SrcYesNo } from "./dt-fields";
 import { DtStandardPanel } from "./dt-standard-panel";
+import { ConditionInputs, ConditionResults } from "./dt-condition";
 import { readBrrFiles, readSiaFile, uploadSketch } from "./dt-files";
 import { DtSectionSketch } from "./dt-section-sketch";
 import { SiaDialog } from "./dt-sia-dialog";
@@ -448,7 +449,10 @@ export function DtRatingEditor({ design, projects }: { design: { id: string; nam
                 </>
               )}
             </Section>
-            <Section title="Condition and review">
+            <Section title="Condition (from the inspection)">
+              <ConditionInputs value={i.condition} onChange={set("condition")} unitCount={i.units.count} span={i.span} sia={i.siaCondition} hasDeck={i.deck.present} onClearSia={() => set("siaCondition")(null)} />
+            </Section>
+            <Section title="Review">
               <label className="block py-1 text-xs">
                 <span className="text-muted-foreground">Items for review (one per line)</span>
                 <textarea value={i.review.items.join("\n")} onChange={(e) => up("review")({ items: e.target.value.split("\n") })} rows={4} className="mt-1 w-full rounded-md border border-input bg-transparent p-2 text-xs" />
@@ -578,6 +582,7 @@ function Results({ i, r, brr, setBrr, df, setDf }: { i: DtInputs; r: DtRating; b
         </div>
       )}
 
+      <ConditionResults r={r} />
       {hs.tInfo && (
         <p className="px-1 text-xs text-muted-foreground">
           For information, not a rating: final tension at 6√f′c ({hs.tInfo.pt.C.toFixed(3)} ksi) gives HS-20 inventory {f3(hs.tInfo.pt.inv)} on {hs.tInfo.g} at {f2(hs.tInfo.pt.x)} ft. The prestress is back-calculated for strength (BRM 1.7.2), so this tests the assumed prestress, not the bridge; service performance is shown by the inspection history.

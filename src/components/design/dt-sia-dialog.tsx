@@ -62,7 +62,11 @@ export function SiaDialog({ reading, file, inputs, onApply, onClose }: { reading
           <DialogDescription>
             {reading.format === "sketch"
               ? `${file}: the labeled callouts only. Bare dimensions (stem depth, stem spacing, stem widths) aren't read; enter them from the sketch. Pick the values to use; each is noted with its callout.`
-              : `${file}, inspected ${reading.date} (${reading.format === "snbi" ? "SNBI items" : "NBI items"}). Pick the values to use; each is noted with its item as the source.`}
+              : `${file}, inspected ${reading.date} (${reading.format === "snbi" ? "SNBI items" : "NBI items"}). Pick the values to use; each is noted with its item as the source.${
+                  reading.condition && (reading.condition.elements.length || reading.condition.notes.length)
+                    ? ` The inspection's findings (${reading.condition.elements.length} element${reading.condition.elements.length === 1 ? "" : "s"}, the notes and maintenance items) go under Condition, to read beside its inputs; none of them is applied.`
+                    : ""
+                }`}
           </DialogDescription>
         </DialogHeader>
         {(otherBridge || reading.findings.length > 0) && (

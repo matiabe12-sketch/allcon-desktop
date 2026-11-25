@@ -1,4 +1,5 @@
 import { DesignError } from "../walls/cip";
+import type { SiaConditionData } from "./sia";
 import { CDOT_VEHICLES, laneAt, tons, trainAt, trainMax, type Vehicle, type VehicleClass } from "./vehicles";
 
 // Load Factor Rating of a simple-span bridge of adjacent precast, prestressed double-tee units, as
@@ -82,6 +83,10 @@ export type DtInputs = {
     stirrups: { bar: number; legs: number; spacing: number; fy: number }; // for shear, per stem
     dfOverride: { intSingle: number; intMulti: number; extSingle: number; extMulti: number } | null;
   };
+  /** What the inspection found, rated on the section as it stands (MBE 6.1.4); the back-calculation stays on the intact bridge. */
+  condition: DtCondition;
+  /** The latest SIA's element table, notes and maintenance items: prompts for the condition, never applied. */
+  siaCondition: SiaConditionData | null;
   review: { items: string[]; assumption: string };
   notes: Record<string, string>; // the source of a value, by input path
   brrResults: string; // BrR's rating table, pasted, for the comparison
@@ -96,6 +101,33 @@ export type DtInputs = {
   /** Started blank: inputs without a source show empty, not ALLCON's placeholders. */
   blankStart: boolean;
 };
+/**
+ * One unit's damage from the inspection. Strand losses apply over the zone (the whole span without one)
+ * and a development length past each end of it, where a damaged strand can't yet carry its full stress
+ * (SSHB 9.28); the top loss over the zone; the judgment factor everywhere, with its reason.
+ */
+export type DtUnitCondition = {
+  unit: number; // 1-based, G1 on side 1
+  lostStrands: number; // broken or missing
+  corrodedStrands: number; // exposed with section loss
+  areaLoss: number; // %, of each corroded strand's area
+  zone: { from: number; to: number } | null; // ft from the left bearing
+  topLoss: number; // in, lost from the top of the flange (or deck): spalls, delamination
+  factor: number; // engineering judgment on the capacity, ≤ 1; 1: none
+  note: string; // what the inspection found; required with a factor
+};
+export type DtCondition = {
+  /** The joints (shear keys) no longer share load: each unit carries the wheels on it (a hinge at every joint). */
+  jointsFailed: boolean;
+  jointsNote: string;
+  units: DtUnitCondition[];
+};
+export const NO_UNIT_CONDITION: Omit<DtUnitCondition, "unit"> = { lostStrands: 0, corrodedStrands: 0, areaLoss: 0, zone: null, topLoss: 0, factor: 1, note: "" };
+/** Whether a unit's condition changes anything. */
+export const unitDamaged = (c: DtUnitCondition) => c.lostStrands > 0 || (c.corrodedStrands > 0 && c.areaLoss > 0) || c.topLoss > 0 || c.factor < 1;
+/** Whether the bridge is rated on anything other than its intact section. */
+export const conditionActive = (c: DtCondition | undefined) => !!c && (c.jointsFailed || c.units.some(unitDamaged));
+
 /** text: a PDF sketch's text lines, for its callouts (none for a scan or a picture). */
 export type DtSketch = { name: string; pages: { key: string; width: number; height: number }[]; text?: string[] };
 
@@ -125,6 +157,8 @@ export const DT_DEFAULTS: DtInputs = {
     stirrups: { bar: 3, legs: 1, spacing: 12, fy: 40 },
     dfOverride: null,
   },
+  condition: { jointsFailed: false, jointsNote: "", units: [] },
+  siaCondition: null,
   review: { items: [], assumption: "" },
   notes: {},
   brrResults: "",
@@ -308,6 +342,38 @@ function buildGirders(i: DtInputs) {
     }
     return { DF: R, wheels: used, S, face };
   };
+  /**
+   * Units acting alone (failed joints): the most wheels that can sit on unit k, the lever rule with a
+   * hinge at every joint. Wheels 6 ft apart in a truck, 4 ft between trucks side by side, 2 ft or more
+   * from the rail or curb faces (faceIn, in, from the bridge's edges), up to the number of lanes.
+   */
+  const leftEdge = geo[0].x - geo[0].edge;
+  const rightEdge = geo[nU - 1].x + geo[nU - 1].edge;
+  const unitSpan = (k: number): [number, number] => {
+    const g = geo[k];
+    if (u.layout) return [g.x - g.bf / 2, g.x + g.bf / 2];
+    if (k === 0) return [leftEdge, g.x + g.ss / 2 + intOverhang];
+    if (k === nU - 1) return [g.x - g.ss / 2 - intOverhang, rightEdge];
+    return [g.x - g.bf / 2, g.x + g.bf / 2];
+  };
+  const isolated = (k: number, multi: boolean, faceIn: number) => {
+    const lo = leftEdge + faceIn + 24;
+    const hi = rightEdge - faceIn - 24;
+    const [a, b] = unitSpan(k);
+    // A wheel on a joint counts half to each unit.
+    const on = (p: number, offs: number[]) => offs.reduce((n, o) => n + (p + o > a + 1e-6 && p + o < b - 1e-6 ? 1 : Math.abs(p + o - a) <= 1e-6 || Math.abs(p + o - b) <= 1e-6 ? 0.5 : 0), 0);
+    let best = 0;
+    for (let t = 1; t <= (multi ? NL : 1); t++) {
+      const offs: number[] = [];
+      for (let j = 0; j < t; j++) offs.push(j * 120, j * 120 + 72);
+      const w = offs[offs.length - 1];
+      if (w > hi - lo + 1e-9) break;
+      // Every placement that puts a wheel at a unit edge (the counts change only there), and the ends of the roadway.
+      const cands = [lo, hi - w, ...offs.flatMap((o) => [a - o, b - o].flatMap((p) => [p - 2e-6, p, p + 2e-6]))].filter((p) => p >= lo - 1e-9 && p <= hi - w + 1e-9);
+      for (const p of cands) best = Math.max(best, on(p, offs));
+    }
+    return best;
+  };
   const dfInt =
     i.options.lldfInterior === "sd"
       ? { method: "sd" as const, multi: sOverD(NL, secInt), single: sOverD(1, secInt) }
@@ -373,17 +439,25 @@ function buildGirders(i: DtInputs) {
     S: number;
     dlSolve: ReturnType<typeof unitDL>;
     dlNow: ReturnType<typeof unitDL>;
+    /** As inspected: the rating's distribution factors (each unit alone where the joints have failed). */
     dfMulti: number;
     dfSingle: number;
+    /** As designed: the original design's, for the back-calculation. */
+    dfMultiDesign: number;
+    dfSingleDesign: number;
     pedKlf: number;
     caseName: string;
   }[] = [];
+  // Failed joints change the rating's distribution, not the design's; an override (the rater's own) holds for both.
+  const alone = !!i.condition?.jointsFailed && !ov;
   for (let gi = 1; gi <= nU; gi++) {
     const k = gi - 1;
     const ext = gi === 1 || gi === nU;
     const sec = section(u, geo[k].bf);
     const dfI = ext ? null : dfInterior(k);
     const extDF = ext ? { multi: lever(NL > 1, curbFace, k).DF, single: lever(false, curbFace, k).DF } : null;
+    const multiD = ov ? (ext ? ov.extMulti : ov.intMulti) : ext ? extDF!.multi : dfI!.multi;
+    const singleD = ov ? (ext ? ov.extSingle : ov.intSingle) : ext ? extDF!.single : dfI!.single;
     girders.push({
       name: `G${gi}`,
       i: gi,
@@ -394,8 +468,10 @@ function buildGirders(i: DtInputs) {
       S: ext ? spacingAt(k === 0 ? 0 : k - 1) / 12 : dfI!.S,
       dlSolve: unitDL(gi, i.options.solveWithOverlay),
       dlNow: unitDL(gi, true),
-      dfMulti: ov ? (ext ? ov.extMulti : ov.intMulti) : ext ? extDF!.multi : dfI!.multi,
-      dfSingle: ov ? (ext ? ov.extSingle : ov.intSingle) : ext ? extDF!.single : dfI!.single,
+      dfMulti: alone ? isolated(k, NL > 1, curbFace) : multiD,
+      dfSingle: alone ? isolated(k, false, curbFace) : singleD,
+      dfMultiDesign: multiD,
+      dfSingleDesign: singleD,
       pedKlf: sidewalks.length ? pedKlf : 0,
       caseName: sidewalks.length ? (pedKlf > 0 ? "curb to curb, with pedestrians" : "curb to curb") : "",
     });
@@ -408,8 +484,10 @@ function buildGirders(i: DtInputs) {
         ...g0,
         name: `G${gi} (trucks on sidewalk)`,
         caseName: "trucks on the sidewalk, no pedestrians",
-        dfMulti: ov ? ov.extMulti : lever(NL > 1, i.roadway.railFaceOffset, k).DF,
-        dfSingle: ov ? ov.extSingle : lever(false, i.roadway.railFaceOffset, k).DF,
+        dfMulti: alone ? isolated(k, NL > 1, i.roadway.railFaceOffset) : ov ? ov.extMulti : lever(NL > 1, i.roadway.railFaceOffset, k).DF,
+        dfSingle: alone ? isolated(k, false, i.roadway.railFaceOffset) : ov ? ov.extSingle : lever(false, i.roadway.railFaceOffset, k).DF,
+        dfMultiDesign: ov ? ov.extMulti : lever(NL > 1, i.roadway.railFaceOffset, k).DF,
+        dfSingleDesign: ov ? ov.extSingle : lever(false, i.roadway.railFaceOffset, k).DF,
         pedKlf: 0,
       });
     }
@@ -423,7 +501,7 @@ function buildGirders(i: DtInputs) {
     csecExt: compositeSec(secExt),
     nDeck,
     impact,
-    df: { int: dfInt, ext: dfExt },
+    df: { int: dfInt, ext: dfExt, alone },
     ped: { sidewalks, pedWidth, pedPsf, pedKlf, mountable, curbFace },
   };
 }
@@ -491,21 +569,40 @@ export function rateDoubleTee(i: DtInputs) {
     const r = Math.min(x, L - x) / (harp.at * L);
     return r >= 1 ? harp.mid : harp.end + (harp.mid - harp.end) * r;
   };
-  const capacity = (g: Girder, As: number, x: number | null = null) => {
+  // The inspection's damage at x on a unit (MBE 6.1.4): strand area lost over the zone and a development
+  // length past each end of it (a broken or corroded strand re-anchors over that length, SSHB 9.28), the
+  // top lost over the zone, the judgment factor everywhere. The strand centroid stays the intact one.
+  const cond = i.condition ?? DT_DEFAULTS.condition;
+  let ldDev = 0; // ft, set once the strands are known
+  const damageAt = (gi: number, x: number | null) => {
+    const c = cond.units.find((q) => q.unit === gi);
+    if (!c || !unitDamaged(c)) return { lostArea: 0, topLoss: 0, factor: 1 };
+    const xx = x ?? L / 2;
+    const z = c.zone;
+    const inZone = !z || (xx >= z.from - 1e-9 && xx <= z.to + 1e-9);
+    const nearZone = !z || (xx >= z.from - ldDev - 1e-9 && xx <= z.to + ldDev + 1e-9);
+    const lostArea = nearZone ? (c.lostStrands + (c.corrodedStrands * c.areaLoss) / 100) * m.aps : 0;
+    return { lostArea, topLoss: inZone ? c.topLoss : 0, factor: c.factor > 0 && c.factor < 1 ? c.factor : 1 };
+  };
+  /** Mn (and the section) at x for strands As; asInspected: with the unit's damage. */
+  const capacity = (g: Girder, As: number, x: number | null = null, asInspected = false) => {
     const cg = cgAt(As, x);
-    const h = u.depth + (deck ? deck.thk : 0);
+    const dmg = asInspected ? damageAt(g.i, x) : { lostArea: 0, topLoss: 0, factor: 1 };
+    const AsE = Math.max(0, As - dmg.lostArea);
+    const h = u.depth + (deck ? deck.thk : 0) - dmg.topLoss;
     const d = h - cg;
-    const hf = u.flangeThk + (deck ? deck.thk : 0);
+    const hf = u.flangeThk + (deck ? deck.thk : 0) - dmg.topLoss;
     const fcF = deck ? deck.fc : m.fc;
     let cap: number | null = null;
     if (x !== null) {
       // Development (SSHB 9.28): fse over the transfer length, rising to f*su over the development length.
       const xe = Math.min(x, L - x) + ext; // ft from the girder's end
-      const full = flexure(As, g.sec, d, m, hf, fcF);
+      const full = flexure(AsE, g.sec, d, m, hf, fcF);
       const ld = ((full.fsu - (2 / 3) * fse) * db) / 12; // ft
       cap = xe <= lt ? (fse * xe) / lt : xe >= ld ? null : fse + ((xe - lt) / Math.max(1e-9, ld - lt)) * (full.fsu - fse);
     }
-    return { ...flexure(As, g.sec, d, m, hf, fcF, cap), cg, d, h, hf, fcFlange: fcF };
+    const f = flexure(AsE, g.sec, d, m, hf, fcF, cap);
+    return { ...f, Mn: f.Mn * dmg.factor, MnSection: f.Mn, factor: dmg.factor, As: AsE, lostArea: As - AsE, cg, d, h, hf, fcFlange: fcF };
   };
   const D = (g: Girder, solve: boolean, x: number) => {
     const dl = solve ? g.dlSolve : g.dlNow;
@@ -517,12 +614,12 @@ export function rateDoubleTee(i: DtInputs) {
   // --- back-calculation (BRM 1.7.2(A)): As so the lowest HS-20 inventory flexure RF over girders and points is 1.0 ---
   const rfFlexInv = (g: Girder, As: number, x: number, solve: boolean) => {
     const C = capacity(g, As, x).Mn;
-    const LL = llAt(hs20, x).M * g.dfMulti * (1 + I);
+    const LL = llAt(hs20, x).M * g.dfMultiDesign * (1 + I);
     if (LL <= 1e-9) return Infinity;
     return (C - 1.3 * D(g, solve, x).M - 2.17 * pedM(g, x)) / (2.17 * LL);
   };
   // The hand method: the largest HS-20 moment anywhere with the dead load at midspan.
-  const rfFlexInvMid = (g: Girder, As: number) => (capacity(g, As).Mn - 1.3 * D(g, true, L / 2).M - 2.17 * pedM(g, L / 2)) / (2.17 * M_HS20 * g.dfMulti * (1 + I));
+  const rfFlexInvMid = (g: Girder, As: number) => (capacity(g, As).Mn - 1.3 * D(g, true, L / 2).M - 2.17 * pedM(g, L / 2)) / (2.17 * M_HS20 * g.dfMultiDesign * (1 + I));
   const rfSolve = (g: Girder, As: number) => (i.options.solveAt === "midspan" ? rfFlexInvMid(g, As) : Math.min(...pois.filter((x) => x > 0 && x < L).map((x) => rfFlexInv(g, As, x, true))));
   // The prestress is solved from the cases the original design would have used (trucks between the
   // curbs); trucks on a mountable sidewalk are then rated with it, not solved for (BRM 1.7.2(A)).
@@ -532,7 +629,7 @@ export function rateDoubleTee(i: DtInputs) {
   let AsExact = 0;
   let crackGoverns = false;
   const fr = ruptureModulus(m.fc);
-  const crack = girders.map((g) => ({ g: g.name, Mcr: (fr * (g.csec ? g.csec.Sb : g.sec.Sb)) / 12, MuReq: 1.3 * D(g, true, L / 2).M + 2.17 * (M_HS20 * g.dfMulti * (1 + I) + pedM(g, L / 2)) }));
+  const crack = girders.map((g) => ({ g: g.name, Mcr: (fr * (g.csec ? g.csec.Sb : g.sec.Sb)) / 12, MuReq: 1.3 * D(g, true, L / 2).M + 2.17 * (M_HS20 * g.dfMultiDesign * (1 + I) + pedM(g, L / 2)) }));
   let solveNote = "";
   if (i.prestress.mode === "known") {
     if (!(i.prestress.strands > 0)) throw new DesignError("Give the number of strands, or back-calculate them.");
@@ -579,6 +676,19 @@ export function rateDoubleTee(i: DtInputs) {
   const Pj = i.prestress.mode === "back-calculate" && i.options.roundStrands ? Math.floor(fpj * As + 1e-9) : fpj * As; // 1e-9: 15 × 0.144 × 175 is 378, not 377.99…
   const cg = cgAt(As, null);
   const Pe = fse * As;
+  {
+    const hD = u.depth + (deck ? deck.thk : 0);
+    const full = flexure(As, b.secInt, hD - cg, m, u.flangeThk + (deck ? deck.thk : 0), deck ? deck.fc : m.fc);
+    ldDev = ((full.fsu - (2 / 3) * fse) * db) / 12;
+  }
+  for (const c of cond.units) {
+    if (!unitDamaged(c)) continue;
+    if (!(c.unit >= 1 && c.unit <= u.count)) throw new DesignError(`The condition names unit ${c.unit}; the bridge has units 1 to ${u.count}.`);
+    if (c.lostStrands + c.corrodedStrands > nStrands + 1e-9) throw new DesignError(`Unit ${c.unit}: ${c.lostStrands + c.corrodedStrands} damaged strands, but the unit has ${+nStrands.toFixed(2)}.`);
+    if (c.topLoss >= u.flangeThk + (deck ? deck.thk : 0)) throw new DesignError(`Unit ${c.unit}: the top loss is the whole flange.`);
+    if (c.factor < 1 && !c.note.trim()) throw new DesignError(`Unit ${c.unit}: a judgment factor needs its reason from the inspection.`);
+    if (c.zone && !(c.zone.to >= c.zone.from)) throw new DesignError(`Unit ${c.unit}: the damage zone ends before it starts.`);
+  }
 
   // --- ratings at every point, every girder, every vehicle ---
   const fy = m.lowRelaxation ? 0.9 * m.fpu : 0.85 * m.fpu; // f*y
@@ -587,9 +697,11 @@ export function rateDoubleTee(i: DtInputs) {
   const ignoreT = tensionIgnored(i);
   /** info: computed and reported, but not a rating (the final tension on a back-calculated prestress). */
   type PointResult = { x: number; check: RatingCheck; inv: number; opr: number | null; C: number; Dl: number; LL: number; info?: true };
-  const rateGirder = (g: Girder, v: Vehicle) => {
+  /** intact: as designed (the section and distribution before the inspection's findings), for the comparison. */
+  const rateGirder = (g: Girder, v: Vehicle, intact = false) => {
     const design = v.cls === "design";
-    const df = design ? g.dfMulti : i.options.legalLldf === "single" ? g.dfSingle : g.dfMulti;
+    const [dfM, dfS] = intact ? [g.dfMultiDesign, g.dfSingleDesign] : [g.dfMulti, g.dfSingle];
+    const df = design ? dfM : i.options.legalLldf === "single" ? dfS : dfM;
     const out: PointResult[] = [];
     const sec = g.sec;
     const cs = g.csec;
@@ -605,10 +717,10 @@ export function rateDoubleTee(i: DtInputs) {
       const Dm = M1 + M2;
       const Mp = pedM(g, x);
       // Flexure, strength.
-      const cap = capacity(g, As, x);
+      const cap = capacity(g, As, x, !intact);
       out.push({ x, check: "flexure", inv: (cap.Mn - 1.3 * Dm - 2.17 * Mp) / (2.17 * LLm), opr: (cap.Mn - 1.3 * Dm - 1.3 * Mp) / (1.3 * LLm), C: cap.Mn, Dl: Dm, LL: LLm });
       // Service, prestressed concrete (MBE 6B.5.3.3); stresses ksi, tension + at the bottom, compression + at the top.
-      const P = Pe * transfer(x);
+      const P = fse * cap.As * transfer(x); // the strands left
       const Sb2 = cs ? cs.Sb : sec.Sb;
       const St2 = cs ? cs.St : sec.St;
       const k12 = 12;
@@ -637,6 +749,7 @@ export function rateDoubleTee(i: DtInputs) {
       // Shear (SSHB 9.20), when it isn't waived: from h/2 to midspan.
       if (i.options.checkShear && Math.min(x, L - x) * 12 >= (cap.h / 2) && x <= L / 2 + 1e-9) {
         const sh = shearAt(g, x, ll.V * df * (1 + I), dlAt(dl.dc1 + dl.dc2, dl.diaph, L, x), P, cap.h, cap.d, LLm, cgx);
+        sh.phiVn *= cap.factor;
         out.push({ x, check: "shear", inv: (sh.phiVn - 1.3 * sh.Vd) / (2.17 * sh.VL), opr: (sh.phiVn - 1.3 * sh.Vd) / (1.3 * sh.VL), C: sh.phiVn, Dl: sh.Vd, LL: sh.VL });
       }
     }
@@ -683,6 +796,30 @@ export function rateDoubleTee(i: DtInputs) {
     const tInfo = per.filter((p) => p.tInfo).reduce<{ g: string; pt: NonNullable<(typeof per)[number]["tInfo"]> } | null>((a, p) => (!a || p.tInfo!.inv < a.pt.inv ? { g: p.g, pt: p.tInfo! } : a), null);
     return { name: v.name, cls: v.cls, tons: t, per, govInv, govOpr, tInfo, invTons: govInv.inv.inv * t, oprTons: govOpr.opr.opr * t, posting: posting(govOpr.opr.opr, v.cls, i.bridge.nearInterstate) };
   });
+  // As designed, beside as inspected: what the inspection's findings cost (only when there are any).
+  const active = conditionActive(cond);
+  const asDesigned = active
+    ? vehicles.map((v) => {
+        const per = girders.map((g) => rateGirder(g, v, true));
+        const gi = per.reduce((a, c) => (c.inv.inv < a.inv.inv ? c : a));
+        const go = per.reduce((a, c) => (c.opr.opr < a.opr.opr ? c : a));
+        return { name: v.name, cls: v.cls, inv: gi.inv.inv, invG: gi.g, opr: go.opr.opr, oprG: go.g, posting: posting(go.opr.opr, v.cls, i.bridge.nearInterstate) };
+      })
+    : null;
+  // Each damaged unit's capacity at midspan, intact and as inspected.
+  const conditionUnits = cond.units
+    .filter((c) => unitDamaged(c) && c.unit >= 1 && c.unit <= u.count)
+    .map((c) => {
+      const g = girders[c.unit - 1];
+      const at = c.zone ? Math.min(L, Math.max(0, (c.zone.from + c.zone.to) / 2)) : L / 2;
+      return { ...c, g: g.name, at, intact: capacity(g, As, at), inspected: capacity(g, As, at, true) };
+    });
+  /** The inspection's damage on a girder (by name) at x, or null where there is none. */
+  const damageOf = (gName: string, x: number) => {
+    const g = girders.find((q) => q.name === gName);
+    const dm = g ? damageAt(g.i, x) : null;
+    return dm && (dm.lostArea > 0 || dm.topLoss > 0 || dm.factor < 1) ? dm : null;
+  };
 
   // --- the hand method at midspan (absolute maximum live load moment with the midspan dead load), as a check ---
   const midspan = vehicles.map((v) => {
@@ -690,11 +827,11 @@ export function rateDoubleTee(i: DtInputs) {
     const Mw = design ? M_HS20 : maxAt[v.name].M;
     const per = girders.map((g) => {
       const df = design ? g.dfMulti : i.options.legalLldf === "single" ? g.dfSingle : g.dfMulti;
-      const C = capacity(g, As).Mn;
+      const C = capacity(g, As, null, true).Mn;
       const Dm = D(g, false, L / 2).M;
       const Mp = pedM(g, L / 2);
       const LL = Mw * df * (1 + I);
-      return { g: g.name, C, D: Dm, LL, ped: Mp, df, inv: (C - 1.3 * Dm - 2.17 * Mp) / (2.17 * LL), opr: (C - 1.3 * Dm - 1.3 * Mp) / (1.3 * LL) };
+      return { g: g.name, C, C0: capacity(g, As).Mn, D: Dm, LL, ped: Mp, df, inv: (C - 1.3 * Dm - 2.17 * Mp) / (2.17 * LL), opr: (C - 1.3 * Dm - 1.3 * Mp) / (1.3 * LL) };
     });
     const gov = per.reduce((a, c) => (c.opr < a.opr ? c : a));
     const govInv = per.reduce((a, c) => (c.inv < a.inv ? c : a));
@@ -722,6 +859,7 @@ export function rateDoubleTee(i: DtInputs) {
     np,
     ratings,
     midspan,
+    condition: { active, ldDev, alone: b.df.alone, asDesigned, units: conditionUnits, damageOf },
   };
 }
 
@@ -822,6 +960,8 @@ export function dtInputsFromBridgeFile(b: Record<string, any>): DtInputs {
       roundStrands: o.round_strands !== false,
       legalLldf: o.legal_lldf === "multi" ? "multi" : "single",
     },
+    condition: conditionFromFile(b.condition),
+    siaCondition: null,
     review: { items: (b.review_items ?? []).map((x: string) => neutralNote(String(x))), assumption: neutralNote(b.assumption_flag ?? "") },
     notes,
     brrResults: "",
@@ -830,6 +970,25 @@ export function dtInputsFromBridgeFile(b: Record<string, any>): DtInputs {
     dimsChecked: true, // the bridge file gives them
     sources: {}, // set by the caller (fileSources), which knows the inputs it makes
     blankStart: false,
+  };
+}
+
+/** A bridge file's condition (snake_case), or none. */
+function conditionFromFile(c: Record<string, any> | undefined): DtCondition {
+  if (!c || typeof c !== "object") return { jointsFailed: false, jointsNote: "", units: [] };
+  return {
+    jointsFailed: !!c.joints_failed,
+    jointsNote: String(c.joints_note ?? ""),
+    units: (Array.isArray(c.units) ? c.units : []).map((x: Record<string, any>) => ({
+      unit: Number(x.unit) || 0,
+      lostStrands: Number(x.lost_strands) || 0,
+      corrodedStrands: Number(x.corroded_strands) || 0,
+      areaLoss: Number(x.area_loss_pct) || 0,
+      zone: Array.isArray(x.zone_ft) && x.zone_ft.length === 2 ? { from: Number(x.zone_ft[0]), to: Number(x.zone_ft[1]) } : null,
+      topLoss: Number(x.top_loss_in) || 0,
+      factor: typeof x.factor === "number" ? x.factor : 1,
+      note: String(x.note ?? ""),
+    })),
   };
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */

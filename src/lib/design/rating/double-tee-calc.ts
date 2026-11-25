@@ -2,7 +2,7 @@ import type { Line } from "@/lib/calcs/library/templates";
 import { cell, COLOR_NOTE, INPUT_COLOR, isInput, num } from "../calc-style";
 import type { Figure } from "../figures";
 import { brrInputSheet, compareBrrDf } from "./brr";
-import { CHECK_LABEL, isSidewalkTruckCase, rateDoubleTee, tensionIgnored, type DtInputs } from "./double-tee";
+import { CHECK_LABEL, isSidewalkTruckCase, rateDoubleTee, tensionIgnored, unitDamaged, type DtInputs } from "./double-tee";
 import { checkStandard, DT_STANDARD_FC, DT_STANDARD_NAME, DT_STANDARD_SLAB } from "./dt-standard";
 
 const ftInText = (inches: number) => {
@@ -107,6 +107,17 @@ function methodNote(i: DtInputs, r: ReturnType<typeof rateDoubleTee>, text: (t: 
           : "There is no sidewalk."
     }`,
   );
+  const cond = i.condition;
+  if (r.condition.active) {
+    const dmg = cond.units.filter(unitDamaged);
+    text(
+      `Condition:- The bridge is rated in its condition at the latest inspection (MBE 6.1.4).${back ? " The prestress is still back-calculated on the intact bridge, since the original design had none of this damage; the damage then lowers the ratings." : ""}${
+        dmg.length
+          ? ` Damaged strands are removed from the unit's prestressing steel over the damaged length and a development length (${num(r.condition.ldDev, 2)} ft) past each end of it, where they cannot yet carry their full stress (SSHB 9.28); concrete lost from the top reduces the depth and the compression flange.${dmg.some((c) => c.factor < 1) ? " Where the damage cannot be measured, a judgment factor reduces the unit's capacity; its reason is given below." : ""}`
+          : ""
+      }${cond.jointsFailed ? " The joints between the units no longer share load, so each unit carries the wheels that fit on it (the lever rule with a hinge at every joint) in place of the distribution of the original design." : ""} The ratings as designed and as inspected are compared after section 9.`,
+    );
+  }
   text(
     `Results:- The rating summary lists the governing rating factor for each vehicle, and posting follows BRM 1.15.1.${i.brrResults.trim() ? " The BrR ratings and distribution factors are then compared with these calculations; they are taken to agree when they are within 5% of each other." : ""}`,
   );
@@ -214,11 +225,22 @@ export function dtRatingCalcLines(i: DtInputs, title: string, figures?: { sectio
   m(ok("a_{c}", "h_f"), "Rectangular section behavior (SSHB 9.17.2)");
   const flexMid = r.midspan[0].per.find((p) => p.g === g.name)!;
   const Mnx = hsFlex.flexInv.C;
-  const developed = Math.abs(Mnx - flexMid.C) < 1e-6 * Math.max(1, flexMid.C);
+  const damage = r.condition.damageOf(g.name, x);
+  const damagedHere = !!damage;
+  const developed = Math.abs(Mnx - flexMid.C0) < 1e-6 * Math.max(1, flexMid.C0);
   if (cap.type === "rectangular" && !cap.overReinforced)
-    m("M_n\\coloneq A_{ps}\\cdot f_{su}\\cdot d\\cdot\\left(1-0.6\\cdot\\frac{\\rho_{p}\\cdot f_{su}}{f'_{cf}}\\right)=", "SSHB Eq. 9-13; φ = 1.0 for prestressed concrete", "kip*ft");
-  else given(`M_n\\coloneq ${num(flexMid.C, 9)}${kft}`, cap.overReinforced ? "Limited to the maximum steel (SSHB 9.18.1)" : "Flanged section, SSHB Eq. 9-14");
-  if (!developed) given(`M_{nx}\\coloneq ${num(Mnx, 9)}${kft}`, `The strands are not fully developed at x = ${num(x, 2)} ft, so f*su is reduced (SSHB 9.28)`);
+    m("M_n\\coloneq A_{ps}\\cdot f_{su}\\cdot d\\cdot\\left(1-0.6\\cdot\\frac{\\rho_{p}\\cdot f_{su}}{f'_{cf}}\\right)=", `SSHB Eq. 9-13; φ = 1.0 for prestressed concrete${damagedHere ? "; intact" : ""}`, "kip*ft");
+  else given(`M_n\\coloneq ${num(flexMid.C0, 9)}${kft}`, cap.overReinforced ? "Limited to the maximum steel (SSHB 9.18.1)" : "Flanged section, SSHB Eq. 9-14");
+  if (damagedHere) {
+    const cu = i.condition.units.find((c) => c.unit === g.i)!;
+    const parts = [
+      cu.lostStrands > 0 && `${num(cu.lostStrands)} strand${cu.lostStrands === 1 ? "" : "s"} broken or missing`,
+      cu.corrodedStrands > 0 && cu.areaLoss > 0 && `${num(cu.corrodedStrands)} exposed with ${num(cu.areaLoss)}% section loss`,
+      cu.topLoss > 0 && `${num(cu.topLoss)} in lost from the top`,
+      cu.factor < 1 && `a judgment factor of ${num(cu.factor)}`,
+    ].filter(Boolean);
+    given(`M_{nx}\\coloneq ${num(Mnx, 9)}${kft}`, `As inspected at x = ${num(x, 2)} ft (MBE 6.1.4): ${parts.join(", ")}${cu.zone ? `, from ${num(cu.zone.from, 2)} to ${num(cu.zone.to, 2)} ft` : ""}. The remaining section's strength, from the same equations`);
+  } else if (!developed) given(`M_{nx}\\coloneq ${num(Mnx, 9)}${kft}`, `The strands are not fully developed at x = ${num(x, 2)} ft, so f*su is reduced (SSHB 9.28)`);
   else m("M_{nx}\\coloneq M_n=", `The strands are fully developed at x = ${num(x, 2)} ft`, "kip*ft");
 
   // 4. Stress limits
@@ -260,7 +282,13 @@ export function dtRatingCalcLines(i: DtInputs, title: string, figures?: { sectio
 
   // 6. Distribution factors
   text("6. Live load distribution (SSHB 3.23)", "subheading");
-  if (i.options.dfOverride) given(`DF_{m}\\coloneq ${num(g.dfMulti, 10)}`, "Two or more lanes, as entered");
+  if (r.condition.alone) {
+    text(
+      `The joints have failed (${i.condition.jointsNote.trim() || "from the inspection"}), so each unit carries the wheels that fit on it: the lever rule with a hinge at every joint, wheels 6 ft apart in a truck and 4 ft between trucks, 2 ft from the ${g.caseName.startsWith("trucks on") ? "rail" : r.ped.sidewalks.length ? "curb" : "rail"} faces; a wheel on a joint counts half to each unit. The original design's factors (${num(g.dfMultiDesign, 3)} for two or more lanes, ${num(g.dfSingleDesign, 3)} for one) set the prestress.`,
+    );
+    given(`DF_{m}\\coloneq ${num(g.dfMulti, 10)}`, `${g.name}, two or more lanes, as inspected`);
+    given(`DF_{s}\\coloneq ${num(g.dfSingle, 10)}`, "One lane, as inspected");
+  } else if (i.options.dfOverride) given(`DF_{m}\\coloneq ${num(g.dfMulti, 10)}`, "Two or more lanes, as entered");
   else if (!g.ext && i.options.lldfInterior === "table") {
     m(`S\\coloneq ${num(g.S, 10)}\\mathrm{ft}`, "Girder spacing");
     m("DF_{m}\\coloneq\\frac{S}{5.5\\mathrm{ft}}=", "Interior, two or more lanes (SSHB Table 3.23.1)");
@@ -272,7 +300,7 @@ export function dtRatingCalcLines(i: DtInputs, title: string, figures?: { sectio
     );
     given(`DF_{s}\\coloneq ${num(g.dfSingle, 10)}`, "One lane");
   }
-  if (i.options.dfOverride) given(`DF_{s}\\coloneq ${num(g.dfSingle, 10)}`, "One lane, as entered");
+  if (i.options.dfOverride && !r.condition.alone) given(`DF_{s}\\coloneq ${num(g.dfSingle, 10)}`, "One lane, as entered");
   const dfRows = compareBrrDf(i, r);
   if (dfRows.length) {
     text("The factors above are compared with those from AASHTOWare BrR. Where the two agree within 5%, the BrR factors are used.", "note");
@@ -298,11 +326,12 @@ export function dtRatingCalcLines(i: DtInputs, title: string, figures?: { sectio
   m("RF_{opr,HS}\\coloneq\\frac{M_{nx}-1.3\\cdot M_D-1.3\\cdot M_{ped}}{1.3\\cdot M_{L,HS}}=", "Operating: A2 = 1.3");
   if (back) {
     const sidewalkCase = isSidewalkTruckCase(g.name);
-    if (i.options.solveWithOverlay && !sidewalkCase) m(ok("1", "RF_{inv,HS}"), "HS-20 inventory rating of at least 1.0 with whole strands (BRM 1.7.2(A))");
+    const asInspected = damagedHere || r.condition.alone;
+    if (i.options.solveWithOverlay && !sidewalkCase && !asInspected) m(ok("1", "RF_{inv,HS}"), "HS-20 inventory rating of at least 1.0 with whole strands (BRM 1.7.2(A))");
     text(
-      `This is the fewest whole strands that gives every girder, with trucks between the curbs, an inventory rating of at least 1.0 in flexure at every point. With one strand fewer, ${s.gov} would rate below 1.0.${
+      `This is the fewest whole strands that gives every girder, with trucks between the curbs, an inventory rating of at least 1.0 in flexure at every point${asInspected ? " as designed (intact)" : ""}. With one strand fewer, ${s.gov} would rate below 1.0.${
         sidewalkCase ? ` The case worked here, ${g.name}, is not used to set the prestress: it is rated with it, so its rating may fall below 1.0.` : ""
-      }`,
+      }${asInspected ? ` The rating above is as inspected, so it may fall below 1.0.` : ""}`,
     );
     // BRM 1.7.2: the steel for the greater of the factored moment and the cracking moment, girder by girder.
     const cr = r.crack.find((c) => c.g === g.name)!;
@@ -318,7 +347,9 @@ export function dtRatingCalcLines(i: DtInputs, title: string, figures?: { sectio
   // 8. Service at the same point
   text(`8. HS-20 service limits for ${g.name} at x`, "subheading");
   const P_at = Math.min(1, (Math.min(x, L - x) + r.ext) / r.lt);
-  if (P_at < 1) m(`P_x\\coloneq ${num(P_at, 10)}\\cdot P_e=`, "Prestress reduced within the transfer length of 50 strand diameters (SSHB 9.20.2.4)", "kip");
+  const left = damage && damage.lostArea > 0 ? 1 - damage.lostArea / s.As : 1;
+  if (left < 1) m(`P_x\\coloneq ${num(P_at * left, 10)}\\cdot P_e=`, `The strands left at x (${num(left * 100, 1)}% of the area, as inspected)${P_at < 1 ? ", within the transfer length (SSHB 9.20.2.4)" : ""}`, "kip");
+  else if (P_at < 1) m(`P_x\\coloneq ${num(P_at, 10)}\\cdot P_e=`, "Prestress reduced within the transfer length of 50 strand diameters (SSHB 9.20.2.4)", "kip");
   else m("P_x\\coloneq P_e=", "Full prestress: x is beyond the transfer length", "kip");
   const Sb2 = g.csec ? "S_{bc}" : "S_b";
   const St2 = g.csec ? "S_{tc}" : "S_t";
@@ -364,6 +395,26 @@ export function dtRatingCalcLines(i: DtInputs, title: string, figures?: { sectio
     text(
       `${v.name}: inventory RF ${num(v.govInv.inv.inv, 3)} (${num(v.invTons, 1)} T), ${checkName(v.govInv.inv.check)} on ${v.govInv.g} at ${num(v.govInv.inv.x, 2)} ft; operating RF ${num(v.govOpr.opr.opr, 3)} (${num(v.oprTons, 1)} T), ${checkName(v.govOpr.opr.check)} on ${v.govOpr.g} at ${num(v.govOpr.opr.x, 2)} ft.${v.posting !== "—" ? ` ${v.posting}.` : ""}`,
     );
+
+  if (r.condition.active && r.condition.asDesigned) {
+    text("Condition: as designed and as inspected (MBE 6.1.4)", "subheading");
+    if (i.condition.jointsFailed) text(`• Joints: ${i.condition.jointsNote.trim() || "failed"}. Each unit carries the wheels on it.`);
+    for (const c of r.condition.units) {
+      const what = [
+        c.lostStrands > 0 && `${num(c.lostStrands)} strand${c.lostStrands === 1 ? "" : "s"} broken or missing`,
+        c.corrodedStrands > 0 && c.areaLoss > 0 && `${num(c.corrodedStrands)} exposed with ${num(c.areaLoss)}% section loss`,
+        c.topLoss > 0 && `${num(c.topLoss)} in lost from the top`,
+        c.factor < 1 && `judgment factor ${num(c.factor)}`,
+      ].filter(Boolean);
+      text(
+        `• ${c.g}: ${c.note.trim() ? `${c.note.trim().replace(/\.$/, "")}. ` : ""}Rated with ${what.join(", ")}${c.zone ? `, from ${num(c.zone.from, 2)} to ${num(c.zone.to, 2)} ft` : " over the whole span"}. At ${num(c.at, 2)} ft, A*s ${num(c.intact.As, 3)} in² intact and ${num(c.inspected.As, 3)} in² left; Mn ${num(c.intact.Mn, 1)} kip·ft intact and ${num(c.inspected.Mn, 1)} kip·ft as inspected.`,
+      );
+    }
+    r.ratings.forEach((v, k) => {
+      const d = r.condition.asDesigned![k];
+      text(`${v.name}: operating RF ${num(d.opr, 3)} as designed (${d.oprG}), ${num(v.govOpr.opr.opr, 3)} as inspected (${v.govOpr.g}); inventory ${num(d.inv, 3)} and ${num(v.govInv.inv.inv, 3)}.${d.posting !== v.posting && v.posting !== "—" ? ` As designed: ${d.posting.toLowerCase()}; as inspected: ${v.posting.toLowerCase()}.` : ""}`);
+    });
+  }
 
   // 10. Posting
   text("10. Posting (BRM 1.15.1)", "subheading");

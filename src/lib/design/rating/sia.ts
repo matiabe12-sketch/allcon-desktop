@@ -60,7 +60,7 @@ export type SiaValue = {
   note?: string;
 };
 
-export type SiaReading = { format: SiaFormat; structure: string; date: string; values: SiaValue[]; findings: string[] };
+export type SiaReading = { format: SiaFormat; structure: string; date: string; values: SiaValue[]; findings: string[]; condition?: SiaConditionData };
 
 const NUM = /-?\d[\d,]*(?:\.\d+)?/;
 const num = (s: string | null | undefined) => {
@@ -274,7 +274,7 @@ export function readSia(lines: string[]): SiaReading {
     }
   }
   if (date) add("bridge.inspection", "Inspection", `SIA ${date}`, format === "snbi" ? `IE03 Inspection Date: ${date}` : `Inspection Date: ${date}`);
-  return { format, structure, date, values, findings };
+  return { format, structure, date, values, findings, condition: readSiaCondition(lines, format, date, format === "snbi" ? "SIA (SNBI)" : "SIA (NBI)") };
 }
 
 /** The current value of an input, for the comparison. */
@@ -413,8 +413,178 @@ export function applySia(i: DtInputs, reading: SiaReading, chosen: SiaValue[]): 
     }
     o.notes[v.input] = `${reading.format === "sketch" ? "Sketch" : "SIA"} ${reading.date}, ${v.source}${v.note ? ` (${v.note})` : ""}`;
   }
+  // The inspection's findings, as prompts for the condition (an SIA's, not a sketch's).
+  if (reading.condition) o.siaCondition = reading.condition;
   o.sources = { ...i.sources };
   for (const v of chosen) o.sources[v.input] = { kind: reading.format === "sketch" ? "sketch" : "sia", note: `${reading.date}: ${v.source}${v.note ? ` (${v.note})` : ""}` };
   // A new year built: the BRM's materials for it, where nothing else has given them.
   return chosen.some((v) => v.input === "bridge.yearBuilt") ? applyBrm(o) : o;
+}
+
+// --- the condition the inspection found, as prompts (never applied) ---------------------------------
+
+/** An element (or one of its defects) with its quantities in condition states 1 to 4. */
+export type SiaElementRow = { code: number; name: string; unit: string; total: number; cs: [number, number, number, number] };
+export type SiaElement = SiaElementRow & { defects: SiaElementRow[]; notes: string[] };
+/**
+ * What the inspection says of the girders, deck and wearing surface, in the inspector's words: the
+ * element table, the structure and inspection notes, and the maintenance items. Shown beside the
+ * condition inputs for the rater to enter what the inspection states; nothing here sets an input.
+ */
+export type SiaConditionData = { source: string; date: string; elements: SiaElement[]; notes: { label: string; text: string }[]; work: string[] };
+export type ConditionTag = "strands" | "joints" | "impact" | "concrete" | "cracks";
+
+/** The elements the rating's condition draws on: decks and top flanges, prestressed girders, the wearing surface, general notes. */
+const CONDITION_ELEMENTS = new Set([12, 13, 15, 16, 38, 104, 109, 115, 510, 600]);
+
+/** The girder elements; the rest (decks, top flanges, wearing surface) span the joints between units. */
+const GIRDER_ELEMENTS = new Set([104, 109, 115]);
+
+/**
+ * What a note bears on, by its words: a pointer for the rater, not a finding. Defect 1100 is exposed
+ * prestressing. A longitudinal crack over the deck may follow a joint; in a girder with rust it may
+ * follow a strand.
+ */
+export function conditionTags(text: string, element?: number): ConditionTag[] {
+  const t: ConditionTag[] = [];
+  const girder = element !== undefined && GIRDER_ELEMENTS.has(element);
+  const longitudinal = /longitudinal (crack|seam)|\bseams?\b/i.test(text);
+  if (/\bstrands?\b|\btendons?\b|prestressing steel|exposed prestress|\b1100\)/i.test(text) || (girder && longitudinal && /rust/i.test(text))) t.push("strands");
+  // The joints between units, not an expansion joint (compression, strip seal) or a diaphragm between girders.
+  const between = /between (the )?(double tees?|units|tees)\b/i.test(text) || (/between (the )?(girders|beams)\b/i.test(text) && /flange/i.test(text) && !/diaphragm/i.test(text));
+  const unitJoint = /\bjoints?\b/i.test(text) && !/(compression|expansion|strip seal|seal|armou?red|finger|modular|deck|bridge) joints?\b/i.test(text);
+  if ((!girder && longitudinal) || between || unitJoint || /shear keys?|keyways?|differential (movement|deflection)|weld(ed)? (plates?|clips?|connect\w*|ties?)|\bclips?\b/i.test(text)) t.push("joints");
+  if (/impact|struck|hit by/i.test(text)) t.push("impact");
+  if (/spall|delaminat|section loss|exposed (re)?bar|honeycomb|scal(e|ing)\b/i.test(text)) t.push("concrete");
+  if (/\bcrack/i.test(text) && !t.includes("joints")) t.push("cracks");
+  return t;
+}
+
+const nums = (s: string) => Number(s.replace(/,/g, ""));
+/** The pieces of a line joined as prose ("Girders | A, B" → "Girders A, B"). */
+const prose = (s: string) => s.replace(/\s*\|\s*/g, " ").replace(/ ,/g, ",").replace(/\s+/g, " ").trim();
+/** Note lines as sentences: a line that doesn't end one continues on the next. */
+function sentences(lines: string[]) {
+  const out: string[] = [];
+  for (const l of lines.map(prose).filter(Boolean)) {
+    const prev = out[out.length - 1];
+    // A quantity tag on its own line ("(1 CS3 1080)") belongs to the sentence before it.
+    if (prev !== undefined && (!/[.)]$/.test(prev) || /^\(\d/.test(l))) out[out.length - 1] = `${prev} ${l}`;
+    else out.push(l);
+  }
+  return out.filter((s) => !/^See Element \d+ comments\.?$/i.test(s));
+}
+
+const SNBI_HEADER = /^(Structure Inspection and Inventory Report|Structure Key:|Structure: .* Page \d+ of \d+$|Element\/Defect \||Elements$|\d+%( \| \d+%)*$)/;
+const NBI_HEADER = /^(\w+( \w+)? Inspection \| Highway Number|Colorado Department of Transportation \||Linear Ref\. Sys\. MP:|Structure Inspection and Inventory Report|Element Inspection Report$|Elm\/Env \||(Mon|Tue|Wed|Thu|Fri|Sat|Sun) \d+\/\d+\/\d{4}|CDOT_SIA v|Page \d+ of \d+$)/;
+
+/** The element table, notes and maintenance items of an SIA's text. */
+export function readSiaCondition(lines: string[], format: "snbi" | "nbi", date: string, source: string): SiaConditionData {
+  const elements: SiaElement[] = [];
+  const notes: { label: string; text: string }[] = [];
+  const work: string[] = [];
+  let cur: SiaElement | null = null;
+  let buf: string[] = [];
+  const flush = () => {
+    if (cur) cur.notes.push(...sentences(buf));
+    buf = [];
+  };
+  const take = (row: SiaElementRow) => {
+    if (row.code >= 1000) {
+      if (cur) cur.defects.push(row);
+      return;
+    }
+    flush();
+    cur = CONDITION_ELEMENTS.has(row.code) ? { ...row, defects: [], notes: [] } : null;
+    if (cur) elements.push(cur);
+  };
+  const header = format === "snbi" ? SNBI_HEADER : NBI_HEADER;
+
+  if (format === "snbi") {
+    const start = lines.findIndex((l) => l === "Elements");
+    let pending: [number, number, number, number] | null = null;
+    for (let k = start < 0 ? lines.length : start + 1; k < lines.length; k++) {
+      const l = lines[k];
+      if (/^(Photos|Maintenance Items|Inspection References|Load Ratings|SI&A Notes and Schedule|Sketches|Attachments)$/.test(l)) break;
+      const q = l.match(/^([\d,.]+) \| ([\d,.]+) \| ([\d,.]+) \| ([\d,.]+)$/);
+      if (q) {
+        pending = [nums(q[1]), nums(q[2]), nums(q[3]), nums(q[4])];
+        continue;
+      }
+      const e = l.match(/^(\d{1,4}) - (.+?) \| ([A-Za-z. ]+) \| ([\d,.]+)$/);
+      if (e) {
+        take({ code: +e[1], name: e[2].trim(), unit: e[3].trim(), total: nums(e[4]), cs: pending ?? [0, 0, 0, 0] });
+        pending = null;
+        continue;
+      }
+      if (header.test(l)) continue;
+      buf.push(l);
+    }
+    flush();
+    // Notes: "nn | L14A - Structure Note : | text", continued on the lines after, up to the schedule.
+    const n0 = lines.findIndex((l) => l === "Notes");
+    let label = "";
+    let text: string[] = [];
+    const keep = () => {
+      if (label && text.length && /Structure Note|Inspection Note/i.test(label)) notes.push({ label, text: sentences(text).join(" ") });
+      text = [];
+    };
+    for (let k = n0 < 0 ? lines.length : n0 + 1; k < lines.length; k++) {
+      const l = lines[k];
+      if (/^(Schedule|Load Ratings)$/.test(l) || /^Structure: .* Page \d+ of \d+$/.test(l)) break;
+      const m = l.match(/^nn \| [A-Z]+\d+[A-Z]? - (.+?)\s*:\s*(?:\| (.*))?$/);
+      if (m) {
+        keep();
+        label = m[1].trim();
+        if (m[2]) text.push(m[2]);
+      } else text.push(l);
+    }
+    keep();
+    // Maintenance items: each "Problem Description" and the lines after it, up to the next item.
+    const endItem = /^(Low|Moderate|Medium|High|Critical|Urgent|Problem Description|Photos|Sketches|Attachments)$|^\d{3}\.\d{2} - |^Status \|/;
+    lines.forEach((l, k) => {
+      if (l !== "Problem Description") return;
+      const text: string[] = [];
+      for (let j = k + 1; j < lines.length && !endItem.test(lines[j]) && !header.test(lines[j]); j++) text.push(lines[j]);
+      if (text.length) work.push(sentences(text).join(" "));
+    });
+  } else {
+    const start = lines.findIndex((l) => l === "Element Inspection Report");
+    for (let k = start < 0 ? lines.length : start + 1; k < lines.length; k++) {
+      const l = lines[k];
+      if (/^(Inspection References and Definitions:|Maintenance Activity Summary)$/.test(l)) break;
+      const e = l.match(/^(\d+)\/\d+ \| (.+?) \| ([^|]+) \| ([\d,.]+) \| \d+% \| ([\d,.]+) \| \d+% \| ([\d,.]+) \| \d+% \| ([\d,.]+) \| \d+% \| ([\d,.]+)$/);
+      if (e) {
+        take({ code: +e[1], name: e[2].trim(), unit: e[3].replace(/[()]/g, "").trim(), total: nums(e[4]), cs: [nums(e[5]), nums(e[6]), nums(e[7]), nums(e[8])] });
+        continue;
+      }
+      if (header.test(l)) continue;
+      buf.push(l);
+    }
+    flush();
+    // "Bridge Notes (Inspection > Inventory > Admin)" and "Inspection Notes (Inspection > Condition)".
+    const blocks: [RegExp, string][] = [
+      [/^Bridge Notes \(Inspection > /, "Structure Note"],
+      [/^Inspection Notes \(Inspection > /, "Inspection Note"],
+    ];
+    for (const [re, label] of blocks) {
+      const s = lines.findIndex((l) => re.test(l));
+      if (s < 0) continue;
+      const text: string[] = [];
+      for (let k = s + 1; k < lines.length && !/\(Inspection > .*\)$/.test(lines[k]) && !header.test(lines[k]); k++) if (!/^(Date|Time): /.test(lines[k])) text.push(lines[k]);
+      if (text.length) notes.push({ label, text: sentences(text).join(" ") });
+    }
+    // Maintenance: "156.00 | Deck-Seal | date | … | Priority", its description on the lines after.
+    const m0 = lines.findIndex((l) => l === "Maintenance Activity Summary");
+    const row = /^\d{3}\.\d{2} \| /;
+    if (m0 >= 0)
+      for (let k = m0 + 1; k < lines.length; k++) {
+        if (/\(Inspection > .*\)$/.test(lines[k])) break;
+        if (!row.test(lines[k])) continue;
+        const text: string[] = [];
+        for (let j = k + 1; j < lines.length && !row.test(lines[j]) && !header.test(lines[j]) && !/\(Inspection > .*\)$/.test(lines[j]) && !/^MMS Activity \|/.test(lines[j]); j++) text.push(lines[j]);
+        if (text.length) work.push(sentences(text).join(" "));
+      }
+  }
+  return { source, date, elements, notes, work };
 }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DT_DEFAULTS } from "./double-tee";
-import { applySia, readSia, textLines } from "./sia";
+import { dtRatingInputs } from "../kinds";
+import { applySia, conditionTags, readSia, textLines } from "./sia";
 
 // Reading the SIA. The lines below follow the two report layouts as pdf.js gives them (pieces on a
 // line joined with " | "), with a real bridge's values; the readings were checked against all ten
@@ -156,4 +157,133 @@ it("groups a page's text pieces into lines, top to bottom and left to right", ()
       { str: " ", x: 10, y: 400 },
     ]),
   ).toEqual(["Geometry (G)", "G03 - Maximum Span: | 66"]);
+});
+
+// The inspection's condition, read as prompts. The layouts are the two reports' (as pdf.js gives
+// them); the notes are made up for the test.
+describe("SIA condition findings (prompts, never applied)", () => {
+  const SNBI_COND = [
+    "n | G03 - Maximum Span: | 40",
+    "n | IE03 - Inspection Date: | 2025-10-14",
+    "SI&A Notes and Schedule",
+    "Notes",
+    "nn | IE11A - Inspection Note :",
+    "nn | L14A - Structure Note : | Direction of inventory is south to north.",
+    "Superstructure is named Girder A through H from west to east.",
+    "Schedule",
+    "n | EP07A - Load Rater Name 66N: | Someone | n | EP19A - Rating Software Used 66RS:",
+    "Elements",
+    "Element/Defect | Unit | Total Qty | CS1 | CS2 | CS3 | CS4",
+    "900 | 0 | 100 | 0",
+    "510 - Wearing Surfaces | sq feet | 1000",
+    "90% | 10%",
+    "0 | 0 | 100 | 0",
+    "3220 - Crack (Wearing Surface) | each | 100",
+    "100%",
+    "Lane 1, longitudinal crack/seam up to 0.25 inch wide over the joint between units. (40 CS3 3220)",
+    "300 | 10 | 8 | 2",
+    "109 - Prestressed Concrete Open Girder/Beam | feet | 320",
+    "94% | 3% | 3% | 1%",
+    "0 | 0 | 0 | 2",
+    "1100 - Exposed Prestressing | each | 2",
+    "Girder C, bottom of stem near mid-span, spall 3 foot long with 2 strands exposed and one broken. (2 CS4",
+    "1100)",
+    "Girder A, west face, crack 10 foot long due to impact. (8 CS3 1110)",
+    "Girder | D, at Abutment 1, longitudinal crack with rust staining. (1 CS3 1110)",
+    "Structure: X : 2025-10-14 - Routine | Page 8 of 21",
+    "1 | 0 | 0 | 0",
+    "215 - Reinforced Concrete Abutment | feet | 60",
+    "Abutment 1, minor cracks.",
+    "Photos",
+    "Maintenance Items",
+    "Moderate",
+    "399.00 - Maintenance requiring engineering.",
+    "Status | Date Entered | Target Date | Deterioration Category",
+    "Open | 10/12/2017 | 10/14/2027",
+    "Problem Description",
+    "Repair the spall in Girder C and coat the exposed",
+    "strands.",
+    "Low",
+  ];
+  const NBI_COND = [
+    "Bridge Key: | X 1-1.0 | Inspection Date: | 10/05/2023",
+    "Max Span 48: | 30.0 ft",
+    "Element Inspection Report",
+    "Elm/Env | Description | Unit | Total Qty | % in 1 | Qty. St. 1 | % in 2 | Qty. St. 2 | % in 3 | Qty. St. 3 | % in 4 | Qty. St. 4",
+    "16/1 | Re Conc Top Flange | sq.ft | 900 | 70% | 630 | 20% | 180 | 10% | 90 | 0% | 0",
+    "Open joints between grout and top flange in three bays (90 SF CS3 -",
+    "Tue 12/19/2023 15:02:34",
+    "CDOT_SIA v12 - 03/05/2023 | Structure ID: X 1-1.0",
+    "Page 3 of 7",
+    "Routine Inspection | Highway Number (ON) 5D: | 00000 | U",
+    "Structure Inspection and Inventory Report (English Units)",
+    "1130).",
+    "1130/1 | Cracking (RC and Other) | sq.ft | 90 | 0% | 0 | 0% | 0 | 100% | 90 | 0% | 0",
+    "See Element 16 comments.",
+    "109/1 | Pre Opn Conc Girder/Beam | ft | 360 | 100% | 360 | 0% | 0 | 0% | 0 | 0% | 0",
+    "No significant defects.",
+    "End diaphragm between Girders B and C is cracked.",
+    "215/1 | Re Conc Abutment | ft | 60 | 100% | 60 | 0% | 0 | 0% | 0 | 0% | 0",
+    "Inspection References and Definitions:",
+    "Maintenance Activity Summary",
+    "MMS Activity | Description | Recommended | Status | Target Year | Priority",
+    "354.02 | Superstructure-Repair Concrete | 10/12/2017 | 1 | 2025 | Medium",
+    "Seal joints where open between grout and top flange.",
+    "Bridge Notes (Inspection > Inventory > Admin)",
+    "Superstructure is labeled A to L from west to east.",
+    "Inspection Notes (Inspection > Condition)",
+    "Date: 10/05/2023",
+  ];
+
+  it("reads an SNBI report's elements, defects, notes and maintenance items", () => {
+    const c = readSia(SNBI_COND).condition!;
+    expect(c.date).toBe("2025-10-14");
+    expect(c.elements.map((e) => e.code)).toEqual([510, 109]); // the abutment isn't the rating's
+    const g = c.elements[1];
+    expect([g.total, g.unit, g.cs]).toEqual([320, "feet", [300, 10, 8, 2]]);
+    expect(g.defects).toEqual([{ code: 1100, name: "Exposed Prestressing", unit: "each", total: 2, cs: [0, 0, 0, 2] }]);
+    expect(g.notes).toEqual([
+      "Girder C, bottom of stem near mid-span, spall 3 foot long with 2 strands exposed and one broken. (2 CS4 1100)",
+      "Girder A, west face, crack 10 foot long due to impact. (8 CS3 1110)",
+      "Girder D, at Abutment 1, longitudinal crack with rust staining. (1 CS3 1110)",
+    ]);
+    expect(c.notes).toEqual([{ label: "Structure Note", text: "Direction of inventory is south to north. Superstructure is named Girder A through H from west to east." }]);
+    expect(c.work).toEqual(["Repair the spall in Girder C and coat the exposed strands."]);
+    // The rater's name on the load rating page isn't read.
+    expect(JSON.stringify(c)).not.toContain("Someone");
+  });
+
+  it("reads an NBI report's, across a page break", () => {
+    const c = readSia(NBI_COND).condition!;
+    expect(c.elements.map((e) => [e.code, e.cs])).toEqual([
+      [16, [630, 180, 90, 0]],
+      [109, [360, 0, 0, 0]],
+    ]);
+    expect(c.elements[0].defects.map((d) => d.code)).toEqual([1130]);
+    expect(c.elements[0].notes).toEqual(["Open joints between grout and top flange in three bays (90 SF CS3 - 1130)."]);
+    expect(c.elements[1].notes).toEqual(["No significant defects.", "End diaphragm between Girders B and C is cracked."]);
+    expect(c.notes).toEqual([{ label: "Structure Note", text: "Superstructure is labeled A to L from west to east." }]);
+    expect(c.work).toEqual(["Seal joints where open between grout and top flange."]);
+  });
+
+  it("tags what a note bears on: strands, joints between units, impact; not an expansion joint or a diaphragm", () => {
+    expect(conditionTags("2 strands exposed and one broken", 109)).toContain("strands");
+    expect(conditionTags("longitudinal crack with rust staining", 109)).toEqual(expect.arrayContaining(["strands"]));
+    expect(conditionTags("longitudinal crack with rust staining", 109)).not.toContain("joints");
+    expect(conditionTags("longitudinal crack/seam in Lane 1", 510)).toContain("joints");
+    expect(conditionTags("Top flanges, between double tee girders, efflorescence", 109)).toContain("joints");
+    expect(conditionTags("crack due to impact", 109)).toContain("impact");
+    expect(conditionTags("spalls along the compression joint over Pier 2", 12)).not.toContain("joints");
+    expect(conditionTags("End diaphragm between Girders B and C is cracked", 109)).not.toContain("joints");
+    expect(conditionTags("cracks showing the welded wire reinforcing pattern", 109)).not.toContain("joints");
+  });
+
+  it("keeps the findings with the design when the SIA is applied, without setting any condition", () => {
+    const r = readSia(SNBI_COND);
+    const o = applySia(DT_DEFAULTS, r, r.values.filter((v) => v.input === "span"));
+    expect(o.siaCondition).toEqual(r.condition);
+    expect(o.condition).toEqual(DT_DEFAULTS.condition);
+    expect(dtRatingInputs(JSON.parse(JSON.stringify(o))).siaCondition).toEqual(r.condition);
+    expect(dtRatingInputs({}).siaCondition).toBeNull();
+  });
 });

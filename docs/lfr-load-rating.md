@@ -57,8 +57,20 @@ these field by field):
   is solved), utilities (weight and the girder carrying each), diaphragms.
 - **Materials:** f′c, strand type, grade and area, by the BRM's table for the year built unless known.
 - **Prestress:** back-calculated (the strand centroid assumption, whole strands or not), or known.
-- **Condition:** notes from the inspection (cracks, spalls, exposed or lost strands, joint
-  condition), a strand loss per girder, and a capacity reduction where the rater judges one is needed.
+- **Condition** (MBE 6.1.4), rated on the section as inspected; the prestress is still
+  back-calculated on the intact bridge with the original distribution, so damage never adds strands.
+  Per unit: broken or missing strands, exposed strands with a % area loss, concrete lost from the
+  top, all over a zone (or the whole span), the strands a development length past each end of it
+  (SSHB 9.28); and a judgment factor on the capacity, which needs its reason. For the bridge: failed
+  joints, where each unit carries the wheels that fit on it (the lever rule with a hinge at every
+  joint; a wheel on a joint counts half to each unit). The strand centroid stays the intact one. The
+  results and the calc package show the ratings as designed beside as inspected, and the BrR sheet
+  gives the reduced force and the distribution factors to enter as overrides. Reading the SIA keeps
+  its element table (decks and top flanges, prestressed girders, wearing surface, general notes, with
+  their defects' condition-state quantities), the structure and inspection notes, and the
+  maintenance items beside these inputs, the inspector's words with tags pointing at strands, joints
+  and impact. None of it sets an input: quantities don't say which strands, and a seam over a joint
+  doesn't show a failed joint.
 - **Options:** the interior distribution method (SSHB Table 3.23.1 or the multi-beam S/D of 3.23.4.3),
   distribution factor overrides (as BrR allows), the tension limit, whether shear is checked.
 

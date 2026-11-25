@@ -130,10 +130,17 @@ these field by field):
     (truck and lane at 1.25 × HS20); from 2002 the bridge is LRFD (HL-93) and isn't back-calculated;
   - strand development without the 1.6 multiplier before 1989 (FHWA's memorandum of October 1988
     required it; SSHB 9.28.1 carries it in the 17th Edition errata), with it from 1989;
-  - the live load distribution and the strand stress at ultimate of the current Specifications. The
-    1973 (11th) rules differ (multi-beam decks by the slab width E = 4 + 0.06S ≤ 7 ft; f*su with 0.5
-    for γ*/β1), but when the 12th to 16th Editions changed them isn't established, so they aren't
-    applied yet.
+  - interior units of a multi-beam deck (no composite deck) by the rule of the era (dates from the
+    Alaska DOT report FHWA-AK-RD-04-03, Section 1.1): built to 1977, the slab rule of the 9th to 11th
+    Editions, each wheel over E = 4 + 0.06L ≤ 7 ft; 1978 to 1986, the 12th Edition's formula (NCHRP
+    Report 83), (12NL + 9)/Ng over D = 5 + NL/10 + (3 − 2NL/7)(1 − C/3)² (C ≤ 3) or 5 + NL/10, with
+    K = √(EI/2GJ) (no deck slab); from 1987, today's S/D (NCHRP Report 287, 1986; in the 16th Edition
+    at the latest, the adopting edition not established). Under a composite deck the table (S/5.5)
+    is the same in every era since 1973. The rating uses today's factors;
+  - the strand stress at ultimate of the current Specifications (γ*/β1): the 1973 form, with 0.5,
+    isn't dated, and today's gives the original strands a little less stress.
+- **Multi-beam S/D for every vehicle:** SSHB 3.23.4.3 gives one fraction, with NL the bridge's design
+  lanes, whatever the lanes loaded, so the legal and permit vehicles use it too (no single-lane S/D).
 - **The rating uses today's rules** (BRM 1.3): development with the 1.6 multiplier. A design made
   without it can rate below 1.0 near the ends; the calc package and the editor show HS-20 with the
   design's development length beside the rating.

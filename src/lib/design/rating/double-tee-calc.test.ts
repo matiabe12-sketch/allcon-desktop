@@ -52,6 +52,9 @@ const cases: [string, DtInputs][] = [
   ["a skewed multi-beam deck, by the lever rule", { ...DT_DEFAULTS, skew: 50, deck: { ...DT_DEFAULTS.deck, present: false } }],
   ["a bridge built in 1996, designed for HS25", { ...DT_DEFAULTS, span: 22, structureLength: 23, bridge: { ...DT_DEFAULTS.bridge, yearBuilt: 1996 } }],
   ["a short span designed before the 1.6 development multiplier", { ...DT_DEFAULTS, span: 22, structureLength: 23 }],
+  ["a multi-beam deck built in 1970, designed by the slab rule", { ...DT_DEFAULTS, span: 24, structureLength: 25, deck: { ...DT_DEFAULTS.deck, present: false } }],
+  ["a multi-beam deck built in 1982, designed by the 1977 formula", { ...DT_DEFAULTS, span: 24, structureLength: 25, bridge: { ...DT_DEFAULTS.bridge, yearBuilt: 1982 }, deck: { ...DT_DEFAULTS.deck, present: false } }],
+  ["a skewed multi-beam deck built in 1982, lever rule and the 1977 formula", { ...DT_DEFAULTS, span: 24, structureLength: 25, skew: 50, bridge: { ...DT_DEFAULTS.bridge, yearBuilt: 1982 }, deck: { ...DT_DEFAULTS.deck, present: false } }],
   ...(fixtures as unknown as { name: string; bridge: Record<string, unknown> }[]).map((f): [string, DtInputs] => [f.name, dtInputsFromBridgeFile(f.bridge)]),
 ];
 

@@ -69,6 +69,37 @@ function originalNote(i: DtInputs, r: ReturnType<typeof rateDoubleTee>) {
   return `Original design:- The prestress is set by the rules of the bridge's time, taken from the year it was built (${y}). The design vehicle is ${vehicle} (BRM 1.7.2(A)), and ${dev}. The live load distribution and the strand stress at ultimate are those of the current Specifications. The ratings then follow the current Specifications, the MBE and the BRM (BRM 1.3).${cost}`;
 }
 
+/** The original design's distribution for an interior unit of a multi-beam deck, where its era's rule differs from today's. */
+function eraDistribution(
+  i: DtInputs,
+  r: ReturnType<typeof rateDoubleTee>,
+  g: ReturnType<typeof rateDoubleTee>["girders"][number],
+  m: (math: string, ref?: string, unit?: string) => void,
+  text: (t: string, style?: "heading" | "subheading" | "note") => void,
+) {
+  const e = r.era;
+  if (!e || e.rule === "current" || g.ext || i.prestress.mode !== "back-calculate") return;
+  text(
+    e.rule === "slab"
+      ? `Original design:- Built in ${i.bridge.yearBuilt}, before the 12th Edition (1977). The 9th to 11th Editions (1965–1973) distributed the wheels of a multi-beam deck as for a slab: each wheel over a width E = 4 + 0.06L, at most 7 ft (1973, Art. 1.3.2(C), Case B). That factor sets the prestress; the rating uses today's S/D.`
+      : `Original design:- Built in ${i.bridge.yearBuilt}, under the 12th or 13th Edition (1977–1983). Their multi-beam formula (from NCHRP Report 83) used an effective spacing (12NL + 9)/Ng over D = 5 + NL/10 + (3 − 2NL/7)(1 − C/3)² for C ≤ 3, or 5 + NL/10 for C > 3, with C = K·W/L and K = √(EI/2GJ), the same K as today's without a deck slab. That factor sets the prestress; the rating uses today's S/D.`,
+    "note",
+  );
+  if (e.rule === "slab") {
+    m("E_0\\coloneq\\min\\left(4\\mathrm{ft}+0.06\\cdot L,7\\mathrm{ft}\\right)=", "Width over which a wheel spreads", "ft");
+    m(`DF_{0}\\coloneq\\frac{${num(g.S, 10)}\\mathrm{ft}}{E_0}=`, `${g.name}, the original design's factor: its width over E`);
+    return;
+  }
+  const t = e.typical!;
+  m(`N_{L0}\\coloneq ${r.geo.NL}`, "Design lanes");
+  m(`N_g\\coloneq ${i.units.count}`, "Units across the bridge");
+  m("S_{e}\\coloneq\\frac{\\left(12\\cdot N_{L0}+9\\right)\\mathrm{ft}}{N_g}=", "Effective spacing", "ft");
+  m(`C_0\\coloneq ${num(t.K!, 10)}\\cdot\\frac{${num(r.geo.roadW, 10)}\\mathrm{ft}}{L}=`, `C = K·W/L, K = √(1.2 I/J) = ${num(t.K!, 3)}, W the overall width`);
+  if ((t.C ?? 0) <= 3) m("D_0\\coloneq\\left(5+\\frac{N_{L0}}{10}+\\left(3-\\frac{2\\cdot N_{L0}}{7}\\right)\\cdot\\left(1-\\frac{C_0}{3}\\right)^{2}\\right)\\cdot\\mathrm{ft}=", "C ≤ 3", "ft");
+  else m("D_0\\coloneq\\left(5+\\frac{N_{L0}}{10}\\right)\\cdot\\mathrm{ft}=", "C > 3", "ft");
+  m("DF_{0}\\coloneq\\frac{S_{e}}{D_0}=", `${g.name}, the original design's factor`);
+}
+
 /** Why the final tension is 1.0 ksi when the prestress is back-calculated. */
 const TENSION_NOTE = "Final tension: 1.0 ksi, as entered. The code limit, 6√f′c (SSHB 9.15.2.2), is set aside so that strength flexure controls the prestress, which BRM 1.7.2 sets by strength";
 
@@ -339,9 +370,8 @@ export function dtRatingCalcLines(i: DtInputs, title: string, figures?: { sectio
     m(`K\\coloneq\\sqrt{\\frac{1.2\\cdot ${num(sec.I, 8)}\\mathrm{in}^{4}}{${num(sec.J, 8)}\\mathrm{in}^{4}}}=`, "K = √((1 + μ) I/J), μ = 0.2. J, the St. Venant torsion constant, is solved on the unit's shape (flange, tapered stems and their junctions) by finite elements, since it has no exact formula for a double tee");
     m("C\\coloneq K\\cdot\\min\\left(\\frac{W}{L},1\\right)=", "SSHB 3.23.4.3");
     m("D_m\\coloneq\\left(5.75-0.5\\cdot N_L+0.7\\cdot N_L\\cdot\\left(1-0.2\\cdot C\\right)^{2}\\right)\\cdot\\mathrm{ft}=", "With the bridge's design lanes", "ft");
-    m("D_s\\coloneq\\left(5.75-0.5+0.7\\cdot\\left(1-0.2\\cdot C\\right)^{2}\\right)\\cdot\\mathrm{ft}=", "With one lane loaded, for the legal and permit vehicles", "ft");
-    m("DF_{m}\\coloneq\\min\\left(\\frac{S}{D_m},1\\right)=", "Interior, two or more lanes; the load fraction need not be greater than 1 (SSHB 3.23.4.3)");
-    m("DF_{s}\\coloneq\\min\\left(\\frac{S}{D_s},1\\right)=", "Interior, one lane");
+    m("DF_{m}\\coloneq\\min\\left(\\frac{S}{D_m},1\\right)=", "Interior; the load fraction need not be greater than 1 (SSHB 3.23.4.3)");
+    m("DF_{s}\\coloneq DF_{m}=", "The legal and permit vehicles too: SSHB 3.23.4.3 gives one fraction for multi-beam decks, with NL the bridge's design lanes, whatever the lanes loaded");
     if (r.df.int.rootIJ !== null) text(`√(I/J) = ${num(r.df.int.rootIJ, 2)}, within S/D's limit of 5.0, and the skew, ${num(i.skew)}°, within 45° (SSHB 3.23.4.3).`, "note");
   } else {
     given(
@@ -351,6 +381,8 @@ export function dtRatingCalcLines(i: DtInputs, title: string, figures?: { sectio
     given(`DF_{s}\\coloneq ${num(g.dfSingle, 10)}`, "One lane");
   }
   if (i.options.dfOverride && !r.condition.alone) given(`DF_{s}\\coloneq ${num(g.dfSingle, 10)}`, "One lane, as entered");
+  const gTyp = r.girders.find((q) => !q.ext && q.i === r.geo.iTyp + 1);
+  if (gTyp) eraDistribution(i, r, gTyp, m, text);
   const dfRows = compareBrrDf(i, r);
   if (dfRows.length) {
     text("The factors above are compared with those from AASHTOWare BrR. Where the two agree within 5%, the BrR factors are used.", "note");
@@ -377,7 +409,7 @@ export function dtRatingCalcLines(i: DtInputs, title: string, figures?: { sectio
   if (back) {
     const sidewalkCase = isSidewalkTruckCase(g.name);
     const asInspected = damagedHere || r.condition.alone;
-    if (i.options.solveWithOverlay && !sidewalkCase && !asInspected && (developed || !r.original.devCompare)) m(ok("1", "RF_{inv,HS}"), "HS-20 inventory rating of at least 1.0 with whole strands (BRM 1.7.2(A))");
+    if (i.options.solveWithOverlay && !sidewalkCase && !asInspected && (developed || !r.original.devCompare) && Math.abs(g.dfSolve - g.dfMulti) < 1e-9) m(ok("1", "RF_{inv,HS}"), "HS-20 inventory rating of at least 1.0 with whole strands (BRM 1.7.2(A))");
     text(
       `This is the fewest whole strands that gives every girder, with trucks between the curbs, an inventory rating of at least 1.0 for ${designVehicleName(r.original.vehicle)} in flexure at every point, with the development length of the original design${asInspected ? " as designed (intact)" : ""}. With one strand fewer, ${s.gov} would rate below 1.0.${
         sidewalkCase ? ` The case worked here, ${g.name}, is not used to set the prestress: it is rated with it, so its rating may fall below 1.0.` : ""

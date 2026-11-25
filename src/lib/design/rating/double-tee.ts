@@ -405,8 +405,8 @@ function buildGirders(i: DtInputs) {
   const sdIn = interiorMethod(i) === "sd";
   const range = sdIn ? sdRange() : null;
   const dfInt = sdIn
-    ? { method: "sd" as const, multi: sOverD(NL, secInt), single: sOverD(1, secInt), rootIJ: range!.rootIJ, outOfRange: range!.out }
-    : { method: "table" as const, multi: { D: 5.5, DF: S_ft / 5.5 }, single: { D: 7.0, DF: S_ft / 7.0 }, sd: { multi: sOverD(NL, secInt), single: sOverD(1, secInt) }, rootIJ: null, outOfRange: null };
+    ? { method: "sd" as const, multi: sOverD(NL, secInt), single: sOverD(NL, secInt), rootIJ: range!.rootIJ, outOfRange: range!.out }
+    : { method: "table" as const, multi: { D: 5.5, DF: S_ft / 5.5 }, single: { D: 7.0, DF: S_ft / 7.0 }, sd: { multi: sOverD(NL, secInt), single: sOverD(NL, secInt) }, rootIJ: null, outOfRange: null };
   /**
    * Lever rule for interior unit k: the wheels' reactions at it, the deck hinged at the units on each
    * side, the trucks placed for the most (wheels 6 ft apart, trucks 12 ft center to center, BRM
@@ -444,6 +444,27 @@ function buildGirders(i: DtInputs) {
     const leverSingle = S > 10;
     return { single: leverSingle ? leverInterior(k, false) : S / 7.0, multi: leverMulti ? leverInterior(k, NL > 1) : S / 5.5, S, leverSingle, leverMulti };
   };
+  /**
+   * The original design's distribution for the interior units of a multi-beam deck (units side by side,
+   * no composite deck), by the year built; see multiBeamEra. The rating uses today's S/D.
+   */
+  const eraRule = sdIn ? multiBeamEra(i.bridge.yearBuilt) : null;
+  const eraAt = (k: number) => {
+    if (!eraRule || eraRule === "current") return null;
+    const S = dfInterior(k).S;
+    if (eraRule === "slab") {
+      const E = Math.min(7, 4 + 0.06 * L); // ft, the width one wheel spreads over
+      return { rule: eraRule, S, E, DF: S / E };
+    }
+    // 1977: an effective spacing, and D from the stiffness C = K·W/L (no deck slab, so Jt = 0 and
+    // K = √(EI/2GJ) = √((1 + μ)I/J), μ = 0.2).
+    const Seff = (12 * NL + 9) / nU;
+    const K = Math.sqrt((1.2 * secInt.I) / secInt.J);
+    const C = (K * roadW) / L;
+    const D = C <= 3 ? 5 + NL / 10 + (3 - (2 * NL) / 7) * (1 - C / 3) ** 2 : 5 + NL / 10;
+    return { rule: eraRule, S, Seff, K, C, D, DF: Seff / D };
+  };
+  const eraDF = eraRule && eraRule !== "current" ? (k: number) => eraAt(k)!.DF : null;
 
   // Sidewalks: rated two ways, the worse governing: trucks curb to curb with pedestrians on the
   // sidewalks, and (mountable sidewalks) trucks on the sidewalk without pedestrians, exterior girders.
@@ -507,6 +528,8 @@ function buildGirders(i: DtInputs) {
     /** As designed: the original design's, for the back-calculation. */
     dfMultiDesign: number;
     dfSingleDesign: number;
+    /** The original design's factor, which sets the prestress: the era's rule for a multi-beam deck, else dfMultiDesign. */
+    dfSolve: number;
     pedKlf: number;
     caseName: string;
     /** Interior: where the lever rule replaces the formula (BRM 1.3(E)). */
@@ -536,6 +559,7 @@ function buildGirders(i: DtInputs) {
       dfSingle: alone ? isolated(k, false, curbFace) : singleD,
       dfMultiDesign: multiD,
       dfSingleDesign: singleD,
+      dfSolve: !ov && !ext && eraDF ? eraDF(k) : multiD,
       pedKlf: sidewalks.length ? pedKlf : 0,
       caseName: sidewalks.length ? (pedKlf > 0 ? "curb to curb, with pedestrians" : "curb to curb") : "",
       lever: dfI && !ov ? { single: dfI.leverSingle, multi: dfI.leverMulti } : null,
@@ -553,6 +577,7 @@ function buildGirders(i: DtInputs) {
         dfSingle: alone ? isolated(k, false, i.roadway.railFaceOffset) : ov ? ov.extSingle : lever(false, i.roadway.railFaceOffset, k).DF,
         dfMultiDesign: ov ? ov.extMulti : lever(NL > 1, i.roadway.railFaceOffset, k).DF,
         dfSingleDesign: ov ? ov.extSingle : lever(false, i.roadway.railFaceOffset, k).DF,
+        dfSolve: ov ? ov.extMulti : lever(NL > 1, i.roadway.railFaceOffset, k).DF,
         pedKlf: 0,
       });
     }
@@ -566,6 +591,7 @@ function buildGirders(i: DtInputs) {
     csecExt: compositeSec(secExt),
     nDeck,
     impact,
+    era: eraRule ? { rule: eraRule, typical: nU >= 3 ? eraAt(iTyp) : null } : null,
     df: { int: dfInt, ext: dfExt, alone },
     ped: { sidewalks, pedWidth, pedPsf, pedKlf, mountable, curbFace },
   };
@@ -691,12 +717,12 @@ export function rateDoubleTee(i: DtInputs) {
   // --- back-calculation (BRM 1.7.2(A)): As so the lowest HS-20 inventory flexure RF over girders and points is 1.0 ---
   const rfFlexInv = (g: Girder, As: number, x: number, solve: boolean) => {
     const C = capacity(g, As, x, false, orig.devFactor).Mn;
-    const LL = llDesignAt(x) * g.dfMultiDesign * (1 + I);
+    const LL = llDesignAt(x) * g.dfSolve * (1 + I);
     if (LL <= 1e-9) return Infinity;
     return (C - 1.3 * D(g, solve, x).M - 2.17 * pedM(g, x)) / (2.17 * LL);
   };
   // The hand method: the largest HS-20 moment anywhere with the dead load at midspan.
-  const rfFlexInvMid = (g: Girder, As: number) => (capacity(g, As).Mn - 1.3 * D(g, true, L / 2).M - 2.17 * pedM(g, L / 2)) / (2.17 * M_design * g.dfMultiDesign * (1 + I));
+  const rfFlexInvMid = (g: Girder, As: number) => (capacity(g, As).Mn - 1.3 * D(g, true, L / 2).M - 2.17 * pedM(g, L / 2)) / (2.17 * M_design * g.dfSolve * (1 + I));
   const rfSolve = (g: Girder, As: number) => (i.options.solveAt === "midspan" ? rfFlexInvMid(g, As) : Math.min(...pois.filter((x) => x > 0 && x < L).map((x) => rfFlexInv(g, As, x, true))));
   // The prestress is solved from the cases the original design would have used (trucks between the
   // curbs); trucks on a mountable sidewalk are then rated with it, not solved for (BRM 1.7.2(A)).
@@ -706,7 +732,7 @@ export function rateDoubleTee(i: DtInputs) {
   let AsExact = 0;
   let crackGoverns = false;
   const fr = ruptureModulus(m.fc);
-  const crack = girders.map((g) => ({ g: g.name, Mcr: (fr * (g.csec ? g.csec.Sb : g.sec.Sb)) / 12, MuReq: 1.3 * D(g, true, L / 2).M + 2.17 * (M_design * g.dfMultiDesign * (1 + I) + pedM(g, L / 2)) }));
+  const crack = girders.map((g) => ({ g: g.name, Mcr: (fr * (g.csec ? g.csec.Sb : g.sec.Sb)) / 12, MuReq: 1.3 * D(g, true, L / 2).M + 2.17 * (M_design * g.dfSolve * (1 + I) + pedM(g, L / 2)) }));
   let solveNote = "";
   if (i.prestress.mode === "known") {
     if (!(i.prestress.strands > 0)) throw new DesignError("Give the number of strands, or back-calculate them.");
@@ -976,6 +1002,20 @@ export function designTruck(v: ReturnType<typeof originalDesign>["vehicle"]): Pi
   if (v === "H20") return { P: [4, 16], S: [14] };
   if (v === "HS25") return { P: hs.P.map((p) => p * 1.25), S: hs.S };
   return hs;
+}
+
+/**
+ * The multi-beam distribution in force when a bridge was designed, taken from the year built:
+ * - "slab", to 1977: the 9th to 11th Editions (1965–1973) gave multi-beam decks the slab rule, each
+ *   wheel over E = 4 + 0.06L ≤ 7 ft (1973, 1.3.2(C), Case B); earlier, there was no rule, and this one
+ *   is used;
+ * - "1977", 1978 to 1986: the 12th Edition's formula (NCHRP Report 83), an effective spacing (12NL + 9)/Ng over
+ *   D = 5 + NL/10 + (3 − 2NL/7)(1 − C/3)² (C ≤ 3), 5 + NL/10 (C > 3);
+ * - "current", from 1987: today's S/D (NCHRP Report 287, 1986; in the 16th Edition, 1996, at the
+ *   latest; the edition that adopted it isn't established).
+ */
+export function multiBeamEra(year: number): "slab" | "1977" | "current" {
+  return year <= 1977 ? "slab" : year <= 1986 ? "1977" : "current";
 }
 
 /** The roadway between the curbs (between the rail faces without curbs), ft: where the lanes go (SSHB 3.6.2). */

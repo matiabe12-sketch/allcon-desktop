@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { dtRatingInputs } from "../kinds";
 import fixtures from "./cdot-bridges.json";
-import { DT_DEFAULTS, NO_UNIT_CONDITION, RESTRICTED, codeTension, designLanes, designTruck, originalDesign, postAll, shearRequired, dtInputsFromBridgeFile, interiorMethod, isSidewalkTruckCase, rateDoubleTee, type DtInputs, type DtRating, type DtUnitCondition } from "./double-tee";
+import { DT_DEFAULTS, NO_UNIT_CONDITION, RESTRICTED, codeTension, designLanes, designTruck, multiBeamEra, originalDesign, postAll, shearRequired, dtInputsFromBridgeFile, interiorMethod, isSidewalkTruckCase, rateDoubleTee, type DtInputs, type DtRating, type DtUnitCondition } from "./double-tee";
 import { dtRatingCalcLines } from "./double-tee-calc";
 import { CDOT_VEHICLES, laneAt, tons, trainAt, trainMax } from "./vehicles";
 
@@ -285,7 +285,7 @@ describe("interior distribution by the deck (the default)", () => {
     }
   });
 
-  it("S/D: D = 5.75 − 0.5 NL + 0.7 NL (1 − 0.2 C)², C = K·min(W/L, 1), K = √(1.2 I/J); one lane with NL = 1", () => {
+  it("S/D: D = 5.75 − 0.5 NL + 0.7 NL (1 − 0.2 C)², C = K·min(W/L, 1), K = √(1.2 I/J); NL the bridge's lanes for every vehicle", () => {
     const r = rateDoubleTee(noDeck);
     const { I, J } = r.secInt;
     const K = Math.sqrt((1.2 * I) / J);
@@ -293,7 +293,7 @@ describe("interior distribution by the deck (the default)", () => {
     const D = (nl: number) => 5.75 - 0.5 * nl + 0.7 * nl * (1 - 0.2 * C) ** 2;
     for (const g of interior(r)) {
       near(g.dfMulti, g.S / D(r.geo.NL), 1e-12);
-      near(g.dfSingle, g.S / D(1), 1e-12);
+      near(g.dfSingle, g.S / D(r.geo.NL), 1e-12); // one equation, whatever the lanes loaded (SSHB 3.23.4.3)
     }
   });
 
@@ -401,5 +401,37 @@ describe("distribution limits", () => {
     const g = r.girders.find((x) => !x.ext)!;
     expect(g.lever).toEqual({ single: true, multi: true });
     expect(g.dfSingle).toBeCloseTo(1, 6); // one wheel over the unit; the other, 6 ft away, past the next unit
+  });
+});
+
+describe("the original design's multi-beam distribution, by era", () => {
+  const noDeck = (year: number): DtInputs => ({ ...DT_DEFAULTS, span: 24, structureLength: 25, bridge: { ...DT_DEFAULTS.bridge, yearBuilt: year }, deck: { ...DT_DEFAULTS.deck, present: false } });
+  it("dates the rules: the slab rule to 1977, the 1977 formula to 1986, today's S/D after", () => {
+    expect(multiBeamEra(1960)).toBe("slab");
+    expect(multiBeamEra(1977)).toBe("slab");
+    expect(multiBeamEra(1978)).toBe("1977");
+    expect(multiBeamEra(1986)).toBe("1977");
+    expect(multiBeamEra(1987)).toBe("current");
+  });
+  it("solves with the slab rule, E = 4 + 0.06L ≤ 7 ft, and rates with today's S/D", () => {
+    const r = rateDoubleTee(noDeck(1970));
+    const g = r.girders.find((x) => !x.ext)!;
+    expect(r.era?.rule).toBe("slab");
+    expect(g.dfSolve).toBeCloseTo(g.S / Math.min(7, 4 + 0.06 * 24), 10);
+    expect(g.dfMulti).not.toBeCloseTo(g.dfSolve, 3);
+  });
+  it("solves with the 1977 formula: (12NL + 9)/Ng over D", () => {
+    const r = rateDoubleTee(noDeck(1982));
+    const t = r.era!.typical!;
+    expect(t.rule).toBe("1977");
+    const NL = r.geo.NL;
+    const D = t.C! <= 3 ? 5 + NL / 10 + (3 - (2 * NL) / 7) * (1 - t.C! / 3) ** 2 : 5 + NL / 10;
+    expect(t.D).toBeCloseTo(D, 10);
+    expect(t.DF).toBeCloseTo((12 * NL + 9) / DT_DEFAULTS.units.count / D, 10);
+  });
+  it("leaves a composite-deck bridge on the table in every era", () => {
+    const r = rateDoubleTee({ ...DT_DEFAULTS, deck: { ...DT_DEFAULTS.deck, present: true }, bridge: { ...DT_DEFAULTS.bridge, yearBuilt: 1970 } });
+    expect(r.era).toBeNull();
+    for (const g of r.girders) expect(g.dfSolve).toBe(g.dfMultiDesign);
   });
 });

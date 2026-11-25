@@ -639,10 +639,12 @@ function Results({ i, r, brr, setBrr, df, setDf }: { i: DtInputs; r: DtRating; b
         <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
           <AlertTriangle className="mt-0.5 size-4 shrink-0" />
           <span>
-            {CHECK_LABEL[hs.govInv.inv.check]} governs HS-20 inventory ({f3(hs.govInv.inv.inv)} on {hs.govInv.g} at {f2(hs.govInv.inv.x)} ft), not flexure, with the final tension limit at {finalTension(i).toFixed(3)} ksi. BrR will report the same.{" "}
-            {s.mode === "back-calculate"
-              ? "With a back-calculated prestress that defeats the back-calculation (BRM 1.7.2 sets the prestress by strength): under Rating options, set the final tension limit to “Not rated” (the default)."
-              : "Accept the service rating, or check the tension limit."}
+            {CHECK_LABEL[hs.govInv.inv.check]} governs HS-20 inventory ({f3(hs.govInv.inv.inv)} on {hs.govInv.g} at {f2(hs.govInv.inv.x)} ft), not flexure, with the final tension limit at {finalTension(i).toFixed(3)} ksi (MBE 6B.5.3.3 rates the service stresses at inventory).{" "}
+            {i.options.solveForService && s.serviceMet
+              ? "The prestress meets the design's tension under the loads it was designed for, so a rating below 1.0 comes from what has changed since: dead load the design didn't carry (such as an overlay left out of the solve), today's distribution, or the condition. The calc package says which."
+              : i.options.solveForService
+                ? "The design's tension couldn't be met within the stems, so the assumed strand layout is the likely cause: review it."
+                : "The prestress was solved for strength alone, which understates the strands of a design that also had to meet its service tension: under Rating options, solve for the design's service tension."}
           </span>
         </div>
       )}

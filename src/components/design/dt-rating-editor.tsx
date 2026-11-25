@@ -395,15 +395,22 @@ export function DtRatingEditor({ design, projects }: { design: { id: string; nam
                 ]}
                 onChange={(v) => opt({ lldfInterior: v })}
               />
-              <Choice
-                label="Legal and permit vehicles"
-                value={i.options.legalLldf}
-                options={[
-                  { value: "single", label: "Single-lane DF" },
-                  { value: "multi", label: "Multi-lane DF" },
-                ]}
-                onChange={(v) => opt({ legalLldf: v })}
-              />
+              {i.bridge.yearBuilt > 1985 ? (
+                <div className="grid grid-cols-[1fr_auto] items-center gap-2 py-0.5 text-xs" title="Bridges built or rehabilitated after 1985 are rated with the multi-lane factor (BRM 1.3(C))">
+                  <span className="text-muted-foreground">Legal and permit vehicles</span>
+                  <span>Multi-lane DF (BRM 1.3(C), built after 1985)</span>
+                </div>
+              ) : (
+                <Choice
+                  label="Legal and permit vehicles (BRM 1.3(D))"
+                  value={i.options.legalLldf}
+                  options={[
+                    { value: "single", label: "Single-lane DF" },
+                    { value: "multi", label: "Multi-lane DF" },
+                  ]}
+                  onChange={(v) => opt({ legalLldf: v })}
+                />
+              )}
               <Choice
                 label="Final tension limit, girder"
                 value={i.options.ignoreTension && i.prestress.mode === "back-calculate" ? "ignored" : i.options.tensionLimit === null ? "code" : i.options.tensionLimit === 1 ? "brm" : "entered"}

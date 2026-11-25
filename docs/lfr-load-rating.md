@@ -141,6 +141,8 @@ these field by field):
     isn't dated, and today's gives the original strands a little less stress.
 - **Multi-beam S/D for every vehicle:** SSHB 3.23.4.3 gives one fraction, with NL the bridge's design
   lanes, whatever the lanes loaded, so the legal and permit vehicles use it too (no single-lane S/D).
+- **Legal and permit vehicles' lanes:** the multi-lane factor for a bridge built after 1985 (BRM
+  1.3(C)); for one built in 1985 or earlier the rater may choose the single-lane factor (BRM 1.3(D)).
 - **The rating uses today's rules** (BRM 1.3): development with the 1.6 multiplier. A design made
   without it can rate below 1.0 near the ends; the calc package and the editor show HS-20 with the
   design's development length beside the rating.

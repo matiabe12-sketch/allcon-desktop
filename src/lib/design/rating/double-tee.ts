@@ -804,7 +804,7 @@ export function rateDoubleTee(i: DtInputs) {
   const rateGirder = (g: Girder, v: Vehicle, intact = false, devFactor = 1.6) => {
     const design = v.cls === "design";
     const [dfM, dfS] = intact ? [g.dfMultiDesign, g.dfSingleDesign] : [g.dfMulti, g.dfSingle];
-    const df = design ? dfM : i.options.legalLldf === "single" ? dfS : dfM;
+    const df = design ? dfM : legalLanes(i) === "single" ? dfS : dfM;
     const out: PointResult[] = [];
     const sec = g.sec;
     const cs = g.csec;
@@ -944,7 +944,7 @@ export function rateDoubleTee(i: DtInputs) {
     const design = v.cls === "design";
     const Mw = design ? M_HS20 : maxAt[v.name].M;
     const per = girders.map((g) => {
-      const df = design ? g.dfMulti : i.options.legalLldf === "single" ? g.dfSingle : g.dfMulti;
+      const df = design ? g.dfMulti : legalLanes(i) === "single" ? g.dfSingle : g.dfMulti;
       const C = capacity(g, As, null, true).Mn;
       const Dm = D(g, false, L / 2).M;
       const Mp = pedM(g, L / 2);
@@ -985,6 +985,13 @@ export function rateDoubleTee(i: DtInputs) {
 }
 
 export type DtRating = ReturnType<typeof rateDoubleTee>;
+
+/**
+ * The distribution the legal and permit vehicles are rated with: multi-lane for a bridge built after
+ * 1985 (BRM 1.3(C)); for one built in 1985 or earlier the single-lane factor may be used (BRM 1.3(D)),
+ * as the rater chooses.
+ */
+export const legalLanes = (i: Pick<DtInputs, "bridge" | "options">): "single" | "multi" => (i.bridge.yearBuilt > 1985 ? "multi" : i.options.legalLldf);
 
 /**
  * The original design's rules by the year built, taken as the year it was designed: CDOT's design

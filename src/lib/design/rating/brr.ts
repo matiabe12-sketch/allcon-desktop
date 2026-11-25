@@ -1,5 +1,5 @@
 import { MAX_DECIMALS, showNum } from "../calc-style";
-import { EP, Ec, finalTension, ruptureModulus, tensionIgnored, type DtInputs, type DtRating } from "./double-tee";
+import { EP, Ec, finalTension, legalLanes, ruptureModulus, tensionIgnored, type DtInputs, type DtRating } from "./double-tee";
 import { CDOT_VEHICLES } from "./vehicles";
 
 // AASHTOWare BrR: the input sheet (every value in BrR's entry order, to model the bridge for its one
@@ -167,7 +167,7 @@ export function brrInputSheet(i: DtInputs, r: DtRating): BrrGroup[] {
     {
       title: "8. Run and check",
       rows: [
-        ["Vehicles", CDOT_VEHICLES.map((v) => v.name).join(", "), `Legal and permit: ${i.options.legalLldf}-lane DF`],
+        ["Vehicles", CDOT_VEHICLES.map((v) => v.name).join(", "), `Legal and permit: ${legalLanes(i)}-lane DF (BRM ${i.bridge.yearBuilt > 1985 ? "1.3(C)" : legalLanes(i) === "single" ? "1.3(D)" : "1.3"})`],
         [`Expected HS-20 inventory RF (${hsGov.govInv.g})`, f(hsGov.govInv.inv.inv, 3), r.condition.active
           ? "As inspected; the intact bridge rates at least 1.00"
           : i.prestress.mode === "back-calculate" && r.original.devCompare && r.original.devCompare.withOriginal - r.original.devCompare.rated > 5e-4

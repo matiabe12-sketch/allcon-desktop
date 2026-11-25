@@ -2,7 +2,7 @@ import type { Line } from "@/lib/calcs/library/templates";
 import { cell, COLOR_NOTE, INPUT_COLOR, isInput, num } from "../calc-style";
 import type { Figure } from "../figures";
 import { brrInputSheet, compareBrrDf } from "./brr";
-import { CHECK_LABEL, interiorMethod, isSidewalkTruckCase, needsPosting, postTons, rateDoubleTee, roadwayWidth, tensionIgnored, unitDamaged, type DtInputs } from "./double-tee";
+import { CHECK_LABEL, interiorMethod, isSidewalkTruckCase, legalLanes, needsPosting, postTons, rateDoubleTee, roadwayWidth, tensionIgnored, unitDamaged, type DtInputs } from "./double-tee";
 import { checkStandard, DT_STANDARD_FC, DT_STANDARD_NAME, DT_STANDARD_SLAB } from "./dt-standard";
 
 const ftInText = (inches: number) => {
@@ -449,7 +449,7 @@ export function dtRatingCalcLines(i: DtInputs, title: string, figures?: { sectio
   // 9. Ratings
   text("9. Ratings: CDOT vehicles", "subheading");
   text(
-    `Each vehicle is moved across the span in both directions. The legal and permit vehicles use the ${i.options.legalLldf}-lane distribution factor. The governing ratings are listed below; the full working for each vehicle's operating rating for flexure is in Appendix A.`,
+    `Each vehicle is moved across the span in both directions. The legal and permit vehicles use the ${legalLanes(i)}-lane distribution factor (BRM ${i.bridge.yearBuilt > 1985 ? "1.3(C): multi-lane for a bridge built after 1985" : legalLanes(i) === "single" ? "1.3(D): built in 1985 or earlier" : "1.3"}). The governing ratings are listed below; the full working for each vehicle's operating rating for flexure is in Appendix A.`,
   );
   const vehicleWorking = () => {
     for (const v of r.ratings) {

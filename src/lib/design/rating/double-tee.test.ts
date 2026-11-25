@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { dtRatingInputs } from "../kinds";
 import fixtures from "./cdot-bridges.json";
-import { DT_DEFAULTS, NO_UNIT_CONDITION, RESTRICTED, codeTension, designLanes, designTruck, multiBeamEra, originalDesign, postAll, shearRequired, dtInputsFromBridgeFile, interiorMethod, isSidewalkTruckCase, rateDoubleTee, type DtInputs, type DtRating, type DtUnitCondition } from "./double-tee";
+import { DT_DEFAULTS, NO_UNIT_CONDITION, RESTRICTED, codeTension, designLanes, designTruck, legalLanes, multiBeamEra, originalDesign, postAll, shearRequired, dtInputsFromBridgeFile, interiorMethod, isSidewalkTruckCase, rateDoubleTee, type DtInputs, type DtRating, type DtUnitCondition } from "./double-tee";
 import { dtRatingCalcLines } from "./double-tee-calc";
 import { CDOT_VEHICLES, laneAt, tons, trainAt, trainMax } from "./vehicles";
 
@@ -433,5 +433,22 @@ describe("the original design's multi-beam distribution, by era", () => {
     const r = rateDoubleTee({ ...DT_DEFAULTS, deck: { ...DT_DEFAULTS.deck, present: true }, bridge: { ...DT_DEFAULTS.bridge, yearBuilt: 1970 } });
     expect(r.era).toBeNull();
     for (const g of r.girders) expect(g.dfSolve).toBe(g.dfMultiDesign);
+  });
+});
+
+describe("legal and permit vehicles' distribution (BRM 1.3(C), (D))", () => {
+  const at = (year: number, legalLldf: "single" | "multi"): DtInputs => ({ ...DT_DEFAULTS, deck: { ...DT_DEFAULTS.deck, present: true }, bridge: { ...DT_DEFAULTS.bridge, yearBuilt: year }, options: { ...DT_DEFAULTS.options, legalLldf } });
+  it("uses the multi-lane factor for a bridge built after 1985, whatever the setting", () => {
+    expect(legalLanes(at(1986, "single"))).toBe("multi");
+    expect(legalLanes(at(1985, "single"))).toBe("single");
+    expect(legalLanes(at(1985, "multi"))).toBe("multi");
+  });
+  it("rates the legal loads of a 1990 bridge with the multi-lane factor", () => {
+    const r = rateDoubleTee(at(1990, "single"));
+    const legal = r.ratings.find((v) => v.name === "CO Type 3")!;
+    const p = legal.per.find((x) => x.g === "G3")!;
+    expect(p.df).toBeCloseTo(r.girders.find((g) => g.name === "G3")!.dfMulti, 12);
+    const old = rateDoubleTee(at(1985, "single")).ratings.find((v) => v.name === "CO Type 3")!.per.find((x) => x.g === "G3")!;
+    expect(old.df).toBeCloseTo(rateDoubleTee(at(1985, "single")).girders.find((g) => g.name === "G3")!.dfSingle, 12);
   });
 });

@@ -7,7 +7,7 @@ import { deleteDesignAttachments } from "@/app/actions/design";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { BRR_TOLERANCE, brrInputSheet, brrTemplate, compareBrr, compareBrrDf } from "@/lib/design/rating/brr";
-import { CHECK_LABEL, dtInputsFromBridgeFile, dtLayout, finalTension, rateDoubleTee, type DtInputs, type DtRating } from "@/lib/design/rating/double-tee";
+import { CHECK_LABEL, dtInputsFromBridgeFile, dtLayout, finalTension, needsPosting, postTons, rateDoubleTee, type DtInputs, type DtRating } from "@/lib/design/rating/double-tee";
 import { applySia, type SiaReading } from "@/lib/design/rating/sia";
 import { readSketchCallouts } from "@/lib/design/rating/sketch-callouts";
 import { applyBrm, GEOMETRY_KEYS, INPUT_LABEL, missingInputs, setPath, withFileSources } from "@/lib/design/rating/sources";
@@ -43,7 +43,7 @@ function MiniNum({ value, onChange, label, w = "w-14" }: { value: number; onChan
   return <input type="number" aria-label={label} title={label} value={value} onChange={(e) => e.target.value !== "" && Number.isFinite(+e.target.value) && onChange(+e.target.value)} className={cn("h-7 rounded-md border border-input bg-transparent px-1 text-right tabular-nums", w)} />;
 }
 
-const postingClass =(p: string) => (p === "Posting required" ? "text-red-600 font-medium" : p.startsWith("Exempt") ? "text-amber-600" : "text-muted-foreground");
+const postingClass =(p: string) => (needsPosting(p) ? "text-red-600 font-medium" : p.startsWith("Exempt") ? "text-amber-600" : "text-muted-foreground");
 
 export function DtRatingEditor({ design, projects }: { design: { id: string; name: string; projectId: string | null; inputs: DtInputs }; projects: { id: string; name: string }[] }) {
   const [inputs, setInputs] = useState(design.inputs);
@@ -183,6 +183,8 @@ export function DtRatingEditor({ design, projects }: { design: { id: string; nam
               <TextField label="Rater" value={i.bridge.rater} onChange={(v) => bridge({ rater: v })} />
               <TextField label="Checker" value={i.bridge.checker} onChange={(v) => bridge({ checker: v })} />
               <Toggle label="Within 1 mile of an Interstate (EV posting)" value={i.bridge.nearInterstate} onChange={(v) => bridge({ nearInterstate: v })} />
+              <SrcField i={i} path="bridge.nbiSuper" label="Superstructure condition (NBI)" onSet={setP} onConfirm={confirmP} transform={(v) => Math.min(9, Math.max(0, Math.round(v)))} hint="Under 5, shear must be rated (BRM 1.4(O))" />
+              <Toggle label="Visible signs of shear distress" value={i.bridge.loadInducedDistress} onChange={(v) => bridge({ loadInducedDistress: v })} />
             </Section>
             <Section title="Span" open>
               <SrcField i={i} path="span" label="Span (bearing to bearing)" unit="ft" step={0.25} onSet={setP} onConfirm={confirmP} />
@@ -548,7 +550,7 @@ function Results({ i, r, brr, setBrr, df, setDf }: { i: DtInputs; r: DtRating; b
   const [vehicle, setVehicle] = useState("HS-20");
   const s = r.solve;
   const hs = r.ratings.find((x) => x.cls === "design")!;
-  const posted = r.ratings.filter((x) => x.posting === "Posting required");
+  const posted = r.ratings.filter((x) => needsPosting(x.posting));
   const exempt = r.ratings.filter((x) => x.posting.startsWith("Exempt"));
   const hsService = hs.govInv.inv.check !== "flexure" && hs.govInv.inv.check !== "shear";
   const sel = r.ratings.find((x) => x.name === vehicle) ?? hs;
@@ -567,10 +569,20 @@ function Results({ i, r, brr, setBrr, df, setDf }: { i: DtInputs; r: DtRating; b
       <div className={cn("flex items-start gap-2 rounded-lg border px-4 py-3 text-sm", posted.length ? "border-red-300 bg-red-50 text-red-900 dark:bg-red-950/40 dark:text-red-200" : "border-emerald-300 bg-emerald-50 text-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200")}>
         {posted.length ? <XCircle className="mt-0.5 size-4 shrink-0" /> : <CheckCircle2 className="mt-0.5 size-4 shrink-0" />}
         <span>
-          {posted.length ? `Posting required (BRM 1.15.1): ${posted.map((x) => `${x.name} ${x.oprTons.toFixed(1)} T`).join(", ")}.` : "No posting required (BRM 1.15.1)."}
+          {r.restricted
+            ? "A legal load rates under 0.3: restrict all legal loads (BRM 1.15.1)."
+            : posted.length
+              ? `Posting required (BRM 1.15.1): ${posted.map((x) => `${x.name} ${postTons(x.oprTons).toFixed(1)} T`).join(", ")}.`
+              : "No posting required (BRM 1.15.1)."}
           {exempt.length > 0 && ` Exempt by the 95% rule: ${exempt.map((x) => x.name).join(", ")}.`} HS-20 inventory {f3(hs.govInv.inv.inv)} ({hs.govInv.g}), operating {f3(hs.govOpr.opr.opr)}.
         </span>
       </div>
+      {r.shearRequired.length > 0 && (
+        <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+          <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+          <span>Shear isn&apos;t rated, but BRM 1.4 requires it: {r.shearRequired.join("; ")}. Turn on “Rate shear” under Rating options.</span>
+        </div>
+      )}
       {s.mode === "back-calculate" && hsService && (
         <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
           <AlertTriangle className="mt-0.5 size-4 shrink-0" />

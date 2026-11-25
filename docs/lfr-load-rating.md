@@ -91,13 +91,15 @@ these field by field):
    - impact I = 50/(L + 125) ≤ 0.30 (SSHB 3.8.2.1);
    - pedestrian load on sidewalks (SSHB 3.14), with CDOT's two models (trucks curb to curb with
      pedestrians; trucks on a mountable sidewalk without), the worse governing.
-5. **Distribution factors:** interior by SSHB Table 3.23.1 or 3.23.4.3; exterior by the lever rule
+5. **Distribution factors:** design lanes on the roadway between the curbs (SSHB 3.6.2, 3.6.3: 12 ft
+   lanes, two on a 20 to 24 ft roadway, as BrR counts them); interior by SSHB Table 3.23.1 or 3.23.4.3; exterior by the lever rule
    (wheel 2 ft from the rail or curb face); or the rater's overrides.
 6. **Prestress:** losses by SSHB 9.16.2 (lump sum, or itemized shrinkage, elastic shortening and
    creep, as BrR's setting), transfer and development (SSHB 9.27–9.28).
 7. **Capacity at every point:**
    - flexure, SSHB 9.17 (fps by Eq. 9-17; rectangular or flanged), φ = 1.0; maximum steel, 9.18.1;
-   - shear, SSHB 9.20 (Vci, Vcw, Vs), unless waived (BRM 1.4(O));
+   - shear, SSHB 9.20 (Vci, Vcw, Vs), unless waived (BRM 1.4(O)); the tool warns when the waiver
+     doesn't apply: built after 2001 (1.4(M)), superstructure condition under 5, or visible shear distress;
    - service stresses at the girder's top and bottom, and the strand stress.
 8. **Rating factors** (MBE 6B.4.1 and 6B.5.3) at every point, for every vehicle and girder:
    - strength: RF = (φRn − A1·D) / (A2·L(1 + I)), A1 = 1.3, A2 = 2.17 inventory and 1.3 operating;
@@ -106,7 +108,11 @@ these field by field):
      strand stress (MBE 6B.5.3.3);
    - the controlling factor per vehicle: the lowest over every point, girder and check, with where it
      occurs; tons = RF × the vehicle's weight.
-9. **Posting** by the agency's rule (CDOT BRM 1.15.1).
+9. **Posting** by CDOT BRM 1.15.1: the Colorado legal trucks, SU4 to SU7 (not posted when the NRL
+   rates 40 T or more) and the emergency vehicles within 1 mile of an Interstate; the 95% rule; none
+   posted at or above its weight limit (Tables 1-4 to 1-6, SU6 and SU7 at the Colorado Bridge
+   Formula's 33 and 35 T); any legal load under 0.3 restricts all legal loads; tons truncated.
+   Interstate routes (their own legal trucks and limits) aren't modeled.
 
 ## 5. Back-calculating the prestress (no plans)
 

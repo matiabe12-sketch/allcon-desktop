@@ -1,3 +1,4 @@
+import { POSTING_LIMIT } from "../girders/lrfr";
 import { DesignError } from "../walls/cip";
 import type { SiaConditionData } from "./sia";
 import { unitJ } from "./torsion";
@@ -337,7 +338,7 @@ function buildGirders(i: DtInputs) {
 
   // Live load distribution, wheel lines per unit (SSHB 3.23).
   const roadW = i.roadway.railToRail;
-  const NL = Math.max(1, Math.floor((roadW - (2 * i.roadway.railFaceOffset) / 12) / 12));
+  const NL = designLanes(roadwayWidth(i));
   const sOverD = (nl: number, sec: DtSection) => {
     const K = Math.sqrt((1.2 * sec.I) / sec.J);
     const WL = roadW / L;
@@ -438,7 +439,7 @@ function buildGirders(i: DtInputs) {
       return { self, deck: 0, dc1: self, asphalt, rail, util, sidewalk, dc2: asphalt + sidewalk + rail + util, diaph, composite: false };
     }
     const deckW = (geo[k].bf / 12) * (deck.thk / 12) * (deck.pcf / 1000);
-    const ctc = i.roadway.curbToCurb || roadW - (2 * i.roadway.railFaceOffset) / 12;
+    const ctc = roadwayWidth(i);
     const asphaltTot = withOverlay ? ((ctc * ld.asphalt) / 12) * (ld.asphaltPcf / 1000) : 0;
     const swTot = sidewalks.reduce((a, s) => a + ((s.width * s.thk) / 12) * (deck.pcf / 1000), 0);
     const utilTot = ld.utilities.reduce((s, x) => s + x.klf, 0);
@@ -815,8 +816,10 @@ export function rateDoubleTee(i: DtInputs) {
     const t = tons(v);
     // The lowest final tension for information (tension ignored), with its girder.
     const tInfo = per.filter((p) => p.tInfo).reduce<{ g: string; pt: NonNullable<(typeof per)[number]["tInfo"]> } | null>((a, p) => (!a || p.tInfo!.inv < a.pt.inv ? { g: p.g, pt: p.tInfo! } : a), null);
-    return { name: v.name, cls: v.cls, tons: t, per, govInv, govOpr, tInfo, invTons: govInv.inv.inv * t, oprTons: govOpr.opr.opr * t, posting: posting(govOpr.opr.opr, v.cls, i.bridge.nearInterstate) };
+    return { name: v.name, cls: v.cls, tons: t, per, govInv, govOpr, tInfo, invTons: govInv.inv.inv * t, oprTons: govOpr.opr.opr * t, posting: "" };
   });
+  const postings = postAll(ratings.map((v) => ({ name: v.name, cls: v.cls, tons: v.tons, rf: v.govOpr.opr.opr })), i.bridge.nearInterstate);
+  ratings.forEach((v, k) => (v.posting = postings[k]));
   // As designed, beside as inspected: what the inspection's findings cost (only when there are any).
   const active = conditionActive(cond);
   const asDesigned = active
@@ -824,9 +827,13 @@ export function rateDoubleTee(i: DtInputs) {
         const per = girders.map((g) => rateGirder(g, v, true));
         const gi = per.reduce((a, c) => (c.inv.inv < a.inv.inv ? c : a));
         const go = per.reduce((a, c) => (c.opr.opr < a.opr.opr ? c : a));
-        return { name: v.name, cls: v.cls, inv: gi.inv.inv, invG: gi.g, opr: go.opr.opr, oprG: go.g, posting: posting(go.opr.opr, v.cls, i.bridge.nearInterstate) };
+        return { name: v.name, cls: v.cls, inv: gi.inv.inv, invG: gi.g, opr: go.opr.opr, oprG: go.g, posting: "" };
       })
     : null;
+  if (asDesigned) {
+    const p = postAll(asDesigned.map((v, k) => ({ name: v.name, cls: v.cls, tons: tons(vehicles[k]), rf: v.opr })), i.bridge.nearInterstate);
+    asDesigned.forEach((v, k) => (v.posting = p[k]));
+  }
   // Each damaged unit's capacity at midspan, intact and as inspected.
   const conditionUnits = cond.units
     .filter((c) => unitDamaged(c) && c.unit >= 1 && c.unit <= u.count)
@@ -881,19 +888,63 @@ export function rateDoubleTee(i: DtInputs) {
     ratings,
     midspan,
     condition: { active, ldDev, alone: b.df.alone, asDesigned, units: conditionUnits, damageOf },
+    shearRequired: i.options.checkShear ? [] : shearRequired(i),
+    restricted: postings.some((p) => p === RESTRICTED),
   };
 }
 
 export type DtRating = ReturnType<typeof rateDoubleTee>;
 
-/** CDOT's posting rule (BRM 1.15.1). */
-export function posting(rf: number, cls: VehicleClass, nearInterstate: boolean) {
-  if (cls === "design" || cls === "permit") return "—";
-  if (cls === "ev" && !nearInterstate) return rf >= 0.95 ? "No posting" : "N/A (more than 1 mi from an Interstate)";
-  if (rf >= 1.0) return "No posting";
-  if (rf >= 0.95) return "Exempt (95% rule)";
-  return "Posting required";
+/** The roadway between the curbs (between the rail faces without curbs), ft: where the lanes go (SSHB 3.6.2). */
+export const roadwayWidth = (i: Pick<DtInputs, "roadway">) => i.roadway.curbToCurb || i.roadway.railToRail - (2 * i.roadway.railFaceOffset) / 12;
+
+/** Design lanes on a roadway (SSHB 3.6.3): 12 ft lanes, no fractions, but two lanes on a roadway of 20 to 24 ft. */
+export const designLanes = (w: number) => (w >= 20 && w <= 24 ? 2 : Math.max(1, Math.floor(w / 12 + 1e-9)));
+
+/** Why shear must be rated (BRM 1.4(M), 1.4(O)); empty where the waiver may apply (with the Bridge Rating Engineer's approval). */
+export function shearRequired(i: Pick<DtInputs, "bridge">): string[] {
+  const out: string[] = [];
+  if (i.bridge.yearBuilt > 2001) out.push(`built in ${i.bridge.yearBuilt}, after December 2001 (BRM 1.4(M))`);
+  if (i.bridge.nbiSuper < 5) out.push(`superstructure condition ${i.bridge.nbiSuper}, under 5 (BRM 1.4(O))`);
+  if (i.bridge.loadInducedDistress) out.push("visible signs of shear distress (BRM 1.4(O))");
+  return out;
 }
+
+export const RESTRICTED = "Restrict all legal loads";
+/** A rating in tons as posted: truncated to 0.1 T (BRM 1.15.1). */
+export const postTons = (t: number) => Math.floor(t * 10 + 1e-9) / 10;
+
+/**
+ * CDOT's posting rules (BRM 1.15.1), for every vehicle at once (they depend on each other):
+ * - only the legal loads are posted: the Colorado legal trucks, SU4 to SU7, and the emergency vehicles
+ *   within 1 mile of an Interstate (reasonable access);
+ * - SU4 to SU7 aren't posted when the NRL rates 40 tons or more;
+ * - an operating rating factor of 0.95 or more is exempt (the 95% rule);
+ * - none is posted at or above its weight limit (Tables 1-4 to 1-6, non-Interstate roads; SU6 and SU7
+ *   by the Colorado Bridge Formula);
+ * - a legal load's operating rating factor under 0.3 restricts all legal loads.
+ */
+export function postAll(list: { name: string; cls: VehicleClass; tons: number; rf: number }[], nearInterstate: boolean): string[] {
+  const nrl = list.find((v) => v.name === "NRL");
+  const nrlOk = !!nrl && nrl.rf >= 1;
+  const posted = (v: (typeof list)[number]) => (v.cls === "legal" || (v.cls === "su" && v.name !== "NRL") || (v.cls === "ev" && nearInterstate));
+  const restrict = list.some((v) => posted(v) && !(v.cls === "su" && nrlOk) && v.rf < 0.3);
+  return list.map((v) => {
+    if (v.cls === "design" || v.cls === "permit") return "—";
+    if (v.name === "NRL") return v.rf >= 1 ? "No SU posting (40 T or more)" : "Rate SU4–SU7";
+    if (v.cls === "ev" && !nearInterstate) return "N/A (more than 1 mi from an Interstate)";
+    if (v.cls === "su" && nrlOk) return "Not required (NRL 40 T or more)";
+    if (restrict) return RESTRICTED;
+    if (v.rf >= 1.0) return "No posting";
+    if (v.rf >= 0.95) return "Exempt (95% rule)";
+    const lim = POSTING_LIMIT[v.name];
+    const limit = lim ? (v.cls === "ev" ? lim.interstate : lim.state) : null;
+    if (limit !== null && postTons(v.rf * v.tons) >= limit) return "No posting (at the weight limit)";
+    return "Posting required";
+  });
+}
+/** Whether a posting result calls for a sign or a restriction. */
+export const needsPosting = (p: string) => p === "Posting required" || p === RESTRICTED;
 
 /**
  * The rating scripts' notes credit methods to people by name ("Someone's rule", "Someone's sheet");

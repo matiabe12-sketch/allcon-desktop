@@ -3,7 +3,7 @@
 import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { NO_UNIT_CONDITION, type DtCondition, type DtRating, type DtUnitCondition } from "@/lib/design/rating/double-tee";
+import { NO_UNIT_CONDITION, needsPosting, type DtCondition, type DtRating, type DtUnitCondition } from "@/lib/design/rating/double-tee";
 import { conditionTags, type ConditionTag, type SiaConditionData } from "@/lib/design/rating/sia";
 import { cn } from "@/lib/utils";
 import { Field, Toggle } from "./design-kit";
@@ -222,7 +222,7 @@ export function ConditionResults({ r }: { r: DtRating }) {
                   <td className="pl-3 text-right tabular-nums">{f3(d.opr)}</td>
                   <td className="text-right tabular-nums">{f3(v.govOpr.opr.opr)}</td>
                   <td className="pl-3 text-right tabular-nums">{Number.isFinite(ch) ? `${(ch * 100).toFixed(1)}%` : "—"}</td>
-                  <td className={cn("pl-3", v.posting === "Posting required" ? "font-medium text-red-600" : "text-muted-foreground")}>{v.posting}</td>
+                  <td className={cn("pl-3", needsPosting(v.posting) ? "font-medium text-red-600" : "text-muted-foreground")}>{v.posting}</td>
                 </tr>
               );
             })}

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { dtRatingInputs } from "../kinds";
 import fixtures from "./cdot-bridges.json";
-import { DT_DEFAULTS, NO_UNIT_CONDITION, codeTension, dtInputsFromBridgeFile, interiorMethod, isSidewalkTruckCase, rateDoubleTee, type DtInputs, type DtRating, type DtUnitCondition } from "./double-tee";
+import { DT_DEFAULTS, NO_UNIT_CONDITION, RESTRICTED, codeTension, designLanes, postAll, shearRequired, dtInputsFromBridgeFile, interiorMethod, isSidewalkTruckCase, rateDoubleTee, type DtInputs, type DtRating, type DtUnitCondition } from "./double-tee";
 import { dtRatingCalcLines } from "./double-tee-calc";
 import { CDOT_VEHICLES, laneAt, tons, trainAt, trainMax } from "./vehicles";
 
@@ -303,5 +303,50 @@ describe("interior distribution by the deck (the default)", () => {
     const b = (fixtures as unknown as { bridge: Record<string, unknown> }[])[0].bridge;
     expect(dtInputsFromBridgeFile(b).options.lldfInterior).toBe("table");
     expect(dtInputsFromBridgeFile({ ...b, options: {} }).options.lldfInterior).toBe("auto");
+  });
+});
+
+describe("CDOT's rules around the rating", () => {
+  it("counts the design lanes between the curbs: 12 ft lanes, two on a 20 to 24 ft roadway (SSHB 3.6.3)", () => {
+    expect(designLanes(18)).toBe(1);
+    expect(designLanes(20)).toBe(2);
+    expect(designLanes(23.92)).toBe(2); // TELLRD, as BrR counts it
+    expect(designLanes(24)).toBe(2);
+    expect(designLanes(27.17)).toBe(2); // ARA
+    expect(designLanes(36)).toBe(3);
+    expect(designLanes(40)).toBe(3); // AUR07
+  });
+
+  it("says when shear can't be waived (BRM 1.4(M), 1.4(O))", () => {
+    const b = DT_DEFAULTS.bridge;
+    expect(shearRequired({ bridge: { ...b, yearBuilt: 1985, nbiSuper: 5 } })).toEqual([]);
+    expect(shearRequired({ bridge: { ...b, yearBuilt: 1985, nbiSuper: 4 } })[0]).toMatch(/under 5/);
+    expect(shearRequired({ bridge: { ...b, yearBuilt: 1985, nbiSuper: 6, loadInducedDistress: true } })[0]).toMatch(/shear distress/);
+    expect(shearRequired({ bridge: { ...b, yearBuilt: 2005, nbiSuper: 7 } })[0]).toMatch(/1\.4\(M\)/);
+  });
+
+  it("applies the posting rules of BRM 1.15.1", () => {
+    const list = (rf: Record<string, number>) => CDOT_VEHICLES.map((v) => ({ name: v.name, cls: v.cls, tons: tons(v), rf: rf[v.name] ?? 1.2 }));
+    const at = (r: string[], name: string) => r[CDOT_VEHICLES.findIndex((v) => v.name === name)];
+    // The 95% rule, and posting below it.
+    let r = postAll(list({ "CO Type 3": 0.96, "CO Type 3S2": 0.9 }), false);
+    expect(at(r, "CO Type 3")).toBe("Exempt (95% rule)");
+    expect(at(r, "CO Type 3S2")).toBe("Posting required");
+    // SU trucks aren't posted while the NRL rates 40 T or more.
+    r = postAll(list({ SU5: 0.9 }), false);
+    expect(at(r, "SU5")).toMatch(/Not required/);
+    r = postAll(list({ NRL: 0.9, SU5: 0.9 }), false);
+    expect(at(r, "SU5")).toBe("Posting required");
+    // SU6 at 0.94 (32.6 T) is posted; at 0.95+ exempt; SU7 at 0.93 is 36.0 T, over its 35 T limit (Colorado Bridge Formula).
+    r = postAll(list({ NRL: 0.9, "CO SU6": 0.94, "CO SU7": 0.93 }), false);
+    expect(at(r, "CO SU6")).toBe("Posting required");
+    expect(at(r, "CO SU7")).toMatch(/weight limit/);
+    // Emergency vehicles only near an Interstate.
+    expect(at(postAll(list({ EV3: 0.5 }), false), "EV3")).toMatch(/N\/A/);
+    expect(at(postAll(list({ EV3: 0.5 }), true), "EV3")).toBe("Posting required");
+    // Under 0.3, every legal load is restricted.
+    r = postAll(list({ "CO Type 3-2": 0.25 }), false);
+    expect(at(r, "CO Type 3")).toBe(RESTRICTED);
+    expect(at(r, "HS-20")).toBe("—");
   });
 });

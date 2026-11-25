@@ -2,7 +2,7 @@ import type { Line } from "@/lib/calcs/library/templates";
 import { cell, COLOR_NOTE, INPUT_COLOR, isInput, num } from "../calc-style";
 import type { Figure } from "../figures";
 import { brrInputSheet, compareBrrDf } from "./brr";
-import { CHECK_LABEL, interiorMethod, isSidewalkTruckCase, rateDoubleTee, tensionIgnored, unitDamaged, type DtInputs } from "./double-tee";
+import { CHECK_LABEL, interiorMethod, isSidewalkTruckCase, needsPosting, postTons, rateDoubleTee, roadwayWidth, tensionIgnored, unitDamaged, type DtInputs } from "./double-tee";
 import { checkStandard, DT_STANDARD_FC, DT_STANDARD_NAME, DT_STANDARD_SLAB } from "./dt-standard";
 
 const ftInText = (inches: number) => {
@@ -94,7 +94,13 @@ function methodNote(i: DtInputs, r: ReturnType<typeof rateDoubleTee>, text: (t: 
         : tension === null
           ? "The final tension limit is 6√f′c (SSHB 9.15.2.2)."
           : `The final tension limit is ${num(tension)} ksi.`
-    } ${i.options.checkShear ? "Shear is rated (SSHB 9.20)." : "Shear is not rated (BRM 1.4(O))."}`,
+    } ${
+      i.options.checkShear
+        ? "Shear is rated (SSHB 9.20)."
+        : r.shearRequired.length
+          ? `Shear is not rated, but BRM 1.4 requires it: ${r.shearRequired.join("; ")}.`
+          : `Shear is not rated: the bridge was built in ${i.bridge.yearBuilt}, before 2002, its superstructure condition is ${i.bridge.nbiSuper} (5 or more) and it shows no visible signs of shear distress, so BRM 1.4(O) allows the shear rating to be ignored with the Bridge Rating Engineer's approval.`
+    }`,
   );
   text(
     `Loads:- The dead loads are ${andList(["the self-weight", i.deck.present && "the deck", "asphalt", curbs.length > 0 && "curbs", sw.length > 0 && "sidewalks", "railings", i.loads.diaphragmKip && "diaphragms"])}. The live load on each girder uses the distribution factors calculated in section 6 (SSHB 3.23). ${
@@ -298,7 +304,7 @@ export function dtRatingCalcLines(i: DtInputs, title: string, figures?: { sectio
     if (!deck) text("Without a composite deck the units sit side by side with their flanges as the deck, joined at the shear keys: a multi-beam deck, distributed by S/D (SSHB 3.23.4.3). K measures the units' stiffness in bending against twisting.", "note");
     const sec = r.secInt;
     m(`S\\coloneq ${num(g.S, 10)}\\mathrm{ft}`, "Width of the unit (center to center)");
-    m(`N_L\\coloneq ${r.geo.NL}`, "Design lanes (SSHB 3.6)");
+    m(`N_L\\coloneq ${r.geo.NL}`, `Design lanes on the ${num(roadwayWidth(i), 2)} ft roadway between the curbs (SSHB 3.6.2, 3.6.3: 12 ft lanes, two from 20 to 24 ft)`);
     m(`W\\coloneq ${num(r.geo.roadW, 10)}\\mathrm{ft}`, "Overall width of the bridge");
     m(`K\\coloneq\\sqrt{\\frac{1.2\\cdot ${num(sec.I, 8)}\\mathrm{in}^{4}}{${num(sec.J, 8)}\\mathrm{in}^{4}}}=`, "K = √((1 + μ) I/J), μ = 0.2. J, the St. Venant torsion constant, is solved on the unit's shape (flange, tapered stems and their junctions) by finite elements, since it has no exact formula for a double tee");
     m("C\\coloneq K\\cdot\\min\\left(\\frac{W}{L},1\\right)=", "SSHB 3.23.4.3");
@@ -431,11 +437,12 @@ export function dtRatingCalcLines(i: DtInputs, title: string, figures?: { sectio
 
   // 10. Posting
   text("10. Posting (BRM 1.15.1)", "subheading");
-  const posted = r.ratings.filter((v) => v.posting === "Posting required");
+  const posted = r.ratings.filter((v) => needsPosting(v.posting));
+  const nrl = r.ratings.find((v) => v.name === "NRL");
   text(
-    `Legal and specialized hauling vehicles are posted when their operating rating factor is below 0.95. Between 0.95 and 1.0 they are not posted (the 95% rule). Emergency vehicles are posted only when the bridge is within 1 mile of an Interstate; this bridge ${i.bridge.nearInterstate ? "is" : "is not"}.`,
+    `Legal and specialized hauling vehicles are posted when their operating rating factor is below 0.95. Between 0.95 and 1.0 they are not posted (the 95% rule). None is posted at or above its weight limit (BRM Tables 1-4 to 1-6; SU6 and SU7 by the Colorado Bridge Formula, 33 and 35 T). The single-unit trucks SU4 to SU7 aren't posted when the NRL rates 40 tons or more${nrl ? `; here it rates ${num(postTons(nrl.oprTons), 1)} T` : ""}. An operating rating factor under 0.3 for any legal load restricts all legal loads. Emergency vehicles are posted only when the bridge is within 1 mile of an Interstate; this bridge ${i.bridge.nearInterstate ? "is" : "is not"}. Postings are in truncated tons.`,
   );
-  text(posted.length ? `Posting is required for: ${posted.map((v) => `${v.name}, ${num(v.oprTons, 1)} T`).join("; ")}.` : "No posting is required.");
+  text(r.restricted ? "A legal load rates under 0.3: the bridge is restricted for all legal loads." : posted.length ? `Posting is required for: ${posted.map((v) => `${v.name}, ${num(postTons(v.oprTons), 1)} T`).join("; ")}.` : "No posting is required.");
   if (figures?.summary) lines.push({ region: figures.summary });
   if (figures?.comparison) {
     // The heading and its note stay on the table's page.

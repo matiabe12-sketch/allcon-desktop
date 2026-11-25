@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import type { BrrDfRow, compareBrr } from "@/lib/design/rating/brr";
-import { CHECK_LABEL, type DtRating } from "@/lib/design/rating/double-tee";
+import { CHECK_LABEL, needsPosting, postTons, type DtRating } from "@/lib/design/rating/double-tee";
 import type { VehicleClass } from "@/lib/design/rating/vehicles";
 
 // The rating's tables as pictures for the calc package (a calc sheet's table regions hold numbers
@@ -77,7 +77,7 @@ export function RatingSummaryTable({ r, title }: { r: DtRating; title: string })
     );
     y += ROW;
     for (const v of rows) {
-      const posted = v.posting === "Posting required";
+      const posted = needsPosting(v.posting);
       body.push(
         <g key={v.name}>
           <text x={22} y={y + 10} fontSize="9.5" fill={LINE}>
@@ -110,7 +110,7 @@ export function RatingSummaryTable({ r, title }: { r: DtRating; title: string })
       y += ROW;
     }
   }
-  const posted = r.ratings.filter((v) => v.posting === "Posting required");
+  const posted = r.ratings.filter((v) => needsPosting(v.posting));
   y += 14;
   const VH = y + 12;
   return (
@@ -121,7 +121,7 @@ export function RatingSummaryTable({ r, title }: { r: DtRating; title: string })
       <Head cols={cols} y={34} sub={sub} />
       {body}
       <text x={14} y={y} fontSize="9.5" fontWeight="600" fill={posted.length ? BAD : GOOD}>
-        {posted.length ? `Posting required (BRM 1.15.1): ${posted.map((v) => `${v.name} ${v.oprTons.toFixed(1)} T`).join(", ")}` : "No posting required (BRM 1.15.1)"}
+        {r.restricted ? "A legal load rates under 0.3: restrict all legal loads (BRM 1.15.1)" : posted.length ? `Posting required (BRM 1.15.1): ${posted.map((v) => `${v.name} ${postTons(v.oprTons).toFixed(1)} T`).join(", ")}` : "No posting required (BRM 1.15.1)"}
       </text>
     </svg>
   );

@@ -937,7 +937,7 @@ function Results({ i, r, brr, setBrr, df, setDf }: { i: DtInputs; r: DtRating; b
               {cmp.c.done.length > 0 && (
                 <p className={cmp.c.outside ? "text-red-600" : "text-emerald-700"}>
                   {cmp.c.outside ? `${cmp.c.outside} outside ±${BRR_TOLERANCE * 100}%: check BrR's girder spacing, member loads, DF overrides and travelway.` : `All ${cmp.c.done.length} within ±${BRR_TOLERANCE * 100}%.`}
-                  {cmp.c.hsInv && ` HS-20 inventory in BrR ${f3(cmp.c.hsInv.brr)}${s.mode === "back-calculate" ? (cmp.c.hsInv.brr >= 1 ? " (≥ 1.0, BRM 1.7.2(A))" : " (below 1.0: add a strand and rerun)") : ""}.`}
+                  {cmp.c.hsInv && ` HS-20 inventory in BrR ${f3(cmp.c.hsInv.brr)} (${cmp.c.hsInv.girder})${s.mode === "back-calculate" && cmp.c.hsInv.brr < 1 ? ": below 1.0 from what has changed since the design (the strands meet its conditions under its loads), not a reason to add strands" : ""}.`}
                 </p>
               )}
             </>

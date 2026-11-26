@@ -292,7 +292,8 @@ export function compareBrr(r: DtRating, text: string) {
     rows.push({ vehicle: b.vehicle, unmatched: false, name: v, level, girder, ours, brr, brrTons: brr * rt.tons, diff, ok: Math.abs(diff) <= BRR_TOLERANCE });
   }
   const done = rows.filter((x): x is Extract<BrrComparisonRow, { unmatched: false }> => !x.unmatched);
-  const hsInv = done.find((x) => x.name === "HS-20" && x.level === "Inventory") ?? null;
+  // The governing (lowest) HS-20 inventory among BrR's rows.
+  const hsInv = done.filter((x) => x.name === "HS-20" && x.level === "Inventory").reduce<(typeof done)[number] | null>((a, x) => (!a || x.brr < a.brr ? x : a), null);
   return { rows, done, hsInv, outside: done.filter((x) => !x.ok).length };
 }
 
@@ -304,13 +305,20 @@ export type BrrDfRow = { key: keyof DtInputs["brrDf"]; label: string; ours: numb
  * exterior: curb to curb (with sidewalks, the pedestrian model).
  */
 export function compareBrrDf(i: DtInputs, r: DtRating): BrrDfRow[] {
-  const int = r.girders.find((g) => !g.ext && !g.name.includes("("));
-  const ext = r.girders.find((g) => g.ext && !g.name.includes("("))!;
+  // Interior: the most heavily loaded interior girder (the one that governs). Exterior: the case BrR's
+  // value stands for, curb to curb or, where it is modeled in one run, trucks on the sidewalk.
+  const ints = r.girders.filter((g) => !g.ext && !g.name.includes("("));
+  const int = ints.length ? ints.reduce((a, g) => (g.dfMulti > a.dfMulti ? g : a)) : undefined;
+  const exts = r.girders.filter((g) => g.ext && g.i === 1);
+  const extBrr = i.brrDf.extMulti ?? i.brrDf.extSingle;
+  const ext = extBrr === null || exts.length < 2 ? exts.find((g) => !g.name.includes("("))! : exts.reduce((a, g) => (Math.abs(g.dfMulti - extBrr) < Math.abs(a.dfMulti - extBrr) ? g : a));
+  const extCase = ext.name.includes("(") ? ", trucks on the sidewalk" : "";
+  const intName = int ? ` (${int.name})` : "";
   const ours: Record<keyof DtInputs["brrDf"], [string, number | undefined]> = {
-    intSingle: ["Interior, one lane", int?.dfSingle],
-    intMulti: ["Interior, two or more lanes", int?.dfMulti],
-    extSingle: ["Exterior, one lane", ext.dfSingle],
-    extMulti: ["Exterior, two or more lanes", ext.dfMulti],
+    intSingle: [`Interior${intName}, one lane`, int?.dfSingle],
+    intMulti: [`Interior${intName}, two or more lanes`, int?.dfMulti],
+    extSingle: [`Exterior${extCase}, one lane`, ext.dfSingle],
+    extMulti: [`Exterior${extCase}, two or more lanes`, ext.dfMulti],
   };
   return (Object.keys(ours) as (keyof DtInputs["brrDf"])[]).flatMap((key) => {
     const brr = i.brrDf[key];

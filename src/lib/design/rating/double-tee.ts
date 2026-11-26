@@ -224,12 +224,15 @@ function trap(h: number, b1: number, b2: number, y0: number) {
 export type DtSection = ReturnType<typeof section>;
 /**
  * A double-tee unit: its flange (width bf), two tapered stems and, if given, a triangular fillet of
- * legs f under the flange on each side of each stem (one fewer on a trimmed exterior flange).
+ * legs f under the flange on each side of each stem (one fewer on a trimmed exterior flange). With
+ * fillets, as BrR's PS tee shape: each stem tapers from its bottom width to its top width at the
+ * fillets' bottom, then runs straight at the top width through the fillets' depth to the flange.
  */
 function section(u: DtInputs["units"], bf: number, fillets = 4) {
   const hs = u.depth - u.flangeThk;
   const f = Math.max(0, Math.min(u.fillet || 0, hs));
-  const parts = [trap(u.flangeThk, bf, bf, hs), trap(hs, u.stemBot, u.stemTop, 0), trap(hs, u.stemBot, u.stemTop, 0)];
+  const stem = f > 0 ? [trap(hs - f, u.stemBot, u.stemTop, 0), trap(f, u.stemTop, u.stemTop, hs - f)] : [trap(hs, u.stemBot, u.stemTop, 0)];
+  const parts = [trap(u.flangeThk, bf, bf, hs), ...stem, ...stem];
   // Each fillet: a triangle with its legs on the flange's underside and the stem's face.
   if (f > 0) for (let k = 0; k < fillets; k++) parts.push({ A: (f * f) / 2, yc: hs - f / 3, Io: f ** 4 / 36 });
   const A = parts.reduce((s, p) => s + p.A, 0);

@@ -116,9 +116,10 @@ export function DtSectionSketch({ inputs: i, layout, cg }: { inputs: DtInputs; l
     const sR = g.x + g.ss / 2;
     const t2 = u.stemTop / 2;
     const b2 = u.stemBot / 2;
-    // A fillet under the flange each side of each stem: from f out along the flange to f down the stem.
+    // A fillet under the flange each side of each stem: from f out along the flange to f down the stem,
+    // where the stem has reached its top width (it runs straight through the fillets' depth).
     const f = Math.max(0, Math.min(u.fillet || 0, hs / 2));
-    const wf = b2 + ((t2 - b2) * (hs - f)) / hs; // the stem's half width where a fillet meets it
+    const wf = t2;
     const pts: [number, number][] = [
       [xl, u.depth],
       [xr, u.depth],

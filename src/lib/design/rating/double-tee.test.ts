@@ -538,19 +538,20 @@ describe("fillets under the flange", () => {
     near(s.I, 27420, 2e-4, "I");
     near(s.yb, 16.026, 1e-4, "yb");
   });
-  it("add four triangles of f²/2 each, f/3 under the flange", () => {
-    const a = rateDoubleTee(base).secInt;
-    const b = rateDoubleTee({ ...base, units: { ...units, fillet: 3 } }).secInt;
-    near(b.A, a.A + 18, 1e-9, "A");
-    const yc = 22 - 1; // hs − f/3
-    near(b.yb, (a.A * a.yb + 18 * yc) / b.A, 1e-9, "yb");
-    near(b.I, a.I + a.A * (a.yb - b.yb) ** 2 + 4 * (3 ** 4 / 36) + 18 * (yc - b.yb) ** 2, 1e-9, "I");
+  it("match BrR's shapes with 3 × 3 in fillets: the stem straight at its top width through them", () => {
+    // BrR (AUR07, 2026): interior 519.25 in², yb 16.168 in, I 28,061.5 in⁴; exterior (36 in between
+    // webs, 60 in flange) 447.25 in², 15.0682 in, 24,135.9 in⁴.
+    const r = rateDoubleTee({ ...base, units: { ...units, fillet: 3, layout: [60, 96, 96, 96, 96, 96, 60].map((w) => ({ flangeWidth: w, stemSpacing: w === 60 ? 36 : 48 })) } });
+    near(r.secInt.A, 519.25, 1e-9, "A int");
+    near(r.secInt.yb, 16.168, 1e-4, "yb int");
+    near(r.secInt.I, 28061.5, 1e-5, "I int");
+    near(r.secExt.A, 447.25, 1e-9, "A ext");
+    near(r.secExt.yb, 15.0682, 1e-5, "yb ext");
+    near(r.secExt.I, 24135.9, 1e-5, "I ext");
   });
   it("leave a trimmed exterior flange's outer stem without one", () => {
     const t = { ...units, fillet: 3, exteriorTrimmed: true };
     const r = rateDoubleTee({ ...base, units: t });
-    const r0 = rateDoubleTee({ ...base, units: { ...t, fillet: 0 } });
-    near(r.secExt.A - r0.secExt.A, 13.5, 1e-9, "exterior");
-    near(r.secInt.A - r0.secInt.A, 18, 1e-9, "interior");
+    near(r.secInt.A - r.secExt.A, 96 * 2 + 4.5 - (r.secExt.bf * 2), 1e-9, "one fillet fewer");
   });
 });

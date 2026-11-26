@@ -33,6 +33,7 @@ export type DtInputs = {
     stemSpacing: number; // in, center to center within a unit
     stemTop: number; // in
     stemBot: number; // in
+    fillet?: number; // in, legs of the triangular fillet (chamfer) under the flange each side of each stem; 0 for none
     exteriorTrimmed: boolean; // exterior flanges trimmed flush with the outer stem
     layout: DtUnitLayout[] | null; // per unit, when they differ
     jointGap: number; // in, between units with a layout
@@ -159,7 +160,7 @@ export const DT_DEFAULTS: DtInputs = {
   structureLength: 30.5,
   numSpans: 1,
   skew: 0,
-  units: { count: 6, spacing: 62, flangeWidth: 60, depth: 17, flangeThk: 5, stemSpacing: 36, stemTop: 8, stemBot: 6, exteriorTrimmed: false, layout: null, jointGap: 0 },
+  units: { count: 6, spacing: 62, flangeWidth: 60, depth: 17, flangeThk: 5, stemSpacing: 36, stemTop: 8, stemBot: 6, fillet: 0, exteriorTrimmed: false, layout: null, jointGap: 0 },
   deck: { present: false, thk: 6, fc: 4.5, pcf: 150 },
   roadway: { railToRail: 30, railFaceOffset: 3, curbToCurb: 0, curbFaceOffset: 0 },
   loads: { asphalt: 3, asphaltPcf: 146.667, concPcf: 163, sidewalks: [], pedWidth: 0, sidewalkMountable: true, pedestrians: true, railKlf: 0.02, railComponents: [], utilities: [], diaphragmKip: 0 },
@@ -221,10 +222,16 @@ function trap(h: number, b1: number, b2: number, y0: number) {
   return { A, yc, Io };
 }
 export type DtSection = ReturnType<typeof section>;
-/** A double-tee unit: its flange (width bf) and two tapered stems. */
-function section(u: DtInputs["units"], bf: number) {
+/**
+ * A double-tee unit: its flange (width bf), two tapered stems and, if given, a triangular fillet of
+ * legs f under the flange on each side of each stem (one fewer on a trimmed exterior flange).
+ */
+function section(u: DtInputs["units"], bf: number, fillets = 4) {
   const hs = u.depth - u.flangeThk;
+  const f = Math.max(0, Math.min(u.fillet || 0, hs));
   const parts = [trap(u.flangeThk, bf, bf, hs), trap(hs, u.stemBot, u.stemTop, 0), trap(hs, u.stemBot, u.stemTop, 0)];
+  // Each fillet: a triangle with its legs on the flange's underside and the stem's face.
+  if (f > 0) for (let k = 0; k < fillets; k++) parts.push({ A: (f * f) / 2, yc: hs - f / 3, Io: f ** 4 / 36 });
   const A = parts.reduce((s, p) => s + p.A, 0);
   const yb = parts.reduce((s, p) => s + p.A * p.yc, 0) / A;
   const I = parts.reduce((s, p) => s + p.Io + p.A * (p.yc - yb) ** 2, 0);
@@ -237,7 +244,7 @@ function section(u: DtInputs["units"], bf: number) {
     I,
     Sb: I / yb,
     St: I / (u.depth - yb),
-    /** St. Venant torsion constant, solved on the unit's shape (torsion.ts); worked out when first asked for. */
+    /** St. Venant torsion constant, solved on the unit's shape without fillets (torsion.ts); worked out when first asked for. */
     get J() {
       return unitJ({ bf, depth: u.depth, flangeThk: u.flangeThk, stemSpacing: u.stemSpacing, stemTop: u.stemTop, stemBot: u.stemBot });
     },
@@ -378,7 +385,7 @@ function buildGirders(i: DtInputs) {
   const S_in = u.layout ? (spacingAt(iTyp - 1 < 0 ? 0 : iTyp - 1) + spacingAt(iTyp)) / 2 : u.spacing;
   const S_ft = S_in / 12;
   const secInt = section(u, geo[iTyp].bf);
-  const secExt = section(u, geo[0].bf);
+  const secExt = section(u, geo[0].bf, u.exteriorTrimmed && !u.layout ? 3 : 4);
   const impact = Math.min(0.3, 50 / (L + 125)); // SSHB 3.8.2.1
 
   // Composite section: the deck transformed to the girder's concrete.
@@ -544,7 +551,7 @@ function buildGirders(i: DtInputs) {
   const unitDL = (gi: number, withOverlay: boolean) => {
     const k = gi - 1;
     const ext = gi === 1 || gi === nU;
-    const sec = section(u, geo[k].bf);
+    const sec = section(u, geo[k].bf, ext && u.exteriorTrimmed && !u.layout ? 3 : 4);
     const self = (sec.A / 144) * (ld.concPcf / 1000);
     const diaph = ld.diaphragmKip;
     if (!deck) {
@@ -599,7 +606,7 @@ function buildGirders(i: DtInputs) {
   for (let gi = 1; gi <= nU; gi++) {
     const k = gi - 1;
     const ext = gi === 1 || gi === nU;
-    const sec = section(u, geo[k].bf);
+    const sec = section(u, geo[k].bf, ext && u.exteriorTrimmed && !u.layout ? 3 : 4);
     const dfI = ext ? null : dfInterior(k);
     const extDF = ext ? { multi: lever(NL > 1, curbFace, k).DF, single: lever(false, curbFace, k).DF } : null;
     const multiD = ov ? (ext ? ov.extMulti : ov.intMulti) : ext ? extDF!.multi : dfI!.multi;
@@ -1360,6 +1367,7 @@ export function dtInputsFromBridgeFile(b: Record<string, any>): DtInputs {
       stemSpacing: u.stem_spacing_in,
       stemTop: u.stem_top_in,
       stemBot: u.stem_bot_in,
+      fillet: u.fillet_in ?? 0,
       exteriorTrimmed: !!u.exterior_trimmed_flush,
       layout: Array.isArray(u.layout) ? u.layout.map((x: Record<string, number>) => ({ flangeWidth: x.flange_width_in, stemSpacing: x.stem_spacing_in })) : null,
       jointGap: u.joint_gap_in ?? 0,

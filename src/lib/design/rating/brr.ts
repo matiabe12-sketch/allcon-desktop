@@ -61,7 +61,7 @@ export function brrInputSheet(i: DtInputs, r: DtRating): BrrGroup[] {
         ["Girder concrete: density for dead load / for E", `${f(ld.concPcf / 1000, 3)} / 0.145 kcf`, ld.concPcf === 163 ? "Dead load: reinforced precast concrete, BRM Table 1-1" : "Dead load as entered (BRM Table 1-1 gives 163 pcf for precast)"],
         ...(deck ? [["Deck concrete: f′c / density", `${f(deck.fc)} ksi / ${f(deck.pcf / 1000, 3)} kcf`, `Ec ≈ ${f(Ec(deck.fc), 0)} ksi; n ≈ ${f(r.nDeck, 3)}`] as BrrRow] : []),
         ["Prestressing strand", m.strand, `f′s = ${f(m.fpu)} ksi, A = ${f(m.aps, 4)} in², ${m.lowRelaxation ? "low relaxation" : "stress-relieved"}`],
-        ["Reinforcing steel", "Grade 60", "No mild steel modeled in the girder"],
+        ["Reinforcing steel", i.bridge.yearBuilt < 1954 ? "33 ksi" : "Grade 40", `No mild steel modeled in the girder; unknown bars ${i.bridge.yearBuilt < 1954 ? "before" : "after"} 1954, MBE Table 6A.5.2.2-1`],
       ],
     },
     {
@@ -70,6 +70,7 @@ export function brrInputSheet(i: DtInputs, r: DtRating): BrrGroup[] {
         ["Depth (all shapes)", `${f(u.depth)} in`, "Precast only"],
         ["Flange thickness", `${f(u.flangeThk)} in`, ""],
         ["Top / bottom web thickness", `${f(u.stemTop)} / ${f(u.stemBot)} in`, ""],
+        ["Fillet, horizontal / vertical", u.fillet ? `${f(u.fillet)} / ${f(u.fillet)} in` : "0 / 0 in", u.fillet ? "Under the flange, each side of each web" : "No fillets"],
         ...shapes.flatMap((sh, j): BrrRow[] => {
           const trimmed = !u.layout && u.exteriorTrimmed && (sh.girders.includes("G1") || sh.girders.includes(`G${u.count}`));
           const left = trimmed ? G.extOverhangOut : (sh.bf - sh.ss) / 2;
@@ -144,7 +145,7 @@ export function brrInputSheet(i: DtInputs, r: DtRating): BrrGroup[] {
         ["Beam details", "Force and eccentricity only", harp ? `Harped at ${f(harp.at * 10, 1)}/10 span (standard plans)` : "Straight strands"],
         ["Force (jacking), all girders", `${f(s.Pj, 1)} kip`, `${f(s.nStrands, 2)} strands × ${f(m.aps, 4)} in² × ${f(s.fpj, 1)} ksi`],
         ["Strand CG at midspan / left / right", harp ? `${f(harp.mid, 2)} / ${f(harp.end, 2)} / ${f(harp.end, 2)} in` : `${f(s.cg, 2)} / ${f(s.cg, 2)} / ${f(s.cg, 2)} in`, "From the bottom"],
-        ["Overhang left / right", `${f(ovh, 1)} / ${f(ovh, 1)} in`, `Structure length ${ftin(i.structureLength)}`],
+        ["Overhang left / right", `${f(ovh, 1)} / ${f(ovh, 1)} in`, `Girder length ${ftin(i.structureLength)}`],
         ["LFD shear computation", i.options.checkShear ? "Compute (SSHB 9.20)" : "Ignore", i.options.checkShear ? "" : "BRM 1.4(O)"],
         ...(dfInt ? ([[`LFD DF, interior`, `Single ${f(dfInt.dfSingle, 3)}; multi ${f(dfInt.dfMulti, 3)}`, r.condition.alone ? "As inspected, joints failed: enter as an override" : r.df.int.method === "sd" ? "SSHB 3.23.4.3, multi-beam S/D" : "SSHB Table 3.23.1"]] as BrrRow[]) : []),
         [`LFD DF, exterior (G1, G${u.count})${mountable ? ", model 1" : ""}`, `Single ${f(dfExt.dfSingle, 3)}; multi ${f(dfExt.dfMulti, 3)}`, r.condition.alone ? "As inspected, joints failed: enter as an override" : "Lever rule"],
@@ -175,7 +176,9 @@ export function brrInputSheet(i: DtInputs, r: DtRating): BrrGroup[] {
           : i.prestress.mode === "back-calculate" && r.original.devCompare && r.original.devCompare.withOriginal - r.original.devCompare.rated > 5e-4
             ? `Below the design's ${f(r.original.devCompare.withOriginal, 3)}: the 1.6 development multiplier (SSHB 9.28.1, 17th Edition errata) the design didn't have`
             : i.prestress.mode === "back-calculate"
-              ? "Should be at least 1.00; if lower, add a strand and rerun"
+              ? hsGov.govInv.inv.inv < 1
+                ? `Below 1.00 from what has changed since the design (such as an overlay left out of the solve); the strands meet the design's conditions under its loads (${f(r.solve.govRF, 3)} while solving). Don't add strands`
+                : "The strands meet the design's conditions; BrR should agree within 5%"
               : ""],
         ["Expected legal operating ratings", legal.map((x) => `${x.name} ${f(x.oprTons, 1)} T`).join(" / "), "BrR should agree within 5%"],
         ["Finally", "Compare the BrR ratings and distribution factors with these calculations", "They should agree within 5%"],

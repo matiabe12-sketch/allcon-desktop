@@ -37,6 +37,7 @@ export const INPUT_LABEL: Record<string, string> = {
   "units.flangeThk": "Flange thickness",
   "units.stemTop": "Stem width, top",
   "units.stemBot": "Stem width, bottom",
+  "units.fillet": "Fillet under the flange (each side of each stem)",
   "deck.present": "Deck or topping (whether there is one)",
   "deck.thk": "Deck thickness",
   "deck.fc": "Deck f′c",
@@ -89,7 +90,7 @@ export function requiredKeys(i: DtInputs): string[] {
 }
 
 /** Those needed for the section drawing (the units and the width). */
-export const GEOMETRY_KEYS = new Set(["units.count", "units.spacing", "units.flangeWidth", "units.stemSpacing", "units.layout", "units.layoutStems", "units.depth", "units.flangeThk", "units.stemTop", "units.stemBot", "deck.present", "deck.thk", "roadway.railToRail"]);
+export const GEOMETRY_KEYS = new Set(["units.count", "units.spacing", "units.flangeWidth", "units.stemSpacing", "units.layout", "units.layoutStems", "units.depth", "units.flangeThk", "units.stemTop", "units.stemBot", "units.fillet", "deck.present", "deck.thk", "roadway.railToRail"]);
 
 /** What the rating still needs, in the order of the form. */
 export const missingInputs = (i: DtInputs) => requiredKeys(i).filter((k) => !i.sources[k]);

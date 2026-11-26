@@ -526,3 +526,31 @@ it("flags a design tension the stems can't meet, keeping the strands strength an
   const r = rateDoubleTee({ ...DT_DEFAULTS, loads: { ...DT_DEFAULTS.loads, asphalt: 0 } });
   expect(r.solve.serviceMet).toBe(false);
 });
+
+describe("fillets under the flange", () => {
+  // AUR07's interior unit as BrR models it: 96 in flange 2 in thick, 24 in deep, stems 8 in at the top and
+  // 5.75 in at the bottom; without fillets BrR gives A = 494.5 in², I = 27,420 in⁴, yb = 16.03 in.
+  const units = { ...DT_DEFAULTS.units, count: 7, spacing: 96, flangeWidth: 96, depth: 24, flangeThk: 2, stemSpacing: 48, stemTop: 8, stemBot: 5.75 };
+  const base: DtInputs = { ...DT_DEFAULTS, span: 32.75, structureLength: 33.25, units };
+  it("match BrR's shape without them", () => {
+    const s = rateDoubleTee(base).secInt;
+    near(s.A, 494.5, 1e-9, "A");
+    near(s.I, 27420, 2e-4, "I");
+    near(s.yb, 16.026, 1e-4, "yb");
+  });
+  it("add four triangles of f²/2 each, f/3 under the flange", () => {
+    const a = rateDoubleTee(base).secInt;
+    const b = rateDoubleTee({ ...base, units: { ...units, fillet: 3 } }).secInt;
+    near(b.A, a.A + 18, 1e-9, "A");
+    const yc = 22 - 1; // hs − f/3
+    near(b.yb, (a.A * a.yb + 18 * yc) / b.A, 1e-9, "yb");
+    near(b.I, a.I + a.A * (a.yb - b.yb) ** 2 + 4 * (3 ** 4 / 36) + 18 * (yc - b.yb) ** 2, 1e-9, "I");
+  });
+  it("leave a trimmed exterior flange's outer stem without one", () => {
+    const t = { ...units, fillet: 3, exteriorTrimmed: true };
+    const r = rateDoubleTee({ ...base, units: t });
+    const r0 = rateDoubleTee({ ...base, units: { ...t, fillet: 0 } });
+    near(r.secExt.A - r0.secExt.A, 13.5, 1e-9, "exterior");
+    near(r.secInt.A - r0.secInt.A, 18, 1e-9, "interior");
+  });
+});

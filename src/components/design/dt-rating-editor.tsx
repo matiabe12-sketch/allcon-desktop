@@ -239,6 +239,7 @@ export function DtRatingEditor({ design, projects }: { design: { id: string; nam
               <SrcField i={i} path="units.flangeThk" label="Flange thickness" unit="in" step={0.25} onSet={setP} onConfirm={confirmP} />
               <SrcField i={i} path="units.stemTop" label="Stem width, top" unit="in" step={0.25} onSet={setP} onConfirm={confirmP} />
               <SrcField i={i} path="units.stemBot" label="Stem width, bottom" unit="in" step={0.25} onSet={setP} onConfirm={confirmP} />
+              <SrcField i={i} path="units.fillet" label="Fillet under the flange" unit="in" step={0.25} onSet={setP} onConfirm={confirmP} hint="Each leg, each side of each stem; 0 for none" />
             </Section>
             <Section title="Deck or topping" open>
               <SrcYesNo i={i} path="deck.present" label="Composite CIP deck or topping" onSet={setP} onConfirm={confirmP} />

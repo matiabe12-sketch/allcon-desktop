@@ -131,15 +131,15 @@ export function brmMaterials(year: number): { path: string; value: unknown; sour
   if (!(y > 1900)) return out;
   const brm = (note: string): DtSource => ({ kind: "brm", note });
   if (y >= 1950 && y < 1980) {
-    const s = brm(`Built ${y}: before 1980, 1/2" 250 ksi stress-relieved strand, 0.144 in² (BRM unknown-material table; confirm)`);
+    const s = brm(`Built ${y}: before 1980, 1/2" 250 ksi stress-relieved strand, 0.144 in² (MBE Table 6A.5.2.3-1: 250 ksi from 1963; stress-relieved before Dec. 1983, BRM 9A-1 I.F)`);
     out.push({ path: "materials.strand", value: '1/2" 250 ksi stress-relieved', source: s }, { path: "materials.fpu", value: 250, source: s }, { path: "materials.aps", value: 0.144, source: s }, { path: "materials.lowRelaxation", value: false, source: s });
   } else if (y >= 1980 && y < 1990) {
-    const s = brm(`Built ${y}: 1980s, 1/2" 270 ksi stress-relieved strand, 0.153 in² (BRM unknown-material table; confirm)`);
+    const s = brm(`Built ${y}: 1980s, 1/2" 270 ksi stress-relieved strand, 0.153 in² (assumed; MBE Table 6A.5.2.3-1 gives 250 ksi from 1963; stress-relieved before Dec. 1983, BRM 9A-1 I.F; confirm)`);
     out.push({ path: "materials.strand", value: '1/2" 270 ksi stress-relieved', source: s }, { path: "materials.fpu", value: 270, source: s }, { path: "materials.aps", value: 0.153, source: s }, { path: "materials.lowRelaxation", value: false, source: s });
   }
-  if (y >= 1960 && y <= 1976) out.push({ path: "deck.fc", value: 3, source: brm(`Built ${y}: 3.0 ksi for 1960–1976 construction (BRM unknown-concrete table; confirm)`) });
-  else if (y >= 1982) out.push({ path: "deck.fc", value: 4.5, source: brm(`Built ${y}: 4.5 ksi for post-1981 construction (BRM unknown-concrete table; confirm)`) });
-  if (y >= 1950) out.push({ path: "materials.fc", value: 6, source: { kind: "assumed", note: "Precast girder concrete 6 ksi, as CDOT's double-tee ratings assume (no BRM table for precast; confirm)" } });
+  if (y >= 1960 && y <= 1976) out.push({ path: "deck.fc", value: 3, source: brm(`Built ${y}: 3.0 ksi for 1960–1976 construction (BRM Table 1-3, structural concrete)`) });
+  else if (y >= 1982) out.push({ path: "deck.fc", value: 4.5, source: brm(`Built ${y}: 4.5 ksi for post-1981 construction (BRM Table 1-3, structural concrete)`) });
+  if (y >= 1950) out.push({ path: "materials.fc", value: 6, source: { kind: "assumed", note: "Precast girder concrete 6 ksi, as CDOT's double-tee standard (CDOH, rev. 3-1-82); MBE Table 6B.5.2.4-1 default 3.75 ksi gives higher ratings here" } });
   return out;
 }
 

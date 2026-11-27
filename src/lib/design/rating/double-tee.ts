@@ -335,9 +335,18 @@ export function strainCompat(As: number, sec: { bf: number; bw: number; A: numbe
 
 /** The strand centroid above the bottom for an area As, rows filled from the bottom (the assumption for a girder without plans). */
 export function strandCG(As: number, m: DtInputs["materials"]) {
-  const n = As / m.aps;
-  const rows = Math.max(1, n / 2 / m.strandsPerRowPerStem);
-  return m.firstRow + (m.rowSpacing * (rows - 1)) / 2;
+  // Each stem's strands fill the rows from the bottom, so a top row may be part full: 7 strands at
+  // 2 per row sit 2/2/2/1 (centroid 32/7 in at rows 2, 4, 6, 8 in). A fractional count (while solving)
+  // fills the top row in proportion, so the centroid stays continuous in the steel area.
+  const perStem = As / m.aps / 2;
+  const r = m.strandsPerRowPerStem;
+  if (!(perStem > 0) || !(r > 0)) return m.firstRow;
+  const full = Math.floor(perStem / r + 1e-9);
+  const rest = Math.max(0, perStem - full * r);
+  let moment = 0;
+  for (let k = 0; k < full; k++) moment += r * (m.firstRow + k * m.rowSpacing);
+  moment += rest * (m.firstRow + full * m.rowSpacing);
+  return moment / perStem;
 }
 
 // --- the rating ------------------------------------------------------------------------------------

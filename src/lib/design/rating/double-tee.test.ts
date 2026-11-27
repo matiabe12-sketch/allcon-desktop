@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { dtRatingInputs } from "../kinds";
 import fixtures from "./cdot-bridges.json";
-import { DT_DEFAULTS, NO_UNIT_CONDITION, RESTRICTED, codeTension, designLanes, designTruck, strainCompat, strandStress, itemizedLosses, legalLanes, multiBeamEra, originalDesign, postAll, shearRequired, dtInputsFromBridgeFile, interiorMethod, isSidewalkTruckCase, rateDoubleTee, type DtInputs, type DtRating, type DtUnitCondition } from "./double-tee";
+import { DT_DEFAULTS, NO_UNIT_CONDITION, RESTRICTED, codeTension, designLanes, designTruck, strainCompat, strandStress, strandCG, itemizedLosses, legalLanes, multiBeamEra, originalDesign, postAll, shearRequired, dtInputsFromBridgeFile, interiorMethod, isSidewalkTruckCase, rateDoubleTee, type DtInputs, type DtRating, type DtUnitCondition } from "./double-tee";
 import { dtRatingCalcLines } from "./double-tee-calc";
 import { CDOT_VEHICLES, laneAt, tons, trainAt, trainMax } from "./vehicles";
 
@@ -107,6 +107,9 @@ describe.each(fixtures as unknown as { name: string; bridge: Record<string, unkn
   const hand: DtInputs = { ...base, options: { ...base.options, solveAt: "midspan", poi: "tenth-and-max" } };
   const r = rateDoubleTee(hand);
   const e = f.expected;
+  // The scripts smooth the strand centroid over the rows; ALLCON places the strands in their rows, a top
+  // row part full (7 per stem at 2 per row: 2/2/2/1). Capacities differ by up to about 0.5%.
+  const capTol = 5e-3;
 
   it("back-calculates the same strands and BrR force (midspan, as the scripts)", () => {
     near(r.solve.nStrands, e.nStrands, 1e-9, "strands");
@@ -119,7 +122,7 @@ describe.each(fixtures as unknown as { name: string; bridge: Record<string, unkn
       expect(r.solve.govRF).toBeGreaterThanOrEqual(1);
     } else {
       expect(r.solve.gov).toBe(gname(e.gov));
-      near(r.solve.govRF, e.govRF, 1e-9, "governing RF");
+      near(r.solve.govRF, e.govRF, capTol, "governing RF");
     }
     expect(r.solve.crackGoverns).toBe(e.crackGoverns);
     near(r.M_HS20, e.M_HS20, 1e-9, "HS-20 moment");
@@ -131,7 +134,7 @@ describe.each(fixtures as unknown as { name: string; bridge: Record<string, unkn
       near(ours.dfSingle, g.dfSingle, 1e-12, `${g.name} DF single`);
       const mid = r.midspan[0].per.find((x) => x.g === ours.name)!;
       near(mid.D, g.Mnow, 1e-12, `${g.name} dead load`);
-      near(mid.C, g.Mn, 1e-12, `${g.name} Mn`);
+      near(mid.C, g.Mn, capTol, `${g.name} Mn`);
     }
   });
   it("rates every vehicle and girder the same at midspan", () => {
@@ -140,8 +143,8 @@ describe.each(fixtures as unknown as { name: string; bridge: Record<string, unkn
       near(ours.Mw, ev.Mw, 1e-12, `${ev.name} moment`);
       for (const p of ev.per) {
         const o = ours.per.find((x) => x.g === gname(p.g))!;
-        near(o.inv, p.inv, 1e-9, `${ev.name} ${p.g} inv`);
-        near(o.opr, p.opr, 1e-9, `${ev.name} ${p.g} opr`);
+        near(o.inv, p.inv, capTol, `${ev.name} ${p.g} inv`);
+        near(o.opr, p.opr, capTol, `${ev.name} ${p.g} opr`);
       }
       expect(ours.gov.g).toBe(gname(ev.gov));
     }
@@ -553,5 +556,14 @@ describe("fillets under the flange", () => {
     const t = { ...units, fillet: 3, exteriorTrimmed: true };
     const r = rateDoubleTee({ ...base, units: t });
     near(r.secInt.A - r.secExt.A, 96 * 2 + 4.5 - (r.secExt.bf * 2), 1e-9, "one fillet fewer");
+  });
+});
+
+describe("strand centroid", () => {
+  it("fills each stem's rows from the bottom, a top row part full", () => {
+    const m = { ...DT_DEFAULTS.materials, aps: 0.144, strandsPerRowPerStem: 2, firstRow: 2, rowSpacing: 2 };
+    near(strandCG(14 * 0.144, m), 32 / 7, 1e-12, "14 strands, 2/2/2/1 per stem");
+    near(strandCG(13 * 0.144, m), 28 / 6.5, 1e-12, "13 strands");
+    near(strandCG(12 * 0.144, m), 4, 1e-12, "12 strands, three full rows");
   });
 });

@@ -126,10 +126,18 @@ function methodNote(i: DtInputs, r: ReturnType<typeof rateDoubleTee>, text: (t: 
   );
   if (back)
     text(
-      `No plans:- There are no design plans or shop drawings for this bridge. The geometry (${andList(["span", "number and spacing of units", "flange and stem dimensions", i.deck.present && "deck", "asphalt", curbs.length > 0 && "curbs", sw.length > 0 && "sidewalks", "railings", "diaphragms"])}) comes from ${records.length ? records.join(" and ") : "the field records"}. The material properties are those the BRM gives for a bridge built in ${i.bridge.yearBuilt}. Because the prestress is not known, it is back-calculated per BRM 1.7.2(A): it is set so that every girder's ${designVehicleName(r.original.vehicle)} inventory rating factor for strength flexure is at least 1.0${i.options.roundStrands ? ", then rounded up to whole strands" : ""}, ${i.options.solveWithOverlay ? "under the dead loads used in the rating, the asphalt included as original to the bridge" : "under the dead load of the original design, without the asphalt: an overlay added later is rated, not designed for, so it lowers the ratings"}. This assumes the girders were designed for HS-20.${
+      `No plans:- There are no design plans or shop drawings for this bridge. The geometry (${andList(["span", "number and spacing of units", "flange and stem dimensions", i.deck.present && "deck", "asphalt", curbs.length > 0 && "curbs", sw.length > 0 && "sidewalks", "railings", "diaphragms"])}) comes from ${records.length ? records.join(" and ") : "the field records"}. The material properties are those the BRM gives for a bridge built in ${i.bridge.yearBuilt}. Because the prestress is not known, it is back-calculated per BRM 1.7.2(A): it is set so that every girder's ${designVehicleName(r.original.vehicle)} inventory rating factor for strength flexure is at least 1.0${i.options.roundStrands ? ", then rounded up to whole strands" : ""}, ${i.options.solveWithOverlay ? "under the dead loads used in the rating, the asphalt included as original to the bridge" : "under the dead load of the original design, without the asphalt: an overlay added later is rated, not designed for, so it lowers the ratings"}.`,
+    );
+  if (back) {
+    text(
+      `It is assumed the girders were designed for HS-20.${
         sw.length && i.loads.sidewalkMountable ? " The prestress is set with trucks between the curbs, the cases the original design would have used; trucks on the mountable sidewalk are then rated with that prestress, not used to set it." : ""
       } The service checks then use this prestress. Section 7 works out the back-calculation.`,
     );
+    text(
+      "Basis:- BRM 1.7.2(A) is written for on-system bridges. BRM 1.9 applies the same rating procedures to off-system bridges, and step 6 of 1.7.2(A) rates the back-calculated steel in BrR, as done here. The assigned rating of BRM 1.7.2(B) would omit the single-unit and emergency vehicles, which this rating includes.",
+    );
+  }
   if (back) text(originalNote(i, r));
   const harp = i.prestress.mode === "known" ? i.prestress.harp : null;
   const std = harp ? checkStandard(i) : null;
@@ -153,20 +161,24 @@ function methodNote(i: DtInputs, r: ReturnType<typeof rateDoubleTee>, text: (t: 
         ? "Shear is rated (SSHB 9.20)."
         : r.shearRequired.length
           ? `Shear is not rated, but BRM 1.4 requires it: ${r.shearRequired.join("; ")}.`
-          : `Shear is not rated: the bridge was built in ${i.bridge.yearBuilt}, before 2002, its superstructure condition is ${i.bridge.nbiSuper} (5 or more) and it shows no visible signs of shear distress, so BRM 1.4(O) allows the shear rating to be ignored with the Bridge Rating Engineer's approval.`
+          : `Shear is not rated: the bridge was built in ${i.bridge.yearBuilt}, before 2002, its superstructure condition is ${i.bridge.nbiSuper} (5 or more) and it shows no visible signs of shear distress, so BRM 1.4(O) allows the shear rating to be ignored with the Bridge Rating Engineer's approval. The inspection findings at the girder ends are listed under the items for review for that decision; without visible shear distress, a field load test for shear is not required either (BRM 1.7, note 3).`
     }`,
   );
   text(
     `Loads:- The dead loads are ${andList(["the self-weight", i.deck.present && "the deck", "asphalt", curbs.length > 0 && "curbs", sw.length > 0 && "sidewalks", "railings", i.loads.diaphragmKip && "diaphragms"])}. The live load on each girder uses the distribution factors calculated in section 6 (SSHB 3.23). ${
       sw.length
         ? i.loads.sidewalkMountable
-          ? `Because the sidewalk is mountable, two cases are rated and the lower rating governs (BRM 1.4(T)): trucks between the curbs${i.loads.pedestrians ? ", with pedestrian load on the sidewalk (SSHB 3.14.1.1)" : ""}; and trucks on the sidewalk, without pedestrians.`
+          ? `Because the sidewalk is mountable, two cases are rated and the lower rating governs (BRM 1.4(T)): trucks between the curbs${i.loads.pedestrians ? ", with pedestrian load on the sidewalk (SSHB 3.14.1.1)" : ""}; and trucks on the sidewalk, without pedestrians.${i.loads.pedestrians ? " The other case of BRM 1.4(T), full pedestrian load without vehicles, is covered by the first: for the girders, vehicles and pedestrians together load them more than pedestrians alone." : ""}`
           : `Trucks stay between the curbs${i.loads.pedestrians ? ", with pedestrian load on the sidewalk (SSHB 3.14.1.1)" : ""}.`
         : curbs.length
           ? "There is no sidewalk. The curbs carry no pedestrians and can't be mounted, so trucks stay between the curb faces."
           : "There is no sidewalk."
     }`,
   );
+  if (back && i.deck.present)
+    text(
+      "Deck:- The deck, the precast flange with its cast-in-place topping, is not rated by calculation: with no plans its reinforcement is unknown. It is rated by field inspection under BRM 1.7.2(B), as a concrete deck without plans in condition 5 or better with no distress due to load: 36 T inventory and 40 T operating for the design vehicle. MBE 6.1.5.1 likewise holds that stringer-supported concrete decks carrying normal traffic satisfactorily need not be routinely evaluated for load capacity. The deck's condition is given under the items for review.",
+    );
   const cond = i.condition;
   if (r.condition.active) {
     const dmg = cond.units.filter(unitDamaged);
@@ -207,10 +219,22 @@ export function dtRatingCalcLines(i: DtInputs, title: string, figures?: { sectio
   const x = hsFlex.flexInv.x;
   const L = i.span;
   const sw = i.loads.sidewalks.filter((s) => !s.curb); // walkways, not curbs
+  // Two other runs for the back-calculation's notes: the MBE's default girder concrete, and the asphalt in the solve.
+  const hsInvOf = (q: ReturnType<typeof rateDoubleTee>) => q.ratings.find((v) => v.cls === "design")!.govInv.inv.inv;
+  const tryRate = (j: DtInputs) => {
+    try {
+      return rateDoubleTee(j);
+    } catch {
+      return null;
+    }
+  };
+  const mbeFc = 3.75; // MBE Table 6B.5.2.4-1: 3.0 ksi for 1959 and later, increased 25% for prestressed concrete
+  const altFc = back && i.bridge.yearBuilt >= 1959 && Math.abs(mt.fc - mbeFc) > 1e-9 ? tryRate({ ...i, materials: { ...mt, fc: mbeFc, fci: Math.min(mt.fci, 0.8 * mbeFc) } }) : null;
+  const altAsphalt = back && !i.options.solveWithOverlay && i.loads.asphalt > 0 ? tryRate({ ...i, options: { ...i.options, solveWithOverlay: true } }) : null;
 
   text(title.toUpperCase(), "heading");
   text(
-    `Load rating of ${i.bridge.id || "the bridge"}${i.bridge.facility ? `, ${i.bridge.facility}` : ""}${i.bridge.feature ? ` over ${i.bridge.feature}` : ""}. The superstructure is ${i.numSpans > 1 ? `${i.numSpans} simple spans` : "a simple span"} of ${num(L, 3)} ft, made of ${i.units.count} adjacent precast prestressed double-tee units${deck ? ` with a ${num(deck.thk)} in composite deck` : ""}${i.skew ? `, on a ${num(i.skew)}° skew` : ""}. Every girder is rated at ${r.pois.length - 2} points along the span.`,
+    `Load rating of ${i.bridge.id || "the bridge"}${i.bridge.facility ? `, ${i.bridge.facility}` : ""}${i.bridge.feature ? ` over ${i.bridge.feature}` : ""}. The superstructure is ${i.numSpans > 1 ? `${i.numSpans} simple spans` : "a simple span"} of ${num(L, 3)} ft, made of ${i.units.count} adjacent precast prestressed double-tee units${deck ? ` with a ${num(deck.thk)}" composite deck` : ""}${i.skew ? `, on a ${num(i.skew)}° skew` : ""}. Every girder is rated at ${r.pois.length - 2} points along the span.`,
   );
   methodNote(i, r, text);
   // The worked girder and why: every girder's HS-20 ratings, identical girders on one line.
@@ -237,12 +261,17 @@ export function dtRatingCalcLines(i: DtInputs, title: string, figures?: { sectio
   // The calculations start a page.
   text("1. Materials", "subheading", true);
   m(`f'_{c}\\coloneq ${num(mt.fc)}\\mathrm{ksi}`, "Girder concrete");
+  if (altFc)
+    text(
+      `Girder concrete:- No plans give it. ${mt.fc === 6 ? "6 ksi is the strength of CDOT's double-tee standard (CDOH, rev. 3-1-82)." : `${num(mt.fc)} ksi is assumed.`} The MBE default for unknown prestressed concrete is ${num(mbeFc)} ksi (Table 6B.5.2.4-1: 3.0 ksi for 1959 and later, increased 25%); with it the HS-20 inventory rating would be ${num(hsInvOf(altFc), 3)}, against ${num(hs.govInv.inv.inv, 3)} here${hsInvOf(altFc) > hs.govInv.inv.inv ? `, so ${num(mt.fc)} ksi is the conservative choice` : ""}.`,
+      "note",
+    );
   m("E_c\\coloneq33000\\cdot0.145^{1.5}\\cdot\\sqrt{\\frac{f'_{c}}{\\mathrm{ksi}}}\\cdot\\mathrm{ksi}=", "Girder modulus, with 145 pcf (SSHB 8.7.1)", "ksi");
   if (deck) {
     m(`f'_{cd}\\coloneq ${num(deck.fc)}\\mathrm{ksi}`, "Deck concrete");
     m("n_d\\coloneq\\sqrt{\\frac{f'_{cd}}{f'_{c}}}=", "Modular ratio of the deck to the girder");
   }
-  m(`f'_{s}\\coloneq ${num(mt.fpu)}\\mathrm{ksi}`, mt.strand);
+  m(`f'_{s}\\coloneq ${num(mt.fpu)}\\mathrm{ksi}`, back && !mt.lowRelaxation ? `${mt.strand}: tensile strength by year built (MBE Table 6A.5.2.3-1); stress-relieved before December 1983 (BRM 9A-1 I.F)` : mt.strand);
   m(`a_{ps}\\coloneq ${num(mt.aps)}\\mathrm{in}^{2}`, "Area of one strand");
   m(`R_j\\coloneq ${num(mt.jackingRatio)}`, "Jacking stress ratio");
   m("f_{pj}\\coloneq R_j\\cdot f'_{s}=", "Jacking stress", "ksi");
@@ -292,7 +321,7 @@ export function dtRatingCalcLines(i: DtInputs, title: string, figures?: { sectio
     const cgx = rr >= 1 ? hp.mid : hp.end + (hp.mid - hp.end) * rr;
     m(`y_{ps}\\coloneq ${num(cgx, 9)}\\mathrm{in}`, `Strand centroid above the bottom at x = ${num(x, 2)} ft: harped from ${num(hp.end)} in at the ends to ${num(hp.mid)} in from 0.4 span (standard plans, Dwg. B-7)`);
   } else {
-    m(`y_{ps}\\coloneq ${num(s.cg, 9)}\\mathrm{in}`, `Strand centroid above the bottom (assumed): rows of ${mt.strandsPerRowPerStem * 2} strands, the first at ${num(mt.firstRow)} in, then every ${num(mt.rowSpacing)} in`);
+    m(`y_{ps}\\coloneq ${num(s.cg, 9)}\\mathrm{in}`, `Strand centroid above the bottom (assumed): rows of ${mt.strandsPerRowPerStem * 2} strands, the first at ${num(mt.firstRow)}", then every ${num(mt.rowSpacing)}", filled row by row from the bottom`);
     if (back) {
       // The CDOH (now CDOT) Double-T Standard (rev. 3-1-82), Dwg. B-3: 34.5–45 in units on 36–66 ft spans.
       const d = i.units.depth, yr = i.bridge.yearBuilt;
@@ -575,9 +604,16 @@ export function dtRatingCalcLines(i: DtInputs, title: string, figures?: { sectio
     text(
       rl.ok
         ? `Release (a check, not a rating):- Just after transfer, with the prestress at ${num(rl.fi, 1)} ksi, the top tension is ${num(rl.top.top * 1000, 0)} psi (limit 7.5√f′ci = ${num(rl.topLim * 1000, 0)} psi) and the bottom compression ${num(rl.bottom.bottom, 3)} ksi (limit 0.60 f′ci = ${num(rl.botLim, 3)} ksi) (SSHB 9.15.2.1): a design with these strands was buildable.`
-        : `Release (a check, not a rating):- Just after transfer, with the prestress at ${num(rl.fi, 1)} ksi, ${rl.top.top > rl.topLim ? `the top tension, ${num(rl.top.top * 1000, 0)} psi at ${num(rl.top.x, 2)} ft, exceeds 7.5√f′ci = ${num(rl.topLim * 1000, 0)} psi` : ""}${rl.top.top > rl.topLim && rl.bottom.bottom > rl.botLim ? " and " : ""}${rl.bottom.bottom > rl.botLim ? `the bottom compression, ${num(rl.bottom.bottom, 3)} ksi at ${num(rl.bottom.x, 2)} ft, exceeds 0.60 f′ci = ${num(rl.botLim, 3)} ksi` : ""} (SSHB 9.15.2.1). A design with straight strands like these couldn't have been built, so the original likely had harped or debonded strands, a higher release strength, or a different layout: the assumed strand arrangement should be reviewed.`,
+        : `Release (a check, not a rating):- Just after transfer, with the prestress at ${num(rl.fi, 1)} ksi, ${rl.top.top > rl.topLim ? `the top tension, ${num(rl.top.top * 1000, 0)} psi at ${num(rl.top.x, 2)} ft, exceeds 7.5√f′ci = ${num(rl.topLim * 1000, 0)} psi` : ""}${rl.top.top > rl.topLim && rl.bottom.bottom > rl.botLim ? " and " : ""}${rl.bottom.bottom > rl.botLim ? `the bottom compression, ${num(rl.bottom.bottom, 3)} ksi at ${num(rl.bottom.x, 2)} ft, exceeds 0.60 f′ci = ${num(rl.botLim, 3)} ksi` : ""} (SSHB 9.15.2.1). A design with straight strands like these couldn't have been built, so the original likely had harped or debonded strands, a higher release strength, or a different layout: the assumed strand arrangement should be reviewed. A release strength of ${num(Math.max(rl.bottom.bottom / 0.6, ((rl.top.top * 1000) / 7.5) ** 2 / 1000), 2)} ksi would satisfy it. The release strength enters the ratings only through the elastic shortening loss, and the ratings govern away from the ends, where any practical layout has about the same strand centroid.`,
       "note",
     );
+    // What else the back-calculation rests on: the asphalt left out, the pedestrians kept in.
+    const notes = [
+      altAsphalt &&
+        `The asphalt (${num(i.loads.asphalt)}") is left out of the back-calculation because the records don't show it as part of the original design; that is the conservative choice. With it in, the strands would be ${num(altAsphalt.solve.nStrands, 9)} and the HS-20 inventory rating ${num(hsInvOf(altAsphalt), 3)}.`,
+      sw.length && i.loads.pedestrians && "The pedestrian load is in the back-calculation with the trucks between the curbs, as the original design combined them (SSHB 3.14.1.1).",
+    ].filter(Boolean);
+    if (notes.length) text(`Loads of the original design:- ${notes.join(" ")}`, "note");
   }
 
   // HS-20 rating of the existing bridge (its loads and the current distribution).

@@ -363,9 +363,10 @@ function Workspace({ doc, calc, projects, backHref }: { doc: CalcDocument; calc:
           .calc-pages > div > div { transform: none !important; }
           .calc-page { box-shadow: none !important; margin: 0 !important; break-after: page; }
           .calc-page:last-child { break-after: auto; }
-          /* Gridlines print a shade darker than on screen: thin light lines fade on paper. */
-          .calc-grid-minor { stroke: #bdd5ec; }
-          .calc-grid-major { stroke: #8db3dc; }
+          /* Gridlines print as thick as the screen shows them: there each line is snapped to a whole
+             pixel, while a PDF draws its true width and a viewer fades a hairline. Screen colours. */
+          .calc-grid-minor { stroke-width: 1px; }
+          .calc-grid-major { stroke-width: 1.5px; }
         }
       `}</style>
       <CalcRibbon

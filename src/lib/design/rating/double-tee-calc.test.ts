@@ -77,8 +77,8 @@ describe("double-tee rating calc package", () => {
       else close(c.value("RF_{t,HS}\\coloneq"), svc("tension"));
       close(c.value("RF_{c1,HS}\\coloneq"), svc("compression"));
       close(c.value("RF_{c2,HS}\\coloneq"), svc("compression-ll"));
-      // Every legal and permit vehicle's operating flexure rating.
-      for (const v of r.ratings.slice(1)) {
+      // The worked example (CO Type 3, or the first legal vehicle): its operating flexure rating.
+      for (const v of [r.ratings.find((q) => q.name === "CO Type 3") ?? r.ratings[1]].filter(Boolean)) {
         const p = v.per.reduce((a, q) => (q.flexOpr.opr! < a.flexOpr.opr! ? q : a));
         const code = { "CO Type 3": "T3", "CO Type 3S2": "T3S2", "CO Type 3-2": "T32", "CO SU6": "SU6", "CO SU7": "SU7", "CO Permit": "PMT", "CO Mod Tandem": "MT" }[v.name] ?? v.name;
         close(c.value(`RF_{opr,${code}}\\coloneq`), p.flexOpr.opr!);
@@ -98,6 +98,6 @@ describe("strand location note", () => {
     const aur07 = dtInputsFromBridgeFile((fixtures as unknown as { name: string; bridge: Record<string, unknown> }[]).find((f) => f.name === "AUR07.0-H.0")!.bridge);
     const note = workOut(aur07).text.split("\n").find((t) => t.startsWith("Strand location"));
     expect(note).toMatch(/2 strands per row per stem, the first row 2 in above the bottom, rows at 2 in\. For \d+ strands this gives a centroid of [\d.]+ in\.$/);
-    expect(note).toContain("does not cover this bridge (built 1970; 24 in deep units on a 33 ft span");
+    expect(note).toContain("the CDOH Double-T Standard (rev. 3-1-82) does not cover this bridge built in 1970 with 24\" deep units on a 33 ft span");
   });
 });

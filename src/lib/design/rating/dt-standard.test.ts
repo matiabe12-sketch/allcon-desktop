@@ -83,6 +83,6 @@ describe("rating a bridge built to the standard", () => {
     const text = dtRatingCalcLines({ ...TELLRD, prestress: { mode: "back-calculate", strands: 0 } }, "Test")
       .flatMap((l) => ("text" in l ? [l.text] : []))
       .join("\n");
-    expect(text).toMatch(/The CDOH Double T Bridge Standard \(1982\) does not apply: /);
+    expect(text).toMatch(/does not (cover this bridge|match the CDOH Double-T Standard)/);
   });
 });

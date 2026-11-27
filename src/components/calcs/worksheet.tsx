@@ -652,8 +652,8 @@ export function Worksheet({
                   // turns patterns into a picture, where the tiles' edges double up into dark lines and
                   // the text over them prints broken.
                   <svg className="pointer-events-none absolute inset-0" width={content.width} height={content.height} aria-hidden shapeRendering="crispEdges">
-                    <path d={gridPath(content.width, content.height, step, showMajor(doc.grid) ? major : 0, false)} fill="none" stroke={GRID_MINOR} strokeWidth="0.75" />
-                    {showMajor(doc.grid) && <path d={gridPath(content.width, content.height, step, major, true)} fill="none" stroke={GRID_MAJOR} strokeWidth="1" />}
+                    <path d={gridPath(content.width, content.height, step, showMajor(doc.grid) ? major : 0, false)} className="calc-grid-minor" fill="none" stroke={GRID_MINOR} strokeWidth="0.75" />
+                    {showMajor(doc.grid) && <path d={gridPath(content.width, content.height, step, major, true)} className="calc-grid-major" fill="none" stroke={GRID_MAJOR} strokeWidth="1" />}
                   </svg>
                 )}
                 {regions

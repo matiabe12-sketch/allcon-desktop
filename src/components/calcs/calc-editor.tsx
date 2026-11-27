@@ -363,6 +363,9 @@ function Workspace({ doc, calc, projects, backHref }: { doc: CalcDocument; calc:
           .calc-pages > div > div { transform: none !important; }
           .calc-page { box-shadow: none !important; margin: 0 !important; break-after: page; }
           .calc-page:last-child { break-after: auto; }
+          /* Gridlines print a shade darker than on screen: thin light lines fade on paper. */
+          .calc-grid-minor { stroke: #bdd5ec; }
+          .calc-grid-major { stroke: #8db3dc; }
         }
       `}</style>
       <CalcRibbon

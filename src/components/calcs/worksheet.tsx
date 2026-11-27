@@ -23,6 +23,25 @@ import { SectionRegionView } from "./section-region";
 type MathLive = Awaited<ReturnType<typeof loadMathLive>>;
 export type Cursor = { x: number; y: number };
 const PAGE_GAP = 24;
+
+/**
+ * The grid as one path of lines across the content: the major lines (every `every` squares) when
+ * `major`, otherwise the minor ones, leaving out the major positions so no line is drawn twice.
+ * Lines sit on the half pixel so a 1 px stroke stays one pixel wide.
+ */
+function gridPath(w: number, h: number, step: number, every: number, major: boolean) {
+  const at = (v: number) => Math.round(v) + 0.5;
+  let d = "";
+  for (let i = 0, x = 0; x <= w + 0.01; i++, x += step) {
+    const isMajor = every > 0 && i % every === 0;
+    if (isMajor === major) d += `M${at(Math.min(x, w - 1))} 0V${h}`;
+  }
+  for (let i = 0, y = 0; y <= h + 0.01; i++, y += step) {
+    const isMajor = every > 0 && i % every === 0;
+    if (isMajor === major) d += `M0 ${at(Math.min(y, h - 1))}H${w}`;
+  }
+  return d;
+}
 /** How far below a region's top its first line's middle is (padding, then half a line). */
 const MATH_MIDDLE = 16;
 const lineMiddle = (r: Region) => (r.kind === "text" ? textMiddle(textLook(r).size) : MATH_MIDDLE);
@@ -629,18 +648,12 @@ export function Worksheet({
                 {/* the margins' edge, faint, as Mathcad shows it */}
                 <div className="no-print pointer-events-none absolute inset-0 border border-dashed border-neutral-200" />
                 {doc.grid.show && (
-                  // Mathcad's gridlines: on screen and in print.
-                  <svg className="pointer-events-none absolute inset-0" width={content.width} height={content.height} aria-hidden>
-                    <defs>
-                      <pattern id={`calc-grid-${p}`} width={step} height={step} patternUnits="userSpaceOnUse">
-                        <path d={`M ${step} 0 L 0 0 0 ${step}`} fill="none" stroke={GRID_MINOR} strokeWidth="0.75" />
-                      </pattern>
-                      <pattern id={`calc-major-${p}`} width={step * major} height={step * major} patternUnits="userSpaceOnUse">
-                        <path d={`M ${step * major} 0 L 0 0 0 ${step * major}`} fill="none" stroke={GRID_MAJOR} strokeWidth="1" />
-                      </pattern>
-                    </defs>
-                    <rect width="100%" height="100%" fill={`url(#calc-grid-${p})`} />
-                    {showMajor(doc.grid) && <rect width="100%" height="100%" fill={`url(#calc-major-${p})`} />}
+                  // Mathcad's gridlines: on screen and in print. Plain lines, not pattern fills: a printer
+                  // turns patterns into a picture, where the tiles' edges double up into dark lines and
+                  // the text over them prints broken.
+                  <svg className="pointer-events-none absolute inset-0" width={content.width} height={content.height} aria-hidden shapeRendering="crispEdges">
+                    <path d={gridPath(content.width, content.height, step, showMajor(doc.grid) ? major : 0, false)} fill="none" stroke={GRID_MINOR} strokeWidth="0.75" />
+                    {showMajor(doc.grid) && <path d={gridPath(content.width, content.height, step, major, true)} fill="none" stroke={GRID_MAJOR} strokeWidth="1" />}
                   </svg>
                 )}
                 {regions

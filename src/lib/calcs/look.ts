@@ -8,6 +8,10 @@ import type { Grid, Paper } from "./types";
 /** Gridlines: the minor ones, and the major ones every inch (every 25 mm on A4). */
 export const GRID_MINOR = "#d3e5f5";
 export const GRID_MAJOR = "#a9c9e8";
+/** In print, every gridline 1 px (0.75 pt) wide and the major ones paler than on screen, so the grid
+ * stays behind the text and math. (The screen snaps lines to whole pixels; print draws true widths.) */
+export const GRID_MAJOR_PRINT = "#bcd5ee";
+export const GRID_PRINT_WIDTH = 1;
 /** Minor squares between major lines: 5 Standard (0.2 in, 5 mm), 10 Fine. */
 export const majorEvery = (_paper: Paper, grid: Grid) => (grid.size === "fine" ? 10 : 5);
 /** Major gridlines show unless turned off (worksheets made before there was a choice show them). */

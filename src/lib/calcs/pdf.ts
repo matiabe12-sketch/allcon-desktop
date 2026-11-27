@@ -12,7 +12,7 @@ import { uprightUnits, type Result } from "./evaluate";
 import { SHAPES_SOURCE } from "./library/shapes";
 import { regionHeight } from "./library/templates";
 import { textLook } from "./text-format";
-import { boldVerdict, GRID_MAJOR, GRID_MINOR, majorEvery, MATH_SIZE, mathColor, showMajor, styleUnits } from "./look";
+import { boldVerdict, GRID_MAJOR_PRINT, GRID_MINOR, GRID_PRINT_WIDTH, majorEvery, MATH_SIZE, mathColor, showMajor, styleUnits } from "./look";
 import { contentSize, DEFAULT_GRID, gridStep, PAGES, type CalcData, type Grid, type Region, type TextFont } from "./types";
 
 // A worksheet as a PDF, laid out as it prints from the editor: the calc paper's header on each
@@ -351,14 +351,14 @@ export async function calcPdf(data: CalcData, results: Map<string, Result>, opti
     const sheet = new Sheet(pdf.addPage([p.width * K, p.height * K]), fonts, p.height);
     drawHeader(sheet, data, i + 1, pages);
     if (grid.show) {
-      // Mathcad's gridlines print when they're shown: light blue, the major ones darker, drawn over.
+      // Mathcad's gridlines print when they're shown: light blue, 1 px, the major ones a shade darker, drawn over.
       const step = gridStep(data.paper, grid);
       const every = showMajor(grid) ? majorEvery(data.paper, grid) : 0;
       for (const major of every ? [false, true] : [false]) {
         for (let i = 0, x = 0; x <= content.width + 0.01; i++, x += step)
-          if (!major || i % every === 0) sheet.line(p.left + x, p.top, p.left + x, p.top + content.height, major ? GRID_MAJOR : GRID_MINOR, major ? 0.75 : 0.5);
+          if (!major || i % every === 0) sheet.line(p.left + x, p.top, p.left + x, p.top + content.height, major ? GRID_MAJOR_PRINT : GRID_MINOR, GRID_PRINT_WIDTH);
         for (let i = 0, y = 0; y <= content.height + 0.01; i++, y += step)
-          if (!major || i % every === 0) sheet.line(p.left, p.top + y, p.left + content.width, p.top + y, major ? GRID_MAJOR : GRID_MINOR, major ? 0.75 : 0.5);
+          if (!major || i % every === 0) sheet.line(p.left, p.top + y, p.left + content.width, p.top + y, major ? GRID_MAJOR_PRINT : GRID_MINOR, GRID_PRINT_WIDTH);
       }
     }
     return sheet;

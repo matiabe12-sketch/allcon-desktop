@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { publishCalcToSheets, setCalcProject } from "@/app/actions/calcs";
 import { LinkButton } from "@/components/ui/link-button";
 import { CalcDocument } from "@/lib/calcs/document";
+import { GRID_MAJOR_PRINT, GRID_PRINT_WIDTH } from "@/lib/calcs/look";
 import type { ImportReport } from "@/lib/calcs/import";
 import { evaluateSheet, putSymbolicAnswers, retrySymbolic, takeSymbolicRequests, type SheetItem, type SymbolicAnswer, type UnitSystem } from "@/lib/calcs/evaluate";
 import { loadShapes } from "@/lib/calcs/library/shapes";
@@ -365,8 +366,8 @@ function Workspace({ doc, calc, projects, backHref }: { doc: CalcDocument; calc:
           .calc-page:last-child { break-after: auto; }
           /* Gridlines print as thick as the screen shows them: there each line is snapped to a whole
              pixel, while a PDF draws its true width and a viewer fades a hairline. Screen colours. */
-          .calc-grid-minor { stroke-width: 1px; shape-rendering: geometricPrecision; }
-          .calc-grid-major { stroke: #bcd5ee; stroke-width: 1px; shape-rendering: geometricPrecision; }
+          .calc-grid-minor { stroke-width: ${GRID_PRINT_WIDTH}px; shape-rendering: geometricPrecision; }
+          .calc-grid-major { stroke: ${GRID_MAJOR_PRINT}; stroke-width: ${GRID_PRINT_WIDTH}px; shape-rendering: geometricPrecision; }
         }
       `}</style>
       <CalcRibbon

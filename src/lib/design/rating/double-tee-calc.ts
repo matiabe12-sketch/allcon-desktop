@@ -183,7 +183,7 @@ function methodNote(i: DtInputs, r: ReturnType<typeof rateDoubleTee>, text: (t: 
   );
 }
 
-export function dtRatingCalcLines(i: DtInputs, title: string, figures?: { section?: Figure; summary?: Figure; comparison?: Figure }): Line[] {
+export function dtRatingCalcLines(i: DtInputs, title: string, figures?: { section?: Figure; summary?: Figure; comparison?: Figure; girders?: Figure }): Line[] {
   const lines: Line[] = [];
   const text = (t: string, style?: "heading" | "subheading" | "note", newPage?: boolean) => lines.push({ text: plain(t), ...(style ? { style } : {}), ...(newPage ? { newPage } : {}) });
   const m = (math: string, ref?: string, unit?: string) =>
@@ -218,7 +218,8 @@ export function dtRatingCalcLines(i: DtInputs, title: string, figures?: { sectio
   text(
     `${g.name} governs${governsAll ? "" : " the HS-20 inventory rating in flexure"} and is worked out in full below, at x = ${num(x, 2)} ft; the other girders are rated using the same method at every point along the span and are shown in the table below.`,
   );
-  text("HS-20 rating of each girder: the lowest over all points and checks (DF, two or more lanes)", "note");
+  // The table of every girder when the figures are drawn; the same as a list otherwise.
+  if (!figures?.girders) text("HS-20 rating of each girder: the lowest over all points and checks (DF, two or more lanes)", "note");
   const rows: { names: string[]; suffix: string; key: string; line: string }[] = [];
   for (const p of hs.per) {
     const suffix = isSidewalkTruckCase(p.g) ? " (trucks on sidewalk)" : "";
@@ -227,7 +228,8 @@ export function dtRatingCalcLines(i: DtInputs, title: string, figures?: { sectio
     if (row) row.names.push(p.g.replace(suffix, ""));
     else rows.push({ names: [p.g.replace(suffix, "")], suffix, key: suffix + line, line });
   }
-  for (const q of rows) text(`• ${q.names.join(", ")}${q.suffix}: ${q.line}`);
+  if (figures?.girders) lines.push({ region: figures.girders });
+  else for (const q of rows) text(`• ${q.names.join(", ")}${q.suffix}: ${q.line}`);
   if (figures?.section) lines.push({ region: figures.section });
   text(COLOR_NOTE, "note");
 
@@ -639,7 +641,9 @@ export function dtRatingCalcLines(i: DtInputs, title: string, figures?: { sectio
   };
 
   text("Governing ratings (all girders, points and checks)", "subheading");
-  for (const v of r.ratings)
+  // The summary table when the figures are drawn; the same as a list otherwise.
+  if (figures?.summary) lines.push({ region: figures.summary });
+  else for (const v of r.ratings)
     text(
       `${v.name}: inventory RF ${num(v.govInv.inv.inv, 3)} (${num(v.invTons, 1)} T), ${checkName(v.govInv.inv.check)} on ${v.govInv.g} at ${num(v.govInv.inv.x, 2)} ft; operating RF ${num(v.govOpr.opr.opr, 3)} (${num(v.oprTons, 1)} T), ${checkName(v.govOpr.opr.check)} on ${v.govOpr.g} at ${num(v.govOpr.opr.x, 2)} ft.${v.posting !== "—" ? ` ${v.posting}.` : ""}`,
     );
@@ -676,7 +680,6 @@ export function dtRatingCalcLines(i: DtInputs, title: string, figures?: { sectio
     `Legal and specialized hauling vehicles are posted when their operating rating factor is below 0.95. Between 0.95 and 1.0 they are not posted (the 95% rule). None is posted at or above its weight limit (BRM Tables 1-4 to 1-6; SU6 and SU7 by the Colorado Bridge Formula, 33 and 35 T). The single-unit trucks SU4 to SU7 aren't posted when the NRL rates 40 tons or more${nrl ? `; here it rates ${num(postTons(nrl.oprTons), 1)} T` : ""}. An operating rating factor under 0.3 for any legal load restricts all legal loads. Emergency vehicles are posted only when the bridge is within 1 mile of an Interstate; this bridge ${i.bridge.nearInterstate ? "is" : "is not"}. Postings are in truncated tons.`,
   );
   text(r.restricted ? "A legal load rates under 0.3: the bridge is restricted for all legal loads." : posted.length ? `Posting is required for: ${posted.map((v) => `${v.name}, ${num(postTons(v.oprTons), 1)} T`).join("; ")}.` : "No posting is required.");
-  if (figures?.summary) lines.push({ region: figures.summary });
   if (figures?.comparison) {
     // The heading and its note stay on the table's page.
     lines.push({ text: "Comparison with AASHTOWare BrR", style: "subheading", keepWithNext: true });

@@ -2,7 +2,7 @@ import { Fragment, isValidElement, type ReactElement, type ReactNode } from "rea
 import { BearingSketch } from "@/components/design/bearing-sketch";
 import { DeckSketch } from "@/components/design/deck-sketch";
 import { DtSectionSketch } from "@/components/design/dt-section-sketch";
-import { BrrComparisonTable, RatingSummaryTable } from "@/components/design/dt-summary-sketch";
+import { BrrComparisonTable, GirderRatingTable, RatingSummaryTable } from "@/components/design/dt-summary-sketch";
 import { GirderElevation, GirderSketch, HandlingSketch } from "@/components/design/girder-sketch";
 import { HaunchSketch } from "@/components/design/haunch-sketch";
 import { BridgeSectionSketch } from "@/components/design/bridge-section-sketch";
@@ -144,7 +144,7 @@ export function dtFigures(i: DtInputs) {
       // BrR's table can't be read: the calc goes without the comparison.
     }
   }
-  return { section: figure(<DtSectionSketch inputs={i} layout={r.geo} cg={r.solve.cg} />), summary: figure(<RatingSummaryTable r={r} title={title} />), ...(comparison ? { comparison } : {}) };
+  return { section: figure(<DtSectionSketch inputs={i} layout={r.geo} cg={r.solve.cg} />), summary: figure(<RatingSummaryTable r={r} title={title} />), girders: figure(<GirderRatingTable r={r} />), ...(comparison ? { comparison } : {}) };
 }
 
 export const approachSlabFigures = (i: ApproachSlabInputs) => ({ section: figure(<ApproachSlabSketch inputs={i} result={designApproachSlab(i)} />) });

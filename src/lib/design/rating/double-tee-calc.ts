@@ -280,7 +280,18 @@ export function dtRatingCalcLines(i: DtInputs, title: string, figures?: { sectio
     const rr = Math.min(x, L - x) / (hp.at * L);
     const cgx = rr >= 1 ? hp.mid : hp.end + (hp.mid - hp.end) * rr;
     m(`y_{ps}\\coloneq ${num(cgx, 9)}\\mathrm{in}`, `Strand centroid above the bottom at x = ${num(x, 2)} ft: harped from ${num(hp.end)} in at the ends to ${num(hp.mid)} in from 0.4 span (standard plans, Dwg. B-7)`);
-  } else m(`y_{ps}\\coloneq ${num(s.cg, 9)}\\mathrm{in}`, `Strand centroid above the bottom (assumed): rows of ${mt.strandsPerRowPerStem * 2} strands, the first at ${num(mt.firstRow)} in, then every ${num(mt.rowSpacing)} in`);
+  } else {
+    m(`y_{ps}\\coloneq ${num(s.cg, 9)}\\mathrm{in}`, `Strand centroid above the bottom (assumed): rows of ${mt.strandsPerRowPerStem * 2} strands, the first at ${num(mt.firstRow)} in, then every ${num(mt.rowSpacing)} in`);
+    if (back) {
+      // The CDOT Double-T Standard (rev. 3-1-82), Dwg. B-3: 34.5–45 in units on 36–66 ft spans.
+      const d = i.units.depth, yr = i.bridge.yearBuilt;
+      const outside = yr < 1982 || d < 34.5 || d > 45 || L < 36 || L > 66;
+      text(
+        `Strand location:- No plans or shop drawings exist${outside ? `, and the CDOT Double-T Standard (rev. 3-1-82) does not cover this bridge (built ${yr}; ${num(d)} in deep units on a ${Math.round(L)} ft span, against the standard's 34.5–45 in units on 36–66 ft spans)` : ""}. The strands are taken as straight and placed in a grid filling the stems from the bottom: ${num(mt.strandsPerRowPerStem)} strands per row per stem, the first row ${num(mt.firstRow)} in above the bottom, rows at ${num(mt.rowSpacing)} in. For ${num(s.nStrands, 9)} strands this gives a centroid of ${num(s.cg, 3)} in.`,
+        "note",
+      );
+    }
+  }
   m(
     back && i.options.roundStrands ? "P_j\\coloneq\\operatorname{floor}\\left(\\frac{f_{pj}\\cdot A_{ps}}{\\mathrm{kip}}\\right)\\cdot\\mathrm{kip}=" : "P_j\\coloneq f_{pj}\\cdot A_{ps}=",
     "Jacking force (BRM 1.7.2)",

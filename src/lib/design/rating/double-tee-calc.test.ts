@@ -92,3 +92,12 @@ describe("double-tee rating calc package", () => {
     });
   }
 });
+
+describe("strand location note", () => {
+  it("says where a back-calculated bridge's strands are placed, and why the 1982 standard doesn't apply", () => {
+    const aur07 = dtInputsFromBridgeFile((fixtures as unknown as { name: string; bridge: Record<string, unknown> }[]).find((f) => f.name === "AUR07.0-H.0")!.bridge);
+    const note = workOut(aur07).text.split("\n").find((t) => t.startsWith("Strand location"));
+    expect(note).toMatch(/2 strands per row per stem, the first row 2 in above the bottom, rows at 2 in\. For \d+ strands this gives a centroid of [\d.]+ in\.$/);
+    expect(note).toContain("does not cover this bridge (built 1970; 24 in deep units on a 33 ft span");
+  });
+});

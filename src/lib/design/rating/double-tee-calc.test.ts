@@ -18,14 +18,18 @@ function workOut(inputs: DtInputs) {
   const values = new Map<string, Value>();
   const results = evaluateSheet(items, DEFAULT_SETTINGS, values);
   const errors = regions.flatMap((r) => (results.get(r.id)?.kind === "error" ? [`${r.kind === "math" ? r.latex : r.kind}: ${(results.get(r.id) as { message: string }).message}`] : []));
-  const checks = regions.filter((r) => r.kind === "math" && r.latex.startsWith("\\operatorname{if}")).map((r) => (results.get(r.id) as { result?: string }).result ?? "");
+  // The one-strand-fewer checks (subscript f) are meant to fail; they are kept apart.
+  const result = (id: string) => (results.get(id) as { result?: string }).result ?? "";
+  const ifs = regions.flatMap((r) => (r.kind === "math" && r.latex.startsWith("\\operatorname{if}") ? [r] : []));
+  const checks = ifs.filter((r) => !/,f\}/.test(r.latex)).map((r) => result(r.id));
+  const fewerChecks = ifs.filter((r) => /,f\}/.test(r.latex)).map((r) => result(r.id));
   const value = (start: string, unit?: string) => {
     const r = regions.find((x) => x.kind === "math" && x.latex.startsWith(start));
     if (!r) throw new Error(`No region ${start}`);
     const v = values.get(r.id);
     return unit ? (v as Unit).toNumber(unit) : (v as number);
   };
-  return { errors, checks, value, text: lines.flatMap((l) => ("text" in l ? [l.text] : [])).join("\n") };
+  return { errors, checks, fewerChecks, value, text: lines.flatMap((l) => ("text" in l ? [l.text] : [])).join("\n") };
 }
 
 const close = (a: number, b: number, rel = 1e-6) => expect(Math.abs(a - b), `${a} vs ${b}`).toBeLessThanOrEqual(Math.max(rel, WORKSHEET_TOLERANCE) * Math.max(1, Math.abs(b)));
@@ -84,6 +88,8 @@ describe("double-tee rating calc package", () => {
         close(c.value(`RF_{opr,${code}}\\coloneq`), p.flexOpr.opr!);
       }
       expect(c.checks.filter((x) => x.includes("NG"))).toEqual([]);
+      // With one strand fewer, at least one of the checks shown fails (the block is left out otherwise).
+      if (c.fewerChecks.length) expect(c.fewerChecks.some((x) => x.includes("NG"))).toBe(true);
       // No one is credited by name.
       expect(c.text).not.toMatch(/\b[A-Z][a-z]+'s (rule|sheet|era table|approach|model|setup|checklist)/);
       // References are design codes (AASHTO, MBE, CDOT BRM/BDM), never the software or background files.

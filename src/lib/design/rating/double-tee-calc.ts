@@ -1,7 +1,7 @@
 import type { Line } from "@/lib/calcs/library/templates";
 import { cell, COLOR_NOTE, INPUT_COLOR, isInput, num } from "../calc-style";
 import type { Figure } from "../figures";
-import { CHECK_LABEL, Ec, interiorMethod, isSidewalkTruckCase, legalLanes, needsPosting, postTons, rateDoubleTee, roadwayWidth, strainCompat, tensionIgnored, unitDamaged, type DtInputs } from "./double-tee";
+import { CHECK_LABEL, codeTension, Ec, strandCG, interiorMethod, isSidewalkTruckCase, legalLanes, needsPosting, postTons, rateDoubleTee, roadwayWidth, strainCompat, tensionIgnored, unitDamaged, type DtInputs } from "./double-tee";
 import { checkStandard, DT_STANDARD_FC, DT_STANDARD_NAME, DT_STANDARD_SLAB } from "./dt-standard";
 
 const ftInText = (inches: number) => {
@@ -511,14 +511,64 @@ export function dtRatingCalcLines(i: DtInputs, title: string, figures?: { sectio
           : `the design's service tension, 6√f′c at the bottom (SSHB 9.15.2.2), can't be met before the strands fill the lower half of the stems; the strands are those the other conditions need, and the tension rating in section 9 shows the shortfall`),
       i.options.minSteel12 && (s.minSteelMet ? "φMn reaches 1.2 M*cr, or 1.33 times the factored moment (SSHB 9.18.2.1, 9.18.2.2; 1973 Art. 1.6.10(B))" : "minimum steel (1.2 M*cr, SSHB 9.18.2.1) can't be met before the stems fill"),
     ].filter(Boolean);
-    // One strand fewer, for the record: the rating it would give under the design's loads.
-    const fewer = s.nStrands > 1 && i.options.roundStrands ? rateDoubleTee({ ...i, prestress: { ...i.prestress, mode: "known", strands: Math.round(s.nStrands) - 1, harp: null } }).solve.govRF : null;
+    // One strand fewer: the same checks at the same point, worked out, to show the count is the fewest.
+    const nF = Math.round(s.nStrands) - 1;
+    const rF = s.nStrands > 1 && i.options.roundStrands ? rateDoubleTee({ ...i, prestress: { ...i.prestress, mode: "known", strands: nF, harp: null } }) : null;
+    const fewer = rF ? rF.solve.govRF : null;
+    const fewerBlock = (() => {
+      if (!rF || sidewalkCase || asInspected) return null;
+      const AsF = nF * mt.aps;
+      const cgF = strandCG(AsF, mt);
+      const fseF = rF.solve.fse;
+      const Dtot = i.units.depth + (deck ? deck.thk : 0);
+      const dF = Dtot - cgF;
+      const fcF = deck ? deck.fc : mt.fc;
+      const b1 = Math.max(0.65, Math.min(0.85, 0.85 - 0.05 * (fcF - 4)));
+      const rho = AsF / (g.sec.bf * dF);
+      const fsu = mt.fpu * (1 - (mt.gammaStar / b1) * ((rho * mt.fpu) / fcF));
+      // Eq. 9-17 and the rectangular section (9-13) hold for these strands, as for the solved ones.
+      const rect = fseF >= 0.5 * mt.fpu && (1.4 * dF * rho * fsu) / fcF <= hf + 1e-9 && s.fsuValid && cap.type === "rectangular" && !cap.overReinforced;
+      if (!rect) return null;
+      const MnF = (AsF * fsu * dF * (1 - (0.6 * rho * fsu) / fcF)) / 12;
+      const md0 = ((g.dlSolve.dc1 + g.dlSolve.dc2) * x * (L - x)) / 2 + (g.dlSolve.diaph * Math.min(x, L - x)) / 2;
+      const mped = (g.pedKlf * x * (L - x)) / 2;
+      const mL0 = llHS * g.dfSolve * (1 + r.impact);
+      const rfF = (MnF - 1.3 * md0 - 2.17 * mped) / (2.17 * mL0);
+      const P = P_at * fseF * AsF;
+      const Sb2v = g.csec ? g.csec.Sb : g.sec.Sb;
+      const m1 = (g.dlSolve.dc1 * x * (L - x)) / 2 + (g.dlSolve.diaph * Math.min(x, L - x)) / 2;
+      const fbF = -P / g.sec.A - (P * (g.sec.yb - cgF)) / g.sec.Sb + (m1 * 12) / g.sec.Sb + ((md0 - m1 + mped + mL0) * 12) / Sb2v;
+      const failsT = i.options.solveForService && fbF > codeTension(mt.fc) + 1e-9;
+      if (rfF >= 1 && !failsT) return null; // fails elsewhere, not here: the note says so
+      return { AsF, cgF, fseF, showT: i.options.solveForService, rfF, failsT };
+    })();
+    const fewerWorked = () => {
+      if (!fewerBlock) return;
+      text(`One strand fewer:- The same checks with ${nF} strands, at the same point. They are expected to fail (NG): that is what makes ${num(s.nStrands, 9)} the fewest.`, "note");
+      m("N_f\\coloneq N_s-1=", "One strand fewer");
+      m("A_{ps,f}\\coloneq N_f\\cdot a_{ps}=", "Prestressing steel", "in^2");
+      given(`y_{ps,f}\\coloneq ${num(fewerBlock.cgF, 9)}\\mathrm{in}`, "Strand centroid, the same grid as above");
+      given(`f_{se,f}\\coloneq ${num(fewerBlock.fseF, 8)}\\mathrm{ksi}`, `Effective prestress, the losses of section 1 worked out with ${nF} strands`);
+      m(`d_f\\coloneq ${num(i.units.depth + (deck ? deck.thk : 0))}\\mathrm{in}-y_{ps,f}=`, "Depth to the strands", "in");
+      m("\\rho_{p,f}\\coloneq\\frac{A_{ps,f}}{b\\cdot d_f}=");
+      m("f_{su,f}\\coloneq f'_{s}\\cdot\\left(1-\\frac{\\gamma_{p}}{\\beta_1}\\cdot\\frac{\\rho_{p,f}\\cdot f'_{s}}{f'_{cf}}\\right)=", "SSHB Eq. 9-17", "ksi");
+      m("M_{n,f}\\coloneq A_{ps,f}\\cdot f_{su,f}\\cdot d_f\\cdot\\left(1-0.6\\cdot\\frac{\\rho_{p,f}\\cdot f_{su,f}}{f'_{cf}}\\right)=", "SSHB Eq. 9-13", "kip*ft");
+      m("RF_{0,f}\\coloneq\\frac{M_{n,f}-1.3\\cdot M_{D,0}-2.17\\cdot M_{ped}}{2.17\\cdot M_{L,0}}=", "Strength under the design's loads");
+      m(ok("1", "RF_{0,f}"), fewerBlock.rfF < 1 ? "Below 1.0: not enough strands (expected NG)" : "Strength alone would be met");
+      if (fewerBlock.showT) {
+        m(`P_f\\coloneq ${P_at < 1 ? `${num(P_at, 10)}\\cdot ` : ""}f_{se,f}\\cdot A_{ps,f}=`, "Effective force at x", "kip");
+        m("e_f\\coloneq y_b-y_{ps,f}=", "Eccentricity", "in");
+        m(`f_{b0,f}\\coloneq-\\frac{P_f}{A_g}-\\frac{P_f\\cdot e_f}{S_b}+\\frac{M_{D1}}{S_b}+\\frac{M_{D2,0}+M_{ped}+M_{L,0}}{${Sb2}}=`, "Bottom stress under the design's loads", "ksi");
+        m(ok("f_{b0,f}", "f_{t0}"), fewerBlock.failsT ? "Above the design's tension limit: not enough strands (expected NG)" : "The tension limit would be met");
+      }
+    };
     text(
-      `Result:- The strands are the fewest that meet every condition of the original design: strength, the cracking moment${parts.length ? `, and ${parts.join("; and ")}` : ""}. Here ${what} sets them: it needs ${num(s.nExact, 3)} strands, ${i.options.roundStrands ? `rounded up to ${num(s.nStrands, 9)}` : "unrounded"}. With them the lowest strength rating under the design's loads is ${num(s.govRF, 3)} (${s.gov})${fewer !== null ? `; with ${num(Math.round(s.nStrands) - 1, 0)} strands it would be ${num(fewer, 3)}${s.governs === "tension" ? " and the design's tension limit would be exceeded" : ""}` : ""}.${
+      `Result:- The strands are the fewest that meet every condition of the original design: strength, the cracking moment${parts.length ? `, and ${parts.join("; and ")}` : ""}. Here ${what} sets them: it needs ${num(s.nExact, 3)} strands, ${i.options.roundStrands ? `rounded up to ${num(s.nStrands, 9)}` : "unrounded"}. With them the lowest strength rating under the design's loads is ${num(s.govRF, 3)} (${s.gov})${fewer !== null ? `; with ${nF} strands it would be ${num(fewer, 3)}${s.governs === "tension" ? " and the design's tension limit would be exceeded" : ""}${fewerBlock ? " (worked below)" : ""}` : ""}.${
         sidewalkCase ? ` The case worked here, ${g.name}, is not used to set the prestress: it is rated with it.` : ""
       }${asInspected ? " The strands are set on the intact bridge; the damage then lowers the ratings." : ""}`,
       "note",
     );
+    fewerWorked();
     const rl = s.release;
     text(
       rl.ok

@@ -3,6 +3,7 @@ import type { BrrDfRow, compareBrr } from "@/lib/design/rating/brr";
 import { CHECK_LABEL, needsPosting, postTons, type DtRating } from "@/lib/design/rating/double-tee";
 import type { VehicleClass } from "@/lib/design/rating/vehicles";
 
+// Tons are truncated to the tenth, as BRM 1.15.1 posts them.
 // The rating's tables as pictures for the calc package (a calc sheet's table regions hold numbers
 // only): the rating summary, grouped as CDOT's LFR Rating Summary Sheet, and the comparison with
 // BrR's run. No hooks.
@@ -103,7 +104,7 @@ export function RatingSummaryTable({ r, title }: { r: DtRating; title: string })
             {f3(v.govInv.inv.inv)}
           </text>
           <text x={232} y={y + 10} textAnchor="end" fontSize="9.5" fill={LINE}>
-            {v.invTons.toFixed(1)}
+            {postTons(v.invTons).toFixed(1)}
           </text>
           <text x={242} y={y + 10} fontSize="8.5" fill={MUTED}>
             {where(v.govInv.g, v.govInv.inv.check, v.govInv.inv.x)}
@@ -112,7 +113,7 @@ export function RatingSummaryTable({ r, title }: { r: DtRating; title: string })
             {f3(v.govOpr.opr.opr)}
           </text>
           <text x={448} y={y + 10} textAnchor="end" fontSize="9.5" fontWeight="600" fill={LINE}>
-            {v.oprTons.toFixed(1)}
+            {postTons(v.oprTons).toFixed(1)}
           </text>
           <text x={458} y={y + 10} fontSize="8.5" fill={MUTED}>
             {where(v.govOpr.g, v.govOpr.opr.check, v.govOpr.opr.x)}

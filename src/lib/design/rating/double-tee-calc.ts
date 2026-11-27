@@ -97,6 +97,79 @@ function eraDistribution(
   m("DF_{0}\\coloneq\\frac{S_{e}}{D_0}=", `${g.name}, the original design's factor`);
 }
 
+/**
+ * Each stem's share of the live load, against its unit's factor: interior stems by the same table
+ * (S/5.5 with S the stem's own spacing), the exterior unit by the lever rule hinged at each stem.
+ * The units are rated whole; this shows that no stem takes more than its half.
+ */
+function stemCheck(i: DtInputs, r: ReturnType<typeof rateDoubleTee>): string | null {
+  const u = i.units;
+  if (!i.deck.present || interiorMethod(i) !== "table" || r.condition.alone || i.options.dfOverride) return null;
+  const units = u.layout ?? Array.from({ length: u.count }, () => ({ flangeWidth: u.flangeWidth, stemSpacing: u.stemSpacing }));
+  if (units.length < 3) return null;
+  // Stem lines across the bridge (ft from the left edge), two per unit.
+  const stemX: number[] = [];
+  let left = 0;
+  for (const un of units) {
+    stemX.push((left + (un.flangeWidth - un.stemSpacing) / 2) / 12, (left + (un.flangeWidth + un.stemSpacing) / 2) / 12);
+    left += un.flangeWidth + (u.jointGap || 0);
+  }
+  const spacingOf = (k: number) => ((k > 0 ? stemX[k] - stemX[k - 1] : 0) + (k < stemX.length - 1 ? stemX[k + 1] - stemX[k] : 0)) / (k > 0 && k < stemX.length - 1 ? 2 : 1);
+  const unitDf = (gi: number) => r.girders.find((g) => g.i === gi && !isSidewalkTruckCase(g.name))?.dfMulti;
+  const parts: string[] = [];
+  // The typical interior unit and the one next to the exterior.
+  const gTyp = units.length >= 5 ? 3 : r.geo.iTyp + 1;
+  for (const gi of [...new Set([2, gTyp])]) {
+    if (gi < 2 || gi > units.length - 1) continue;
+    const a = spacingOf(2 * gi - 2) / 5.5;
+    const b = spacingOf(2 * gi - 1) / 5.5;
+    const whole = unitDf(gi);
+    if (whole === undefined) continue;
+    const ratio = (a + b) / whole;
+    const rated = r.ratings[0].per.find((p) => p.g === `G${gi}`);
+    parts.push(
+      `G${gi}: stems ${num(a, 3)} and ${num(b, 3)} (S/5.5 on each stem's spacing), ${num(a + b, 3)} together against the unit's ${num(whole, 3)}${
+        ratio > 1 + 1e-3 && rated ? ` (${((ratio - 1) * 100).toFixed(1)}% more; its HS-20 inventory rating would be about ${num(rated.inv.inv / ratio, 2)}, against the governing ${num(r.ratings[0].govInv.inv.inv, 3)})` : ""
+      }`,
+    );
+  }
+  // The exterior unit by the lever rule, hinged at each stem: wheels 6 ft apart, trucks 12 ft apart,
+  // the first wheel 2 ft from the curb or rail face (BRM 1.3(F)).
+  const share = (face: number) => {
+    const wheels = [2, 8, 14, 20].map((d) => face + d);
+    const at = [0, 0];
+    for (const w of wheels)
+      for (let k = 0; k < stemX.length - 1; k++)
+        if (w >= stemX[k] - 1e-9 && w <= stemX[k + 1]) {
+          const t = (w - stemX[k]) / (stemX[k + 1] - stemX[k]);
+          if (k < 2) at[k] += (1 - t) * 0.5;
+          if (k + 1 < 2) at[k + 1] += t * 0.5;
+          break;
+        } else if (k === 0 && w < stemX[0]) {
+          at[0] += 0.5 * (1 + (stemX[0] - w) / (stemX[1] - stemX[0]));
+          at[1] -= 0.5 * ((stemX[0] - w) / (stemX[1] - stemX[0]));
+          break;
+        }
+    return at.map((v) => v * 2); // wheel lines
+  };
+  const ext = r.girders.filter((g) => g.ext && g.i === 1);
+  // The case that loads the exterior unit (trucks on a mountable sidewalk, if rated).
+  for (const g of ext.some((q) => isSidewalkTruckCase(q.name)) ? ext.filter((q) => isSidewalkTruckCase(q.name)) : ext) {
+    const onWalk = isSidewalkTruckCase(g.name);
+    const face = onWalk || !r.ped.sidewalks.length ? i.roadway.railFaceOffset / 12 : i.roadway.curbFaceOffset / 12;
+    const [o, n] = share(face);
+    const half = g.dfMulti / 2;
+    const over = Math.max(o, n) > half + 1e-3;
+    parts.push(
+      `${g.name}: outer stem ${num(o, 3)}, inner stem ${num(n, 3)} (lever rule, hinged at each stem), ${num(o + n, 3)} together against the unit's ${num(g.dfMulti, 3)}; ${
+        over ? `the ${o > n ? "outer" : "inner"} stem takes more than half the unit's factor (${num(half, 3)}): that stem should be rated on its own` : `neither stem takes more than half the unit's factor (${num(half, 3)})`
+      }`,
+    );
+  }
+  if (!parts.length) return null;
+  return `Per stem:- The units are rated whole, each with its two stems; this checks the share of each stem, with the composite deck carrying the wheels across to the stems on each side. ${parts.join(". ")}.`;
+}
+
 /** Why the final tension is 1.0 ksi when the prestress is back-calculated. */
 const TENSION_NOTE = "Final tension: 1.0 ksi, as entered. Not a code limit: SSHB 9.15.2.2 gives 6√f′c, which MBE 6B.5.3.3 requires at the inventory level";
 
@@ -177,7 +250,7 @@ function methodNote(i: DtInputs, r: ReturnType<typeof rateDoubleTee>, text: (t: 
   );
   if (back && i.deck.present)
     text(
-      "Deck:- The deck, the precast flange with its cast-in-place topping, is not rated by calculation: with no plans its reinforcement is unknown. It is rated by field inspection under BRM 1.7.2(B), as a concrete deck without plans in condition 5 or better with no distress due to load: 36 T inventory and 40 T operating for the design vehicle. MBE 6.1.5.1 likewise holds that stringer-supported concrete decks carrying normal traffic satisfactorily need not be routinely evaluated for load capacity. The deck's condition is given under the items for review.",
+      "Deck:- The deck, the precast flange with its cast-in-place topping, is not rated by calculation: with no plans its reinforcement is unknown. It is rated by field inspection under BRM 1.7.2(B), as a concrete deck without plans in condition 5 or better with no distress due to load: 36 T inventory and 40 T operating for the design vehicle. MBE 6.1.5.1 likewise holds that stringer-supported concrete decks carrying normal traffic satisfactorily need not be routinely evaluated for load capacity. The deck's condition and its dead-load history (BRM 1.7.2(B) asks that the dead loads have not changed for an appreciable period) are given under the items for review.",
     );
   const cond = i.condition;
   if (r.condition.active) {
@@ -475,6 +548,8 @@ export function dtRatingCalcLines(i: DtInputs, title: string, figures?: { sectio
   if (i.options.dfOverride && !r.condition.alone) given(`DF_{s}\\coloneq ${num(g.dfSingle, 10)}`, "One lane, as entered");
   const gTyp = r.girders.find((q) => !q.ext && q.i === r.geo.iTyp + 1);
   if (gTyp) eraDistribution(i, r, gTyp, m, text);
+  const stems = stemCheck(i, r);
+  if (stems) text(stems, "note");
   m("I_m\\coloneq\\min\\left(\\frac{50}{\\frac{L}{\\mathrm{ft}}+125},0.30\\right)=", "Impact (SSHB 3.8.2.1)");
 
   // The HS-20 moment at x, shared by the back-calculation and the rating.
@@ -534,6 +609,15 @@ export function dtRatingCalcLines(i: DtInputs, title: string, figures?: { sectio
       ok("M_{cr}", "M_u"),
       s.crackGoverns ? "On at least one girder the cracking moment governs and sets the prestressing steel (BRM 1.7.2)" : "The factored moment exceeds the cracking moment on every girder, so it governs (BRM 1.7.2)",
     );
+    // Minimum steel (SSHB 9.18.2.1): M*cr with the prestress and the staged dead load, at midspan.
+    if (i.options.minSteel12 && g.csec && !sidewalkCase && !asInspected) {
+      const Mdnc = (g.dlSolve.dc1 * (L / 2) * (L / 2)) / 2 + (g.dlSolve.diaph * (L / 2)) / 2;
+      m("f_{rs}\\coloneq\\frac{7.5\\cdot\\sqrt{1000\\cdot\\frac{f'_{c}}{\\mathrm{ksi}}}}{1000}\\cdot\\mathrm{ksi}=", "Modulus of rupture, 7.5√f′c psi (SSHB 9.15.2.3)", "ksi");
+      m("f_{pe}\\coloneq\\frac{P_e}{A_g}+\\frac{P_e\\cdot e}{S_b}=", "Compression at the bottom from the effective prestress, at midspan", "ksi");
+      given(`M_{dnc}\\coloneq ${num(Mdnc, 9)}${kft}`, "Dead load on the precast section alone at midspan (the unit and the deck placed on it)");
+      m("M_{crm}\\coloneq\\left(f_{rs}+f_{pe}\\right)\\cdot S_{bc}-M_{dnc}\\cdot\\left(\\frac{S_{bc}}{S_b}-1\\right)=", "Cracking moment of the composite section (SSHB 9.18.2.1)", "kip*ft");
+      m(ok("\\min\\left(1.2\\cdot M_{crm},1.33\\cdot M_u\\right)", "M_n"), "Minimum steel: φMn at least 1.2 M*cr, or 1.33 times the factored moment (SSHB 9.18.2.1, 9.18.2.2), φ = 1.0");
+    }
     const what = { strength: "strength flexure", cracking: "the cracking moment (BRM 1.7.2)", tension: "the design's service tension", "min-steel": "minimum steel" }[s.governs];
     const parts = [
       i.options.solveForService &&
@@ -643,7 +727,12 @@ export function dtRatingCalcLines(i: DtInputs, title: string, figures?: { sectio
   m("RF_{c1,HS}\\coloneq\\frac{f_{c1}-f_{tD}}{f_{tL}}=", "Concrete compression under all loads, inventory");
   m("RF_{c2,HS}\\coloneq\\frac{f_{c2}-0.5\\cdot f_{tD}}{f_{tL}}=", "Concrete compression under live load plus half the prestress and dead load, inventory");
   text(
-    `Over all girders, points and checks, the lowest HS-20 inventory rating is ${num(hs.govInv.inv.inv, 3)}, for ${checkName(hs.govInv.inv.check)} on ${hs.govInv.g} at ${num(hs.govInv.inv.x, 2)} ft. The strand stress and the deck stress are checked the same way at every point.`,
+    `Over all girders, points and checks, the lowest HS-20 inventory rating is ${num(hs.govInv.inv.inv, 3)} (${hs.govInv.inv.inv.toFixed(4)} unrounded), for ${checkName(hs.govInv.inv.check)} on ${hs.govInv.g} at ${num(hs.govInv.inv.x, 2)} ft.${(() => {
+      // The same check at the worked point, from the same run, where it isn't the governing one.
+      const here = hsFlex.points.find((p) => p.check === hs.govInv.inv.check && Math.abs(p.x - x) < 1e-9);
+      if (!here || (hs.govInv.g === g.name && Math.abs(hs.govInv.inv.x - x) < 1e-9)) return "";
+      return ` At x = ${num(x, 2)} ft on ${g.name}, worked above, the same check gives ${here.inv.toFixed(4)} unrounded; the worked steps carry their inputs at three decimals, so they can differ from it in the third decimal.`;
+    })()} The strand stress and the deck stress are checked the same way at every point.`,
   );
 
   // Ratings
@@ -713,7 +802,7 @@ export function dtRatingCalcLines(i: DtInputs, title: string, figures?: { sectio
   const posted = r.ratings.filter((v) => needsPosting(v.posting));
   const nrl = r.ratings.find((v) => v.name === "NRL");
   text(
-    `Legal and specialized hauling vehicles are posted when their operating rating factor is below 0.95. Between 0.95 and 1.0 they are not posted (the 95% rule). None is posted at or above its weight limit (BRM Tables 1-4 to 1-6; SU6 and SU7 by the Colorado Bridge Formula, 33 and 35 T). The single-unit trucks SU4 to SU7 aren't posted when the NRL rates 40 tons or more${nrl ? `; here it rates ${num(postTons(nrl.oprTons), 1)} T` : ""}. An operating rating factor under 0.3 for any legal load restricts all legal loads. Emergency vehicles are posted only when the bridge is within 1 mile of an Interstate; this bridge ${i.bridge.nearInterstate ? "is" : "is not"}. Postings are in truncated tons.`,
+    `Legal and specialized hauling vehicles are posted when their operating rating factor is below 0.95. Between 0.95 and 1.0 they are not posted (the 95% rule). None is posted at or above its weight limit (BRM Tables 1-4 to 1-6; SU6 and SU7 by the Colorado Bridge Formula, 33 and 35 T). The single-unit trucks SU4 to SU7 aren't posted when the NRL rates 40 tons or more${nrl ? `; here it rates ${num(postTons(nrl.oprTons), 1)} T` : ""}. An operating rating factor under 0.3 for any legal load restricts all legal loads. Emergency vehicles are posted only when the bridge is within 1 mile of an Interstate; this bridge ${i.bridge.nearInterstate ? "is" : "is not"}${i.sources?.["bridge.nearInterstate"]?.note ? ` (SIA ${i.sources["bridge.nearInterstate"].note.replace(/ \(.*$/, "")})` : ""}. Postings are in truncated tons.`,
   );
   text(r.restricted ? "A legal load rates under 0.3: the bridge is restricted for all legal loads." : posted.length ? `Posting is required for: ${posted.map((v) => `${v.name}, ${num(postTons(v.oprTons), 1)} T`).join("; ")}.` : "No posting is required.");
   if (figures?.comparison) {

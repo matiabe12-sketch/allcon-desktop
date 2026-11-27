@@ -49,7 +49,7 @@ function designVehicleName(v: string) {
   return v === "HS25" ? "HS25 (1.25 × HS-20)" : v === "H20" ? "H20" : "HS-20";
 }
 
-/** What the back-calculation takes from the original design's time, and what the rating takes from today's rules. */
+/** What the back-calculation takes from the original design's time, and what the rating takes from the current Specifications. */
 function originalNote(i: DtInputs, r: ReturnType<typeof rateDoubleTee>) {
   const o = r.original;
   const y = i.bridge.yearBuilt;
@@ -61,12 +61,12 @@ function originalNote(i: DtInputs, r: ReturnType<typeof rateDoubleTee>) {
   const cost = !d
     ? ""
     : d.withOriginal - d.rated > 5e-4
-      ? ` The rating uses today's rule, with the 1.6 multiplier, so near the ends of the span the strands carry less stress than the design assumed: in flexure, HS-20 rates ${num(d.withOriginal, 3)} at inventory with the development length of the design, and ${num(d.rated, 3)} with today's.`
-      : ` The rating uses today's rule, with the 1.6 multiplier; HS-20 governs where the strands are fully developed either way, so it doesn't change the rating.`;
+      ? ` The rating uses the current rule (SSHB 9.28.1, with the 1.6 multiplier), so near the ends of the span the strands carry less stress than the design assumed: in flexure, HS-20 rates ${num(d.withOriginal, 3)} at inventory with the development length of the design, and ${num(d.rated, 3)} with the current one.`
+      : ` The rating uses the current rule (SSHB 9.28.1, with the 1.6 multiplier); HS-20 governs where the strands are fully developed either way, so it doesn't change the rating.`;
   return `Original design:- The prestress is set by the rules of the bridge's time, taken from the year it was built (${y}). The design vehicle is ${vehicle} (BRM 1.7.2(A)), and ${dev}. ${dist} The ratings then follow the current Specifications, the MBE and the BRM (BRM 1.3).${cost}`;
 }
 
-/** The original design's distribution for an interior unit of a multi-beam deck, where its era's rule differs from today's. */
+/** The original design's distribution for an interior unit of a multi-beam deck, where its era's rule differs from the current Specifications. */
 function eraDistribution(
   i: DtInputs,
   r: ReturnType<typeof rateDoubleTee>,
@@ -78,8 +78,8 @@ function eraDistribution(
   if (!e || e.rule === "current" || g.ext || i.prestress.mode !== "back-calculate") return;
   text(
     e.rule === "slab"
-      ? `Original design:- Built in ${i.bridge.yearBuilt}, before the 12th Edition (1977). The 9th to 11th Editions (1965–1973) distributed the wheels of a multi-beam deck as for a slab: each wheel over a width E = 4 + 0.06L, at most 7 ft (1973, Art. 1.3.2(C), Case B). That factor sets the prestress; the rating uses today's S/D.`
-      : `Original design:- Built in ${i.bridge.yearBuilt}, under the 12th or 13th Edition (1977–1983). Their multi-beam formula (from NCHRP Report 83) used an effective spacing (12NL + 9)/Ng over D = 5 + NL/10 + (3 − 2NL/7)(1 − C/3)² for C ≤ 3, or 5 + NL/10 for C > 3, with C = K·W/L and K = √(EI/2GJ), the same K as today's without a deck slab. That factor sets the prestress; the rating uses today's S/D.`,
+      ? `Original design:- Built in ${i.bridge.yearBuilt}, before the 12th Edition (1977). The 9th to 11th Editions (1965–1973) distributed the wheels of a multi-beam deck as for a slab: each wheel over a width E = 4 + 0.06L, at most 7 ft (1973, Art. 1.3.2(C), Case B). That factor sets the prestress; the rating uses the current S/D.`
+      : `Original design:- Built in ${i.bridge.yearBuilt}, under the 12th or 13th Edition (1977–1983). Their multi-beam formula (from NCHRP Report 83) used an effective spacing (12NL + 9)/Ng over D = 5 + NL/10 + (3 − 2NL/7)(1 − C/3)² for C ≤ 3, or 5 + NL/10 for C > 3, with C = K·W/L and K = √(EI/2GJ), the same K as the current Specifications' without a deck slab. That factor sets the prestress; the rating uses the current S/D.`,
     "note",
   );
   if (e.rule === "slab") {
@@ -462,10 +462,10 @@ export function dtRatingCalcLines(i: DtInputs, title: string, figures?: { sectio
 
   // 7. Back-calculation of the prestress: the original design, under its own loads.
   if (back) {
-    text("7. Back-calculation of the prestress (BRM 1.7.2(A))", "subheading");
+    text("7. Back-calculation of the prestress: original design (BRM 1.7.2(A))", "subheading");
     const sidewalkCase = isSidewalkTruckCase(g.name);
     const asInspected = damagedHere || r.condition.alone;
-    // What the original design had that today's rating doesn't: no later overlay; its era's distribution.
+    // What the original design had that the existing bridge's rating doesn't: no later overlay; its era's distribution.
     const wAdded = g.dlNow.dc1 + g.dlNow.dc2 - (g.dlSolve.dc1 + g.dlSolve.dc2);
     const overlayOut = wAdded > 1e-9;
     const eraDf = Math.abs(g.dfSolve - g.dfMulti) > 1e-9;
@@ -479,7 +479,7 @@ export function dtRatingCalcLines(i: DtInputs, title: string, figures?: { sectio
     } else m("M_{D2,0}\\coloneq M_{D2}=", "Superimposed dead load of the original design", "kip*ft");
     m("M_{D,0}\\coloneq M_{D1}+M_{D2,0}=", "Dead load moment of the original design", "kip*ft");
     if (eraDf) given(`DF_{m,0}\\coloneq ${num(g.dfSolve, 10)}`, "The original design's distribution factor (section 6)");
-    else m("DF_{m,0}\\coloneq DF_{m}=", "The same distribution factor as today's");
+    else m("DF_{m,0}\\coloneq DF_{m}=", "The same distribution factor as the existing bridge's");
     m("M_{L,0}\\coloneq M_{w,HS}\\cdot DF_{m,0}\\cdot\\left(1+I_m\\right)=", "Design live load moment", "kip*ft");
     // Strength under the design's loads.
     m("RF_{0}\\coloneq\\frac{M_{nx}-1.3\\cdot M_{D,0}-2.17\\cdot M_{ped}}{2.17\\cdot M_{L,0}}=", "Strength: HS-20 inventory rating under the design's loads (MBE Eq. 6B.4.1-1)");
@@ -528,9 +528,9 @@ export function dtRatingCalcLines(i: DtInputs, title: string, figures?: { sectio
     );
   }
 
-  // HS-20 rating (today's loads and distribution).
-  text(`${back ? 8 : 7}. HS-20 rating of ${g.name} at x`, "subheading");
-  if (back) text("From here on the bridge is rated as it is today: the dead loads of section 5 (with the asphalt) and the distribution of section 6. These are its ratings, and they can be below the original design's.", "note");
+  // HS-20 rating of the existing bridge (its loads and the current distribution).
+  text(back ? `8. HS-20 rating of the existing bridge, ${g.name} at x` : `7. HS-20 rating of ${g.name} at x`, "subheading");
+  if (back) text("From here on the existing bridge is rated: the dead loads of section 5 (with the asphalt) and the distribution of section 6. These are its ratings, and they can be below the original design's.", "note");
   else wheelHS();
   m("M_{L,HS}\\coloneq M_{w,HS}\\cdot DF_{m}\\cdot\\left(1+I_m\\right)=", undefined, "kip*ft");
   if (kpt) {

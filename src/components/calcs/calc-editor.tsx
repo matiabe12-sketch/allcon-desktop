@@ -365,8 +365,8 @@ function Workspace({ doc, calc, projects, backHref }: { doc: CalcDocument; calc:
           .calc-page:last-child { break-after: auto; }
           /* Gridlines print as thick as the screen shows them: there each line is snapped to a whole
              pixel, while a PDF draws its true width and a viewer fades a hairline. Screen colours. */
-          .calc-grid-minor { stroke-width: 1px; }
-          .calc-grid-major { stroke-width: 1.5px; }
+          .calc-grid-minor { stroke-width: 1px; shape-rendering: geometricPrecision; }
+          .calc-grid-major { stroke-width: 1.5px; shape-rendering: geometricPrecision; }
         }
       `}</style>
       <CalcRibbon

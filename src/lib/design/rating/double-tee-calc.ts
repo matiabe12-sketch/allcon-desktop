@@ -834,8 +834,15 @@ export function dtRatingCalcLines(i: DtInputs, title: string, figures?: { sectio
   text(`${back ? 11 : 10}. Posting (BRM 1.15.1)`, "subheading");
   const posted = r.ratings.filter((v) => needsPosting(v.posting));
   const nrl = r.ratings.find((v) => v.name === "NRL");
+  const evs = r.ratings.filter((v) => /^EV\d/.test(v.name));
+  // The SIA by its date ("2025-10-14: LR09A Within 1 Mile …" → "2025-10-14").
+  const siaNear = i.sources?.["bridge.nearInterstate"]?.note ? ` (SIA ${i.sources["bridge.nearInterstate"].note.replace(/ \(.*$/, "").replace(/^(\d{4}-\d{2}-\d{2}):.*$/, "$1")})` : "";
   text(
-    `Legal and specialized hauling vehicles are posted when their operating rating factor is below 0.95. Between 0.95 and 1.0 they are not posted (the 95% rule). None is posted at or above its weight limit (BRM Tables 1-4 to 1-6; SU6 and SU7 by the Colorado Bridge Formula, 33 and 35 T). The single-unit trucks SU4 to SU7 aren't posted when the NRL rates 40 tons or more${nrl ? `; here it rates ${num(postTons(nrl.oprTons), 1)} T` : ""}. An operating rating factor under 0.3 for any legal load restricts all legal loads. Emergency vehicles are posted only when the bridge is within 1 mile of an Interstate; this bridge ${i.bridge.nearInterstate ? "is" : "is not"}${i.sources?.["bridge.nearInterstate"]?.note ? ` (SIA ${i.sources["bridge.nearInterstate"].note.replace(/ \(.*$/, "")})` : ""}. Postings are in truncated tons.`,
+    `A legal truck is posted when its operating rating factor is below 0.95; from 0.95 to 1.0 it is not (the 95% rule). A truck that rates at or above its legal weight is not posted (BRM Tables 1-4 to 1-6; SU6 and SU7 are held to 33 and 35 T by the Colorado Bridge Formula). The single-unit trucks SU4 to SU7 need no posting when the NRL rates 40 T or more${nrl ? `; here it rates ${num(postTons(nrl.oprTons), 1)} T` : ""}. If any legal truck rates below 0.3 at the operating level, the bridge is restricted for all legal loads. The emergency vehicles${evs.length ? ` ${evs.map((v) => v.name).join(" and ")}` : ""} are checked only when the bridge is within 1 mile of an Interstate; this bridge ${
+      i.bridge.nearInterstate
+        ? `is${siaNear}, so they are checked${evs.length ? `: they rate ${evs.map((v) => num(v.govOpr.opr.opr, 3)).join(" and ")} at the operating level` : ""}`
+        : `is not${siaNear}, so they are not`
+    }. Tons are truncated to the tenth, as BRM 1.15.1 reports them.`,
   );
   text(r.restricted ? "A legal load rates under 0.3: the bridge is restricted for all legal loads." : posted.length ? `Posting is required for: ${posted.map((v) => `${v.name}, ${num(postTons(v.oprTons), 1)} T`).join("; ")}.` : "No posting is required.");
   if (figures?.comparison) {

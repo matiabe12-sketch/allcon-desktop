@@ -280,6 +280,23 @@ export function dtRatingCalcLines(i: DtInputs, title: string, figures?: { sectio
       ...(isInput(math) ? { color: INPUT_COLOR } : {}),
     });
   const given = (math: string, ref?: string) => lines.push({ math, ...(ref ? { ref: plain(ref) } : {}) });
+  // Inputs written so that three decimals keep their digits: loads in lbf/ft, small stresses in psi and
+  // the strand centroid as its rows (an exact fraction), so the worked results match the engine's.
+  const plf = (sym: string, klf: number, ref?: string) => given(`${sym}\\coloneq ${num(klf * 1000)}\\frac{\\mathrm{lbf}}{\\mathrm{ft}}`, ref);
+  const psi = (sym: string, ksi: number, ref?: string) => given(`${sym}\\coloneq ${num(ksi * 1000)}\\mathrm{psi}`, ref);
+  const cgRows = (sym: string, nIn: number, ref: string) => {
+    const mt0 = i.materials;
+    const nStrands = Math.abs(nIn - Math.round(nIn)) < 1e-6 ? Math.round(nIn) : nIn;
+    const perStem = nStrands / 2;
+    const r0 = mt0.strandsPerRowPerStem;
+    const full = Math.floor(perStem / r0 + 1e-9);
+    const rest = perStem - full * r0;
+    if (!Number.isInteger(nStrands) || !(r0 > 0) || full < 1) return given(`${sym}\\coloneq ${num(strandCG(nStrands * mt0.aps, mt0), 9)}\\mathrm{in}`, ref);
+    const rows = Array.from({ length: full }, (_, k) => num(mt0.firstRow + k * mt0.rowSpacing));
+    const sum = r0 === 1 ? rows.join("+") : `${num(r0)}\\cdot\\left(${rows.join("+")}\\right)`;
+    const top = rest > 1e-9 ? `+${num(rest)}\\cdot${num(mt0.firstRow + full * mt0.rowSpacing)}` : "";
+    m(`${sym}\\coloneq\\frac{${sum}${top}}{${num(perStem)}}\\cdot\\mathrm{in}=`, ref, "in");
+  };
   const r = rateDoubleTee(i);
   const s = r.solve;
   const mt = i.materials;
@@ -354,9 +371,9 @@ export function dtRatingCalcLines(i: DtInputs, title: string, figures?: { sectio
     m(`RH\\coloneq ${num(ls.RH)}`, "Mean annual relative humidity, % (SSHB Figure 9.16.2.1.1)");
     m("\\Delta_{SH}\\coloneq\\left(17-0.150\\cdot RH\\right)\\cdot\\mathrm{ksi}=", "Shrinkage (Eq. 9-4)", "ksi");
     given(`E_{ci}\\coloneq ${num(ls.Eci, 8)}\\mathrm{ksi}`, `Concrete modulus at transfer, 33w^1.5√f′ci with w = 145 pcf (normal-weight concrete, as for Ec) and f′ci = ${num(mt.fci)} ksi`);
-    given(`f_{cir}\\coloneq ${num(ls.fcir, 8)}\\mathrm{ksi}`, `At the strands just after transfer: ${num(ls.Pi, 4)} kip (${mt.lowRelaxation ? "0.69" : "0.63"} f′s in proportion to the jacking stress, as the article allows) and the unit's weight, ${num(ls.Mg, 4)} kip·ft`);
+    psi("f_{cir}", ls.fcir,`At the strands just after transfer: ${num(ls.Pi, 4)} kip (${mt.lowRelaxation ? "0.69" : "0.63"} f′s in proportion to the jacking stress, as the article allows) and the unit's weight, ${num(ls.Mg, 4)} kip·ft`);
     m("\\Delta_{ES}\\coloneq\\frac{28000\\mathrm{ksi}}{E_{ci}}\\cdot f_{cir}=", "Elastic shortening (Eq. 9-6), Es = 28,000 ksi", "ksi");
-    given(`f_{cds}\\coloneq ${num(ls.fcds, 8)}\\mathrm{ksi}`, "At the strands, from the dead loads added after transfer");
+    psi("f_{cds}", ls.fcds,"At the strands, from the dead loads added after transfer");
     m("\\Delta_{CR}\\coloneq\\max\\left(12\\cdot f_{cir}-7\\cdot f_{cds},0\\mathrm{ksi}\\right)=", "Creep (Eq. 9-9)", "ksi");
     if (mt.lowRelaxation) m("\\Delta_{R}\\coloneq\\max\\left(5\\mathrm{ksi}-0.10\\cdot\\Delta_{ES}-0.05\\cdot\\left(\\Delta_{SH}+\\Delta_{CR}\\right),0\\mathrm{ksi}\\right)=", "Relaxation, low-relaxation strand (Eq. 9-10A)", "ksi");
     else m("\\Delta_{R}\\coloneq\\max\\left(20\\mathrm{ksi}-0.4\\cdot\\Delta_{ES}-0.2\\cdot\\left(\\Delta_{SH}+\\Delta_{CR}\\right),0\\mathrm{ksi}\\right)=", "Relaxation, stress-relieved strand (Eq. 9-10)", "ksi");
@@ -394,7 +411,7 @@ export function dtRatingCalcLines(i: DtInputs, title: string, figures?: { sectio
     const cgx = rr >= 1 ? hp.mid : hp.end + (hp.mid - hp.end) * rr;
     m(`y_{ps}\\coloneq ${num(cgx, 9)}\\mathrm{in}`, `Strand centroid above the bottom at x = ${num(x, 2)} ft: harped from ${num(hp.end)} in at the ends to ${num(hp.mid)} in from 0.4 span (standard plans, Dwg. B-7)`);
   } else {
-    m(`y_{ps}\\coloneq ${num(s.cg, 9)}\\mathrm{in}`, `Strand centroid above the bottom (assumed): rows of ${mt.strandsPerRowPerStem * 2} strands, the first at ${num(mt.firstRow)}", then every ${num(mt.rowSpacing)}", filled row by row from the bottom`);
+    cgRows("y_{ps}", s.nStrands, `Strand centroid above the bottom (assumed): rows of ${mt.strandsPerRowPerStem * 2} strands, the first at ${num(mt.firstRow)}", then every ${num(mt.rowSpacing)}", filled row by row from the bottom`);
     if (back) {
       // The CDOH (now CDOT) Double-T Standard (rev. 3-1-82), Dwg. B-3: 34.5–45 in units on 36–66 ft spans.
       const d = i.units.depth, yr = i.bridge.yearBuilt;
@@ -488,14 +505,16 @@ export function dtRatingCalcLines(i: DtInputs, title: string, figures?: { sectio
   m(`L\\coloneq ${num(L, 9)}\\mathrm{ft}`, "Span, bearing to bearing");
   m(`x\\coloneq ${num(x, 9)}\\mathrm{ft}`, "Point rated, from the left bearing");
   const dl = g.dlNow;
-  given(
-    `w_{DC1}\\coloneq ${num(dl.dc1, 10)}\\frac{\\mathrm{kip}}{\\mathrm{ft}}`,
+  plf(
+    "w_{DC1}",
+    dl.dc1,
     deck
       ? `Self-weight of the unit (${num(dl.self)} klf at ${num(i.loads.concPcf)} pcf${i.loads.concPcf === 163 ? ", reinforced precast concrete, BRM Table 1-1" : ""}) plus the deck it carries (${num(dl.deck)} klf), carried by the precast section`
       : `Self-weight of the unit, at ${num(i.loads.concPcf)} pcf${i.loads.concPcf === 163 ? " (reinforced precast concrete, BRM Table 1-1)" : ""}`,
   );
-  given(
-    `w_{DC2}\\coloneq ${num(dl.dc2, 10)}\\frac{\\mathrm{kip}}{\\mathrm{ft}}`,
+  plf(
+    "w_{DC2}",
+    dl.dc2,
     `Asphalt ${num(dl.asphalt)} klf, rail ${num(dl.rail)} klf, utilities ${num(dl.util)} klf${dl.sidewalk ? `, ${i.loads.sidewalks.every((s) => s.curb) ? "curbs" : i.loads.sidewalks.some((s) => s.curb) ? "sidewalks and curbs" : "sidewalks"} ${num(dl.sidewalk)} klf` : ""}${deck ? "; shared equally by all girders and carried by the composite section" : "; carried by the unit beneath them"}`,
   );
   m(`P_{dia}\\coloneq ${num(dl.diaph)}\\mathrm{kip}`, "Diaphragm load at midspan");
@@ -503,7 +522,7 @@ export function dtRatingCalcLines(i: DtInputs, title: string, figures?: { sectio
   m("M_{D2}\\coloneq\\frac{w_{DC2}\\cdot x\\cdot\\left(L-x\\right)}{2}=", undefined, "kip*ft");
   m("M_D\\coloneq M_{D1}+M_{D2}=", "Dead load moment", "kip*ft");
   if (g.pedKlf > 0) {
-    given(`w_{ped}\\coloneq ${num(g.pedKlf, 10)}\\frac{\\mathrm{kip}}{\\mathrm{ft}}`, `Pedestrian load: ${num(r.ped.pedPsf)} psf on ${num(r.ped.pedWidth, 2)} ft of sidewalk, shared by ${i.units.count} units (SSHB 3.14.1.1)`);
+    plf("w_{ped}", g.pedKlf,`Pedestrian load: ${num(r.ped.pedPsf)} psf on ${num(r.ped.pedWidth, 2)} ft of sidewalk, shared by ${i.units.count} units (SSHB 3.14.1.1)`);
     m("M_{ped}\\coloneq\\frac{w_{ped}\\cdot x\\cdot\\left(L-x\\right)}{2}=", undefined, "kip*ft");
   } else m(`M_{ped}\\coloneq0${kft}`, sw.length ? (i.loads.pedestrians ? "No pedestrian load in this case (trucks on the sidewalk)" : "No pedestrian load") : "No sidewalk");
 
@@ -580,7 +599,7 @@ export function dtRatingCalcLines(i: DtInputs, title: string, figures?: { sectio
     );
     wheelHS();
     if (overlayOut) {
-      given(`w_{AS}\\coloneq ${num(wAdded, 10)}\\frac{\\mathrm{kip}}{\\mathrm{ft}}`, "Asphalt, added after the design (in w_DC2, section 5)");
+      plf("w_{AS}", wAdded,"Asphalt, added after the design (in w_DC2, section 5)");
       m("M_{D2,0}\\coloneq M_{D2}-\\frac{w_{AS}\\cdot x\\cdot\\left(L-x\\right)}{2}=", "Superimposed dead load of the original design", "kip*ft");
     } else m("M_{D2,0}\\coloneq M_{D2}=", "Superimposed dead load of the original design", "kip*ft");
     m("M_{D,0}\\coloneq M_{D1}+M_{D2,0}=", "Dead load moment of the original design", "kip*ft");
@@ -662,7 +681,7 @@ export function dtRatingCalcLines(i: DtInputs, title: string, figures?: { sectio
       text(`One strand fewer:- The same checks with ${nF} strands, at the same point. They are expected to fail (NG): that is what makes ${num(s.nStrands, 9)} the fewest.`, "note");
       m("N_f\\coloneq N_s-1=", "One strand fewer");
       m("A_{ps,f}\\coloneq N_f\\cdot a_{ps}=", "Prestressing steel", "in^2");
-      given(`y_{ps,f}\\coloneq ${num(fewerBlock.cgF, 9)}\\mathrm{in}`, "Strand centroid, the same grid as above");
+      cgRows("y_{ps,f}", nF, "Strand centroid, the same grid as above");
       given(`f_{se,f}\\coloneq ${num(fewerBlock.fseF, 8)}\\mathrm{ksi}`, `Effective prestress, the losses of section 1 worked out with ${nF} strands`);
       m(`d_f\\coloneq ${num(i.units.depth + (deck ? deck.thk : 0))}\\mathrm{in}-y_{ps,f}=`, "Depth to the strands", "in");
       m("\\rho_{p,f}\\coloneq\\frac{A_{ps,f}}{b\\cdot d_f}=");
@@ -727,11 +746,13 @@ export function dtRatingCalcLines(i: DtInputs, title: string, figures?: { sectio
   m("RF_{c1,HS}\\coloneq\\frac{f_{c1}-f_{tD}}{f_{tL}}=", "Concrete compression under all loads, inventory");
   m("RF_{c2,HS}\\coloneq\\frac{f_{c2}-0.5\\cdot f_{tD}}{f_{tL}}=", "Concrete compression under live load plus half the prestress and dead load, inventory");
   text(
-    `Over all girders, points and checks, the lowest HS-20 inventory rating is ${num(hs.govInv.inv.inv, 3)} (${hs.govInv.inv.inv.toFixed(4)} unrounded), for ${checkName(hs.govInv.inv.check)} on ${hs.govInv.g} at ${num(hs.govInv.inv.x, 2)} ft.${(() => {
+    `Over all girders, points and checks, the lowest HS-20 inventory rating is ${num(hs.govInv.inv.inv, 3)}, for ${checkName(hs.govInv.inv.check)} on ${hs.govInv.g} at ${num(hs.govInv.inv.x, 2)} ft.${(() => {
       // The same check at the worked point, from the same run, where it isn't the governing one.
       const here = hsFlex.points.find((p) => p.check === hs.govInv.inv.check && Math.abs(p.x - x) < 1e-9);
-      if (!here || (hs.govInv.g === g.name && Math.abs(hs.govInv.inv.x - x) < 1e-9)) return "";
-      return ` At x = ${num(x, 2)} ft on ${g.name}, worked above, the same check gives ${here.inv.toFixed(4)} unrounded; the worked steps carry their inputs at three decimals, so they can differ from it in the third decimal.`;
+      if (!here || (hs.govInv.g === g.name && Math.abs(hs.govInv.inv.x - x) < 1e-9)) return " It is worked above.";
+      return num(here.inv, 3) === num(hs.govInv.inv.inv, 3) && hs.govInv.g === g.name
+        ? ` At x = ${num(x, 2)} ft, worked above, it is the same to three decimals.`
+        : ` At x = ${num(x, 2)} ft on ${g.name}, worked above, the same check gives ${num(here.inv, 3)}.`;
     })()} The strand stress and the deck stress are checked the same way at every point.`,
   );
 

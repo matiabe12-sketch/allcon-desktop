@@ -117,6 +117,8 @@ function stemCheck(i: DtInputs, r: ReturnType<typeof rateDoubleTee>): string | n
   const spacingOf = (k: number) => ((k > 0 ? stemX[k] - stemX[k - 1] : 0) + (k < stemX.length - 1 ? stemX[k + 1] - stemX[k] : 0)) / (k > 0 && k < stemX.length - 1 ? 2 : 1);
   const unitDf = (gi: number) => r.girders.find((g) => g.i === gi && !isSidewalkTruckCase(g.name))?.dfMulti;
   const parts: string[] = [];
+  let fine = true; // no stem governs or takes more than its half
+  let more = false; // some unit's stems together take more than the unit's factor
   // The typical interior unit and the one next to the exterior.
   const gTyp = units.length >= 5 ? 3 : r.geo.iTyp + 1;
   for (const gi of [...new Set([2, gTyp])]) {
@@ -127,11 +129,20 @@ function stemCheck(i: DtInputs, r: ReturnType<typeof rateDoubleTee>): string | n
     if (whole === undefined) continue;
     const ratio = (a + b) / whole;
     const rated = r.ratings[0].per.find((p) => p.g === `G${gi}`);
-    parts.push(
-      `G${gi}: stems ${num(a, 3)} and ${num(b, 3)} (S/5.5 on each stem's spacing), ${num(a + b, 3)} together against the unit's ${num(whole, 3)}${
-        ratio > 1 + 1e-3 && rated ? ` (${((ratio - 1) * 100).toFixed(1)}% more; its HS-20 inventory rating would be about ${num(rated.inv.inv / ratio, 2)}, against the governing ${num(r.ratings[0].govInv.inv.inv, 3)})` : ""
-      }`,
-    );
+    const gov = r.ratings[0].govInv.inv.inv;
+    const takes = Math.abs(a - b) < 1e-3 ? `each stem takes ${num(a, 3)}` : `its stems take ${num(a, 3)} and ${num(b, 3)}`;
+    let tail: string;
+    if (ratio <= 1 + 1e-3) tail = ratio >= 1 - 1e-3 ? `, the same as the unit's factor.` : `, less than the unit's ${num(whole, 3)}.`;
+    else {
+      const perStem = rated ? rated.inv.inv / ratio : null;
+      const governs = perStem !== null && perStem < gov - 1e-9;
+      if (governs) fine = false;
+      more = true;
+      tail = `, ${((ratio - 1) * 100).toFixed(1)}% more than the unit's ${num(whole, 3)}.${
+        perStem === null ? "" : governs ? ` That would lower G${gi}'s HS-20 inventory rating to about ${num(perStem, 2)}, below the governing ${num(gov, 3)}: G${gi} should be rated per stem.` : ` That would lower G${gi}'s HS-20 inventory rating to about ${num(perStem, 2)}, still above the governing ${num(gov, 3)}.`
+      }`;
+    }
+    parts.push(`G${gi}: ${takes} (S/5.5, with S the distance to the stems on either side), ${num(a + b, 3)} together${tail}`);
   }
   // The exterior unit by the lever rule, hinged at each stem: wheels 6 ft apart, trucks 12 ft apart,
   // the first wheel 2 ft from the curb or rail face (BRM 1.3(F)).
@@ -160,14 +171,15 @@ function stemCheck(i: DtInputs, r: ReturnType<typeof rateDoubleTee>): string | n
     const [o, n] = share(face);
     const half = g.dfMulti / 2;
     const over = Math.max(o, n) > half + 1e-3;
+    if (over) fine = false;
     parts.push(
-      `${g.name}: outer stem ${num(o, 3)}, inner stem ${num(n, 3)} (lever rule, hinged at each stem), ${num(o + n, 3)} together against the unit's ${num(g.dfMulti, 3)}; ${
-        over ? `the ${o > n ? "outer" : "inner"} stem takes more than half the unit's factor (${num(half, 3)}): that stem should be rated on its own` : `neither stem takes more than half the unit's factor (${num(half, 3)})`
+      `${g.name}: by the lever rule, the outer stem takes ${num(o, 3)} and the inner ${num(n, 3)}. ${
+        over ? `The ${o > n ? "outer" : "inner"} stem takes more than half the unit's ${num(g.dfMulti, 3)} (${num(half, 3)}), so it should be rated on its own.` : `Neither takes more than half the unit's ${num(g.dfMulti, 3)} (${num(half, 3)}).`
       }`,
     );
   }
   if (!parts.length) return null;
-  return `Per stem:- The units are rated whole, each with its two stems; this checks the share of each stem, with the composite deck carrying the wheels across to the stems on each side. ${parts.join(". ")}.`;
+  return `Per stem:- Each unit is rated as a whole, both stems together. As a check, each stem is also given its own share of the wheels, with the deck carrying them to the stems on either side. ${parts.join(" ")}${fine ? (more ? " No stem's share changes the governing rating, so the unit ratings stand." : " No stem takes more than the unit ratings allow for, so they stand.") : ""}`;
 }
 
 /** Why the final tension is 1.0 ksi when the prestress is back-calculated. */

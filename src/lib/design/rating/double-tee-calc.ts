@@ -264,7 +264,7 @@ function methodNote(i: DtInputs, r: ReturnType<typeof rateDoubleTee>, text: (t: 
     );
   }
   text(
-    `Results:- The rating summary lists the governing rating factor for each vehicle, and posting follows BRM 1.15.1.${i.brrResults.trim() ? " The BrR ratings and distribution factors are then compared with the hand calculations from this package; they are taken to agree when they are within 5% of each other." : ""}`,
+    `Results:- The rating summary lists the governing rating factor for each vehicle, and posting follows BRM 1.15.1.${i.brrResults.trim() ? " The BrR ratings and distribution factors are then compared with the hand calculations from this package; they are taken to agree when they are within 5% of each other. The ratings reported for the bridge (load rating summary, SIA) are BrR's, given in the comparison table; this package's values verify them." : ""}`,
   );
 }
 
